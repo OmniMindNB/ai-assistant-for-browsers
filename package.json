@@ -6,7 +6,8 @@
   "type": "module",
   "pnpm": {
     "onlyBuiltDependencies": [
-      "esbuild"
+      "esbuild",
+      "spawn-sync"
     ]
   },
   "scripts": {

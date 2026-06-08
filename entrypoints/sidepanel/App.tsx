@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, type KeyboardEvent } from 'react';
 import { useChat } from './store';
 import Markdown from './Markdown';
-import ScriptPanel from './ScriptPanel';
 
 export default function App() {
   const {
@@ -25,7 +24,6 @@ export default function App() {
   } = useChat();
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [showScripts, setShowScripts] = useState(false);
 
   useEffect(() => {
     refreshProvider();
@@ -57,23 +55,7 @@ export default function App() {
           {provider ? provider.name : '未配置'}
         </span>
         <button
-          onClick={() => {
-            setShowScripts((v) => !v);
-            if (showHistory) toggleHistory();
-          }}
-          title="脚本改造"
-          className={
-            'rounded border px-2 py-0.5 text-xs ' +
-            (showScripts ? 'border-neutral-900 bg-neutral-900 text-white' : 'border-neutral-300')
-          }
-        >
-          改造
-        </button>
-        <button
-          onClick={() => {
-            setShowScripts(false);
-            toggleHistory();
-          }}
+          onClick={toggleHistory}
           title="历史会话"
           className={
             'rounded border px-2 py-0.5 text-xs ' +
@@ -100,9 +82,7 @@ export default function App() {
         </button>
       </header>
 
-      {showScripts ? (
-        <ScriptPanel />
-      ) : showHistory ? (
+      {showHistory ? (
         <HistoryPanel
           conversations={conversations}
           onOpen={openConversation}
