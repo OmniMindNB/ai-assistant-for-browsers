@@ -6,6 +6,8 @@ export type MessageType =
   | 'EXTRACT_PAGE'
   | 'GET_SELECTION'
   | 'GET_ACTIVE_TAB'
+  | 'INJECT_SCRIPT'
+  | 'UNDO_SCRIPT'
   | 'CHAT';
 
 export interface Message<T = unknown> {
@@ -38,6 +40,19 @@ export interface PageContent {
 /** GET_SELECTION 返回的页面选区数据 */
 export interface PageSelection {
   text: string;
+}
+
+/** INJECT_SCRIPT 请求载荷 */
+export interface InjectScriptPayload {
+  code: string;
+}
+
+/** INJECT_SCRIPT / UNDO_SCRIPT 返回结果 */
+export interface InjectScriptResult {
+  /** 脚本返回值的文本化表示（如有） */
+  result?: string;
+  /** 是否已保存可撤销快照 */
+  snapshotSaved?: boolean;
 }
 
 /** 生成唯一消息 ID */

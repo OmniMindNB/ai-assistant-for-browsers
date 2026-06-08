@@ -7,7 +7,13 @@ import {
 } from '@/lib/messaging';
 import { chatStream, type ChatMessage } from '@/lib/llm';
 import { ensureDevProvider, getActiveProvider, type ProviderConfig } from '@/lib/settings';
-import { db } from '@/lib/db';
+import {
+  db,
+  deleteConversation,
+  getConversationMessages,
+  listConversations,
+  type ConversationRecord,
+} from '@/lib/db';
 
 const SYSTEM_PROMPT =
   '你是 Aluminum，一个浏览器侧边栏 AI 助手，帮助用户理解、总结和分析当前网页内容。' +
@@ -28,6 +34,8 @@ interface ChatState {
   error: string | null;
   provider: ProviderConfig | null;
   conversationId: string;
+  conversations: ConversationRecord[];
+  showHistory: boolean;
   setInput: (v: string) => void;
   refreshProvider: () => Promise<void>;
   send: (text?: string) => Promise<void>;
@@ -35,6 +43,10 @@ interface ChatState {
   explainSelection: () => Promise<void>;
   stop: () => void;
   clear: () => void;
+  toggleHistory: () => Promise<void>;
+  refreshConversations: () => Promise<void>;
+  openConversation: (id: string) => Promise<void>;
+  removeConversation: (id: string) => Promise<void>;
 }
 
 let abortController: AbortController | null = null;
@@ -50,6 +62,8 @@ export const useChat = create<ChatState>((set, get) => ({
   error: null,
   provider: null,
   conversationId: genConversationId(),
+  conversations: [],
+  showHistory: false,
 
   setInput: (v) => set({ input: v }),
 
@@ -118,6 +132,33 @@ export const useChat = create<ChatState>((set, get) => ({
   clear: () => {
     abortController?.abort();
     set({ messages: [], error: null, conversationId: genConversationId() });
+  },
+
+  toggleHistory: async () => {
+    const next = !get().showHistory;
+    set({ showHistory: next });
+    if (next) await get().refreshConversations();
+  },
+
+  refreshConversations: async () => {
+    set({ conversations: await listConversations() });
+  },
+
+  openConversation: async (id) => {
+    abortController?.abort();
+    const records = await getConversationMessages(id);
+    const messages: UIMessage[] = records
+      .filter((r) => r.role !== 'system')
+      .map((r) => ({ role: r.role as 'user' | 'assistant', content: r.content }));
+    set({ messages, conversationId: id, showHistory: false, error: null });
+  },
+
+  removeConversation: async (id) => {
+    await deleteConversation(id);
+    await get().refreshConversations();
+    if (get().conversationId === id) {
+      set({ messages: [], conversationId: genConversationId() });
+    }
   },
 }));
 

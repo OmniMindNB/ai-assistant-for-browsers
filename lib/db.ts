@@ -33,3 +33,23 @@ class AluminumDB extends Dexie {
 }
 
 export const db = new AluminumDB();
+
+/** 按更新时间倒序列出会话 */
+export async function listConversations(): Promise<ConversationRecord[]> {
+  return db.conversations.orderBy('updatedAt').reverse().toArray();
+}
+
+/** 读取某会话的全部消息（按时间正序） */
+export async function getConversationMessages(
+  conversationId: string,
+): Promise<ChatMessageRecord[]> {
+  return db.messages.where('conversationId').equals(conversationId).sortBy('createdAt');
+}
+
+/** 删除会话及其消息 */
+export async function deleteConversation(conversationId: string): Promise<void> {
+  await db.transaction('rw', db.conversations, db.messages, async () => {
+    await db.messages.where('conversationId').equals(conversationId).delete();
+    await db.conversations.delete(conversationId);
+  });
+}

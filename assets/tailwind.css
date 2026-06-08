@@ -1,1 +1,86 @@
 @import 'tailwindcss';
+
+/* Markdown 渲染排版（侧边栏 LLM 输出） */
+.md-body > :first-child {
+  margin-top: 0;
+}
+.md-body > :last-child {
+  margin-bottom: 0;
+}
+.md-body p {
+  margin: 0.5em 0;
+}
+.md-body h1,
+.md-body h2,
+.md-body h3 {
+  font-weight: 600;
+  margin: 0.8em 0 0.4em;
+  line-height: 1.3;
+}
+.md-body h1 {
+  font-size: 1.15em;
+}
+.md-body h2 {
+  font-size: 1.08em;
+}
+.md-body h3 {
+  font-size: 1em;
+}
+.md-body ul,
+.md-body ol {
+  margin: 0.5em 0;
+  padding-left: 1.4em;
+}
+.md-body ul {
+  list-style: disc;
+}
+.md-body ol {
+  list-style: decimal;
+}
+.md-body li {
+  margin: 0.2em 0;
+}
+.md-body a {
+  color: #2563eb;
+  text-decoration: underline;
+}
+.md-body code {
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 4px;
+  padding: 0.1em 0.3em;
+  font-size: 0.9em;
+}
+.md-body pre {
+  background: #f6f8fa;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 0.7em;
+  overflow-x: auto;
+  margin: 0.6em 0;
+}
+.md-body pre code {
+  background: transparent;
+  padding: 0;
+  font-size: 0.85em;
+}
+.md-body blockquote {
+  border-left: 3px solid #d1d5db;
+  padding-left: 0.8em;
+  color: #6b7280;
+  margin: 0.5em 0;
+}
+.md-body table {
+  border-collapse: collapse;
+  margin: 0.6em 0;
+  font-size: 0.9em;
+}
+.md-body th,
+.md-body td {
+  border: 1px solid #e5e7eb;
+  padding: 0.3em 0.6em;
+}
+.md-body th {
+  background: #f9fafb;
+  font-weight: 600;
+}
+
