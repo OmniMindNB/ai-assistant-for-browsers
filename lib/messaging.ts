@@ -4,6 +4,7 @@
 export type MessageType =
   | 'PING'
   | 'EXTRACT_PAGE'
+  | 'GET_SELECTION'
   | 'GET_ACTIVE_TAB'
   | 'CHAT';
 
@@ -32,6 +33,11 @@ export interface PageContent {
   text: string;
   /** 提取到的字符数 */
   length: number;
+}
+
+/** GET_SELECTION 返回的页面选区数据 */
+export interface PageSelection {
+  text: string;
 }
 
 /** 生成唯一消息 ID */

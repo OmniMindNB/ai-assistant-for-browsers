@@ -2,6 +2,7 @@ import {
   type Message,
   type MessageResponse,
   type PageContent,
+  type PageSelection,
 } from '@/lib/messaging';
 
 // Service Worker：消息路由中心（ref: technical-plan.md §3.2）
@@ -41,6 +42,9 @@ async function handleMessage(message: Message): Promise<unknown> {
     case 'EXTRACT_PAGE':
       return extractActivePage();
 
+    case 'GET_SELECTION':
+      return getActiveSelection();
+
     default:
       throw new Error(`未处理的消息类型: ${message.type}`);
   }
@@ -63,6 +67,21 @@ async function extractActivePage(): Promise<PageContent> {
 
   if (!response?.ok || !response.data) {
     throw new Error(response?.error ?? '页面提取失败');
+  }
+  return response.data;
+}
+
+async function getActiveSelection(): Promise<PageSelection> {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) throw new Error('未找到活动标签页');
+
+  const response = (await browser.tabs.sendMessage(tab.id, {
+    id: `selection-${Date.now()}`,
+    type: 'GET_SELECTION',
+  } satisfies Message)) as MessageResponse<PageSelection>;
+
+  if (!response?.ok || !response.data) {
+    throw new Error(response?.error ?? '获取选区失败');
   }
   return response.data;
 }
