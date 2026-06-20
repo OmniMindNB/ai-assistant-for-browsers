@@ -11,8 +11,18 @@ const DEFAULT_SYSTEM_PROMPT =
   '涉及修改页面、点击、输入、导航、注入脚本等写操作时，必须等待权限闸门放行。';
 
 const MAX_CONTEXT_MESSAGES = 24;
-const MAX_TOOL_RESULT_CHARS = 8000;
-const DEFAULT_MAX_TOOL_TURNS = 8;
+const MAX_TOOL_RESULT_CHARS = 30000;
+const DEFAULT_MAX_TOOL_TURNS = 12;
+const IMPLEMENTATION_DOSSIER_TOOL = 'browser_inspect_page_implementation';
+const MAX_POST_DOSSIER_FOLLOW_UPS = 4;
+const POST_DOSSIER_ALLOWED_TOOLS = new Set([
+  'browser_get_scripts',
+  'browser_get_stylesheets',
+  'browser_get_html',
+  'browser_query_dom',
+  'browser_get_computed_style',
+]);
+const POST_DOSSIER_BLOCKED_TOOLS = new Set(['browser_get_page_meta', 'browser_read_page']);
 
 export interface BrowserAgentOptions {
   provider: ProviderConfig;
@@ -26,6 +36,10 @@ export function createBrowserAgent(options: BrowserAgentOptions): Agent {
   const tools = options.tools ?? createBrowserTools();
   const maxToolTurns = options.maxToolTurns ?? DEFAULT_MAX_TOOL_TURNS;
   let completedToolTurns = 0;
+  let implementationDossierCollected = false;
+  let postDossierFollowUps = 0;
+  const toolCallCounts = new Map<string, number>();
+  let agent: Agent;
 
   const agentOptions: AgentOptions = {
     initialState: {
@@ -43,20 +57,54 @@ export function createBrowserAgent(options: BrowserAgentOptions): Agent {
       if (completedToolTurns >= maxToolTurns) {
         return {
           block: true,
-          reason: `工具调用已达到上限（${maxToolTurns} 次），请基于已有结果给出最终回答。`,
+          reason: `工具调用已达到上限（${maxToolTurns} 次）。不要再调用任何工具，请立即基于已有结果给出最终回答，并说明仍不确定的部分。`,
         };
+      }
+      if (implementationDossierCollected) {
+        const toolName = context.toolCall.name;
+        if (POST_DOSSIER_BLOCKED_TOOLS.has(toolName)) {
+          return {
+            block: true,
+            reason:
+              '页面实现巡检已经包含 meta、正文、HTML、脚本和样式表。不要重复读取这些宽泛资料；请立即基于 browser_inspect_page_implementation 的结果回答。',
+          };
+        }
+        if (POST_DOSSIER_ALLOWED_TOOLS.has(toolName)) {
+          const priorCalls = toolCallCounts.get(toolName) ?? 0;
+          if (postDossierFollowUps >= MAX_POST_DOSSIER_FOLLOW_UPS || priorCalls >= 1) {
+            return {
+              block: true,
+              reason:
+                '页面实现巡检后的定向补查额度已用完，或该工具已经补查过一次。请停止继续调用工具，基于已有证据给出最终回答。',
+            };
+          }
+        }
       }
       return beforeToolCallPermissionGate(context);
     },
-    afterToolCall: async () => {
+    afterToolCall: async (context) => {
       completedToolTurns += 1;
+      const toolName = context.toolCall.name;
+      toolCallCounts.set(toolName, (toolCallCounts.get(toolName) ?? 0) + 1);
+      if (toolName === IMPLEMENTATION_DOSSIER_TOOL && !context.isError) {
+        implementationDossierCollected = true;
+        agent.steer({
+          role: 'user',
+          content:
+            '页面实现巡检已经完成。请优先基于 evidenceSummary 和已有工具结果给出详细、证据驱动的回答；如果仍缺少具体引用证据，最多对 scripts/stylesheets/html/query_dom/computed_style 各补查一次，总补查不超过 4 次，然后必须回答。请点名引用脚本、样式、DOM class、computed style 中的关键线索。',
+          timestamp: Date.now(),
+        });
+      } else if (implementationDossierCollected) {
+        postDossierFollowUps += 1;
+      }
       return undefined;
     },
     transformContext: async (messages) => compactAgentMessages(messages),
     convertToLlm: (messages) => messages.filter(isLlmMessage),
   };
 
-  return new Agent(agentOptions);
+  agent = new Agent(agentOptions);
+  return agent;
 }
 
 export function createOpenAICompatibleModel(provider: ProviderConfig): Model<Api> {

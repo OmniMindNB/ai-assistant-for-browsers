@@ -5,6 +5,7 @@ import Markdown from './Markdown';
 export default function App() {
   const {
     messages,
+    toolActivities,
     input,
     busy,
     error,
@@ -31,7 +32,7 @@ export default function App() {
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages]);
+  }, [messages, toolActivities]);
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -127,6 +128,7 @@ export default function App() {
                 <Bubble key={i} role={m.role} content={m.content} busy={busy} />
               ))
             )}
+            {toolActivities.length > 0 && <ToolActivityList activities={toolActivities} />}
             {error && (
               <div className="rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700">
                 {error}
@@ -206,6 +208,49 @@ function HistoryPanel({
         </ul>
       )}
     </main>
+  );
+}
+
+function ToolActivityList({
+  activities,
+}: {
+  activities: import('./store').ToolActivity[];
+}) {
+  return (
+    <div className="rounded-md border border-neutral-200 bg-white p-2 text-xs text-neutral-500 shadow-sm">
+      <div className="mb-1 font-medium text-neutral-600">Agent 工具调用</div>
+      <ul className="space-y-1">
+        {activities.map((activity) => (
+          <li key={activity.id} className="flex items-start gap-2">
+            <span
+              className={
+                activity.status === 'running'
+                  ? 'text-blue-500'
+                  : activity.status === 'blocked'
+                    ? 'text-amber-600'
+                  : activity.status === 'error'
+                    ? 'text-red-500'
+                    : 'text-emerald-600'
+              }
+            >
+              {activity.status === 'running'
+                ? '运行中'
+                : activity.status === 'blocked'
+                  ? '已拦截'
+                  : activity.status === 'error'
+                    ? '失败'
+                    : '完成'}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="font-mono text-[11px] text-neutral-700">{activity.name}</span>
+              {activity.detail && (
+                <span className="ml-1 break-all text-neutral-400">{activity.detail}</span>
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

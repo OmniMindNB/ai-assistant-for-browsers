@@ -75,8 +75,8 @@
 
 - [x] A0'：**Pi 打包 spike** —— ✅ 已验证通过（2026-06-13）：`@earendil-works/pi-agent-core` + `pi-ai` 在 WXT MV3 `pnpm build` 成功；`node:fs` 仅 warning 且被 Node 运行时守卫（源码显式面向浏览器）；agent 入口约 1.69MB（可接受）。**直接用 Pi，不启用降级方案 D**
 - [x] A1：`lib/agent/agent.ts` 封装 Pi `Agent`（传入 browser `streamFn`、`beforeToolCall` 作为 Deny-First 闸门、`AgentTool` 注册）+ 轮次熔断
-- [ ] A2：只读检查工具集（read_page / query_dom / get_html / get_scripts / get_stylesheets / get_computed_style / get_page_meta / screenshot），后端在 `background.ts` + 协议在 `messaging.ts`
-- [ ] A3：`store.ts` 删除关键词路由，`send()` 改为驱动 Pi `Agent.prompt()`；`App.tsx` 订阅 `tool_execution_*` 事件展示工具调用中间态
+- [x] A2：只读检查工具集（read_page / query_dom / get_html / get_scripts / get_stylesheets / get_computed_style / get_page_meta / screenshot），后端在 `background.ts` + 协议在 `messaging.ts`
+- [x] A3：`store.ts` 删除关键词路由，`send()` 改为驱动 Pi `Agent.prompt()`；`App.tsx` 订阅 `tool_execution_*` 事件展示工具调用中间态
 - [ ] 验收：问「当前网页的滚动效果是怎么做的」→ 模型自动读脚本/样式后给出基于真实代码的分析
 
 > 上下文管理（单步预算 / 结果折叠 / 轮次熔断）随 A1/A2 落地最小集；CDP、网络嗅探、多标签留待 Agent B/C。
@@ -85,6 +85,12 @@
 
 | 日期 | 内容 | 关联 |
 |------|------|------|
+| 2026-06-20 | Agent A3 完成：sidepanel 发送流程切换为 Pi `Agent.prompt()`，删除关键词路由与正文-only prompt，新增工具调用状态 UI | agent-plan.md |
+| 2026-06-20 | 提升聚合巡检答案质量：`browser_inspect_page_implementation` 增加 `evidenceSummary`，抽取 scroll/sticky/IntersectionObserver/animation/Primer/GitHub landing-page 等脚本、样式、HTML、DOM 与 computed style 证据；聚合后允许最多 4 次、每类 1 次定向补查 | agent-plan.md |
+| 2026-06-20 | 增加聚合巡检后的运行时收敛约束：`browser_inspect_page_implementation` 成功后通过 `agent.steer()` 引导回答，并阻断重复读取 page_meta/read_page；scripts/styles/html/DOM/computed style 仅允许最多 4 次、每类 1 次定向补查 | agent-plan.md |
+| 2026-06-20 | 新增 `browser_inspect_page_implementation` 聚合工具：一次 Agent 工具调用内收集 meta/readable text/HTML/DOM/scripts/stylesheets/computed style，降低实现分析类问题的工具预算消耗 | agent-plan.md |
+| 2026-06-20 | 调整 Agent 工具预算：默认/侧边栏分析预算从 8 提升到 12，提示词要求避免重复工具调用并在预算耗尽时直接收敛回答 | agent-plan.md |
+| 2026-06-20 | Agent A2 完成：扩展只读浏览器检查协议与 background 后端，注册 page meta / DOM / HTML / scripts / stylesheets / computed style / screenshot 工具 | agent-plan.md |
 | 2026-06-20 | Agent A1 完成：新增 Pi Agent factory、浏览器 OpenAI-compatible streamFn、Deny-First 权限闸门、最小工具注册表（active tab/read page）与工具结果压缩/调用上限 | agent-plan.md |
 | 2026-06-13 | A0' Pi 打包 spike 验证通过：pi-agent-core 在 WXT MV3 可干净打包，node 内建被浏览器守卫；确定直接基于 Pi | ADR-0003, agent-plan.md |
 | 2026-06-13 | 方向调整：转向 Agent 循环 + 工具调用，修复关键词路由与纯文本上下文导致的「脱靶」 | ADR-0003, agent-plan.md |

@@ -6,6 +6,13 @@ export type MessageType =
   | 'EXTRACT_PAGE'
   | 'GET_SELECTION'
   | 'GET_ACTIVE_TAB'
+  | 'QUERY_DOM'
+  | 'GET_HTML'
+  | 'GET_SCRIPTS'
+  | 'GET_STYLESHEETS'
+  | 'GET_COMPUTED_STYLE'
+  | 'GET_PAGE_META'
+  | 'CAPTURE_SCREENSHOT'
   | 'INJECT_SCRIPT'
   | 'UNDO_SCRIPT'
   | 'CHAT';
@@ -40,6 +47,119 @@ export interface PageContent {
 /** GET_SELECTION 返回的页面选区数据 */
 export interface PageSelection {
   text: string;
+}
+
+export interface QueryDomPayload {
+  selector: string;
+  limit?: number;
+  includeText?: boolean;
+}
+
+export interface DomNodeSummary {
+  index: number;
+  tag: string;
+  id?: string;
+  className?: string;
+  text?: string;
+  attributes: Record<string, string>;
+  rect: { x: number; y: number; width: number; height: number };
+}
+
+export interface QueryDomResult {
+  selector: string;
+  count: number;
+  truncated: boolean;
+  nodes: DomNodeSummary[];
+}
+
+export interface GetHtmlPayload {
+  selector?: string;
+  maxChars?: number;
+}
+
+export interface GetHtmlResult {
+  selector: string;
+  count: number;
+  html: string;
+  length: number;
+  truncated: boolean;
+}
+
+export interface GetScriptsPayload {
+  includeInline?: boolean;
+  includeExternal?: boolean;
+  maxChars?: number;
+}
+
+export interface PageScriptInfo {
+  index: number;
+  src?: string;
+  type?: string;
+  async: boolean;
+  defer: boolean;
+  text?: string;
+  length: number;
+  truncated: boolean;
+  error?: string;
+}
+
+export interface GetScriptsResult {
+  count: number;
+  scripts: PageScriptInfo[];
+  truncated: boolean;
+}
+
+export interface GetStylesheetsPayload {
+  includeInline?: boolean;
+  includeExternal?: boolean;
+  maxChars?: number;
+}
+
+export interface PageStylesheetInfo {
+  index: number;
+  href?: string;
+  ownerTag?: string;
+  text?: string;
+  length: number;
+  truncated: boolean;
+  error?: string;
+}
+
+export interface GetStylesheetsResult {
+  count: number;
+  stylesheets: PageStylesheetInfo[];
+  truncated: boolean;
+}
+
+export interface GetComputedStylePayload {
+  selector: string;
+  props?: string[];
+}
+
+export interface GetComputedStyleResult {
+  selector: string;
+  found: boolean;
+  styles: Record<string, string>;
+}
+
+export interface PageMetaResult {
+  title: string;
+  url: string;
+  lang: string;
+  charset: string;
+  viewport?: string;
+  scripts: number;
+  stylesheets: number;
+  frameworkHints: string[];
+}
+
+export interface CaptureScreenshotPayload {
+  format?: 'png' | 'jpeg';
+  quality?: number;
+}
+
+export interface CaptureScreenshotResult {
+  dataUrl: string;
 }
 
 /** INJECT_SCRIPT 请求载荷 */

@@ -125,8 +125,9 @@ async function* agentLoop(ctx: AgentContext): AsyncGenerator<AgentEvent> {
 | `evaluate_js` | `{ expression, awaitPromise? }` | `executeScript` MAIN，返回序列化结果 | 探查运行时状态（写操作走闸门） |
 | `screenshot` | `{ fullPage?, selector? }` | `chrome.tabs.captureVisibleTab` / CDP | 视觉分析（需 Vision 模型） |
 | `get_page_meta` | `{}` | title/url/lang/frameworks 探测 | 基本信息 + 技术栈识别 |
+| `inspect_page_implementation` | `{ focus?, selectors?, budgets? }` | 组合调用 meta / readable text / HTML / DOM / scripts / stylesheets / computed style | **一次性收集实现分析证据，避免工具预算耗尽** |
 
-> 「滚动效果怎么做的」典型工具序列：`get_page_meta` → `get_scripts`（搜 `scroll`/`wheel`/`IntersectionObserver`/`requestAnimationFrame`）→ `get_stylesheets`（搜 `scroll-behavior`/`scroll-snap`）→ 必要时 `get_event_listeners` → 产出分析。
+> 「滚动效果怎么做的」典型工具序列：优先 `inspect_page_implementation({ focus: 'scroll' })` 一次性收集页面元信息、DOM/HTML、脚本、样式和关键 computed style；只有关键证据缺失时，再补充单项 `get_scripts` / `get_stylesheets` / `query_dom`。
 
 #### Phase B — 交互与写入工具（经权限闸门）
 
