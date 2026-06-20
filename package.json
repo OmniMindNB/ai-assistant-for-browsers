@@ -21,6 +21,8 @@
     "postinstall": "wxt prepare"
   },
   "dependencies": {
+    "@earendil-works/pi-agent-core": "^0.79.3",
+    "@earendil-works/pi-ai": "^0.79.3",
     "@mozilla/readability": "^0.6.0",
     "dexie": "^4.4.3",
     "highlight.js": "^11.11.1",
