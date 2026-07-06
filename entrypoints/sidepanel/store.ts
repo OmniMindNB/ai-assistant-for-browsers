@@ -6,7 +6,13 @@ import {
   type MessageResponse,
   type PageSelection,
 } from '@/lib/messaging';
-import { ensureDevProvider, getActiveProvider, type ProviderConfig } from '@/lib/settings';
+import {
+  ensureDevProvider,
+  getActiveProvider,
+  loadSettings,
+  providerModels,
+  type ProviderConfig,
+} from '@/lib/settings';
 import {
   db,
   deleteConversation,
@@ -57,17 +63,24 @@ interface ChatState {
   busy: boolean;
   error: string | null;
   provider: ProviderConfig | null;
+  /** 全部已配置 Provider（输入框选择器枚举用） */
+  providers: ProviderConfig[];
+  /** 输入框当前选中的 Provider（运行时覆盖，默认回退到 active） */
+  selectedProviderId: string | null;
+  /** 输入框当前选中的模型 */
+  selectedModel: string;
   conversationId: string;
   conversations: ConversationRecord[];
-  showHistory: boolean;
   setInput: (v: string) => void;
   refreshProvider: () => Promise<void>;
+  setSelectedProvider: (id: string) => void;
+  setSelectedModel: (model: string) => void;
+  selectProviderAndModel: (providerId: string, model: string) => void;
   send: (text?: string) => Promise<void>;
   summarizePage: () => Promise<void>;
   explainSelection: () => Promise<void>;
   stop: () => void;
   clear: () => void;
-  toggleHistory: () => Promise<void>;
   refreshConversations: () => Promise<void>;
   openConversation: (id: string) => Promise<void>;
   removeConversation: (id: string) => Promise<void>;
@@ -86,16 +99,44 @@ export const useChat = create<ChatState>((set, get) => ({
   busy: false,
   error: null,
   provider: null,
+  providers: [],
+  selectedProviderId: null,
+  selectedModel: '',
   conversationId: genConversationId(),
   conversations: [],
-  showHistory: false,
 
   setInput: (v) => set({ input: v }),
 
   refreshProvider: async () => {
     await ensureDevProvider();
-    const provider = (await getActiveProvider()) ?? null;
-    set({ provider });
+    const settings = await loadSettings();
+    const all = settings.providers;
+    const active = all.find((p) => p.id === settings.activeProviderId) ?? all[0] ?? null;
+    set((s) => {
+      const selectedId =
+        s.selectedProviderId && all.some((p) => p.id === s.selectedProviderId)
+          ? s.selectedProviderId
+          : active?.id ?? null;
+      const selectedProv = all.find((p) => p.id === selectedId) ?? null;
+      const models = selectedProv ? providerModels(selectedProv) : [];
+      const keepModel = Boolean(s.selectedModel) && models.includes(s.selectedModel);
+      const selectedModel = selectedProv ? (keepModel ? s.selectedModel : selectedProv.model) : '';
+      return { providers: all, provider: active, selectedProviderId: selectedId, selectedModel };
+    });
+  },
+
+  setSelectedProvider: (id) => {
+    const prov = get().providers.find((p) => p.id === id);
+    if (!prov) return;
+    set({ selectedProviderId: id, selectedModel: prov.model });
+  },
+
+  setSelectedModel: (model) => set({ selectedModel: model }),
+
+  selectProviderAndModel: (providerId, model) => {
+    const prov = get().providers.find((p) => p.id === providerId);
+    if (!prov) return;
+    set({ selectedProviderId: providerId, selectedModel: model });
   },
 
   send: async (text) => {
@@ -148,14 +189,7 @@ export const useChat = create<ChatState>((set, get) => ({
       toolActivities: [],
       error: null,
       conversationId: genConversationId(),
-      showHistory: false,
     });
-  },
-
-  toggleHistory: async () => {
-    const next = !get().showHistory;
-    set({ showHistory: next });
-    if (next) await get().refreshConversations();
   },
 
   refreshConversations: async () => {
@@ -168,7 +202,7 @@ export const useChat = create<ChatState>((set, get) => ({
     const messages: UIMessage[] = records
       .filter((r) => r.role !== 'system')
       .map((r) => ({ role: r.role as 'user' | 'assistant', content: r.content }));
-    set({ messages, toolActivities: [], conversationId: id, showHistory: false, error: null });
+    set({ messages, toolActivities: [], conversationId: id, error: null });
   },
 
   removeConversation: async (id) => {
@@ -186,7 +220,11 @@ async function runAgent(
   display: UIMessage,
   agentUserContent: string,
 ): Promise<void> {
-  const provider = get().provider ?? (await getActiveProvider()) ?? null;
+  const all = get().providers;
+  const provider =
+    all.find((p) => p.id === get().selectedProviderId) ??
+    (await getActiveProvider()) ??
+    null;
   if (!provider) {
     set({ error: '未配置 Provider，请在「设置」中添加 API Key。' });
     return;
@@ -195,6 +233,11 @@ async function runAgent(
     set({ error: '当前 Provider 未填写 API Key，请在「设置」中补全。' });
     return;
   }
+
+  // 输入框选中的模型覆盖 Provider 默认模型
+  const desiredModel = get().selectedModel || provider.model;
+  const agentProvider: ProviderConfig =
+    desiredModel && desiredModel !== provider.model ? { ...provider, model: desiredModel } : provider;
 
   const history = get().messages;
   set({
@@ -206,7 +249,7 @@ async function runAgent(
   });
 
   const agent = createBrowserAgent({
-    provider,
+    provider: agentProvider,
     systemPrompt: SYSTEM_PROMPT,
     messages: toAgentMessages(history),
     maxToolTurns: MAX_AGENT_TOOL_TURNS,

@@ -9,7 +9,10 @@ export interface ProviderConfig {
   /** OpenAI 兼容的基础地址，至 /v1 为止（不含 /chat/completions） */
   baseURL: string;
   apiKey: string;
+  /** 默认 / 当前选中的模型 */
   model: string;
+  /** 该 Provider 下可在输入框切换的全部模型（含 model）；为空时回退到 [model] */
+  models?: string[];
 }
 
 export interface Settings {
@@ -40,6 +43,16 @@ const DEFAULT_SETTINGS: Settings = {
 export async function loadSettings(): Promise<Settings> {
   const result = await browser.storage.local.get(STORAGE_KEY);
   return (result[STORAGE_KEY] as Settings) ?? DEFAULT_SETTINGS;
+}
+
+/** 列出全部已配置 Provider（便于输入框选择器枚举）。 */
+export async function listProviders(): Promise<ProviderConfig[]> {
+  return (await loadSettings()).providers;
+}
+
+/** 返回 Provider 的可用模型列表（保证非空，至少含 model）。 */
+export function providerModels(provider: ProviderConfig): string[] {
+  return provider.models?.length ? provider.models : [provider.model];
 }
 
 export async function saveSettings(settings: Settings): Promise<void> {

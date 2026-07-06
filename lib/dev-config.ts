@@ -22,7 +22,7 @@ export const DEV_PROVIDER: DevProvider = {
   enabled: true, // ← 改为 true 启用下面的开发配置
   id: 'dev-deepseek',
   name: 'DeepSeek (Dev)',
-  baseURL: 'https://api.deepseek.com/v1',
+  baseURL: 'https://api.deepseek.com/',
   apiKey: 'sk-3d0923dd2a7a45eea9b6c0ef2ebf6369', // ← 在这里填入你的测试 API Key
-  model: 'deepseek-chat',
+  model: 'deepseek-v4-pro',
 };
