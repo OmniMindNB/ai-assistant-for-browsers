@@ -381,10 +381,51 @@ async function executeInActiveTab<TInput, TResult>(
   return frame.result as TResult;
 }
 
+// 拒绝内网/回环/链路本地地址与非 http(s) 协议，防止页面通过 script/link 的
+// src/href 诱导扩展（拥有 <all_urls> 权限、可绕过 CORS）探测内网服务（SSRF）。
+function isDisallowedHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (host === 'localhost' || host === '0.0.0.0') return true;
+
+  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ipv4) {
+    const a = Number(ipv4[1]);
+    const b = Number(ipv4[2]);
+    if (a === 127 || a === 10 || a === 0) return true; // loopback / 10.0.0.0/8
+    if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
+    if (a === 192 && b === 168) return true; // 192.168.0.0/16
+    if (a === 169 && b === 254) return true; // 169.254.0.0/16 (incl. cloud metadata)
+    return false;
+  }
+
+  if (host === '::1') return true; // loopback
+  if (host.startsWith('fe80')) return true; // link-local
+  if (host.startsWith('fc') || host.startsWith('fd')) return true; // fc00::/7 unique local
+  return false;
+}
+
+function isFetchUrlAllowed(rawUrl: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+  return !isDisallowedHost(parsed.hostname);
+}
+
 async function fetchText(
   url: string,
   maxChars: number,
 ): Promise<{ text?: string; length: number; truncated: boolean; error?: string }> {
+  if (!isFetchUrlAllowed(url)) {
+    return {
+      length: 0,
+      truncated: false,
+      error: '已阻止：目标地址不允许访问（非 http/https 协议，或指向内网/回环/链路本地地址）',
+    };
+  }
   try {
     const response = await fetch(url);
     if (!response.ok) {
