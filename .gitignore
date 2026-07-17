@@ -29,3 +29,5 @@ web-ext.config.ts
 *.sw?
 
 *.png
+!public/icons/*.png
+!docs/store-assets/*.png

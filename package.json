@@ -2,7 +2,7 @@
   "name": "aluminum",
   "description": "Aluminum — Chromium 浏览器 AI 助手侧边栏插件",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "pnpm": {
     "onlyBuiltDependencies": [

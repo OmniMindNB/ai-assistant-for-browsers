@@ -11,10 +11,22 @@ export default defineConfig({
   manifest: {
     name: 'Aluminum',
     description: 'AI 助手侧边栏：总结、理解、改造与自动化当前网页',
-    permissions: ['sidePanel', 'storage', 'scripting', 'activeTab', 'tabs', 'contextMenus'],
+    permissions: ['sidePanel', 'storage', 'scripting', 'activeTab', 'tabs'],
     host_permissions: ['<all_urls>'],
+    icons: {
+      16: 'icons/icon-16.png',
+      32: 'icons/icon-32.png',
+      48: 'icons/icon-48.png',
+      128: 'icons/icon-128.png',
+    },
     action: {
       default_title: 'Aluminum',
+      default_icon: {
+        16: 'icons/icon-16.png',
+        32: 'icons/icon-32.png',
+        48: 'icons/icon-48.png',
+        128: 'icons/icon-128.png',
+      },
     },
   },
 });
