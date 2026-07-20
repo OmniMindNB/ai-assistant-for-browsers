@@ -22,14 +22,16 @@ export function summarizeToolCallForConfirmation(toolName: string, args: unknown
     case 'browser_modify_dom': {
       const selector = str('selector');
       const action = str('action');
+      const hasValue = typeof record.value === 'string';
+      const hasAttribute = typeof record.attribute === 'string';
       const value = str('value');
       const attribute = str('attribute');
       let detail = '';
-      if (attribute && value) {
+      if (hasAttribute && hasValue) {
         detail = `，把属性 "${attribute}" 设为 "${truncate(value)}"`;
-      } else if (attribute) {
+      } else if (hasAttribute) {
         detail = `，涉及属性 "${attribute}"`;
-      } else if (value) {
+      } else if (hasValue) {
         detail = `，值为 "${truncate(value)}"`;
       }
       return { summary: `AI 想要对匹配 "${selector}" 的元素执行 "${action}"${detail}。` };

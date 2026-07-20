@@ -42,6 +42,28 @@ describe('summarizeToolCallForConfirmation', () => {
     expect(result.summary).toContain('https://evil.test');
   });
 
+  it('summarizes modify_dom setAttribute with an explicit empty-string value, not omitting it', () => {
+    const result = summarizeToolCallForConfirmation('browser_modify_dom', {
+      selector: 'a.link',
+      action: 'setAttribute',
+      attribute: 'href',
+      value: '',
+    });
+    expect(result.summary).toContain('href');
+    expect(result.summary).not.toBe('AI 想要对匹配 "a.link" 的元素执行 "setAttribute"。');
+  });
+
+  it('summarizes modify_dom setText with an explicit empty-string value, not omitting it', () => {
+    const result = summarizeToolCallForConfirmation('browser_modify_dom', {
+      selector: '.title',
+      action: 'setText',
+      value: '',
+    });
+    expect(result.summary).not.toBe('AI 想要对匹配 ".title" 的元素执行 "setText"。');
+    expect(result.summary).toContain('setText');
+    expect(result.summary).toContain('""');
+  });
+
   it('truncates a long modify_dom value in the summary', () => {
     const longValue = 'x'.repeat(500);
     const result = summarizeToolCallForConfirmation('browser_modify_dom', {
