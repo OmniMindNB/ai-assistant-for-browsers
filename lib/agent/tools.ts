@@ -14,6 +14,8 @@ import {
   type GetScriptsResult,
   type GetStylesheetsPayload,
   type GetStylesheetsResult,
+  type InjectScriptPayload,
+  type InjectScriptResult,
   type MessageResponse,
   type MessageType,
   type ModifyDomPayload,
@@ -59,6 +61,7 @@ export function createBrowserTools(): BrowserAgentTool[] {
     browserScrollTool,
     browserNavigateTool,
     browserSetStorageTool,
+    browserInjectScriptTool,
     browserRevertChangesTool,
   ];
 }
@@ -498,6 +501,25 @@ const browserSetStorageTool: BrowserAgentTool = {
     if (!response.ok || !response.data) throw new Error(response.error ?? '写入存储失败');
     return textResult(
       `已写入 ${response.data.area}Storage 的 "${response.data.key}"。`,
+      response.data as unknown as Record<string, unknown>,
+    );
+  },
+};
+
+const browserInjectScriptTool: BrowserAgentTool = {
+  name: 'browser_inject_script',
+  label: 'Inject Script',
+  description:
+    'Inject and execute a JavaScript snippet in the current page (MAIN world) for page modifications not covered by the other structured tools — e.g. reading mode, dark theme, or complex layout changes. The script is statically scanned for dangerous APIs before execution.',
+  parameters: Type.Object({
+    code: Type.String({ description: 'JavaScript source to execute in the page.' }),
+  }),
+  execute: async (_toolCallId, params) => {
+    const payload = params as InjectScriptPayload;
+    const response = (await sendMessage<InjectScriptPayload, InjectScriptResult>('INJECT_SCRIPT', payload)) as MessageResponse<InjectScriptResult>;
+    if (!response.ok || !response.data) throw new Error(response.error ?? '脚本注入失败');
+    return textResult(
+      response.data.result ? `已注入并执行脚本，返回值：${response.data.result}` : '已注入并执行脚本。',
       response.data as unknown as Record<string, unknown>,
     );
   },
