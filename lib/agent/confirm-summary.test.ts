@@ -51,6 +51,9 @@ describe('summarizeToolCallForConfirmation', () => {
     });
     expect(result.summary).toContain('href');
     expect(result.summary).not.toBe('AI 想要对匹配 "a.link" 的元素执行 "setAttribute"。');
+    // 必须命中 hasAttribute && hasValue 分支（显示 设为 ""），而不是退化到只提属性名的 hasAttribute 分支。
+    expect(result.summary).toContain('""');
+    expect(result.summary).not.toContain('涉及属性');
   });
 
   it('summarizes modify_dom setText with an explicit empty-string value, not omitting it', () => {
