@@ -17,6 +17,10 @@ export type MessageType =
   | 'UNDO_SCRIPT'
   | 'SET_STYLE'
   | 'MODIFY_DOM'
+  | 'CLICK_ELEMENT'
+  | 'TYPE_TEXT'
+  | 'SELECT_OPTION'
+  | 'SCROLL_PAGE'
   | 'CHAT';
 
 export interface Message<T = unknown> {
@@ -198,6 +202,53 @@ export interface ModifyDomResult {
   selector: string;
   matched: number;
   action: ModifyDomPayload['action'];
+}
+
+export interface ClickElementPayload {
+  selector: string;
+  index?: number;
+}
+
+export interface ClickElementResult {
+  selector: string;
+  matched: number;
+  clickedIndex: number | null;
+}
+
+export interface TypeTextPayload {
+  selector: string;
+  text: string;
+  replace?: boolean;
+}
+
+export interface TypeTextResult {
+  selector: string;
+  matched: boolean;
+  value: string;
+}
+
+export interface SelectOptionPayload {
+  selector: string;
+  value: string;
+}
+
+export interface SelectOptionResult {
+  selector: string;
+  matched: boolean;
+  value: string;
+}
+
+export interface ScrollPagePayload {
+  selector?: string;
+  x?: number;
+  y?: number;
+  behavior?: 'auto' | 'smooth';
+}
+
+export interface ScrollPageResult {
+  selector?: string;
+  x: number;
+  y: number;
 }
 
 /** 生成唯一消息 ID */

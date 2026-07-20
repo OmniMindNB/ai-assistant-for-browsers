@@ -1,6 +1,8 @@
 import {
   type CaptureScreenshotPayload,
   type CaptureScreenshotResult,
+  type ClickElementPayload,
+  type ClickElementResult,
   type GetComputedStylePayload,
   type GetComputedStyleResult,
   type GetHtmlPayload,
@@ -22,8 +24,14 @@ import {
   type PageSelection,
   type QueryDomPayload,
   type QueryDomResult,
+  type ScrollPagePayload,
+  type ScrollPageResult,
+  type SelectOptionPayload,
+  type SelectOptionResult,
   type SetStylePayload,
   type SetStyleResult,
+  type TypeTextPayload,
+  type TypeTextResult,
 } from '@/lib/messaging';
 import { analyzeScript } from '@/lib/security';
 import {
@@ -52,6 +60,10 @@ const SUPPORTED_MESSAGE_TYPES = [
   'UNDO_SCRIPT',
   'SET_STYLE',
   'MODIFY_DOM',
+  'CLICK_ELEMENT',
+  'TYPE_TEXT',
+  'SELECT_OPTION',
+  'SCROLL_PAGE',
   'CHAT',
 ] as const;
 
@@ -121,6 +133,18 @@ async function handleMessage(message: Message): Promise<unknown> {
 
     case 'MODIFY_DOM':
       return modifyDom(message.payload as ModifyDomPayload);
+
+    case 'CLICK_ELEMENT':
+      return clickElement(message.payload as ClickElementPayload);
+
+    case 'TYPE_TEXT':
+      return typeText(message.payload as TypeTextPayload);
+
+    case 'SELECT_OPTION':
+      return selectOption(message.payload as SelectOptionPayload);
+
+    case 'SCROLL_PAGE':
+      return scrollPage(message.payload as ScrollPagePayload);
 
     case 'INJECT_SCRIPT':
       return injectScript(message.payload as InjectScriptPayload);
@@ -525,6 +549,75 @@ async function modifyDom(payload: ModifyDomPayload): Promise<ModifyDomResult> {
       }
     }
     return { selector, matched: nodes.length, action: input?.action ?? 'remove' };
+  });
+}
+
+async function clickElement(payload: ClickElementPayload): Promise<ClickElementResult> {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) throw new Error('未找到活动标签页');
+  await ensureTurnSnapshot(tab.id);
+
+  return executeInActiveTab(payload, (input): ClickElementResult => {
+    const selector = input?.selector || '';
+    const nodes = Array.from(document.querySelectorAll<HTMLElement>(selector));
+    const index = input?.index ?? 0;
+    const target = nodes[index];
+    if (target) target.click();
+    return { selector, matched: nodes.length, clickedIndex: target ? index : null };
+  });
+}
+
+async function typeText(payload: TypeTextPayload): Promise<TypeTextResult> {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) throw new Error('未找到活动标签页');
+  await ensureTurnSnapshot(tab.id);
+
+  return executeInActiveTab(payload, (input): TypeTextResult => {
+    const selector = input?.selector || '';
+    const target = document.querySelector(selector) as HTMLInputElement | HTMLTextAreaElement | null;
+    if (!target) return { selector, matched: false, value: '' };
+
+    const nextValue = input?.replace === false ? `${target.value}${input?.text ?? ''}` : input?.text ?? '';
+    const prototype = target instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+    if (setter) setter.call(target, nextValue);
+    else target.value = nextValue;
+
+    target.dispatchEvent(new Event('input', { bubbles: true }));
+    target.dispatchEvent(new Event('change', { bubbles: true }));
+    return { selector, matched: true, value: nextValue };
+  });
+}
+
+async function selectOption(payload: SelectOptionPayload): Promise<SelectOptionResult> {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) throw new Error('未找到活动标签页');
+  await ensureTurnSnapshot(tab.id);
+
+  return executeInActiveTab(payload, (input): SelectOptionResult => {
+    const selector = input?.selector || '';
+    const target = document.querySelector<HTMLSelectElement>(selector);
+    if (!target) return { selector, matched: false, value: input?.value ?? '' };
+    target.value = input?.value ?? '';
+    target.dispatchEvent(new Event('change', { bubbles: true }));
+    return { selector, matched: true, value: target.value };
+  });
+}
+
+async function scrollPage(payload: ScrollPagePayload): Promise<ScrollPageResult> {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) throw new Error('未找到活动标签页');
+  await ensureTurnSnapshot(tab.id);
+
+  return executeInActiveTab(payload, (input): ScrollPageResult => {
+    const behavior = input?.behavior ?? 'auto';
+    if (input?.selector) {
+      const target = document.querySelector(input.selector);
+      target?.scrollIntoView({ behavior, block: 'center' });
+    } else {
+      window.scrollTo({ left: input?.x ?? window.scrollX, top: input?.y ?? window.scrollY, behavior });
+    }
+    return { selector: input?.selector, x: window.scrollX, y: window.scrollY };
   });
 }
 

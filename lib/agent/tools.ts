@@ -4,6 +4,8 @@ import {
   sendMessage,
   type CaptureScreenshotPayload,
   type CaptureScreenshotResult,
+  type ClickElementPayload,
+  type ClickElementResult,
   type GetComputedStylePayload,
   type GetComputedStyleResult,
   type GetHtmlPayload,
@@ -20,8 +22,14 @@ import {
   type PageMetaResult,
   type QueryDomPayload,
   type QueryDomResult,
+  type ScrollPagePayload,
+  type ScrollPageResult,
+  type SelectOptionPayload,
+  type SelectOptionResult,
   type SetStylePayload,
   type SetStyleResult,
+  type TypeTextPayload,
+  type TypeTextResult,
 } from '@/lib/messaging';
 
 export type BrowserAgentTool = AgentTool<any, Record<string, unknown>>;
@@ -40,6 +48,10 @@ export function createBrowserTools(): BrowserAgentTool[] {
     browserScreenshotTool,
     browserSetStyleTool,
     browserModifyDomTool,
+    browserClickTool,
+    browserTypeTool,
+    browserSelectTool,
+    browserScrollTool,
   ];
 }
 
@@ -368,6 +380,83 @@ const browserModifyDomTool: BrowserAgentTool = {
       `已对匹配 "${response.data.selector}" 的 ${response.data.matched} 个元素执行 "${response.data.action}"。`,
       response.data as unknown as Record<string, unknown>,
     );
+  },
+};
+
+const browserClickTool: BrowserAgentTool = {
+  name: 'browser_click',
+  label: 'Click',
+  description: 'Click the first (or nth) element matching a CSS selector. Use this to interact with buttons, links, or other clickable elements.',
+  parameters: Type.Object({
+    selector: Type.String({ description: 'CSS selector for the element to click.' }),
+    index: Type.Optional(Type.Number({ description: 'Which matched element to click, 0-based. Defaults to 0.' })),
+  }),
+  execute: async (_toolCallId, params) => {
+    const payload = params as ClickElementPayload;
+    const response = (await sendMessage<ClickElementPayload, ClickElementResult>('CLICK_ELEMENT', payload)) as MessageResponse<ClickElementResult>;
+    if (!response.ok || !response.data) throw new Error(response.error ?? '点击失败');
+    if (response.data.clickedIndex === null) throw new Error(`未找到匹配 "${response.data.selector}" 的元素。`);
+    return textResult(
+      `已点击匹配 "${response.data.selector}" 的第 ${response.data.clickedIndex} 个元素。`,
+      response.data as unknown as Record<string, unknown>,
+    );
+  },
+};
+
+const browserTypeTool: BrowserAgentTool = {
+  name: 'browser_type',
+  label: 'Type',
+  description:
+    'Set the value of an input or textarea matching a CSS selector, dispatching input/change events so frameworks like React observe the change.',
+  parameters: Type.Object({
+    selector: Type.String({ description: 'CSS selector for the input or textarea.' }),
+    text: Type.String({ description: 'Text to type.' }),
+    replace: Type.Optional(Type.Boolean({ description: 'Replace the existing value (default true). Set to false to append.' })),
+  }),
+  execute: async (_toolCallId, params) => {
+    const payload = params as TypeTextPayload;
+    const response = (await sendMessage<TypeTextPayload, TypeTextResult>('TYPE_TEXT', payload)) as MessageResponse<TypeTextResult>;
+    if (!response.ok || !response.data) throw new Error(response.error ?? '输入失败');
+    if (!response.data.matched) throw new Error(`未找到匹配 "${response.data.selector}" 的元素。`);
+    return textResult(`已在匹配 "${response.data.selector}" 的元素中输入文本。`, response.data as unknown as Record<string, unknown>);
+  },
+};
+
+const browserSelectTool: BrowserAgentTool = {
+  name: 'browser_select',
+  label: 'Select',
+  description: 'Set a select element value by CSS selector, dispatching a change event.',
+  parameters: Type.Object({
+    selector: Type.String({ description: 'CSS selector for the select element.' }),
+    value: Type.String({ description: 'Option value to select.' }),
+  }),
+  execute: async (_toolCallId, params) => {
+    const payload = params as SelectOptionPayload;
+    const response = (await sendMessage<SelectOptionPayload, SelectOptionResult>('SELECT_OPTION', payload)) as MessageResponse<SelectOptionResult>;
+    if (!response.ok || !response.data) throw new Error(response.error ?? '选择失败');
+    if (!response.data.matched) throw new Error(`未找到匹配 "${response.data.selector}" 的元素。`);
+    return textResult(
+      `已将匹配 "${response.data.selector}" 的选项设为 "${response.data.value}"。`,
+      response.data as unknown as Record<string, unknown>,
+    );
+  },
+};
+
+const browserScrollTool: BrowserAgentTool = {
+  name: 'browser_scroll',
+  label: 'Scroll',
+  description: 'Scroll the page to specific coordinates, or scroll a specific element into view.',
+  parameters: Type.Object({
+    selector: Type.Optional(Type.String({ description: 'CSS selector to scroll into view. If omitted, scrolls the window to x/y.' })),
+    x: Type.Optional(Type.Number()),
+    y: Type.Optional(Type.Number()),
+    behavior: Type.Optional(Type.Union([Type.Literal('auto'), Type.Literal('smooth')])),
+  }),
+  execute: async (_toolCallId, params) => {
+    const payload = params as ScrollPagePayload;
+    const response = (await sendMessage<ScrollPagePayload, ScrollPageResult>('SCROLL_PAGE', payload)) as MessageResponse<ScrollPageResult>;
+    if (!response.ok || !response.data) throw new Error(response.error ?? '滚动失败');
+    return textResult(`已滚动到 (${response.data.x}, ${response.data.y})。`, response.data as unknown as Record<string, unknown>);
   },
 };
 
