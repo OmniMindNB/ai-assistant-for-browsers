@@ -24,6 +24,17 @@ describe('raceWithAbort', () => {
     await expect(result).resolves.toBe(false);
     settleLater(true); // 迟到的 resolve 不应再影响已经返回的结果
   });
+
+  it('resolves to false (not rejects) when the wrapped promise rejects and there is no signal', async () => {
+    const rejected = Promise.reject(new Error('onConfirm blew up'));
+    await expect(raceWithAbort(rejected)).resolves.toBe(false);
+  });
+
+  it('resolves to false (not rejects) when the wrapped promise rejects and a signal is present', async () => {
+    const controller = new AbortController();
+    const rejected = Promise.reject(new Error('onConfirm blew up'));
+    await expect(raceWithAbort(rejected, controller.signal)).resolves.toBe(false);
+  });
 });
 
 describe('resolveConfirmGate', () => {

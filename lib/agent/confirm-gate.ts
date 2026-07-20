@@ -10,17 +10,26 @@ export function createConfirmGateState(): ConfirmGateState {
   return { decision: 'unset' };
 }
 
-/** signal 触发 abort 时把 promise 当作 false（拒绝）处理。 */
+/**
+ * signal 触发 abort 时把 promise 当作 false（拒绝）处理；
+ * promise 本身 reject（例如 onConfirm 抛错）时也当作 false 处理，而不是让调用方收到一个未处理的拒绝。
+ */
 export async function raceWithAbort(promise: Promise<boolean>, signal?: AbortSignal): Promise<boolean> {
-  if (!signal) return promise;
+  if (!signal) return promise.catch(() => false);
   if (signal.aborted) return false;
   return new Promise<boolean>((resolve) => {
     const onAbort = () => resolve(false);
     signal.addEventListener('abort', onAbort, { once: true });
-    promise.then((value) => {
-      signal.removeEventListener('abort', onAbort);
-      resolve(value);
-    });
+    promise.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      () => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(false);
+      },
+    );
   });
 }
 
