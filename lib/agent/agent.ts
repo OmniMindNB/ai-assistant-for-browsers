@@ -3,6 +3,7 @@ import type { Api, Message, Model } from '@earendil-works/pi-ai';
 import type { ProviderConfig } from '@/lib/settings';
 import { browserOpenAIStream } from './stream';
 import { beforeToolCallPermissionGate } from './permissions';
+import { createConfirmGateState, type ConfirmFn } from './confirm-gate';
 import { createBrowserTools, type BrowserAgentTool } from './tools';
 
 const DEFAULT_SYSTEM_PROMPT =
@@ -30,6 +31,7 @@ export interface BrowserAgentOptions {
   tools?: BrowserAgentTool[];
   messages?: AgentMessage[];
   maxToolTurns?: number;
+  onConfirm?: ConfirmFn;
 }
 
 export function createBrowserAgent(options: BrowserAgentOptions): Agent {
@@ -39,6 +41,7 @@ export function createBrowserAgent(options: BrowserAgentOptions): Agent {
   let implementationDossierCollected = false;
   let postDossierFollowUps = 0;
   const toolCallCounts = new Map<string, number>();
+  const confirmGateState = createConfirmGateState();
   let agent: Agent;
 
   const agentOptions: AgentOptions = {
@@ -80,7 +83,11 @@ export function createBrowserAgent(options: BrowserAgentOptions): Agent {
           }
         }
       }
-      return beforeToolCallPermissionGate(context);
+      return beforeToolCallPermissionGate(context, {
+        gateState: confirmGateState,
+        onConfirm: options.onConfirm,
+        signal,
+      });
     },
     afterToolCall: async (context) => {
       completedToolTurns += 1;

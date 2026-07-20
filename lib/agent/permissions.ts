@@ -1,5 +1,6 @@
 import type { BeforeToolCallContext, BeforeToolCallResult } from '@earendil-works/pi-agent-core';
 import { analyzeScript } from '@/lib/security';
+import { resolveConfirmGate, type ConfirmFn, type ConfirmGateState } from './confirm-gate';
 
 export type PermissionLevel = 'always_allow' | 'auto_allow' | 'confirm' | 'deny';
 
@@ -53,6 +54,19 @@ export function decideToolPermission(toolName: string, args: unknown): Permissio
     if (danger) return { level: 'deny', reason: danger.message };
   }
 
+  if (toolName === 'browser_navigate') {
+    const url = extractStringArg(args, 'url');
+    let isHttpUrl = false;
+    try {
+      isHttpUrl = /^https?:$/.test(new URL(url).protocol);
+    } catch {
+      isHttpUrl = false;
+    }
+    if (!isHttpUrl) {
+      return { level: 'deny', reason: '仅允许跳转到 http/https 地址。' };
+    }
+  }
+
   if (READ_ONLY_TOOLS.has(toolName)) return { level: 'always_allow' };
   if (AUTO_ALLOW_TOOLS.has(toolName)) return { level: 'auto_allow' };
   if (CONFIRM_TOOLS.has(toolName)) {
@@ -62,20 +76,30 @@ export function decideToolPermission(toolName: string, args: unknown): Permissio
   return { level: 'deny', reason: `未知工具 ${toolName}，已按 Deny-First 策略阻止。` };
 }
 
+export interface PermissionGateOptions {
+  gateState: ConfirmGateState;
+  onConfirm?: ConfirmFn;
+  signal?: AbortSignal;
+}
+
 export async function beforeToolCallPermissionGate(
   context: BeforeToolCallContext,
+  options: PermissionGateOptions,
 ): Promise<BeforeToolCallResult | undefined> {
   const decision = decideToolPermission(context.toolCall.name, context.args);
   if (decision.level === 'always_allow' || decision.level === 'auto_allow') return undefined;
-
-  return {
-    block: true,
-    reason:
-      decision.reason ??
-      (decision.level === 'confirm'
-        ? '该操作需要用户确认，当前确认 UI 尚未接入。'
-        : '该操作已被安全策略阻止。'),
-  };
+  if (decision.level === 'deny') {
+    return { block: true, reason: decision.reason ?? '该操作已被安全策略阻止。' };
+  }
+  return resolveConfirmGate(
+    options.gateState,
+    context.toolCall.id,
+    context.toolCall.name,
+    context.args,
+    decision.reason ?? '该操作会修改页面或浏览器状态，需要用户确认。',
+    options.onConfirm,
+    options.signal,
+  );
 }
 
 function extractStringArg(args: unknown, key: string): string {
