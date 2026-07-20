@@ -24,6 +24,7 @@ import {
   type PageMetaResult,
   type QueryDomPayload,
   type QueryDomResult,
+  type RevertChangesResult,
   type ScrollPagePayload,
   type ScrollPageResult,
   type SelectOptionPayload,
@@ -58,6 +59,7 @@ export function createBrowserTools(): BrowserAgentTool[] {
     browserScrollTool,
     browserNavigateTool,
     browserSetStorageTool,
+    browserRevertChangesTool,
   ];
 }
 
@@ -496,6 +498,25 @@ const browserSetStorageTool: BrowserAgentTool = {
     if (!response.ok || !response.data) throw new Error(response.error ?? '写入存储失败');
     return textResult(
       `已写入 ${response.data.area}Storage 的 "${response.data.key}"。`,
+      response.data as unknown as Record<string, unknown>,
+    );
+  },
+};
+
+const browserRevertChangesTool: BrowserAgentTool = {
+  name: 'browser_revert_changes',
+  label: 'Revert Changes',
+  description:
+    'Undo every page modification made during this turn (DOM edits, style changes, storage writes, navigation), restoring the page to its state before this turn started. Safe to call whenever the user asks to undo.',
+  parameters: Type.Object({}),
+  execute: async () => {
+    const response = (await sendMessage('REVERT_CHANGES')) as MessageResponse<RevertChangesResult>;
+    if (!response.ok || !response.data) throw new Error(response.error ?? '撤销失败');
+    if (!response.data.reverted) {
+      return textResult('本轮没有可撤销的改动。', response.data as unknown as Record<string, unknown>);
+    }
+    return textResult(
+      response.data.navigatedBack ? '已跳转回本轮开始前的页面。' : '已撤销本轮的全部改动。',
       response.data as unknown as Record<string, unknown>,
     );
   },

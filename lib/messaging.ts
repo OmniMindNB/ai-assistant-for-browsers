@@ -14,7 +14,6 @@ export type MessageType =
   | 'GET_PAGE_META'
   | 'CAPTURE_SCREENSHOT'
   | 'INJECT_SCRIPT'
-  | 'UNDO_SCRIPT'
   | 'SET_STYLE'
   | 'MODIFY_DOM'
   | 'CLICK_ELEMENT'
@@ -23,6 +22,8 @@ export type MessageType =
   | 'SCROLL_PAGE'
   | 'NAVIGATE_TAB'
   | 'SET_STORAGE'
+  | 'RESET_TURN_SNAPSHOT'
+  | 'REVERT_CHANGES'
   | 'CHAT';
 
 export interface Message<T = unknown> {
@@ -175,12 +176,17 @@ export interface InjectScriptPayload {
   code: string;
 }
 
-/** INJECT_SCRIPT / UNDO_SCRIPT 返回结果 */
+/** INJECT_SCRIPT 返回结果 */
 export interface InjectScriptResult {
   /** 脚本返回值的文本化表示（如有） */
   result?: string;
   /** 是否已保存可撤销快照 */
   snapshotSaved?: boolean;
+}
+
+export interface RevertChangesResult {
+  reverted: boolean;
+  navigatedBack?: boolean;
 }
 
 export interface SetStylePayload {

@@ -26,6 +26,7 @@ import {
   type PageSelection,
   type QueryDomPayload,
   type QueryDomResult,
+  type RevertChangesResult,
   type ScrollPagePayload,
   type ScrollPageResult,
   type SelectOptionPayload,
@@ -61,7 +62,6 @@ const SUPPORTED_MESSAGE_TYPES = [
   'GET_PAGE_META',
   'CAPTURE_SCREENSHOT',
   'INJECT_SCRIPT',
-  'UNDO_SCRIPT',
   'SET_STYLE',
   'MODIFY_DOM',
   'CLICK_ELEMENT',
@@ -70,6 +70,8 @@ const SUPPORTED_MESSAGE_TYPES = [
   'SCROLL_PAGE',
   'NAVIGATE_TAB',
   'SET_STORAGE',
+  'RESET_TURN_SNAPSHOT',
+  'REVERT_CHANGES',
   'CHAT',
 ] as const;
 
@@ -155,8 +157,11 @@ async function handleMessage(message: Message): Promise<unknown> {
     case 'INJECT_SCRIPT':
       return injectScript(message.payload as InjectScriptPayload);
 
-    case 'UNDO_SCRIPT':
-      return undoScript();
+    case 'RESET_TURN_SNAPSHOT':
+      return resetTurnSnapshot();
+
+    case 'REVERT_CHANGES':
+      return revertChanges();
 
     case 'NAVIGATE_TAB':
       return navigateTab(message.payload as NavigateTabPayload);
@@ -649,6 +654,7 @@ async function injectScript(
 
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) throw new Error('未找到活动标签页');
+  await ensureTurnSnapshot(tab.id);
 
   const [frame] = await browser.scripting.executeScript({
     target: { tabId: tab.id },
@@ -656,8 +662,6 @@ async function injectScript(
     args: [code],
     func: (userCode: string) => {
       try {
-        // 保存可撤销快照（仅 body 结构，不保留 JS 状态）
-        (window as any).__aluminumSnapshot = document.body.innerHTML;
         // eslint-disable-next-line no-new-func
         const fn = new Function(userCode);
         const ret = fn();
@@ -675,26 +679,39 @@ async function injectScript(
   return { result: out.result, snapshotSaved: true };
 }
 
-// 撤销上一次注入：从快照还原 body。
-async function undoScript(): Promise<InjectScriptResult> {
+// 撤销"本轮"全部改动：若本轮发生过跳转，直接跳回原 URL（跳转前的 DOM 已不可复原，
+// 也没有意义）；否则依次恢复 storage、body.innerHTML、滚动位置。撤销后清空该 tab 的快照。
+async function revertChanges(): Promise<RevertChangesResult> {
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) throw new Error('未找到活动标签页');
 
-  const [frame] = await browser.scripting.executeScript({
-    target: { tabId: tab.id },
-    world: 'MAIN',
-    func: () => {
-      const snap = (window as any).__aluminumSnapshot as string | undefined;
-      if (typeof snap !== 'string') return { ok: false, error: '无可撤销的快照' };
-      document.body.innerHTML = snap;
-      delete (window as any).__aluminumSnapshot;
-      return { ok: true };
-    },
-  });
+  const snapshot = getSnapshot(tab.id);
+  if (!snapshot) return { reverted: false };
 
-  const out = frame?.result as { ok: boolean; error?: string } | undefined;
-  if (!out?.ok) throw new Error(out?.error ?? '撤销失败');
-  return { snapshotSaved: false };
+  const currentUrl = await executeInActiveTab(null, (): string => location.href);
+  if (currentUrl !== snapshot.url) {
+    await browser.tabs.update(tab.id, { url: snapshot.url });
+    clearSnapshot(tab.id);
+    return { reverted: true, navigatedBack: true };
+  }
+
+  await executeInActiveTab(snapshot, (snap): void => {
+    for (const entry of snap.storageEntries) {
+      const store = entry.area === 'session' ? sessionStorage : localStorage;
+      if (entry.previousValue === null) store.removeItem(entry.key);
+      else store.setItem(entry.key, entry.previousValue);
+    }
+    document.body.innerHTML = snap.bodyHTML;
+    window.scrollTo(snap.scrollX, snap.scrollY);
+  });
+  clearSnapshot(tab.id);
+  return { reverted: true, navigatedBack: false };
+}
+
+async function resetTurnSnapshot(): Promise<{ ok: true }> {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  if (tab?.id) clearSnapshot(tab.id);
+  return { ok: true };
 }
 
 // 拒绝非 http(s) 协议的跳转目标，防止 agent 被诱导跳转到 javascript:/file:/chrome: 等敏感 scheme。
