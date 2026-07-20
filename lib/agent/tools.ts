@@ -14,10 +14,14 @@ import {
   type GetStylesheetsResult,
   type MessageResponse,
   type MessageType,
+  type ModifyDomPayload,
+  type ModifyDomResult,
   type PageContent,
   type PageMetaResult,
   type QueryDomPayload,
   type QueryDomResult,
+  type SetStylePayload,
+  type SetStyleResult,
 } from '@/lib/messaging';
 
 export type BrowserAgentTool = AgentTool<any, Record<string, unknown>>;
@@ -34,6 +38,8 @@ export function createBrowserTools(): BrowserAgentTool[] {
     browserGetStylesheetsTool,
     browserGetComputedStyleTool,
     browserScreenshotTool,
+    browserSetStyleTool,
+    browserModifyDomTool,
   ];
 }
 
@@ -309,6 +315,57 @@ const browserScreenshotTool: BrowserAgentTool = {
     if (!response.ok || !response.data) throw new Error(response.error ?? '截图失败');
     return textResult(
       `已截取当前可见标签页截图。dataUrl 长度：${response.data.dataUrl.length}。`,
+      response.data as unknown as Record<string, unknown>,
+    );
+  },
+};
+
+const browserSetStyleTool: BrowserAgentTool = {
+  name: 'browser_set_style',
+  label: 'Set Style',
+  description:
+    'Apply inline CSS properties to every element matching a CSS selector on the current page. Use this for visual page transformations such as reading mode, dark backgrounds, or hiding floating ads.',
+  parameters: Type.Object({
+    selector: Type.String({ description: 'CSS selector for the elements to restyle.' }),
+    styles: Type.Record(Type.String(), Type.String(), {
+      description: 'CSS property/value pairs, e.g. {"display":"none"}.',
+    }),
+  }),
+  execute: async (_toolCallId, params) => {
+    const payload = params as SetStylePayload;
+    const response = (await sendMessage<SetStylePayload, SetStyleResult>('SET_STYLE', payload)) as MessageResponse<SetStyleResult>;
+    if (!response.ok || !response.data) throw new Error(response.error ?? '样式修改失败');
+    return textResult(
+      `已对匹配 "${response.data.selector}" 的 ${response.data.matched} 个元素应用样式。`,
+      response.data as unknown as Record<string, unknown>,
+    );
+  },
+};
+
+const browserModifyDomTool: BrowserAgentTool = {
+  name: 'browser_modify_dom',
+  label: 'Modify DOM',
+  description:
+    'Modify DOM elements matching a CSS selector: remove, setText, setHtml, setAttribute, addClass, or removeClass. Use this for content edits like removing ad elements, without writing raw JavaScript.',
+  parameters: Type.Object({
+    selector: Type.String({ description: 'CSS selector for the target elements.' }),
+    action: Type.Union([
+      Type.Literal('remove'),
+      Type.Literal('setText'),
+      Type.Literal('setHtml'),
+      Type.Literal('setAttribute'),
+      Type.Literal('addClass'),
+      Type.Literal('removeClass'),
+    ]),
+    value: Type.Optional(Type.String({ description: 'Text, HTML, attribute value, or class name, depending on action.' })),
+    attribute: Type.Optional(Type.String({ description: 'Attribute name, required for setAttribute.' })),
+  }),
+  execute: async (_toolCallId, params) => {
+    const payload = params as ModifyDomPayload;
+    const response = (await sendMessage<ModifyDomPayload, ModifyDomResult>('MODIFY_DOM', payload)) as MessageResponse<ModifyDomResult>;
+    if (!response.ok || !response.data) throw new Error(response.error ?? 'DOM 修改失败');
+    return textResult(
+      `已对匹配 "${response.data.selector}" 的 ${response.data.matched} 个元素执行 "${response.data.action}"。`,
       response.data as unknown as Record<string, unknown>,
     );
   },

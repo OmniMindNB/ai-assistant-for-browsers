@@ -13,6 +13,8 @@ import {
   type InjectScriptResult,
   type Message,
   type MessageResponse,
+  type ModifyDomPayload,
+  type ModifyDomResult,
   type PageContent,
   type PageMetaResult,
   type PageScriptInfo,
@@ -20,8 +22,18 @@ import {
   type PageSelection,
   type QueryDomPayload,
   type QueryDomResult,
+  type SetStylePayload,
+  type SetStyleResult,
 } from '@/lib/messaging';
 import { analyzeScript } from '@/lib/security';
+import {
+  beginSnapshotIfNeeded,
+  clearSnapshot,
+  getSnapshot,
+  hasSnapshot,
+  recordStorageEntryIfAbsent,
+  type CapturePageState,
+} from '@/lib/agent/turn-snapshot';
 
 const DEFAULT_TOOL_MAX_CHARS = 12000;
 const SUPPORTED_MESSAGE_TYPES = [
@@ -38,6 +50,8 @@ const SUPPORTED_MESSAGE_TYPES = [
   'CAPTURE_SCREENSHOT',
   'INJECT_SCRIPT',
   'UNDO_SCRIPT',
+  'SET_STYLE',
+  'MODIFY_DOM',
   'CHAT',
 ] as const;
 
@@ -101,6 +115,12 @@ async function handleMessage(message: Message): Promise<unknown> {
 
     case 'CAPTURE_SCREENSHOT':
       return captureScreenshot(message.payload as CaptureScreenshotPayload);
+
+    case 'SET_STYLE':
+      return setStyle(message.payload as SetStylePayload);
+
+    case 'MODIFY_DOM':
+      return modifyDom(message.payload as ModifyDomPayload);
 
     case 'INJECT_SCRIPT':
       return injectScript(message.payload as InjectScriptPayload);
@@ -440,6 +460,72 @@ async function fetchText(
       error: error instanceof Error ? error.message : String(error),
     };
   }
+}
+
+async function ensureTurnSnapshot(tabId: number): Promise<void> {
+  if (hasSnapshot(tabId)) return;
+  const capture = await executeInActiveTab(
+    null,
+    (): CapturePageState => ({
+      url: location.href,
+      bodyHTML: document.body.innerHTML,
+      scrollX: window.scrollX,
+      scrollY: window.scrollY,
+    }),
+  );
+  beginSnapshotIfNeeded(tabId, capture);
+}
+
+async function setStyle(payload: SetStylePayload): Promise<SetStyleResult> {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) throw new Error('未找到活动标签页');
+  await ensureTurnSnapshot(tab.id);
+
+  return executeInActiveTab(payload, (input): SetStyleResult => {
+    const selector = input?.selector || '';
+    const styles = input?.styles || {};
+    const nodes = Array.from(document.querySelectorAll<HTMLElement>(selector));
+    for (const node of nodes) {
+      for (const [prop, value] of Object.entries(styles)) {
+        node.style.setProperty(prop, value);
+      }
+    }
+    return { selector, matched: nodes.length };
+  });
+}
+
+async function modifyDom(payload: ModifyDomPayload): Promise<ModifyDomResult> {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) throw new Error('未找到活动标签页');
+  await ensureTurnSnapshot(tab.id);
+
+  return executeInActiveTab(payload, (input): ModifyDomResult => {
+    const selector = input?.selector || '';
+    const nodes = Array.from(document.querySelectorAll<HTMLElement>(selector));
+    for (const node of nodes) {
+      switch (input?.action) {
+        case 'remove':
+          node.remove();
+          break;
+        case 'setText':
+          node.textContent = input?.value ?? '';
+          break;
+        case 'setHtml':
+          node.innerHTML = input?.value ?? '';
+          break;
+        case 'setAttribute':
+          if (input?.attribute) node.setAttribute(input.attribute, input?.value ?? '');
+          break;
+        case 'addClass':
+          if (input?.value) node.classList.add(input.value);
+          break;
+        case 'removeClass':
+          if (input?.value) node.classList.remove(input.value);
+          break;
+      }
+    }
+    return { selector, matched: nodes.length, action: input?.action ?? 'remove' };
+  });
 }
 
 // 脚本注入（ref: technical-plan.md §4.2）。

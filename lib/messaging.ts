@@ -15,6 +15,8 @@ export type MessageType =
   | 'CAPTURE_SCREENSHOT'
   | 'INJECT_SCRIPT'
   | 'UNDO_SCRIPT'
+  | 'SET_STYLE'
+  | 'MODIFY_DOM'
   | 'CHAT';
 
 export interface Message<T = unknown> {
@@ -173,6 +175,29 @@ export interface InjectScriptResult {
   result?: string;
   /** 是否已保存可撤销快照 */
   snapshotSaved?: boolean;
+}
+
+export interface SetStylePayload {
+  selector: string;
+  styles: Record<string, string>;
+}
+
+export interface SetStyleResult {
+  selector: string;
+  matched: number;
+}
+
+export interface ModifyDomPayload {
+  selector: string;
+  action: 'remove' | 'setText' | 'setHtml' | 'setAttribute' | 'addClass' | 'removeClass';
+  value?: string;
+  attribute?: string;
+}
+
+export interface ModifyDomResult {
+  selector: string;
+  matched: number;
+  action: ModifyDomPayload['action'];
 }
 
 /** 生成唯一消息 ID */
