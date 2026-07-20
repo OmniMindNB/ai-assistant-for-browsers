@@ -6,7 +6,7 @@ import AppearanceSettings from '@/components/AppearanceSettings';
 import { useTheme, type ThemeMode } from '@/lib/theme';
 import { providerModels, type ProviderConfig } from '@/lib/settings';
 import type { ConversationRecord } from '@/lib/db';
-import type { ToolActivity } from './store';
+import type { PendingConfirmation, ToolActivity } from './store';
 import {
   IconArrowLeft,
   IconCheck,
@@ -38,6 +38,8 @@ export default function App() {
     input,
     busy,
     error,
+    pendingConfirmation,
+    turnHasChanges,
     providers,
     selectedProviderId,
     selectedModel,
@@ -53,6 +55,8 @@ export default function App() {
     clear,
     openConversation,
     removeConversation,
+    respondToConfirmation,
+    revertTurnChanges,
   } = useChat();
 
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
@@ -168,6 +172,14 @@ export default function App() {
                 ))
               )}
               {toolActivities.length > 0 && <ToolActivityList activities={toolActivities} />}
+              {pendingConfirmation && (
+                <ConfirmationCard
+                  confirmation={pendingConfirmation}
+                  onApprove={() => respondToConfirmation(true)}
+                  onDeny={() => respondToConfirmation(false)}
+                />
+              )}
+              {!busy && !pendingConfirmation && turnHasChanges && <UndoBar onRevert={revertTurnChanges} />}
               {error && (
                 <div
                   role="alert"
@@ -554,7 +566,7 @@ function TypingDots() {
 }
 
 function ToolActivityList({ activities }: { activities: ToolActivity[] }) {
-  const running = activities.filter((a) => a.status === 'running').length;
+  const running = activities.filter((a) => a.status === 'running' || a.status === 'confirming').length;
   return (
     <details className="group rounded-xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs text-neutral-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-neutral-300">
@@ -582,10 +594,64 @@ function ToolActivityList({ activities }: { activities: ToolActivity[] }) {
   );
 }
 
+function ConfirmationCard({
+  confirmation,
+  onApprove,
+  onDeny,
+}: {
+  confirmation: PendingConfirmation;
+  onApprove: () => void;
+  onDeny: () => void;
+}) {
+  return (
+    <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-900/60 dark:bg-amber-950/30">
+      <div className="mb-2 flex items-center gap-2 font-medium text-amber-900 dark:text-amber-200">
+        ⚠️ 需要你确认后才能修改页面
+      </div>
+      <p className="mb-2 text-amber-900/90 dark:text-amber-200/90">{confirmation.summary}</p>
+      {confirmation.codePreview && (
+        <pre className="mb-2 max-h-40 overflow-auto rounded-lg bg-neutral-900/90 p-2 text-[11px] text-neutral-100">
+          {confirmation.codePreview}
+        </pre>
+      )}
+      <div className="flex gap-2">
+        <button
+          onClick={onApprove}
+          className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500"
+        >
+          批准本轮操作
+        </button>
+        <button
+          onClick={onDeny}
+          className="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+        >
+          拒绝
+        </button>
+      </div>
+      <p className="mt-2 text-[11px] text-amber-800/70 dark:text-amber-300/60">
+        批准后，本轮内后续的写操作将自动执行，无需逐条确认。
+      </p>
+    </div>
+  );
+}
+
+function UndoBar({ onRevert }: { onRevert: () => void }) {
+  return (
+    <div className="flex items-center justify-between rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs dark:border-neutral-800 dark:bg-neutral-900">
+      <span className="text-emerald-600 dark:text-emerald-400">● 本轮已修改页面</span>
+      <button onClick={onRevert} className="font-medium text-red-600 hover:underline dark:text-red-400">
+        撤销本轮更改
+      </button>
+    </div>
+  );
+}
+
 function statusLabel(status: ToolActivity['status']): string {
   switch (status) {
     case 'running':
       return '运行中';
+    case 'confirming':
+      return '待确认';
     case 'blocked':
       return '已拦截';
     case 'error':
@@ -599,6 +665,8 @@ function statusColor(status: ToolActivity['status']): string {
   switch (status) {
     case 'running':
       return 'text-blue-500';
+    case 'confirming':
+      return 'text-amber-600 dark:text-amber-500';
     case 'blocked':
       return 'text-amber-600 dark:text-amber-500';
     case 'error':
