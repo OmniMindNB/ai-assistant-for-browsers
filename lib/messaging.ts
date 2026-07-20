@@ -22,6 +22,7 @@ export type MessageType =
   | 'SELECT_OPTION'
   | 'SCROLL_PAGE'
   | 'NAVIGATE_TAB'
+  | 'SET_STORAGE'
   | 'CHAT';
 
 export interface Message<T = unknown> {
@@ -258,6 +259,18 @@ export interface NavigateTabPayload {
 
 export interface NavigateTabResult {
   url: string;
+}
+
+export interface SetStoragePayload {
+  area: 'local' | 'session';
+  key: string;
+  value: string | null;
+}
+
+export interface SetStorageResult {
+  area: 'local' | 'session';
+  key: string;
+  previousValue: string | null;
 }
 
 /** 生成唯一消息 ID */

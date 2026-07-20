@@ -28,6 +28,8 @@ import {
   type ScrollPageResult,
   type SelectOptionPayload,
   type SelectOptionResult,
+  type SetStoragePayload,
+  type SetStorageResult,
   type SetStylePayload,
   type SetStyleResult,
   type TypeTextPayload,
@@ -55,6 +57,7 @@ export function createBrowserTools(): BrowserAgentTool[] {
     browserSelectTool,
     browserScrollTool,
     browserNavigateTool,
+    browserSetStorageTool,
   ];
 }
 
@@ -475,6 +478,26 @@ const browserNavigateTool: BrowserAgentTool = {
     const response = (await sendMessage<NavigateTabPayload, NavigateTabResult>('NAVIGATE_TAB', payload)) as MessageResponse<NavigateTabResult>;
     if (!response.ok || !response.data) throw new Error(response.error ?? '跳转失败');
     return textResult(`已跳转到 "${response.data.url}"。`, response.data as unknown as Record<string, unknown>);
+  },
+};
+
+const browserSetStorageTool: BrowserAgentTool = {
+  name: 'browser_set_storage',
+  label: 'Set Storage',
+  description: 'Write or remove a key in localStorage or sessionStorage on the current page. Pass value: null to remove the key.',
+  parameters: Type.Object({
+    area: Type.Union([Type.Literal('local'), Type.Literal('session')]),
+    key: Type.String(),
+    value: Type.Union([Type.String(), Type.Null()]),
+  }),
+  execute: async (_toolCallId, params) => {
+    const payload = params as SetStoragePayload;
+    const response = (await sendMessage<SetStoragePayload, SetStorageResult>('SET_STORAGE', payload)) as MessageResponse<SetStorageResult>;
+    if (!response.ok || !response.data) throw new Error(response.error ?? '写入存储失败');
+    return textResult(
+      `已写入 ${response.data.area}Storage 的 "${response.data.key}"。`,
+      response.data as unknown as Record<string, unknown>,
+    );
   },
 };
 

@@ -30,6 +30,8 @@ import {
   type ScrollPageResult,
   type SelectOptionPayload,
   type SelectOptionResult,
+  type SetStoragePayload,
+  type SetStorageResult,
   type SetStylePayload,
   type SetStyleResult,
   type TypeTextPayload,
@@ -67,6 +69,7 @@ const SUPPORTED_MESSAGE_TYPES = [
   'SELECT_OPTION',
   'SCROLL_PAGE',
   'NAVIGATE_TAB',
+  'SET_STORAGE',
   'CHAT',
 ] as const;
 
@@ -157,6 +160,9 @@ async function handleMessage(message: Message): Promise<unknown> {
 
     case 'NAVIGATE_TAB':
       return navigateTab(message.payload as NavigateTabPayload);
+
+    case 'SET_STORAGE':
+      return setStorage(message.payload as SetStoragePayload);
 
     default:
       throw new Error(`未处理的消息类型: ${message.type}`);
@@ -712,4 +718,22 @@ async function navigateTab(payload: NavigateTabPayload): Promise<NavigateTabResu
 
   await browser.tabs.update(tab.id, { url });
   return { url };
+}
+
+async function setStorage(payload: SetStoragePayload): Promise<SetStorageResult> {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) throw new Error('未找到活动标签页');
+  await ensureTurnSnapshot(tab.id);
+
+  const result = await executeInActiveTab(payload, (input): SetStorageResult => {
+    const store = input?.area === 'session' ? sessionStorage : localStorage;
+    const key = input?.key ?? '';
+    const previousValue = store.getItem(key);
+    if (input?.value === null || input?.value === undefined) store.removeItem(key);
+    else store.setItem(key, input.value);
+    return { area: input?.area ?? 'local', key, previousValue };
+  });
+
+  recordStorageEntryIfAbsent(tab.id, { area: result.area, key: result.key, previousValue: result.previousValue });
+  return result;
 }
