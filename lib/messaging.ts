@@ -21,6 +21,7 @@ export type MessageType =
   | 'TYPE_TEXT'
   | 'SELECT_OPTION'
   | 'SCROLL_PAGE'
+  | 'NAVIGATE_TAB'
   | 'CHAT';
 
 export interface Message<T = unknown> {
@@ -249,6 +250,14 @@ export interface ScrollPageResult {
   selector?: string;
   x: number;
   y: number;
+}
+
+export interface NavigateTabPayload {
+  url: string;
+}
+
+export interface NavigateTabResult {
+  url: string;
 }
 
 /** 生成唯一消息 ID */

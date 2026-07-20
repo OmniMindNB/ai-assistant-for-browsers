@@ -18,6 +18,8 @@ import {
   type MessageType,
   type ModifyDomPayload,
   type ModifyDomResult,
+  type NavigateTabPayload,
+  type NavigateTabResult,
   type PageContent,
   type PageMetaResult,
   type QueryDomPayload,
@@ -52,6 +54,7 @@ export function createBrowserTools(): BrowserAgentTool[] {
     browserTypeTool,
     browserSelectTool,
     browserScrollTool,
+    browserNavigateTool,
   ];
 }
 
@@ -457,6 +460,21 @@ const browserScrollTool: BrowserAgentTool = {
     const response = (await sendMessage<ScrollPagePayload, ScrollPageResult>('SCROLL_PAGE', payload)) as MessageResponse<ScrollPageResult>;
     if (!response.ok || !response.data) throw new Error(response.error ?? '滚动失败');
     return textResult(`已滚动到 (${response.data.x}, ${response.data.y})。`, response.data as unknown as Record<string, unknown>);
+  },
+};
+
+const browserNavigateTool: BrowserAgentTool = {
+  name: 'browser_navigate',
+  label: 'Navigate',
+  description: 'Navigate the active tab to a new http or https URL.',
+  parameters: Type.Object({
+    url: Type.String({ description: 'Destination URL, must be http or https.' }),
+  }),
+  execute: async (_toolCallId, params) => {
+    const payload = params as NavigateTabPayload;
+    const response = (await sendMessage<NavigateTabPayload, NavigateTabResult>('NAVIGATE_TAB', payload)) as MessageResponse<NavigateTabResult>;
+    if (!response.ok || !response.data) throw new Error(response.error ?? '跳转失败');
+    return textResult(`已跳转到 "${response.data.url}"。`, response.data as unknown as Record<string, unknown>);
   },
 };
 

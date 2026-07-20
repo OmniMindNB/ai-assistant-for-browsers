@@ -17,6 +17,8 @@ import {
   type MessageResponse,
   type ModifyDomPayload,
   type ModifyDomResult,
+  type NavigateTabPayload,
+  type NavigateTabResult,
   type PageContent,
   type PageMetaResult,
   type PageScriptInfo,
@@ -64,6 +66,7 @@ const SUPPORTED_MESSAGE_TYPES = [
   'TYPE_TEXT',
   'SELECT_OPTION',
   'SCROLL_PAGE',
+  'NAVIGATE_TAB',
   'CHAT',
 ] as const;
 
@@ -151,6 +154,9 @@ async function handleMessage(message: Message): Promise<unknown> {
 
     case 'UNDO_SCRIPT':
       return undoScript();
+
+    case 'NAVIGATE_TAB':
+      return navigateTab(message.payload as NavigateTabPayload);
 
     default:
       throw new Error(`未处理的消息类型: ${message.type}`);
@@ -683,4 +689,27 @@ async function undoScript(): Promise<InjectScriptResult> {
   const out = frame?.result as { ok: boolean; error?: string } | undefined;
   if (!out?.ok) throw new Error(out?.error ?? '撤销失败');
   return { snapshotSaved: false };
+}
+
+// 拒绝非 http(s) 协议的跳转目标，防止 agent 被诱导跳转到 javascript:/file:/chrome: 等敏感 scheme。
+// 这与 Task 4 在 decideToolPermission 中已加入的 scheme 校验重复，属于后端纵深防御，
+// 与 isFetchUrlAllowed 采用的模式一致。
+function isNavigableUrl(rawUrl: string): boolean {
+  try {
+    return /^https?:$/.test(new URL(rawUrl).protocol);
+  } catch {
+    return false;
+  }
+}
+
+async function navigateTab(payload: NavigateTabPayload): Promise<NavigateTabResult> {
+  const url = payload?.url ?? '';
+  if (!isNavigableUrl(url)) throw new Error('仅允许跳转到 http/https 地址。');
+
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) throw new Error('未找到活动标签页');
+  await ensureTurnSnapshot(tab.id);
+
+  await browser.tabs.update(tab.id, { url });
+  return { url };
 }
