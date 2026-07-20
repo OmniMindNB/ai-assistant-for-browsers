@@ -48,4 +48,4 @@ Dashboard 的 "Does your extension collect user data?" 问卷建议如下勾选�
 - **Website content**（当前页面文本）：是——需要勾选，并注明"仅在用户主动发起操作时读取当前页面内容，发送给用户自行配置的第三方大模型 API 用于生成回复，不做其他用途，不落库到开发者服务器"
 - 认证声明：需要勾选"我不会将用户数据出售给第三方""我不会将用户数据用于与核心功能无关的用途"等标准承诺条款——结合上表如实勾选即可。
 
-隐私政策 URL 填 [privacy-policy.md](privacy-policy.md) 对应的公开访问链接（建议用 GitHub Pages 或项目官网托管一份可公开访问的 HTML/Markdown 渲染版）。
+隐私政策 URL：https://omnimindnb.github.io/aluminum-legal/ （GitHub Pages 渲染版，对应 [privacy-policy.md](privacy-policy.md) 内容；请勿使用 github.com 仓库的 blob 链接，那只会显示源码，不是渲染后的页面）。
