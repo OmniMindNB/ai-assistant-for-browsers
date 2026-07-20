@@ -14,7 +14,7 @@
 | Phase 1 | MVP 对话（总结/问答/划词） | ✅ 完成 |
 | Phase 2 | 脚本生成与注入（关键词触发，**将被 Agent 取代**） | ✅ 基本完成 |
 | **Agent A** | **Agent 循环 + 工具调用 + 只读检查工具** | 🚧 进行中 |
-| Agent B | 写入/交互工具 + 权限确认 UI | ⬜ 未开始 |
+| Agent B | 写入/交互工具 + 权限确认 UI | ✅ 完成 |
 | Agent C | CDP / 网络嗅探 / 多标签 / 抓取导出 | ⬜ 未开始 |
 
 图例：⬜ 未开始 · 🚧 进行中 · ✅ 完成
@@ -81,10 +81,24 @@
 
 > 上下文管理（单步预算 / 结果折叠 / 轮次熔断）随 A1/A2 落地最小集；CDP、网络嗅探、多标签留待 Agent B/C。
 
+## Agent Phase B — 写入/交互工具 + 权限确认 UI
+
+参考：[Spec-0001](specs/0001-agent-write-tools-and-permission-ui.md)、[实现计划](superpowers/plans/2026-07-20-agent-write-tools-and-permission-ui.md)
+
+- [x] 10 个写入/交互工具注册：browser_set_style、browser_modify_dom、browser_click、browser_type、browser_select、browser_scroll、browser_navigate、browser_set_storage、browser_inject_script、browser_revert_changes（`lib/agent/tools.ts`）
+- [x] 每轮一次确认闸门：`lib/agent/confirm-gate.ts`（`resolveConfirmGate`/`raceWithAbort`）+ `lib/agent/permissions.ts`（`beforeToolCallPermissionGate` 真正等待用户确认，取代此前的硬拒绝占位）
+- [x] `browser_navigate` 硬拒绝非 http/https 协议（权限层 + 后端 `isNavigableUrl` 双重校验）
+- [x] 整轮撤销：`lib/agent/turn-snapshot.ts` 每 tab 一份快照，`RESET_TURN_SNAPSHOT`/`REVERT_CHANGES` 取代旧的单槽 `UNDO_SCRIPT`
+- [x] 侧边栏 UI：确认卡片（含代码预览、批准/拒绝）、撤销条、工具调用列表新增「待确认」状态（`entrypoints/sidepanel/store.ts`、`App.tsx`）
+- [x] 系统提示词补充写工具说明（原提示词完全面向只读分析，模型不会主动调用写工具）
+
+> 实现过程中发现并修复两处计划外的缺口：`browser_inject_script` 从未被注册为 Agent 工具（补上）；系统提示词从未提及写工具存在，导致模型即使有工具也不会调用（补上）。均已通过真实 LLM 会话（DeepSeek deepseek-v4-pro）现场验证：确认卡片每轮仅弹出一次、批准后同轮后续写操作自动执行、页面确实按要求改变、撤销能还原、拒绝后模型能正常收敛而不崩溃或重试、新一轮会重新要求确认。
+
 ## 变更日志
 
 | 日期 | 内容 | 关联 |
 |------|------|------|
+| 2026-07-21 | Agent Phase B 完成：10 个写入/交互工具、每轮一次确认闸门、整轮撤销、确认卡片/撤销条 UI、系统提示词补充写工具说明；真实 LLM 会话现场验证通过 | Spec-0001, 实现计划 |
 | 2026-06-20 | Agent A3 完成：sidepanel 发送流程切换为 Pi `Agent.prompt()`，删除关键词路由与正文-only prompt，新增工具调用状态 UI | agent-plan.md |
 | 2026-06-20 | 提升聚合巡检答案质量：`browser_inspect_page_implementation` 增加 `evidenceSummary`，抽取 scroll/sticky/IntersectionObserver/animation/Primer/GitHub landing-page 等脚本、样式、HTML、DOM 与 computed style 证据；聚合后允许最多 4 次、每类 1 次定向补查 | agent-plan.md |
 | 2026-06-20 | 增加聚合巡检后的运行时收敛约束：`browser_inspect_page_implementation` 成功后通过 `agent.steer()` 引导回答，并阻断重复读取 page_meta/read_page；scripts/styles/html/DOM/computed style 仅允许最多 4 次、每类 1 次定向补查 | agent-plan.md |
