@@ -617,13 +617,13 @@ function ConfirmationCard({
       <div className="flex gap-2">
         <button
           onClick={onApprove}
-          className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500"
+          className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
           批准本轮操作
         </button>
         <button
           onClick={onDeny}
-          className="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+          className="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
         >
           拒绝
         </button>
@@ -639,7 +639,10 @@ function UndoBar({ onRevert }: { onRevert: () => void }) {
   return (
     <div className="flex items-center justify-between rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs dark:border-neutral-800 dark:bg-neutral-900">
       <span className="text-emerald-600 dark:text-emerald-400">● 本轮已修改页面</span>
-      <button onClick={onRevert} className="font-medium text-red-600 hover:underline dark:text-red-400">
+      <button
+        onClick={onRevert}
+        className="font-medium text-red-600 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-red-400"
+      >
         撤销本轮更改
       </button>
     </div>
