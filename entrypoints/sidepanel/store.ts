@@ -5,6 +5,7 @@ import {
   sendMessage,
   type MessageResponse,
   type PageSelection,
+  type RevertChangesResult,
 } from '@/lib/messaging';
 import {
   ensureDevProvider,
@@ -21,6 +22,7 @@ import {
   type ConversationRecord,
 } from '@/lib/db';
 import { createBrowserAgent } from '@/lib/agent/agent';
+import { summarizeToolCallForConfirmation } from '@/lib/agent/confirm-summary';
 
 const SYSTEM_PROMPT =
   '你是 Aluminum，一个深入浏览器的 AI Agent。你可以按需读取当前网页的正文、DOM、HTML、脚本、样式表、计算样式、页面元信息和截图，再回答用户。' +
@@ -42,7 +44,29 @@ const REQUIRED_AGENT_MESSAGE_TYPES = [
   'GET_HTML',
   'GET_COMPUTED_STYLE',
   'CAPTURE_SCREENSHOT',
+  'SET_STYLE',
+  'MODIFY_DOM',
+  'CLICK_ELEMENT',
+  'TYPE_TEXT',
+  'SELECT_OPTION',
+  'SCROLL_PAGE',
+  'NAVIGATE_TAB',
+  'SET_STORAGE',
+  'RESET_TURN_SNAPSHOT',
+  'REVERT_CHANGES',
 ] as const;
+
+const WRITE_TOOL_NAMES = new Set([
+  'browser_inject_script',
+  'browser_set_style',
+  'browser_modify_dom',
+  'browser_click',
+  'browser_type',
+  'browser_select',
+  'browser_scroll',
+  'browser_navigate',
+  'browser_set_storage',
+]);
 
 export interface UIMessage {
   role: 'user' | 'assistant';
@@ -52,8 +76,14 @@ export interface UIMessage {
 export interface ToolActivity {
   id: string;
   name: string;
-  status: 'running' | 'done' | 'error' | 'blocked';
+  status: 'running' | 'confirming' | 'done' | 'error' | 'blocked';
   detail?: string;
+}
+
+export interface PendingConfirmation {
+  toolName: string;
+  summary: string;
+  codePreview?: string;
 }
 
 interface ChatState {
@@ -62,6 +92,8 @@ interface ChatState {
   input: string;
   busy: boolean;
   error: string | null;
+  pendingConfirmation: PendingConfirmation | null;
+  turnHasChanges: boolean;
   provider: ProviderConfig | null;
   /** 全部已配置 Provider（输入框选择器枚举用） */
   providers: ProviderConfig[];
@@ -84,9 +116,12 @@ interface ChatState {
   refreshConversations: () => Promise<void>;
   openConversation: (id: string) => Promise<void>;
   removeConversation: (id: string) => Promise<void>;
+  respondToConfirmation: (approved: boolean) => void;
+  revertTurnChanges: () => Promise<void>;
 }
 
 let activeAgent: Agent | null = null;
+let pendingConfirmResolve: ((approved: boolean) => void) | null = null;
 
 function genConversationId(): string {
   return `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -98,6 +133,8 @@ export const useChat = create<ChatState>((set, get) => ({
   input: '',
   busy: false,
   error: null,
+  pendingConfirmation: null,
+  turnHasChanges: false,
   provider: null,
   providers: [],
   selectedProviderId: null,
@@ -180,6 +217,24 @@ export const useChat = create<ChatState>((set, get) => ({
 
   stop: () => {
     activeAgent?.abort();
+    pendingConfirmResolve = null;
+    set({ pendingConfirmation: null });
+  },
+
+  respondToConfirmation: (approved) => {
+    pendingConfirmResolve?.(approved);
+    pendingConfirmResolve = null;
+    set({ pendingConfirmation: null });
+  },
+
+  revertTurnChanges: async () => {
+    try {
+      const res = (await sendMessage('REVERT_CHANGES')) as MessageResponse<RevertChangesResult>;
+      if (!res.ok) throw new Error(res.error ?? '撤销失败');
+      set({ turnHasChanges: false });
+    } catch (e) {
+      set({ error: errMsg(e) });
+    }
   },
 
   clear: () => {
@@ -246,13 +301,26 @@ async function runAgent(
     input: '',
     busy: true,
     error: null,
+    pendingConfirmation: null,
+    turnHasChanges: false,
   });
+  await sendMessage('RESET_TURN_SNAPSHOT').catch(() => undefined);
+
+  const onConfirm = async (toolCallId: string, toolName: string, args: unknown, _reason: string): Promise<boolean> => {
+    const { summary, codePreview } = summarizeToolCallForConfirmation(toolName, args);
+    upsertToolActivity(set, { id: toolCallId, name: toolName, status: 'confirming', detail: summary });
+    set({ pendingConfirmation: { toolName, summary, codePreview } });
+    return new Promise<boolean>((resolve) => {
+      pendingConfirmResolve = resolve;
+    });
+  };
 
   const agent = createBrowserAgent({
     provider: agentProvider,
     systemPrompt: SYSTEM_PROMPT,
     messages: toAgentMessages(history),
     maxToolTurns: MAX_AGENT_TOOL_TURNS,
+    onConfirm,
   });
   activeAgent = agent;
   let acc = '';
@@ -288,6 +356,13 @@ async function runAgent(
         status: blocked ? 'blocked' : event.isError ? 'error' : 'done',
         detail: event.isError ? compactJson(event.result) : undefined,
       });
+      if (!event.isError) {
+        if (event.toolName === 'browser_revert_changes') {
+          set({ turnHasChanges: false });
+        } else if (WRITE_TOOL_NAMES.has(event.toolName)) {
+          set({ turnHasChanges: true });
+        }
+      }
     }
   });
 
