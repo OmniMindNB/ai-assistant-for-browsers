@@ -2269,3 +2269,11 @@ Run `pnpm compile` and `pnpm test` one more time to confirm nothing regressed, t
 git add docs/PROGRESS.md
 git commit -m "docs: mark Agent Phase B complete in PROGRESS.md"
 ```
+
+---
+
+## Addendum: plan gap found during Task 10 review
+
+Spec-0001 lists `browser_inject_script` (wrapping the pre-existing `INJECT_SCRIPT` message) as the first tool to register. No task from 5-9 actually added it to `createBrowserTools()` in `lib/agent/tools.ts` — an authorship gap in this plan, not an implementer deviation (Task 9 only added `browser_revert_changes`; the inject-script registration was simply never written into any task). The gap surfaced when Task 10's reviewer noticed `WRITE_TOOL_NAMES` (copied verbatim from this plan) references a tool name that doesn't exist anywhere in `tools.ts`.
+
+Fixed with a standalone addition before Task 11: register `browser_inject_script` in `lib/agent/tools.ts`, importing `InjectScriptPayload`/`InjectScriptResult` from `@/lib/messaging` (both already exist, unchanged since before this plan) and sending the existing `'INJECT_SCRIPT'` message type. Same `execute`/`textResult` shape as every other tool in the file. No other file needed changes — `permissions.ts`'s `CONFIRM_TOOLS` already listed `'browser_inject_script'` before this plan started, and the backend handler was refactored to use the shared turn-snapshot in Task 9.
