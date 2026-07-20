@@ -17,6 +17,9 @@ web-ext.config.ts
 # Python (uv venv for skill scripts)
 .venv
 
+# Superpowers brainstorming companion
+.superpowers/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
