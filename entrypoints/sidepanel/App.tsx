@@ -606,7 +606,7 @@ function ConfirmationCard({
   return (
     <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-900/60 dark:bg-amber-950/30">
       <div className="mb-2 flex items-center gap-2 font-medium text-amber-900 dark:text-amber-200">
-        ⚠️ 需要你确认后才能修改页面
+        🔒 修改页面前，先请你确认
       </div>
       <p className="mb-2 text-amber-900/90 dark:text-amber-200/90">{confirmation.summary}</p>
       {confirmation.codePreview && (
@@ -629,7 +629,7 @@ function ConfirmationCard({
         </button>
       </div>
       <p className="mt-2 text-[11px] text-amber-800/70 dark:text-amber-300/60">
-        批准后，本轮内后续的写操作将自动执行，无需逐条确认。
+        批准后，本轮内后续的写操作会自动执行，无需逐条确认；这轮做的所有改动之后都能一键撤销。
       </p>
     </div>
   );
