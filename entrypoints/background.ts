@@ -668,16 +668,16 @@ async function injectScript(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     throw new Error(
-      `脚本注入失败：${message}。若从未见过此提示，请确认已在 chrome://extensions 打开本扩展详情页并开启「允许用户脚本」（Allow User Scripts）开关。`,
+      `脚本注入失败：${message}。请在 chrome://extensions 打开本扩展详情页，开启「允许用户脚本」（Allow User Scripts）开关后重试。`,
     );
   }
 
   const out = results[0];
-  if (out?.error) {
-    throw new Error(out.error);
+  if (!out || out.error) {
+    throw new Error(out?.error ?? '脚本执行失败');
   }
   return {
-    result: out?.result === undefined ? '' : String(out.result),
+    result: out.result === undefined ? '' : String(out.result),
     snapshotSaved: true,
   };
 }

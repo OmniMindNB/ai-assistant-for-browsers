@@ -13,7 +13,7 @@ export default defineConfig({
     description: 'AI 助手侧边栏：总结、理解、改造与自动化当前网页',
     permissions: ['sidePanel', 'storage', 'scripting', 'activeTab', 'tabs', 'userScripts'],
     host_permissions: ['<all_urls>'],
-    minimum_chrome_version: '135',
+    minimum_chrome_version: '138',
     icons: {
       16: 'icons/icon-16.png',
       32: 'icons/icon-32.png',
