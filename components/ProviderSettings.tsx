@@ -114,7 +114,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
     setSelectedPreset(name);
     const preset = PROVIDER_PRESETS.find((p) => p.name === name);
     if (!preset) return;
-    const result = applyPresetToDraft(draft, extrasText, preset);
+    const result = applyPresetToDraft(draft, extrasText, preset, isEditing);
     setDraft(result.draft);
     setExtrasText(result.extrasText);
   }

@@ -57,44 +57,53 @@ describe('applyPresetToDraft', () => {
     models: ['deepseek-v4-pro', 'deepseek-v4-flash'],
   };
 
-  it('fills empty fields from the preset', () => {
-    const { draft } = applyPresetToDraft(baseDraft, '', preset);
+  it('fills empty fields from the preset when editing', () => {
+    const { draft } = applyPresetToDraft(baseDraft, '', preset, true);
     expect(draft.name).toBe('DeepSeek');
     expect(draft.baseURL).toBe('https://api.deepseek.com');
     expect(draft.model).toBe('deepseek-v4-pro');
   });
 
-  it('does not overwrite an existing baseURL (regression: previously always overwrote)', () => {
+  it('when editing, does not overwrite an existing baseURL (regression: previously always overwrote)', () => {
     const draft = { ...baseDraft, baseURL: 'https://my-proxy.example.com' };
-    const result = applyPresetToDraft(draft, '', preset);
+    const result = applyPresetToDraft(draft, '', preset, true);
     expect(result.draft.baseURL).toBe('https://my-proxy.example.com');
   });
 
-  it('does not overwrite existing name or model', () => {
+  it('when editing, does not overwrite existing name or model', () => {
     const draft = { ...baseDraft, name: 'Custom', model: 'custom-model' };
-    const result = applyPresetToDraft(draft, '', preset);
+    const result = applyPresetToDraft(draft, '', preset, true);
     expect(result.draft.name).toBe('Custom');
     expect(result.draft.model).toBe('custom-model');
   });
 
-  it("backfills extrasText with the preset's other models when extrasText is empty", () => {
-    const result = applyPresetToDraft(baseDraft, '', preset);
-    expect(result.extrasText).toBe('deepseek-v4-flash');
+  it('when editing, leaves extrasText untouched even though the preset has other models', () => {
+    const result = applyPresetToDraft(baseDraft, '', preset, true);
+    expect(result.extrasText).toBe('');
   });
 
-  it('does not overwrite existing extrasText', () => {
-    const result = applyPresetToDraft(baseDraft, 'my-custom-model', preset);
+  it('when editing, does not overwrite existing extrasText', () => {
+    const result = applyPresetToDraft(baseDraft, 'my-custom-model', preset, true);
     expect(result.extrasText).toBe('my-custom-model');
   });
 
-  it('produces empty extrasText when the preset has no extra models', () => {
-    const singleModelPreset = {
-      name: 'OpenAI',
-      baseURL: 'https://api.openai.com/v1',
-      model: 'gpt-4o-mini',
-    };
-    const result = applyPresetToDraft(baseDraft, '', singleModelPreset);
-    expect(result.extrasText).toBe('');
+  describe('when adding a new (unsaved) provider', () => {
+    const openai = { name: 'OpenAI', baseURL: 'https://api.openai.com/v1', model: 'gpt-4o-mini' };
+
+    it('overwrites fields already filled by a previously-selected preset, but leaves extrasText untouched', () => {
+      const afterDeepSeek = applyPresetToDraft(baseDraft, 'my-custom-model', preset, false);
+      const afterOpenAI = applyPresetToDraft(afterDeepSeek.draft, afterDeepSeek.extrasText, openai, false);
+      expect(afterOpenAI.draft.name).toBe('OpenAI');
+      expect(afterOpenAI.draft.baseURL).toBe('https://api.openai.com/v1');
+      expect(afterOpenAI.draft.model).toBe('gpt-4o-mini');
+      expect(afterOpenAI.extrasText).toBe('my-custom-model');
+    });
+
+    it('overwrites even fields the user manually typed, since nothing is saved yet', () => {
+      const draft = { ...baseDraft, name: 'My Draft Name' };
+      const result = applyPresetToDraft(draft, '', preset, false);
+      expect(result.draft.name).toBe('DeepSeek');
+    });
   });
 });
 

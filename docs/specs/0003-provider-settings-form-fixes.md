@@ -14,8 +14,9 @@
 2. **预设覆盖不一致**：`applyPreset` 中 `name`/`model` 仅在当前字段为空时才填充
    （`d.name || preset.name`），但 `baseURL` 无条件覆盖，编辑已有 Provider 时误触预设下拉会
    静默丢失自定义 Base URL。
-3. **预设 `models` 数组被丢弃**：`PROVIDER_PRESETS` 中 DeepSeek 预设含两个模型，但 `applyPreset`
-   从未回填 `extrasText`，导致选择该预设时只能拿到默认模型。
+3. ~~预设 `models` 数组被丢弃~~（已于后续修订中撤销，见「设计方案 A」）：`PROVIDER_PRESETS` 中
+   DeepSeek 预设含两个模型，`applyPreset` 未回填 `extrasText`——产品决策是「其他可用模型」不受
+   预设影响，始终由用户手动填写，故不再视为缺陷。
 4. **多上下文无同步**：options 页与侧边栏设置视图各自独立 `loadSettings()` 一次，无
    `browser.storage.onChanged` 监听。两处同时打开并编辑/删除时，后写入者静默覆盖前者的改动。
 
@@ -43,9 +44,13 @@
 
 - `saveDraft`：在校验前对 `draft.name`/`draft.baseURL`/`draft.model`/`draft.apiKey` 统一 trim，
   校验与存储都使用 trim 后的值（`extrasText` 中各模型名同样在 `withExtras` 内 trim，此逻辑已存在）。
-- `applyPreset`：`baseURL` 改为 `d.baseURL || preset.baseURL`，与 `name`/`model` 语义一致。
-- `applyPreset`：当 `extrasText` 当前为空时，用 `(preset.models ?? []).filter(m => m !== preset.model)`
-  回填 `extrasText`（沿用 `extrasOf` 的展示格式，逗号分隔）。
+- `applyPreset`：仅在**编辑已有 Provider**（`isEditing`）时，`baseURL` 改为
+  `d.baseURL || preset.baseURL`，与 `name`/`model` 语义一致（保护已保存的自定义值不被误触覆盖）。
+  **添加新 Provider**（`!isEditing`）时，`name`/`baseURL`/`model` 改为直接用预设值整体覆盖草稿，
+  使「快速预设」下拉可在多个预设间自由切换比对，而不会被上一次选择的预设「锁死」
+  （否则除首次选中的预设外，其余预设选中后表单字段不会更新）。
+- `applyPreset` 不再回填 `extrasText`（「其他可用模型」）：无论编辑还是添加，该字段始终只反映
+  用户手动输入，不受预设选择影响。
 
 ### B. 跨上下文同步
 
@@ -98,8 +103,10 @@
 ## 验收标准（Acceptance Criteria）
 
 - [ ] 保存时对 name/baseURL/model/apiKey 前后空白被去除，存储值与展示值均为 trim 后结果。
-- [ ] 编辑已有 Provider 时选择预设，若已填写 baseURL，则不被覆盖；未填写时正确填充。
-- [ ] 选择 DeepSeek 预设后，「其他可用模型」输入框自动填充 `deepseek-v4-flash`（当该字段原本为空时）。
+- [ ] 编辑已有 Provider 时选择预设，若已填写 baseURL/name/model，则不被覆盖；未填写时正确填充。
+- [ ] 添加新 Provider 时选择任意预设（含切换到另一个预设），name/baseURL/model 均正确更新为该
+      预设的值，不会被上一次选择的预设「锁死」。
+- [ ] 选择任意预设（含 DeepSeek）均不修改「其他可用模型」输入框，该字段只反映用户手动输入。
 - [ ] 同时打开 options 页与侧边栏设置视图，在一处新增/编辑/删除 Provider，另一处的列表在合理时间内
       自动反映变更，且不清空对方正在编辑中的草稿（除非该草稿对应的 Provider 已被删除，此时显示提示
       而非静默清空）。

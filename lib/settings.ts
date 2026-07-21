@@ -87,23 +87,30 @@ export function trimProviderDraft(draft: ProviderConfig): ProviderConfig {
 }
 
 /**
- * 将预设应用到草稿：仅在字段为空时填充（不覆盖用户已填写的内容）。
- * 「其他可用模型」文本框同理，为空时才用预设中除默认模型外的其余模型回填。
+ * 将预设应用到草稿；「其他可用模型」文本框不受预设影响，始终保留用户输入。
+ * 编辑已有 Provider 时（isEditing）仅在字段为空时填充，避免误触预设下拉静默丢失已保存的自定义值。
+ * 添加新 Provider 时（!isEditing）草稿本就未保存，直接用预设值整体覆盖，
+ * 使「快速预设」可在多个预设间自由切换比对，而不会被上一次选择的预设「锁死」。
  */
 export function applyPresetToDraft(
   draft: ProviderConfig,
   extrasText: string,
   preset: Omit<ProviderConfig, 'id' | 'apiKey'>,
+  isEditing: boolean,
 ): { draft: ProviderConfig; extrasText: string } {
+  if (!isEditing) {
+    return {
+      draft: { ...draft, name: preset.name, baseURL: preset.baseURL, model: preset.model },
+      extrasText,
+    };
+  }
   const nextDraft: ProviderConfig = {
     ...draft,
     name: draft.name || preset.name,
     baseURL: draft.baseURL || preset.baseURL,
     model: draft.model || preset.model,
   };
-  const presetExtras = (preset.models ?? []).filter((m) => m !== preset.model);
-  const nextExtrasText = extrasText.trim() ? extrasText : presetExtras.join(', ');
-  return { draft: nextDraft, extrasText: nextExtrasText };
+  return { draft: nextDraft, extrasText };
 }
 
 /** 是否存在另一个（id 不同于 excludeId）Provider 与给定名称（trim 后）重复。 */
