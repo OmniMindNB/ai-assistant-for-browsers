@@ -241,11 +241,14 @@ export const useChat = create<ChatState>((set, get) => ({
 
   clear: () => {
     activeAgent?.abort();
+    pendingConfirmResolve = null;
     set({
       messages: [],
       toolActivities: [],
       error: null,
       conversationId: genConversationId(),
+      turnHasChanges: false,
+      pendingConfirmation: null,
     });
   },
 
@@ -255,18 +258,32 @@ export const useChat = create<ChatState>((set, get) => ({
 
   openConversation: async (id) => {
     activeAgent?.abort();
+    pendingConfirmResolve = null;
     const records = await getConversationMessages(id);
     const messages: UIMessage[] = records
       .filter((r) => r.role !== 'system')
       .map((r) => ({ role: r.role as 'user' | 'assistant', content: r.content }));
-    set({ messages, toolActivities: [], conversationId: id, error: null });
+    set({
+      messages,
+      toolActivities: [],
+      conversationId: id,
+      error: null,
+      turnHasChanges: false,
+      pendingConfirmation: null,
+    });
   },
 
   removeConversation: async (id) => {
     await deleteConversation(id);
     await get().refreshConversations();
     if (get().conversationId === id) {
-      set({ messages: [], toolActivities: [], conversationId: genConversationId() });
+      set({
+        messages: [],
+        toolActivities: [],
+        conversationId: genConversationId(),
+        turnHasChanges: false,
+        pendingConfirmation: null,
+      });
     }
   },
 }));
