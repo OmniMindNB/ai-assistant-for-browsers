@@ -98,6 +98,7 @@
 
 | 日期 | 内容 | 关联 |
 |------|------|------|
+| 2026-07-21 | Chrome 应用商店合规修复：`browser_inject_script` 从 `new Function` 迁移到 `chrome.userScripts.execute`，消除 Remote Hosted Code 政策违规；新增 `userScripts` manifest 权限与 Chrome 135 版本下限 | Spec-0002 |
 | 2026-07-21 | 文档一致性清理：修正 Agent A/Spec-0001/ADR-0003 的过时状态标记、补全 docs/README 目录索引、technical-plan.md 三处加「已被取代」说明、归档已完成的实现计划；删除未被引用的死代码 `lib/llm.ts`（功能已由 `lib/agent/stream.ts` 承接） | 本次审计 |
 | 2026-07-21 | Agent Phase B 完成：10 个写入/交互工具、每轮一次确认闸门、整轮撤销、确认卡片/撤销条 UI、系统提示词补充写工具说明；真实 LLM 会话现场验证通过 | Spec-0001, 实现计划 |
 | 2026-06-20 | Agent A3 完成：sidepanel 发送流程切换为 Pi `Agent.prompt()`，删除关键词路由与正文-only prompt，新增工具调用状态 UI | agent-plan.md |
