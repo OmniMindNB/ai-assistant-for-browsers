@@ -6,6 +6,9 @@ import {
   loadSettings,
   saveSettings,
   newProviderId,
+  applyPresetToDraft,
+  hasDuplicateProviderName,
+  trimProviderDraft,
   PROVIDER_PRESETS,
   type ProviderConfig,
   type Settings,
@@ -74,20 +77,23 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
   function applyPreset(name: string) {
     const preset = PROVIDER_PRESETS.find((p) => p.name === name);
     if (!preset) return;
-    setDraft((d) => ({
-      ...d,
-      name: d.name || preset.name,
-      baseURL: preset.baseURL,
-      model: d.model || preset.model,
-    }));
+    const result = applyPresetToDraft(draft, extrasText, preset);
+    setDraft(result.draft);
+    setExtrasText(result.extrasText);
   }
 
   async function saveDraft() {
-    if (!draft.name.trim() || !draft.baseURL.trim() || !draft.model.trim()) {
+    const trimmed = trimProviderDraft(draft);
+    if (!trimmed.name || !trimmed.baseURL || !trimmed.model) {
       flash('请填写名称、Base URL 和模型');
       return;
     }
-    const finalDraft = withExtras(draft, extrasText);
+    const finalDraft = withExtras(trimmed, extrasText);
+    const isDuplicateName = hasDuplicateProviderName(
+      settings.providers,
+      finalDraft.name,
+      isEditing ? finalDraft.id : undefined,
+    );
     const providers = [...settings.providers];
     if (isEditing) {
       const idx = providers.findIndex((p) => p.id === finalDraft.id);
@@ -102,7 +108,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
     };
     await persist(next);
     resetDraft();
-    flash('已保存');
+    flash(isDuplicateName ? '已保存（存在同名 Provider）' : '已保存');
   }
 
   async function remove(id: string) {
