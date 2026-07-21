@@ -283,55 +283,68 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
           </select>
         </label>
 
-        <Field
-          label="名称"
-          value={draft.name}
-          placeholder="例如 DeepSeek"
-          onChange={(v) => setDraft((d) => ({ ...d, name: v }))}
-        />
-        <Field
-          label="Base URL"
-          value={draft.baseURL}
-          placeholder="https://api.deepseek.com"
-          onChange={(v) => setDraft((d) => ({ ...d, baseURL: v }))}
-        />
-        <Field
-          label="模型（默认）"
-          value={draft.model}
-          placeholder="deepseek-v4-pro"
-          onChange={(v) => setDraft((d) => ({ ...d, model: v }))}
-        />
-        <Field
-          label="其他可用模型（逗号分隔，可选）"
-          value={extrasText}
-          placeholder="例如 deepseek-v4-flash"
-          onChange={setExtrasText}
-        />
-        <Field
-          label="API Key"
-          type="password"
-          value={draft.apiKey}
-          placeholder="sk-..."
-          onChange={(v) => setDraft((d) => ({ ...d, apiKey: v }))}
-        />
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void saveDraft();
+          }}
+        >
+          <Field
+            label="名称"
+            value={draft.name}
+            placeholder="例如 DeepSeek"
+            required
+            onChange={(v) => setDraft((d) => ({ ...d, name: v }))}
+          />
+          <Field
+            label="Base URL"
+            value={draft.baseURL}
+            placeholder="https://api.deepseek.com"
+            required
+            onChange={(v) => setDraft((d) => ({ ...d, baseURL: v }))}
+          />
+          <Field
+            label="模型（默认）"
+            value={draft.model}
+            placeholder="deepseek-v4-pro"
+            required
+            onChange={(v) => setDraft((d) => ({ ...d, model: v }))}
+          />
+          <Field
+            label="其他可用模型（逗号分隔，可选）"
+            value={extrasText}
+            placeholder="例如 deepseek-v4-flash"
+            onChange={setExtrasText}
+          />
+          <Field
+            label="API Key"
+            type="password"
+            toggleable
+            value={draft.apiKey}
+            placeholder="sk-..."
+            onChange={(v) => setDraft((d) => ({ ...d, apiKey: v }))}
+          />
 
-        <div className="mt-4 flex items-center gap-2">
-          <button
-            onClick={saveDraft}
-            className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white transition-colors hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-white"
-          >
-            {isEditing ? '保存修改' : '添加'}
-          </button>
-          {isEditing && (
+          <div className="mt-4 flex items-center gap-2">
             <button
-              onClick={resetDraft}
-              className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+              type="submit"
+              disabled={saving}
+              className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white transition-colors hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-white"
             >
-              取消
+              {isEditing ? '保存修改' : '添加'}
             </button>
-          )}
-          {toast && <span className="text-xs text-green-600 dark:text-green-400">{toast}</span>}
-        </div>
+            {isEditing && (
+              <button
+                type="button"
+                onClick={resetDraft}
+                className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+              >
+                取消
+              </button>
+            )}
+            {toast && <span className="text-xs text-green-600 dark:text-green-400">{toast}</span>}
+          </div>
+        </form>
       </section>
     </>
   );
@@ -342,24 +355,42 @@ function Field({
   value,
   placeholder,
   type = 'text',
+  required,
+  toggleable,
   onChange,
 }: {
   label: string;
   value: string;
   placeholder?: string;
   type?: string;
+  required?: boolean;
+  toggleable?: boolean;
   onChange: (v: string) => void;
 }) {
+  const [revealed, setRevealed] = useState(false);
+  const resolvedType = toggleable ? (revealed ? 'text' : 'password') : type;
   return (
     <label className="mb-3 block text-xs text-neutral-500 dark:text-neutral-400">
       {label}
-      <input
-        type={type}
-        value={value}
-        placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value)}
-        className="mt-1 block w-full rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100 dark:placeholder:text-neutral-600"
-      />
+      {required && <span className="text-red-500"> *</span>}
+      <div className="relative mt-1">
+        <input
+          type={resolvedType}
+          value={value}
+          placeholder={placeholder}
+          onChange={(e) => onChange(e.target.value)}
+          className="block w-full rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100 dark:placeholder:text-neutral-600"
+        />
+        {toggleable && (
+          <button
+            type="button"
+            onClick={() => setRevealed((v) => !v)}
+            className="absolute inset-y-0 right-2 text-xs text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200"
+          >
+            {revealed ? '隐藏' : '显示'}
+          </button>
+        )}
+      </div>
     </label>
   );
 }
