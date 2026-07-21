@@ -510,7 +510,7 @@ const browserInjectScriptTool: BrowserAgentTool = {
   name: 'browser_inject_script',
   label: 'Inject Script',
   description:
-    'Inject and execute a JavaScript snippet in the current page (MAIN world) for page modifications not covered by the other structured tools — e.g. reading mode, dark theme, or complex layout changes. The script is statically scanned for dangerous APIs before execution.',
+    "Inject and execute a JavaScript snippet in the current page (MAIN world) via Chrome's userScripts API for page modifications not covered by the other structured tools — e.g. reading mode, dark theme, or complex layout changes. The script is statically scanned for dangerous APIs before execution.",
   parameters: Type.Object({
     code: Type.String({ description: 'JavaScript source to execute in the page.' }),
   }),
