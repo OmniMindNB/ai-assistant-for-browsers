@@ -191,19 +191,19 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
         <Field
           label="Base URL"
           value={draft.baseURL}
-          placeholder="https://api.deepseek.com/v1"
+          placeholder="https://api.deepseek.com"
           onChange={(v) => setDraft((d) => ({ ...d, baseURL: v }))}
         />
         <Field
           label="模型（默认）"
           value={draft.model}
-          placeholder="deepseek-chat"
+          placeholder="deepseek-v4-pro"
           onChange={(v) => setDraft((d) => withExtras({ ...d, model: v }, extrasOf(d)))}
         />
         <Field
           label="其他可用模型（逗号分隔，可选）"
           value={extrasOf(draft)}
-          placeholder="例如 deepseek-reasoner, deepseek-coder"
+          placeholder="例如 deepseek-v4-flash"
           onChange={(v) => setDraft((d) => withExtras(d, v))}
         />
         <Field

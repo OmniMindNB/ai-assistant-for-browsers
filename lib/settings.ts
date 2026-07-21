@@ -22,7 +22,12 @@ export interface Settings {
 
 /** 常用 OpenAI 兼容 Provider 预设（用于「设置」页快速填充） */
 export const PROVIDER_PRESETS: Array<Omit<ProviderConfig, 'id' | 'apiKey'>> = [
-  { name: 'DeepSeek', baseURL: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
+  {
+    name: 'DeepSeek',
+    baseURL: 'https://api.deepseek.com',
+    model: 'deepseek-v4-pro',
+    models: ['deepseek-v4-pro', 'deepseek-v4-flash'],
+  },
   { name: 'OpenAI', baseURL: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
   {
     name: '通义千问',
