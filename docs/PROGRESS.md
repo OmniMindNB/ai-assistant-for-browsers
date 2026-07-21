@@ -13,7 +13,7 @@
 | Phase 0 | 脚手架与三端通信 | ✅ 完成 |
 | Phase 1 | MVP 对话（总结/问答/划词） | ✅ 完成 |
 | Phase 2 | 脚本生成与注入（关键词触发，**将被 Agent 取代**） | ✅ 基本完成 |
-| **Agent A** | **Agent 循环 + 工具调用 + 只读检查工具** | 🚧 进行中 |
+| **Agent A** | **Agent 循环 + 工具调用 + 只读检查工具** | ✅ 完成 |
 | Agent B | 写入/交互工具 + 权限确认 UI | ✅ 完成 |
 | Agent C | CDP / 网络嗅探 / 多标签 / 抓取导出 | ⬜ 未开始 |
 
@@ -37,7 +37,7 @@
 
 参考：[technical-plan.md §4.1、§5](technical-plan.md)
 
-- [x] OpenAI 兼容的流式对话客户端（`lib/llm.ts`，SSE 逐 token 输出）
+- [x] OpenAI 兼容的流式对话客户端（原 `lib/llm.ts`，SSE 逐 token 输出；Agent 化后无调用方，已作为死代码删除，功能由 `lib/agent/stream.ts` 承接）
 - [x] Provider / API Key 配置：「设置」页表单 + 预设（`entrypoints/options`、`lib/settings.ts`）
 - [x] 开发测试快捷配置：`lib/dev-config.ts` 填入测试 Key 自动注入 Provider
 - [x] Readability 正文提取（`entrypoints/content.ts`）
@@ -77,13 +77,13 @@
 - [x] A1：`lib/agent/agent.ts` 封装 Pi `Agent`（传入 browser `streamFn`、`beforeToolCall` 作为 Deny-First 闸门、`AgentTool` 注册）+ 轮次熔断
 - [x] A2：只读检查工具集（read_page / query_dom / get_html / get_scripts / get_stylesheets / get_computed_style / get_page_meta / screenshot），后端在 `background.ts` + 协议在 `messaging.ts`
 - [x] A3：`store.ts` 删除关键词路由，`send()` 改为驱动 Pi `Agent.prompt()`；`App.tsx` 订阅 `tool_execution_*` 事件展示工具调用中间态
-- [ ] 验收：问「当前网页的滚动效果是怎么做的」→ 模型自动读脚本/样式后给出基于真实代码的分析
+- [x] 验收：问「当前网页的滚动效果是怎么做的」→ 模型自动读脚本/样式后给出基于真实代码的分析（2026-06-20 起围绕该场景多轮迭代 `browser_inspect_page_implementation` 的 `evidenceSummary` 与收敛约束，见下方变更日志）
 
 > 上下文管理（单步预算 / 结果折叠 / 轮次熔断）随 A1/A2 落地最小集；CDP、网络嗅探、多标签留待 Agent B/C。
 
 ## Agent Phase B — 写入/交互工具 + 权限确认 UI
 
-参考：[Spec-0001](specs/0001-agent-write-tools-and-permission-ui.md)、[实现计划](superpowers/plans/2026-07-20-agent-write-tools-and-permission-ui.md)
+参考：[Spec-0001](specs/0001-agent-write-tools-and-permission-ui.md)、[实现计划（已归档）](superpowers/plans/archive/2026-07-20-agent-write-tools-and-permission-ui.md)
 
 - [x] 10 个写入/交互工具注册：browser_set_style、browser_modify_dom、browser_click、browser_type、browser_select、browser_scroll、browser_navigate、browser_set_storage、browser_inject_script、browser_revert_changes（`lib/agent/tools.ts`）
 - [x] 每轮一次确认闸门：`lib/agent/confirm-gate.ts`（`resolveConfirmGate`/`raceWithAbort`）+ `lib/agent/permissions.ts`（`beforeToolCallPermissionGate` 真正等待用户确认，取代此前的硬拒绝占位）
@@ -98,6 +98,7 @@
 
 | 日期 | 内容 | 关联 |
 |------|------|------|
+| 2026-07-21 | 文档一致性清理：修正 Agent A/Spec-0001/ADR-0003 的过时状态标记、补全 docs/README 目录索引、technical-plan.md 三处加「已被取代」说明、归档已完成的实现计划；删除未被引用的死代码 `lib/llm.ts`（功能已由 `lib/agent/stream.ts` 承接） | 本次审计 |
 | 2026-07-21 | Agent Phase B 完成：10 个写入/交互工具、每轮一次确认闸门、整轮撤销、确认卡片/撤销条 UI、系统提示词补充写工具说明；真实 LLM 会话现场验证通过 | Spec-0001, 实现计划 |
 | 2026-06-20 | Agent A3 完成：sidepanel 发送流程切换为 Pi `Agent.prompt()`，删除关键词路由与正文-only prompt，新增工具调用状态 UI | agent-plan.md |
 | 2026-06-20 | 提升聚合巡检答案质量：`browser_inspect_page_implementation` 增加 `evidenceSummary`，抽取 scroll/sticky/IntersectionObserver/animation/Primer/GitHub landing-page 等脚本、样式、HTML、DOM 与 computed style 证据；聚合后允许最多 4 次、每类 1 次定向补查 | agent-plan.md |

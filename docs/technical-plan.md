@@ -280,6 +280,8 @@ interface ChatRequest {
 - **Function Calling / Tool Use**：把「提取页面」「注入脚本」「抓取数据」注册为工具，让模型自主决定调用（Agent 模式），同时保留人工确认关卡。
 - 配置项：endpoint、apiKey、默认 model、温度、最大 token、代理。
 
+> ⚠️ **本节方案未实现，已被 [ADR-0003](adr/0003-agent-loop-and-tool-calling.md) 取代**：`LLMProvider`/`chatWithTools()`/`ToolSpec` 从未落地，实际直接采用 `@earendil-works/pi-agent-core` 作为 Agent 循环与工具调用的基座（内置模型/工具抽象），详见 `lib/agent/agent.ts`。`lib/llm.ts` 的 `chatStream()` 保留作为历史参考，当前代码中无调用方。
+
 ---
 
 ## 6. 安全与隐私
@@ -295,7 +297,9 @@ interface ChatRequest {
 
 ---
 
-## 7. 项目结构（建议）
+## 7. 项目结构（建议，已被 ADR-0002 定案的 WXT 约定取代）
+
+> ⚠️ 以下是早期设想，ADR-0002 定案后实际采用 WXT 的 `entrypoints/` 约定而非本节的 `src/` 布局。当前真实结构见根目录 [README.md](../README.md) 的「项目结构」一节（`entrypoints/{background,content,sidepanel,options}` + `lib/`，其中 `lib/agent/` 承载 Agent 循环与工具调用）。本节保留仅作历史参考。
 
 ```
 Aluminum/
@@ -331,6 +335,8 @@ Aluminum/
 ---
 
 ## 8. 分阶段实施计划
+
+> ⚠️ 方向调整（2026-06-13）：Phase 3/4/5 已被 [ADR-0003](adr/0003-agent-loop-and-tool-calling.md) 顺延/取代——转向「Agent 循环 + 工具调用」后，Skill 体系演化为「固化的工具调用序列」，自动化抓取与增强并入 Agent Phase C。当前实际进度以 [PROGRESS.md](PROGRESS.md) 的阶段总览表为准，本节以下内容仅作历史路线图参考。
 
 ### Phase 0 — 脚手架（基础设施）
 - 初始化 WXT/Vite + React + TS + Tailwind 项目。

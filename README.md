@@ -6,9 +6,11 @@
 
 - 📄 **页面总结**：一键提炼当前页面要点
 - 💡 **理解辅助**：解释名词、翻译、基于页面上下文问答
-- 🛠️ **页面改造**：可直接在对话中要求 AI 修改当前页面（去广告、阅读模式、改样式等）
+- 🔍 **Agent 工具调用**：自动读取页面文本 / DOM / 脚本 / 样式 / 计算样式 / 截图，回答「这个效果怎么实现的」这类需要看代码的问题
+- 🛠️ **页面改造**：对话中直接要求 AI 修改当前页面（改样式、增删 DOM、点击/输入/滚动/跳转、注入脚本等），写入类操作需**逐轮人工确认**
+- ↩️ **一键撤销**：每轮写入前自动生成快照，可随时撤销当前轮次的改动
+- 🔒 **安全闸门**：Deny-First 权限模型 + 注入脚本静态扫描（AST 危险 API 检测）+ SSRF 防护
 - ⚡ **Skill 体系**：把常用操作固化为可复用 Skill 并集中管理
-- 🤖 **轻量自动化**：批量抓取页面数据 / 图片 / 视频
 
 ## 技术栈
 
@@ -16,8 +18,10 @@
 |------|------|
 | 扩展框架 | [WXT](https://wxt.dev/)（Manifest V3） |
 | UI | React 18 + TypeScript + Tailwind CSS |
+| Agent | [`@earendil-works/pi-agent-core`](https://www.npmjs.com/package/@earendil-works/pi-agent-core)（工具调用循环，OpenAI 兼容 Chat Completions） |
 | 状态 | Zustand |
 | 存储 | Dexie（IndexedDB） + `chrome.storage` |
+| 测试 | Vitest |
 | 包管理 | pnpm |
 
 ## 快速开始
@@ -34,6 +38,9 @@ pnpm build
 
 # 类型检查
 pnpm compile
+
+# 运行测试
+pnpm test
 ```
 
 > 本机若未安装 Google Chrome，可在 [web-ext.config.ts](web-ext.config.ts) 中将浏览器二进制指向 Microsoft Edge 等 Chromium 内核浏览器。
@@ -44,14 +51,22 @@ pnpm compile
 
 ```
 entrypoints/        # 扩展入口
-  background.ts     # Service Worker：消息路由中心
-  content.ts        # Content Script：页面提取/交互
-  sidepanel/        # 侧边栏 React 应用
-  options/          # 设置 / Skill 管理页
+  background.ts     # Service Worker：消息路由中心，唯一持有 tabs/scripting 权限
+  content.ts        # Content Script：页面提取（Readability）/ 划词
+  sidepanel/        # 侧边栏 React 应用（对话 UI、确认卡片、撤销栏）
+  options/          # 设置 / Provider & API Key 管理
 lib/                # 共享库
-  messaging.ts      # 统一消息协议
+  messaging.ts      # 三端统一消息协议
+  agent/            # Agent 循环与工具调用
+    agent.ts        # Agent 封装（model / tools / 生命周期钩子）
+    tools.ts        # browser_* 工具定义（只读 / 写入 / 撤销）
+    permissions.ts  # Deny-First 权限分级（always_allow / confirm / deny）
+    confirm-gate.ts # 每轮首次写入弹出确认，结果当轮复用
+    turn-snapshot.ts# 写入前快照，供 browser_revert_changes 撤销
+    stream.ts       # SSE 流式响应解析
   db.ts             # IndexedDB（Dexie）
-  settings.ts       # 配置存储封装
+  settings.ts       # Provider 配置存储封装
+  security.ts       # 注入脚本静态安全扫描（acorn AST）
 docs/               # 文档（文档驱动开发）
 ```
 
@@ -67,4 +82,6 @@ docs/               # 文档（文档驱动开发）
 
 ## 开发状态
 
-🚧 早期开发中 —— Phase 0（脚手架与三端通信）已完成，详见[进度看板](docs/PROGRESS.md)。
+🚧 开发中 —— Phase 0/1/2 与 Agent Phase B（写入/交互工具 + 权限确认 UI）已完成，
+Agent Phase A（工具调用循环）验收中，Agent Phase C（CDP / 多标签 / 抓取导出）未开始。
+详见[进度看板](docs/PROGRESS.md)。

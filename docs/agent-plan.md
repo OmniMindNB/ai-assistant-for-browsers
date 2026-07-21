@@ -156,6 +156,8 @@ async function* agentLoop(ctx: AgentContext): AsyncGenerator<AgentEvent> {
 
 ## 4. LLM 客户端升级（`lib/llm.ts`）
 
+> ⚠️ **本节方案未采用**：A0' spike 通过后决定直接基于 `@earendil-works/pi-agent-core`（见 [ADR-0003](adr/0003-agent-loop-and-tool-calling.md)「关于 Pi 的决策修正」），浏览器 streamFn 实际落在 `lib/agent/stream.ts`，不是本节设想的给 `lib/llm.ts` 加 `chatWithTools()`。`lib/llm.ts` 连同其 `chatStream()` 已作为未使用的死代码删除。本节保留仅作「降级方案 D」的历史设计参考。
+
 新增 `chatWithTools()`，与现有 `chatStream()` 并存：
 
 ```ts
@@ -229,7 +231,7 @@ L3 Explicit Confirm（高风险写）
 |------|------|------|
 | **打包 spike（A0'）** | `wxt.config.ts` / `lib/agent/agent.ts`（新） | 验证 `@earendil-works/pi-agent-core` 在 MV3 SW 可打包：`node:` 内建 alias 空 shim、Tree-shaking 摘掉 AWS/proxy |
 | 封装 Pi Agent | `lib/agent/agent.ts`（新） | 用 Pi `Agent`，传入 browser `streamFn`、`beforeToolCall`（权限闸门）、`AgentTool` 注册 |
-| 浏览器 streamFn | `lib/llm.ts` | 复用现有 SSE 逻辑，适配成 Pi `streamFn`；**降级方案**才需 `chatWithTools()` |
+| 浏览器 streamFn | `lib/agent/stream.ts`（实际；原计划改 `lib/llm.ts`，该文件已删除） | SSE 解析适配为 Pi `streamFn`；`chatWithTools()` 属未采用的降级方案 |
 | 新增工具注册表 | `lib/agent/tools.ts`（新） | `AgentTool[]`（typebox schema + execute）；按 Phase 注册 |
 | 新增权限闸门 | `lib/agent/permissions.ts`（新） | Deny-First 四档判定，接入 `beforeToolCall` |
 | 新增只读检查后端 | `entrypoints/background.ts` | 扩 `handleMessage`：QUERY_DOM/GET_SCRIPTS/GET_STYLES/GET_COMPUTED/EVALUATE/SCREENSHOT |

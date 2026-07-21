@@ -26,11 +26,16 @@ flowchart LR
 |------|------|
 | [plan.md](plan.md) | 最初的产品需求（不可变历史） |
 | [technical-plan.md](technical-plan.md) | 总体技术规划 |
+| [agent-plan.md](agent-plan.md) | Agent 循环/工具调用的详细设计与分阶段计划 |
+| [research-report.md](research-report.md) | Agent 化改造前的技术调研报告（ADR-0003 决策依据） |
 | [PROGRESS.md](PROGRESS.md) | 阶段进度与任务看板（持续更新） |
 | [adr/](adr/) | 架构决策记录（Architecture Decision Records） |
 | [specs/](specs/) | 功能规格说明 |
 | [adr/_template.md](adr/_template.md) | ADR 模板 |
 | [specs/_template.md](specs/_template.md) | Spec 模板 |
+| [superpowers/plans/](superpowers/plans/) | 逐任务实现计划（会话级 TODO，完成状态以 PROGRESS.md/Spec 为准） |
+| [chrome-store-permission-justifications.md](chrome-store-permission-justifications.md) | Chrome 应用商店权限申请理由说明 |
+| [privacy-policy.md](privacy-policy.md) | 隐私政策 |
 
 ## 约定
 

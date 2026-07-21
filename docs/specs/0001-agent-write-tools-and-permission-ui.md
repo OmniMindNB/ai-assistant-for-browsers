@@ -1,6 +1,6 @@
 # Spec-0001：Agent 写入/交互工具 + 权限确认 UI（页面改造能力）
 
-- 状态：草稿 Draft
+- 状态：已实现 Implemented（2026-07-21 起，见 [PROGRESS.md](../PROGRESS.md) Agent Phase B）
 - 日期：2026-07-20
 - 关联：[ADR-0003](../adr/0003-agent-loop-and-tool-calling.md)、[agent-plan.md](../agent-plan.md)、[PROGRESS.md](../PROGRESS.md) Agent Phase B
 
@@ -186,14 +186,16 @@ interface TurnSnapshot {
 
 ## 验收标准（Acceptance Criteria）
 
-- [ ] `pnpm compile` 通过。
-- [ ] 对一个真实网页依次验证：`inject_script`（阅读模式）、`set_style`、`modify_dom`（remove 广告元素）、`click`+`type`（表单填写）、`scroll`、`navigate`、`set_storage` 均可从对话触发。
-- [ ] 一轮内第一次写操作触发确认卡片，后续写操作（含不同工具）不再重复弹出。
-- [ ] 拒绝确认后，Agent 收到拒绝原因并据此调整回复，不崩溃、不无限重试。
-- [ ] "撤销本轮更改"能把 DOM/storage/滚动位置恢复到本轮开始前；若本轮发生过 `navigate`，撤销能跳回原 URL。
-- [ ] 新一轮对话开始时（用户发送新消息）会重置撤销快照与确认状态。
-- [ ] 对话中点击 Stop 能立刻结束一个正在等待确认的写操作，不留下悬挂的 Promise。
-- [ ] 尝试 `browser_navigate` 到 `javascript:` URL 被硬性拒绝。
+> 以下均已于 2026-07-21 通过真实 LLM 会话（DeepSeek deepseek-v4-pro）现场验证，见 [PROGRESS.md](../PROGRESS.md) Agent Phase B 与变更日志。
+
+- [x] `pnpm compile` 通过。
+- [x] 对一个真实网页依次验证：`inject_script`（阅读模式）、`set_style`、`modify_dom`（remove 广告元素）、`click`+`type`（表单填写）、`scroll`、`navigate`、`set_storage` 均可从对话触发。
+- [x] 一轮内第一次写操作触发确认卡片，后续写操作（含不同工具）不再重复弹出。
+- [x] 拒绝确认后，Agent 收到拒绝原因并据此调整回复，不崩溃、不无限重试。
+- [x] "撤销本轮更改"能把 DOM/storage/滚动位置恢复到本轮开始前；若本轮发生过 `navigate`，撤销能跳回原 URL。
+- [x] 新一轮对话开始时（用户发送新消息）会重置撤销快照与确认状态。
+- [x] 对话中点击 Stop 能立刻结束一个正在等待确认的写操作，不留下悬挂的 Promise。
+- [x] 尝试 `browser_navigate` 到 `javascript:` URL 被硬性拒绝（`lib/agent/permissions.test.ts` 覆盖）。
 
 ## 开放问题（Open Questions）
 

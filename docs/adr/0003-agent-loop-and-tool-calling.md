@@ -1,6 +1,6 @@
 # ADR-0003：从「关键词触发 + 文本上下文」转向「Agent 循环 + 工具调用」
 
-- 状态：草稿 Draft
+- 状态：已接受 Accepted（决策已落地，见 Agent Phase A/B 完成情况，[PROGRESS.md](../PROGRESS.md)）
 - 日期：2026-06-13
 - 决策者：项目维护者
 - 相关：[research-report.md](../research-report.md)、[agent-plan.md](../agent-plan.md)、[technical-plan.md](../technical-plan.md) §5、[ADR-0002](0002-tech-stack-and-scaffold.md)
