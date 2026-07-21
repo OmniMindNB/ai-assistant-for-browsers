@@ -49,6 +49,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
   const [toast, setToast] = useState<string | null>(null);
   const [editingRemoved, setEditingRemoved] = useState(false);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const confirmTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -115,6 +116,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
   }
 
   async function saveDraft() {
+    if (saving) return;
     if (editingRemoved) {
       flash('该 Provider 已在别处被删除，请放弃编辑');
       return;
@@ -125,26 +127,33 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
       return;
     }
     const finalDraft = withExtras(trimmed, extrasText);
-    const isDuplicateName = hasDuplicateProviderName(
-      settings.providers,
-      finalDraft.name,
-      isEditing ? finalDraft.id : undefined,
-    );
-    const providers = [...settings.providers];
-    if (isEditing) {
-      const idx = providers.findIndex((p) => p.id === finalDraft.id);
-      if (idx >= 0) providers[idx] = finalDraft;
-    } else {
-      const created = { ...finalDraft, id: newProviderId() };
-      providers.push(created);
+    setSaving(true);
+    try {
+      let next: Settings = { providers: [] };
+      let isDuplicateName = false;
+      setSettings((prev) => {
+        isDuplicateName = hasDuplicateProviderName(
+          prev.providers,
+          finalDraft.name,
+          isEditing ? finalDraft.id : undefined,
+        );
+        const providers = [...prev.providers];
+        if (isEditing) {
+          const idx = providers.findIndex((p) => p.id === finalDraft.id);
+          if (idx >= 0) providers[idx] = finalDraft;
+        } else {
+          providers.push({ ...finalDraft, id: newProviderId() });
+        }
+        next = { providers, activeProviderId: prev.activeProviderId ?? providers[0]?.id };
+        return next;
+      });
+      await saveSettings(next);
+      onChange?.();
+      resetDraft();
+      flash(isDuplicateName ? '已保存（存在同名 Provider）' : '已保存');
+    } finally {
+      setSaving(false);
     }
-    const next: Settings = {
-      providers,
-      activeProviderId: settings.activeProviderId ?? providers[0]?.id,
-    };
-    await persist(next);
-    resetDraft();
-    flash(isDuplicateName ? '已保存（存在同名 Provider）' : '已保存');
   }
 
   async function remove(id: string) {
