@@ -1,7 +1,7 @@
 // Provider 配置 UI（列表 + 新增/编辑表单）。
 // 同时供 options 页与侧边栏内嵌「设置」视图复用，避免重复实现。
 // 配置存于 chrome.storage.local（ref: lib/settings.ts）。
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   loadSettings,
   saveSettings,
@@ -48,6 +48,8 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
   const [extrasText, setExtrasText] = useState('');
   const [toast, setToast] = useState<string | null>(null);
   const [editingRemoved, setEditingRemoved] = useState(false);
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
+  const confirmTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     loadSettings().then(setSettings);
@@ -72,6 +74,14 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
     browser.storage.onChanged.addListener(handleStorageChange);
     return () => browser.storage.onChanged.removeListener(handleStorageChange);
   }, [isEditing, draft.id]);
+
+  useEffect(() => {
+    return () => {
+      if (confirmTimeoutRef.current !== null) {
+        window.clearTimeout(confirmTimeoutRef.current);
+      }
+    };
+  }, []);
 
   function flash(msg: string) {
     setToast(msg);
@@ -145,6 +155,26 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
     if (draft.id === id) resetDraft();
   }
 
+  function requestDelete(id: string) {
+    if (confirmTimeoutRef.current !== null) {
+      window.clearTimeout(confirmTimeoutRef.current);
+    }
+    setConfirmingDeleteId(id);
+    confirmTimeoutRef.current = window.setTimeout(() => {
+      setConfirmingDeleteId(null);
+      confirmTimeoutRef.current = null;
+    }, 3000);
+  }
+
+  async function confirmDelete(id: string) {
+    if (confirmTimeoutRef.current !== null) {
+      window.clearTimeout(confirmTimeoutRef.current);
+      confirmTimeoutRef.current = null;
+    }
+    setConfirmingDeleteId(null);
+    await remove(id);
+  }
+
   async function setActive(id: string) {
     await persist({ ...settings, activeProviderId: id });
   }
@@ -195,10 +225,16 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
                     编辑
                   </button>
                   <button
-                    onClick={() => remove(p.id)}
-                    className="rounded border border-red-200 px-2 py-1 text-xs text-red-600 transition-colors hover:bg-red-50 dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-950/40"
+                    onClick={() =>
+                      confirmingDeleteId === p.id ? confirmDelete(p.id) : requestDelete(p.id)
+                    }
+                    className={
+                      confirmingDeleteId === p.id
+                        ? 'rounded border border-red-600 bg-red-600 px-2 py-1 text-xs text-white transition-colors hover:bg-red-700'
+                        : 'rounded border border-red-200 px-2 py-1 text-xs text-red-600 transition-colors hover:bg-red-50 dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-950/40'
+                    }
                   >
-                    删除
+                    {confirmingDeleteId === p.id ? '确认删除？' : '删除'}
                   </button>
                 </li>
               );
