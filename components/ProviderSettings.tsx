@@ -46,6 +46,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
   // 独立于 draft 的原始文本，避免每次按键都经过 withExtras 的去重/过滤——
   // 那样会在用户粘贴的内容恰好等于「模型（默认）」时把输入静默清空（看起来像粘贴无效）。
   const [extrasText, setExtrasText] = useState('');
+  const [selectedPreset, setSelectedPreset] = useState('');
   const [toast, setToast] = useState<string | null>(null);
   const [editingRemoved, setEditingRemoved] = useState(false);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
@@ -92,12 +93,14 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
   function loadDraft(p: ProviderConfig) {
     setDraft(p);
     setExtrasText(extrasOf(p));
+    setSelectedPreset('');
     setEditingRemoved(false);
   }
 
   function resetDraft() {
     setDraft(EMPTY_DRAFT);
     setExtrasText('');
+    setSelectedPreset('');
     setEditingRemoved(false);
   }
 
@@ -108,6 +111,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
   }
 
   function applyPreset(name: string) {
+    setSelectedPreset(name);
     const preset = PROVIDER_PRESETS.find((p) => p.name === name);
     if (!preset) return;
     const result = applyPresetToDraft(draft, extrasText, preset);
@@ -271,7 +275,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
           快速预设
           <select
             className="mt-1 block w-full rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-sm text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
-            value=""
+            value={selectedPreset}
             onChange={(e) => applyPreset(e.target.value)}
           >
             <option value="">选择以填充 Base URL / 模型…</option>
