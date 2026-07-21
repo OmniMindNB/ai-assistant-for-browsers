@@ -127,6 +127,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
       return;
     }
     const finalDraft = withExtras(trimmed, extrasText);
+    const newId = newProviderId();
     setSaving(true);
     try {
       let next: Settings = { providers: [] };
@@ -142,7 +143,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
           const idx = providers.findIndex((p) => p.id === finalDraft.id);
           if (idx >= 0) providers[idx] = finalDraft;
         } else {
-          providers.push({ ...finalDraft, id: newProviderId() });
+          providers.push({ ...finalDraft, id: newId });
         }
         next = { providers, activeProviderId: prev.activeProviderId ?? providers[0]?.id };
         return next;
