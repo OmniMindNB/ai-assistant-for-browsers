@@ -39,7 +39,7 @@ export const PROVIDER_PRESETS: Array<Omit<ProviderConfig, 'id' | 'apiKey'>> = [
   { name: '本地 (Ollama)', baseURL: 'http://localhost:11434/v1', model: 'llama3.1' },
 ];
 
-const STORAGE_KEY = 'aluminum:settings';
+export const STORAGE_KEY = 'aluminum:settings';
 
 const DEFAULT_SETTINGS: Settings = {
   providers: [],

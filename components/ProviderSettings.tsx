@@ -10,6 +10,7 @@ import {
   hasDuplicateProviderName,
   trimProviderDraft,
   PROVIDER_PRESETS,
+  STORAGE_KEY,
   type ProviderConfig,
   type Settings,
 } from '@/lib/settings';
@@ -46,12 +47,31 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
   // 那样会在用户粘贴的内容恰好等于「模型（默认）」时把输入静默清空（看起来像粘贴无效）。
   const [extrasText, setExtrasText] = useState('');
   const [toast, setToast] = useState<string | null>(null);
+  const [editingRemoved, setEditingRemoved] = useState(false);
 
   useEffect(() => {
     loadSettings().then(setSettings);
   }, []);
 
   const isEditing = draft.id !== '';
+
+  useEffect(() => {
+    const handleStorageChange: Parameters<typeof browser.storage.onChanged.addListener>[0] = (
+      changes,
+      areaName,
+    ) => {
+      if (areaName !== 'local') return;
+      const change = changes[STORAGE_KEY];
+      if (!change) return;
+      const next = (change.newValue as Settings | undefined) ?? { providers: [] };
+      setSettings(next);
+      if (isEditing && !next.providers.some((p) => p.id === draft.id)) {
+        setEditingRemoved(true);
+      }
+    };
+    browser.storage.onChanged.addListener(handleStorageChange);
+    return () => browser.storage.onChanged.removeListener(handleStorageChange);
+  }, [isEditing, draft.id]);
 
   function flash(msg: string) {
     setToast(msg);
@@ -61,11 +81,13 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
   function loadDraft(p: ProviderConfig) {
     setDraft(p);
     setExtrasText(extrasOf(p));
+    setEditingRemoved(false);
   }
 
   function resetDraft() {
     setDraft(EMPTY_DRAFT);
     setExtrasText('');
+    setEditingRemoved(false);
   }
 
   async function persist(next: Settings) {
@@ -83,6 +105,10 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
   }
 
   async function saveDraft() {
+    if (editingRemoved) {
+      flash('该 Provider 已在别处被删除，请放弃编辑');
+      return;
+    }
     const trimmed = trimProviderDraft(draft);
     if (!trimmed.name || !trimmed.baseURL || !trimmed.model) {
       flash('请填写名称、Base URL 和模型');
@@ -185,6 +211,15 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
         <h2 className="mb-3 text-sm font-medium text-neutral-700 dark:text-neutral-200">
           {isEditing ? '编辑 Provider' : '添加 Provider'}
         </h2>
+
+        {editingRemoved && (
+          <p className="mb-3 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-700 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+            此 Provider 已在别处被删除，继续保存不会生效。
+            <button type="button" onClick={resetDraft} className="ml-2 underline">
+              放弃编辑
+            </button>
+          </p>
+        )}
 
         <label className="mb-3 block text-xs text-neutral-500 dark:text-neutral-400">
           快速预设
