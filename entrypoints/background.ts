@@ -638,8 +638,9 @@ async function scrollPage(payload: ScrollPagePayload): Promise<ScrollPageResult>
   });
 }
 
-// 脚本注入（ref: technical-plan.md §4.2）。
-// 在 MAIN world 中执行，执行前保存 body 快照以支持撤销。
+// 脚本注入（ref: technical-plan.md §4.2、Spec-0002）。
+// 使用 chrome.userScripts.execute（Chrome MV3 官方认可的动态脚本执行通道）而非 eval/new Function，
+// 满足 Remote Hosted Code 政策；用 IIFE 包裹以保留旧版 new Function 的 return 语义。
 async function injectScript(
   payload: InjectScriptPayload,
 ): Promise<InjectScriptResult> {
@@ -656,27 +657,29 @@ async function injectScript(
   if (!tab?.id) throw new Error('未找到活动标签页');
   await ensureTurnSnapshot(tab.id);
 
-  const [frame] = await browser.scripting.executeScript({
-    target: { tabId: tab.id },
-    world: 'MAIN',
-    args: [code],
-    func: (userCode: string) => {
-      try {
-        // eslint-disable-next-line no-new-func
-        const fn = new Function(userCode);
-        const ret = fn();
-        return { ok: true, result: ret === undefined ? '' : String(ret) };
-      } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : String(err) };
-      }
-    },
-  });
+  const wrapped = `(function(){\n${code}\n})()`;
+  let results;
+  try {
+    results = await browser.userScripts.execute({
+      target: { tabId: tab.id },
+      world: 'MAIN',
+      js: [{ code: wrapped }],
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `脚本注入失败：${message}。请在 chrome://extensions 打开本扩展详情页，开启「允许用户脚本」（Allow User Scripts）开关后重试。`,
+    );
+  }
 
-  const out = frame?.result as { ok: boolean; result?: string; error?: string } | undefined;
-  if (!out?.ok) {
+  const out = results[0];
+  if (!out || out.error) {
     throw new Error(out?.error ?? '脚本执行失败');
   }
-  return { result: out.result, snapshotSaved: true };
+  return {
+    result: out.result === undefined ? '' : String(out.result),
+    snapshotSaved: true,
+  };
 }
 
 // 撤销"本轮"全部改动：若本轮发生过跳转，直接跳回原 URL（跳转前的 DOM 已不可复原，

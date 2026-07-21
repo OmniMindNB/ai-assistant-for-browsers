@@ -30,7 +30,7 @@ pnpm test          # vitest run (single run, not watch)
 
 The extension has three isolated JS contexts that only talk to each other through the message protocol in `lib/messaging.ts`:
 
-- **`entrypoints/background.ts`** (service worker) — the message router and the only context with `browser.tabs`/`browser.scripting` access. Every DOM-touching action funnels through `executeInActiveTab`, which runs a function in the page's MAIN world via `browser.scripting.executeScript` and returns the result.
+- **`entrypoints/background.ts`** (service worker) — the message router and the only context with `browser.tabs`/`browser.scripting`/`browser.userScripts` access. Every DOM-touching action funnels through `executeInActiveTab`, which runs a function in the page's MAIN world via `browser.scripting.executeScript` and returns the result — except `browser_inject_script`, which hands the LLM-generated code string to `browser.userScripts.execute()` (Chrome's MV3-sanctioned dynamic-script API) instead of `eval`/`new Function`, per the Chrome Web Store Remote Hosted Code policy (ref: Spec-0002).
 - **`entrypoints/content.ts`** (content script, all URLs) — handles only `EXTRACT_PAGE` (Readability-based text extraction, falls back to `innerText`) and `GET_SELECTION`.
 - **`entrypoints/sidepanel/`** (React app) — the chat UI. `store.ts` (Zustand) owns chat/session state and drives the agent; `App.tsx` renders messages, tool-call state, the confirmation card, and the undo bar.
 - **`entrypoints/options/`** — settings page for Provider/API key management (`components/ProviderSettings.tsx`, `components/AppearanceSettings.tsx`).

@@ -20,6 +20,22 @@
 
 **English**: Used to inject scripts into the current page only when the user explicitly requests a page-transformation action (e.g. removing ads, reading mode, style tweaks) from the side panel, and to support undoing that change. Never runs unsolicited.
 
+## userScripts
+
+**中文**：用于在用户明确要求且确认后，将 AI 生成的 JavaScript 代码通过 Chrome 官方的
+`chrome.userScripts.execute()` API（而非 `eval`/`new Function`）注入并执行到当前页面，实现
+阅读模式、深色主题等没有对应结构化工具覆盖的页面改造。该 API 是 Manifest V3 官方认可的动态
+脚本执行通道，用户需在扩展详情页手动开启「允许用户脚本」开关后才能生效；未开启时该功能会
+明确报错并提示用户开启，不会静默失败或绕过该同意步骤。
+
+**English**: Used to inject and execute AI-generated JavaScript into the current page via
+Chrome's official `chrome.userScripts.execute()` API (not `eval`/`new Function`), only after
+explicit user confirmation, for page transformations not covered by the other structured tools
+(e.g. reading mode, dark theme). This is the Manifest-V3-sanctioned channel for dynamic script
+execution; the user must separately enable the "Allow User Scripts" toggle on the extension's
+details page before it takes effect — if not enabled, the feature fails with a clear message
+telling the user to enable it, rather than silently failing or bypassing that consent step.
+
 ## storage
 
 **中文**：用于在本机保存用户配置（大模型 Provider、API Key、Skill 列表等）和会话状态，全部使用 `chrome.storage.local`，不同步到云端，也不会上传到开发者的服务器（本扩展没有后端服务器）。

@@ -92,7 +92,7 @@ export interface InjectScriptResult {
 
 ```ts
 permissions: ['sidePanel', 'storage', 'scripting', 'activeTab', 'tabs', 'userScripts'],
-minimum_chrome_version: '120',
+minimum_chrome_version: '138',
 ```
 
 ### 边界与异常
@@ -116,7 +116,7 @@ minimum_chrome_version: '120',
 ## 验收标准（Acceptance Criteria）
 
 - [ ] `wxt.config.ts` 的 `manifest.permissions` 包含 `'userScripts'`，并设置
-      `manifest.minimum_chrome_version: '120'`
+      `manifest.minimum_chrome_version: '138'`
 - [ ] `entrypoints/background.ts` 的 `injectScript()` 使用 `chrome.userScripts.execute()`，
       不再使用 `browser.scripting.executeScript` + `new Function()`
 - [ ] 「允许用户脚本」开关关闭时，触发 `browser_inject_script` 会返回清晰的中文错误提示
@@ -127,7 +127,7 @@ minimum_chrome_version: '120',
       格式与现有条目一致）
 - [ ] `docs/PROGRESS.md` 变更日志新增一行记录本次迁移
 - [ ] `CLAUDE.md`"安全边界"章节中关于 MAIN world 隔离执行的描述同步更新
-- [ ] 手动在真实 Chrome（版本 ≥ 120，且已开启「允许用户脚本」开关）中验证：注入脚本工具可正常
+- [ ] 手动在真实 Chrome（版本 ≥ 138，且已开启「允许用户脚本」开关）中验证：注入脚本工具可正常
       执行页面改造（如阅读模式切换），且执行结果可被 `browser_revert_changes` 撤销
 
 ## 开放问题（Open Questions）
