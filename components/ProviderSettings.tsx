@@ -39,6 +39,9 @@ function withExtras(p: ProviderConfig, extrasText: string): ProviderConfig {
 export default function ProviderSettings({ onChange }: { onChange?: () => void }) {
   const [settings, setSettings] = useState<Settings>({ providers: [] });
   const [draft, setDraft] = useState<ProviderConfig>(EMPTY_DRAFT);
+  // 独立于 draft 的原始文本，避免每次按键都经过 withExtras 的去重/过滤——
+  // 那样会在用户粘贴的内容恰好等于「模型（默认）」时把输入静默清空（看起来像粘贴无效）。
+  const [extrasText, setExtrasText] = useState('');
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
@@ -50,6 +53,16 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
   function flash(msg: string) {
     setToast(msg);
     window.setTimeout(() => setToast(null), 2000);
+  }
+
+  function loadDraft(p: ProviderConfig) {
+    setDraft(p);
+    setExtrasText(extrasOf(p));
+  }
+
+  function resetDraft() {
+    setDraft(EMPTY_DRAFT);
+    setExtrasText('');
   }
 
   async function persist(next: Settings) {
@@ -74,12 +87,13 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
       flash('请填写名称、Base URL 和模型');
       return;
     }
+    const finalDraft = withExtras(draft, extrasText);
     const providers = [...settings.providers];
     if (isEditing) {
-      const idx = providers.findIndex((p) => p.id === draft.id);
-      if (idx >= 0) providers[idx] = draft;
+      const idx = providers.findIndex((p) => p.id === finalDraft.id);
+      if (idx >= 0) providers[idx] = finalDraft;
     } else {
-      const created = { ...draft, id: newProviderId() };
+      const created = { ...finalDraft, id: newProviderId() };
       providers.push(created);
     }
     const next: Settings = {
@@ -87,7 +101,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
       activeProviderId: settings.activeProviderId ?? providers[0]?.id,
     };
     await persist(next);
-    setDraft(EMPTY_DRAFT);
+    resetDraft();
     flash('已保存');
   }
 
@@ -96,7 +110,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
     const activeProviderId =
       settings.activeProviderId === id ? providers[0]?.id : settings.activeProviderId;
     await persist({ providers, activeProviderId });
-    if (draft.id === id) setDraft(EMPTY_DRAFT);
+    if (draft.id === id) resetDraft();
   }
 
   async function setActive(id: string) {
@@ -143,7 +157,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
                     </div>
                   </div>
                   <button
-                    onClick={() => setDraft(p)}
+                    onClick={() => loadDraft(p)}
                     className="rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-700 transition-colors hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
                   >
                     编辑
@@ -198,13 +212,13 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
           label="模型（默认）"
           value={draft.model}
           placeholder="deepseek-v4-pro"
-          onChange={(v) => setDraft((d) => withExtras({ ...d, model: v }, extrasOf(d)))}
+          onChange={(v) => setDraft((d) => ({ ...d, model: v }))}
         />
         <Field
           label="其他可用模型（逗号分隔，可选）"
-          value={extrasOf(draft)}
+          value={extrasText}
           placeholder="例如 deepseek-v4-flash"
-          onChange={(v) => setDraft((d) => withExtras(d, v))}
+          onChange={setExtrasText}
         />
         <Field
           label="API Key"
@@ -223,7 +237,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
           </button>
           {isEditing && (
             <button
-              onClick={() => setDraft(EMPTY_DRAFT)}
+              onClick={resetDraft}
               className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
             >
               取消
