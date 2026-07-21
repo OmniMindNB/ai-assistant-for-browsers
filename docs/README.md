@@ -36,6 +36,7 @@ flowchart LR
 | [superpowers/plans/](superpowers/plans/) | 逐任务实现计划（会话级 TODO，完成状态以 PROGRESS.md/Spec 为准） |
 | [chrome-store-permission-justifications.md](chrome-store-permission-justifications.md) | Chrome 应用商店权限申请理由说明 |
 | [privacy-policy.md](privacy-policy.md) | 隐私政策 |
+| [chrome-store-submission-guide.md](chrome-store-submission-guide.md) | Chrome 应用商店上架操作指南（账号注册/素材/Dashboard 表单/审核） |
 
 ## 约定
 
