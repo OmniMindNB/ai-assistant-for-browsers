@@ -20,7 +20,12 @@ export interface Settings {
   providers: ProviderConfig[];
 }
 
-/** 常用 OpenAI 兼容 Provider 预设（用于「设置」页快速填充） */
+/**
+ * 常用 OpenAI 兼容 Provider 预设（用于「设置」页快速填充）。
+ * model/models 按各厂商官方文档核对（2026-07），moonshot-v1/qwen-plus/glm-4-flash 等旧模型
+ * 已停用或被取代，deepseek-chat/deepseek-reasoner 亦即将下线。
+ * 默认模型统一取各厂商当前最新旗舰（能力最强档位），其余档位放入 models 供「其他可用模型」参考。
+ */
 export const PROVIDER_PRESETS: Array<Omit<ProviderConfig, 'id' | 'apiKey'>> = [
   {
     name: 'DeepSeek',
@@ -28,15 +33,36 @@ export const PROVIDER_PRESETS: Array<Omit<ProviderConfig, 'id' | 'apiKey'>> = [
     model: 'deepseek-v4-pro',
     models: ['deepseek-v4-pro', 'deepseek-v4-flash'],
   },
-  { name: 'OpenAI', baseURL: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+  {
+    name: 'OpenAI',
+    baseURL: 'https://api.openai.com/v1',
+    model: 'gpt-5.6-sol',
+    models: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'],
+  },
   {
     name: '通义千问',
     baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-    model: 'qwen-plus',
+    model: 'qwen3.7-max',
+    models: ['qwen3.7-max', 'qwen3.7-plus', 'qwen3.6-flash'],
   },
-  { name: '智谱 GLM', baseURL: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-flash' },
-  { name: 'Moonshot', baseURL: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k' },
-  { name: '本地 (Ollama)', baseURL: 'http://localhost:11434/v1', model: 'llama3.1' },
+  {
+    name: '智谱 GLM',
+    baseURL: 'https://open.bigmodel.cn/api/paas/v4',
+    model: 'glm-5.2',
+    models: ['glm-5.2', 'glm-4.7', 'glm-4.7-flash'],
+  },
+  {
+    name: 'Moonshot',
+    baseURL: 'https://api.moonshot.cn/v1',
+    model: 'kimi-k3',
+    models: ['kimi-k3', 'kimi-k2.7-code', 'kimi-k2.6'],
+  },
+  {
+    name: '本地 (Ollama)',
+    baseURL: 'http://localhost:11434/v1',
+    model: 'llama3.1',
+    models: ['llama3.1', 'qwen3', 'deepseek-r1'],
+  },
 ];
 
 export const STORAGE_KEY = 'aluminum:settings';

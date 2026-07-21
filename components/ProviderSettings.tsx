@@ -28,6 +28,13 @@ function extrasOf(p: ProviderConfig): string {
   return (p.models ?? []).filter((m) => m !== p.model).join(', ');
 }
 
+/** 「其他可用模型」输入框的提示文案：随当前选中的预设切换，展示该厂商的其他模型示例。 */
+function extrasPlaceholder(selectedPreset: string): string {
+  const preset = PROVIDER_PRESETS.find((p) => p.name === selectedPreset);
+  const extras = (preset?.models ?? []).filter((m) => m !== preset?.model);
+  return extras.length ? `例如 ${extras.join(', ')}` : '例如 deepseek-v4-flash';
+}
+
 /** 根据默认模型 + 其他模型文本，重建去重后的 models 列表。 */
 function withExtras(p: ProviderConfig, extrasText: string): ProviderConfig {
   const extras = extrasText
@@ -317,7 +324,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
           <Field
             label="其他可用模型（逗号分隔，可选）"
             value={extrasText}
-            placeholder="例如 deepseek-v4-flash"
+            placeholder={extrasPlaceholder(selectedPreset)}
             onChange={setExtrasText}
           />
           <Field
