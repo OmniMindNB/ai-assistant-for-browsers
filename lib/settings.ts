@@ -75,6 +75,48 @@ export function newProviderId(): string {
   return `p-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/** 保存前统一 trim name/baseURL/model/apiKey，避免粘贴带来的首尾空白静默存入。 */
+export function trimProviderDraft(draft: ProviderConfig): ProviderConfig {
+  return {
+    ...draft,
+    name: draft.name.trim(),
+    baseURL: draft.baseURL.trim(),
+    apiKey: draft.apiKey.trim(),
+    model: draft.model.trim(),
+  };
+}
+
+/**
+ * 将预设应用到草稿：仅在字段为空时填充（不覆盖用户已填写的内容）。
+ * 「其他可用模型」文本框同理，为空时才用预设中除默认模型外的其余模型回填。
+ */
+export function applyPresetToDraft(
+  draft: ProviderConfig,
+  extrasText: string,
+  preset: Omit<ProviderConfig, 'id' | 'apiKey'>,
+): { draft: ProviderConfig; extrasText: string } {
+  const nextDraft: ProviderConfig = {
+    ...draft,
+    name: draft.name || preset.name,
+    baseURL: draft.baseURL || preset.baseURL,
+    model: draft.model || preset.model,
+  };
+  const presetExtras = (preset.models ?? []).filter((m) => m !== preset.model);
+  const nextExtrasText = extrasText.trim() ? extrasText : presetExtras.join(', ');
+  return { draft: nextDraft, extrasText: nextExtrasText };
+}
+
+/** 是否存在另一个（id 不同于 excludeId）Provider 与给定名称（trim 后）重复。 */
+export function hasDuplicateProviderName(
+  providers: ProviderConfig[],
+  name: string,
+  excludeId?: string,
+): boolean {
+  const trimmed = name.trim();
+  if (!trimmed) return false;
+  return providers.some((p) => p.id !== excludeId && p.name.trim() === trimmed);
+}
+
 /**
  * 若 dev-config.ts 中启用了开发 Provider，则在尚未存在时自动注入并设为当前。
  * 仅用于本地开发自测（ref: lib/dev-config.ts）。
