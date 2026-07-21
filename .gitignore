@@ -34,3 +34,4 @@ web-ext.config.ts
 *.png
 !public/icons/*.png
 !docs/store-assets/*.png
+.gstack/
