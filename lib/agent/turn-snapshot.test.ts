@@ -62,13 +62,18 @@ describe('turn-snapshot', () => {
     expect(await hasSnapshot(TAB_ID)).toBe(false);
   });
 
-  it('survives being read back after a simulated service-worker restart (fresh fakeBrowser storage, same key)', async () => {
+  it('reads a snapshot back through a fresh module instance (proves it is not held in module-level state)', async () => {
     await beginSnapshotIfNeeded(TAB_ID, { url: 'https://a.example', bodyHTML: '<p>a</p>', scrollX: 1, scrollY: 2 });
-    // 模拟 SW 重启：不清空 fakeBrowser 的 storage.session（它代表浏览器进程内数据），
-    // 只是重新 import 也无意义（ESM 模块缓存），所以这里改为直接验证同一 tabId 的读路径
-    // 不依赖任何模块级变量——即，多次独立的 getSnapshot 调用互相不干扰、都读到同一份数据。
-    expect((await getSnapshot(TAB_ID))?.bodyHTML).toBe('<p>a</p>');
-    expect((await getSnapshot(TAB_ID))?.bodyHTML).toBe('<p>a</p>');
+
+    // 模拟 service worker 重启：重置模块注册表后重新 import，得到全新的模块实例
+    // （任何模块级变量都会被清空）。fakeBrowser 的 storage.session 数据不受影响——
+    // 它代表浏览器进程内、独立于 service worker 生命周期的存储。旧的 Map 实现在这里
+    // 会读到 undefined；新实现应仍能读到之前写入的快照。
+    vi.resetModules();
+    const fresh = await import('./turn-snapshot');
+
+    expect(await fresh.hasSnapshot(TAB_ID)).toBe(true);
+    expect((await fresh.getSnapshot(TAB_ID))?.bodyHTML).toBe('<p>a</p>');
   });
 
   it('degrades silently when persisting a new snapshot fails (e.g. storage quota exceeded)', async () => {
