@@ -23,7 +23,6 @@ import {
 } from '@/lib/db';
 import { createBrowserAgent } from '@/lib/agent/agent';
 import { summarizeToolCallForConfirmation } from '@/lib/agent/confirm-summary';
-import { isUserScriptsToggleBlocked } from '@/lib/agent/inject-script-blocked';
 
 const MAX_AGENT_TOOL_TURNS = 50;
 
@@ -89,6 +88,11 @@ export interface PendingConfirmation {
   codePreview?: string;
 }
 
+export interface UserScriptsWaitState {
+  attempts: number;
+  elapsedSeconds: number;
+}
+
 interface ChatState {
   messages: UIMessage[];
   toolActivities: ToolActivity[];
@@ -97,7 +101,7 @@ interface ChatState {
   error: string | null;
   pendingConfirmation: PendingConfirmation | null;
   turnHasChanges: boolean;
-  userScriptsBlockedNotice: boolean;
+  userScriptsWait: UserScriptsWaitState | null;
   provider: ProviderConfig | null;
   /** 全部已配置 Provider（输入框选择器枚举用） */
   providers: ProviderConfig[];
@@ -126,6 +130,20 @@ interface ChatState {
 
 let activeAgent: Agent | null = null;
 let pendingConfirmResolve: ((approved: boolean) => void) | null = null;
+/** 当前这一轮固定下来的目标 tabId；用于 revertTurnChanges 在轮次结束后仍能撤销正确的标签页。 */
+let currentTurnTabId: number | null = null;
+
+async function resolveActiveTabId(): Promise<number> {
+  const res = (await sendMessage('GET_ACTIVE_TAB')) as MessageResponse<{
+    id?: number;
+    title?: string;
+    url?: string;
+  }>;
+  if (!res.ok || typeof res.data?.id !== 'number') {
+    throw new Error(res.error ?? '未找到当前标签页，请确保有一个网页处于打开状态。');
+  }
+  return res.data.id;
+}
 
 function genConversationId(): string {
   return `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -139,7 +157,7 @@ export const useChat = create<ChatState>((set, get) => ({
   error: null,
   pendingConfirmation: null,
   turnHasChanges: false,
-  userScriptsBlockedNotice: false,
+  userScriptsWait: null,
   provider: null,
   providers: [],
   selectedProviderId: null,
@@ -197,9 +215,11 @@ export const useChat = create<ChatState>((set, get) => ({
   explainSelection: async () => {
     if (get().busy) return;
     set({ busy: true, error: null });
+    let tabId: number;
     let selection: PageSelection;
     try {
-      const res = (await sendMessage('GET_SELECTION')) as MessageResponse<PageSelection>;
+      tabId = await resolveActiveTabId();
+      const res = (await sendMessage('GET_SELECTION', undefined, tabId)) as MessageResponse<PageSelection>;
       if (!res.ok || !res.data) throw new Error(res.error ?? '获取选区失败');
       selection = res.data;
     } catch (e) {
@@ -217,7 +237,7 @@ export const useChat = create<ChatState>((set, get) => ({
     const prompt =
       `请解释以下选中的内容，必要时给出背景、定义或通俗说明：\n\n` +
       `"""${selection.text.slice(0, MAX_SELECTION_CHARS)}"""`;
-    await runAgent(set, get, display, prompt);
+    await runAgent(set, get, display, prompt, tabId);
   },
 
   stop: () => {
@@ -233,8 +253,12 @@ export const useChat = create<ChatState>((set, get) => ({
   },
 
   revertTurnChanges: async () => {
+    if (currentTurnTabId === null) {
+      set({ error: '没有可撤销的标签页信息。' });
+      return;
+    }
     try {
-      const res = (await sendMessage('REVERT_CHANGES')) as MessageResponse<RevertChangesResult>;
+      const res = (await sendMessage('REVERT_CHANGES', undefined, currentTurnTabId)) as MessageResponse<RevertChangesResult>;
       if (!res.ok) throw new Error(res.error ?? '撤销失败');
       if (!res.data?.reverted) {
         set({ turnHasChanges: false, error: '本轮没有可撤销的改动。' });
@@ -252,7 +276,7 @@ export const useChat = create<ChatState>((set, get) => ({
     set({
       messages: [],
       toolActivities: [],
-      userScriptsBlockedNotice: false,
+      userScriptsWait: null,
       error: null,
       conversationId: genConversationId(),
       turnHasChanges: false,
@@ -274,7 +298,7 @@ export const useChat = create<ChatState>((set, get) => ({
     set({
       messages,
       toolActivities: [],
-      userScriptsBlockedNotice: false,
+      userScriptsWait: null,
       conversationId: id,
       error: null,
       turnHasChanges: false,
@@ -289,7 +313,7 @@ export const useChat = create<ChatState>((set, get) => ({
       set({
         messages: [],
         toolActivities: [],
-        userScriptsBlockedNotice: false,
+        userScriptsWait: null,
         conversationId: genConversationId(),
         turnHasChanges: false,
         pendingConfirmation: null,
@@ -303,6 +327,7 @@ async function runAgent(
   get: () => ChatState,
   display: UIMessage,
   agentUserContent: string,
+  presetTabId?: number,
 ): Promise<void> {
   const all = get().providers;
   const provider =
@@ -323,18 +348,27 @@ async function runAgent(
   const agentProvider: ProviderConfig =
     desiredModel && desiredModel !== provider.model ? { ...provider, model: desiredModel } : provider;
 
+  let tabId: number;
+  try {
+    tabId = presetTabId ?? (await resolveActiveTabId());
+  } catch (e) {
+    set({ error: errMsg(e) });
+    return;
+  }
+  currentTurnTabId = tabId;
+
   const history = get().messages;
   set({
     messages: [...history, display, { role: 'assistant', content: '' }],
     toolActivities: [],
-    userScriptsBlockedNotice: false,
+    userScriptsWait: null,
     input: '',
     busy: true,
     error: null,
     pendingConfirmation: null,
     turnHasChanges: false,
   });
-  await sendMessage('RESET_TURN_SNAPSHOT').catch(() => undefined);
+  await sendMessage('RESET_TURN_SNAPSHOT', undefined, tabId).catch(() => undefined);
 
   const onConfirm = async (toolCallId: string, toolName: string, args: unknown, _reason: string): Promise<boolean> => {
     const { summary, codePreview } = summarizeToolCallForConfirmation(toolName, args);
@@ -347,6 +381,7 @@ async function runAgent(
 
   const agent = createBrowserAgent({
     provider: agentProvider,
+    tabId,
     systemPrompt: SYSTEM_PROMPT,
     messages: toAgentMessages(history),
     maxToolTurns: MAX_AGENT_TOOL_TURNS,
@@ -370,6 +405,15 @@ async function runAgent(
     }
 
     if (event.type === 'tool_execution_update') {
+      const details = (event.partialResult as { details?: Record<string, unknown> } | undefined)?.details;
+      if (event.toolName === 'browser_inject_script' && details?.waitingForUserScriptsToggle) {
+        set({
+          userScriptsWait: {
+            attempts: typeof details.attempts === 'number' ? details.attempts : 0,
+            elapsedSeconds: typeof details.elapsedSeconds === 'number' ? details.elapsedSeconds : 0,
+          },
+        });
+      }
       upsertToolActivity(set, {
         id: event.toolCallId,
         name: event.toolName,
@@ -386,8 +430,8 @@ async function runAgent(
         status: blocked ? 'blocked' : event.isError ? 'error' : 'done',
         detail: event.isError ? compactJson(event.result) : undefined,
       });
-      if (event.isError && isUserScriptsToggleBlocked(event.toolName, event.result)) {
-        set({ userScriptsBlockedNotice: true });
+      if (event.toolName === 'browser_inject_script') {
+        set({ userScriptsWait: null });
       }
       if (!event.isError) {
         if (event.toolName === 'browser_revert_changes') {
