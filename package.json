@@ -4,12 +4,6 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild",
-      "spawn-sync"
-    ]
-  },
   "scripts": {
     "dev": "wxt",
     "dev:firefox": "wxt -b firefox",
