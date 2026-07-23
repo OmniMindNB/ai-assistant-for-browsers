@@ -236,6 +236,10 @@ export const useChat = create<ChatState>((set, get) => ({
     try {
       const res = (await sendMessage('REVERT_CHANGES')) as MessageResponse<RevertChangesResult>;
       if (!res.ok) throw new Error(res.error ?? '撤销失败');
+      if (!res.data?.reverted) {
+        set({ turnHasChanges: false, error: '本轮没有可撤销的改动。' });
+        return;
+      }
       set({ turnHasChanges: false });
     } catch (e) {
       set({ error: errMsg(e) });
