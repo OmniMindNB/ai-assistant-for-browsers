@@ -23,6 +23,7 @@ import {
 } from '@/lib/db';
 import { createBrowserAgent } from '@/lib/agent/agent';
 import { summarizeToolCallForConfirmation } from '@/lib/agent/confirm-summary';
+import { isUserScriptsToggleBlocked } from '@/lib/agent/inject-script-blocked';
 
 const MAX_AGENT_TOOL_TURNS = 50;
 
@@ -96,6 +97,7 @@ interface ChatState {
   error: string | null;
   pendingConfirmation: PendingConfirmation | null;
   turnHasChanges: boolean;
+  userScriptsBlockedNotice: boolean;
   provider: ProviderConfig | null;
   /** 全部已配置 Provider（输入框选择器枚举用） */
   providers: ProviderConfig[];
@@ -137,6 +139,7 @@ export const useChat = create<ChatState>((set, get) => ({
   error: null,
   pendingConfirmation: null,
   turnHasChanges: false,
+  userScriptsBlockedNotice: false,
   provider: null,
   providers: [],
   selectedProviderId: null,
@@ -245,6 +248,7 @@ export const useChat = create<ChatState>((set, get) => ({
     set({
       messages: [],
       toolActivities: [],
+      userScriptsBlockedNotice: false,
       error: null,
       conversationId: genConversationId(),
       turnHasChanges: false,
@@ -266,6 +270,7 @@ export const useChat = create<ChatState>((set, get) => ({
     set({
       messages,
       toolActivities: [],
+      userScriptsBlockedNotice: false,
       conversationId: id,
       error: null,
       turnHasChanges: false,
@@ -280,6 +285,7 @@ export const useChat = create<ChatState>((set, get) => ({
       set({
         messages: [],
         toolActivities: [],
+        userScriptsBlockedNotice: false,
         conversationId: genConversationId(),
         turnHasChanges: false,
         pendingConfirmation: null,
@@ -317,6 +323,7 @@ async function runAgent(
   set({
     messages: [...history, display, { role: 'assistant', content: '' }],
     toolActivities: [],
+    userScriptsBlockedNotice: false,
     input: '',
     busy: true,
     error: null,
@@ -375,6 +382,9 @@ async function runAgent(
         status: blocked ? 'blocked' : event.isError ? 'error' : 'done',
         detail: event.isError ? compactJson(event.result) : undefined,
       });
+      if (event.isError && isUserScriptsToggleBlocked(event.toolName, event.result)) {
+        set({ userScriptsBlockedNotice: true });
+      }
       if (!event.isError) {
         if (event.toolName === 'browser_revert_changes') {
           set({ turnHasChanges: false });
