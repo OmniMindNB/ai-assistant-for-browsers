@@ -12,9 +12,14 @@ export interface StorageSnapshotEntry {
   previousValue: string | null;
 }
 
+export type ElementAttributeSnapshot = [name: string, value: string][];
+
 export interface CapturePageState {
   url: string;
+  headHTML: string;
   bodyHTML: string;
+  htmlAttrs: ElementAttributeSnapshot;
+  bodyAttrs: ElementAttributeSnapshot;
   scrollX: number;
   scrollY: number;
 }

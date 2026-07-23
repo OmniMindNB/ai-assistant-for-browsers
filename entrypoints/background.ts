@@ -514,7 +514,10 @@ async function ensureTurnSnapshot(tabId: number): Promise<void> {
     null,
     (): CapturePageState => ({
       url: location.href,
+      headHTML: document.head.innerHTML,
       bodyHTML: document.body.innerHTML,
+      htmlAttrs: Array.from(document.documentElement.attributes).map((attr) => [attr.name, attr.value]),
+      bodyAttrs: Array.from(document.body.attributes).map((attr) => [attr.name, attr.value]),
       scrollX: window.scrollX,
       scrollY: window.scrollY,
     }),
@@ -688,7 +691,8 @@ async function injectScript(
 }
 
 // 撤销"本轮"全部改动：若本轮发生过跳转，直接跳回原 URL（跳转前的 DOM 已不可复原，
-// 也没有意义）；否则依次恢复 storage、body.innerHTML、滚动位置。撤销后清空该 tab 的快照。
+// 也没有意义）；否则依次恢复 storage、head.innerHTML、body.innerHTML、html/body 自身的属性
+// （style、class 等）、滚动位置。撤销后清空该 tab 的快照。
 async function revertChanges(): Promise<RevertChangesResult> {
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) throw new Error('未找到活动标签页');
@@ -709,7 +713,20 @@ async function revertChanges(): Promise<RevertChangesResult> {
       if (entry.previousValue === null) store.removeItem(entry.key);
       else store.setItem(entry.key, entry.previousValue);
     }
+    document.head.innerHTML = snap.headHTML;
     document.body.innerHTML = snap.bodyHTML;
+    // body.innerHTML 只替换子节点，不会撤销直接打在 <html>/<body> 元素自身的改动
+    // （护眼模式等页面级视觉改造常见做法：给 documentElement/body 加 style/class），
+    // 所以要单独把这两个元素自身的属性也恢复到快照时的状态。
+    const restoreAttrs = (el: Element, attrs: [string, string][]): void => {
+      const keep = new Set(attrs.map(([name]) => name));
+      for (const name of Array.from(el.attributes).map((attr) => attr.name)) {
+        if (!keep.has(name)) el.removeAttribute(name);
+      }
+      for (const [name, value] of attrs) el.setAttribute(name, value);
+    };
+    restoreAttrs(document.documentElement, snap.htmlAttrs);
+    restoreAttrs(document.body, snap.bodyAttrs);
     window.scrollTo(snap.scrollX, snap.scrollY);
   });
   await clearSnapshot(tab.id);
