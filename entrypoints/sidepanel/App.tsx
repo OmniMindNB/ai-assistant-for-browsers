@@ -40,6 +40,7 @@ export default function App() {
     error,
     pendingConfirmation,
     turnHasChanges,
+    userScriptsBlockedNotice,
     providers,
     selectedProviderId,
     selectedModel,
@@ -172,6 +173,13 @@ export default function App() {
                 ))
               )}
               {toolActivities.length > 0 && <ToolActivityList activities={toolActivities} />}
+              {userScriptsBlockedNotice && (
+                <UserScriptsBlockedNotice
+                  onOpenSettings={() =>
+                    browser.tabs.create({ url: `chrome://extensions/?id=${browser.runtime.id}` })
+                  }
+                />
+              )}
               {pendingConfirmation && (
                 <ConfirmationCard
                   confirmation={pendingConfirmation}
@@ -631,6 +639,25 @@ function ConfirmationCard({
       <p className="mt-2 text-[11px] text-amber-800/70 dark:text-amber-300/60">
         批准后，本轮内后续的写操作会自动执行，无需逐条确认；这轮做的所有改动之后都能一键撤销。
       </p>
+    </div>
+  );
+}
+
+function UserScriptsBlockedNotice({ onOpenSettings }: { onOpenSettings: () => void }) {
+  return (
+    <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-900/60 dark:bg-amber-950/30">
+      <div className="mb-1 font-medium text-amber-900 dark:text-amber-200">
+        ⚠️ 有一项更强的页面改造能力被挡住了
+      </div>
+      <p className="mb-2 text-amber-900/90 dark:text-amber-200/90">
+        注入脚本需要先在本扩展详情页开启「允许用户脚本」开关。
+      </p>
+      <button
+        onClick={onOpenSettings}
+        className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+      >
+        🔧 前往开启
+      </button>
     </div>
   );
 }
