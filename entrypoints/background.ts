@@ -504,7 +504,7 @@ async function fetchText(
 }
 
 async function ensureTurnSnapshot(tabId: number): Promise<void> {
-  if (hasSnapshot(tabId)) return;
+  if (await hasSnapshot(tabId)) return;
   const capture = await executeInActiveTab(
     null,
     (): CapturePageState => ({
@@ -514,7 +514,7 @@ async function ensureTurnSnapshot(tabId: number): Promise<void> {
       scrollY: window.scrollY,
     }),
   );
-  beginSnapshotIfNeeded(tabId, capture);
+  await beginSnapshotIfNeeded(tabId, capture);
 }
 
 async function setStyle(payload: SetStylePayload): Promise<SetStyleResult> {
@@ -688,13 +688,13 @@ async function revertChanges(): Promise<RevertChangesResult> {
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) throw new Error('未找到活动标签页');
 
-  const snapshot = getSnapshot(tab.id);
+  const snapshot = await getSnapshot(tab.id);
   if (!snapshot) return { reverted: false };
 
   const currentUrl = await executeInActiveTab(null, (): string => location.href);
   if (currentUrl !== snapshot.url) {
     await browser.tabs.update(tab.id, { url: snapshot.url });
-    clearSnapshot(tab.id);
+    await clearSnapshot(tab.id);
     return { reverted: true, navigatedBack: true };
   }
 
@@ -707,13 +707,13 @@ async function revertChanges(): Promise<RevertChangesResult> {
     document.body.innerHTML = snap.bodyHTML;
     window.scrollTo(snap.scrollX, snap.scrollY);
   });
-  clearSnapshot(tab.id);
+  await clearSnapshot(tab.id);
   return { reverted: true, navigatedBack: false };
 }
 
 async function resetTurnSnapshot(): Promise<{ ok: true }> {
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-  if (tab?.id) clearSnapshot(tab.id);
+  if (tab?.id) await clearSnapshot(tab.id);
   return { ok: true };
 }
 
@@ -754,6 +754,6 @@ async function setStorage(payload: SetStoragePayload): Promise<SetStorageResult>
     return { area: input?.area ?? 'local', key, previousValue };
   });
 
-  recordStorageEntryIfAbsent(tab.id, { area: result.area, key: result.key, previousValue: result.previousValue });
+  await recordStorageEntryIfAbsent(tab.id, { area: result.area, key: result.key, previousValue: result.previousValue });
   return result;
 }
