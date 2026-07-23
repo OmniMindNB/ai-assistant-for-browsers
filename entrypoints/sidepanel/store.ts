@@ -243,7 +243,7 @@ export const useChat = create<ChatState>((set, get) => ({
   stop: () => {
     activeAgent?.abort();
     pendingConfirmResolve = null;
-    set({ pendingConfirmation: null });
+    set({ pendingConfirmation: null, userScriptsWait: null });
   },
 
   respondToConfirmation: (approved) => {
