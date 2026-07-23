@@ -141,26 +141,23 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
     const newId = newProviderId();
     setSaving(true);
     try {
-      let next: Settings = { providers: [] };
-      let isDuplicateName = false;
-      setSettings((prev) => {
-        isDuplicateName = hasDuplicateProviderName(
-          prev.providers,
-          finalDraft.name,
-          isEditing ? finalDraft.id : undefined,
-        );
-        const providers = [...prev.providers];
-        if (isEditing) {
-          const idx = providers.findIndex((p) => p.id === finalDraft.id);
-          if (idx >= 0) providers[idx] = finalDraft;
-        } else {
-          providers.push({ ...finalDraft, id: newId });
-        }
-        next = { providers, activeProviderId: prev.activeProviderId ?? providers[0]?.id };
-        return next;
-      });
-      await saveSettings(next);
-      onChange?.();
+      const isDuplicateName = hasDuplicateProviderName(
+        settings.providers,
+        finalDraft.name,
+        isEditing ? finalDraft.id : undefined,
+      );
+      const providers = [...settings.providers];
+      if (isEditing) {
+        const idx = providers.findIndex((p) => p.id === finalDraft.id);
+        if (idx >= 0) providers[idx] = finalDraft;
+      } else {
+        providers.push({ ...finalDraft, id: newId });
+      }
+      const next: Settings = {
+        providers,
+        activeProviderId: settings.activeProviderId ?? providers[0]?.id,
+      };
+      await persist(next);
       resetDraft();
       flash(isDuplicateName ? '已保存（存在同名 Provider）' : '已保存');
     } finally {
