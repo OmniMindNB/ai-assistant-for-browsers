@@ -557,3 +557,7 @@ async function persist(
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
+
+if (import.meta.env.DEV) {
+  (window as unknown as { __useChat: typeof useChat }).__useChat = useChat;
+}

@@ -1,6 +1,9 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useChat } from './store';
-import Markdown from './Markdown';
+
+// react-markdown + rehype-highlight 拉入较大的解析/高亮代码，单独分包，
+// 避免其阻塞侧边栏首次渲染（消息为空时完全不需要加载）。
+const Markdown = lazy(() => import('./Markdown'));
 import ProviderSettings from '@/components/ProviderSettings';
 import AppearanceSettings from '@/components/AppearanceSettings';
 import { useTheme, type ThemeMode } from '@/lib/theme';
@@ -554,7 +557,9 @@ function Message({
       </div>
       <div className="min-w-0 flex-1 rounded-2xl rounded-tl-md bg-white px-4 py-3 shadow-sm ring-1 ring-neutral-200/70 dark:bg-neutral-900 dark:ring-neutral-800">
         {content ? (
-          <Markdown content={content} />
+          <Suspense fallback={<span className="whitespace-pre-wrap">{content}</span>}>
+            <Markdown content={content} />
+          </Suspense>
         ) : busy ? (
           <TypingDots />
         ) : null}
