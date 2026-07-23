@@ -31,6 +31,14 @@ export interface Message<T = unknown> {
   id: string;
   type: MessageType;
   payload?: T;
+  /**
+   * 本次操作要作用的标签页 ID。由侧边栏在回合开始时解析一次并透传，
+   * background.ts 用它代替临时查询"当前激活标签页"，避免等待期间
+   * 打开设置页等操作改变激活标签页后，后续工具调用跟错目标
+   * （ref: docs/superpowers/specs/2026-07-23-turn-tabid-pinning-and-userscripts-wait-design.md）。
+   * GET_ACTIVE_TAB 本身不需要它——它的语义就是"查询当前激活标签页"。
+   */
+  tabId?: number;
   /** 是否为流式响应 */
   stream?: boolean;
 }
@@ -288,7 +296,8 @@ export function newMessageId(): string {
 export async function sendMessage<TReq = unknown, TRes = unknown>(
   type: MessageType,
   payload?: TReq,
+  tabId?: number,
 ): Promise<MessageResponse<TRes>> {
-  const message: Message<TReq> = { id: newMessageId(), type, payload };
+  const message: Message<TReq> = { id: newMessageId(), type, payload, tabId };
   return browser.runtime.sendMessage(message) as Promise<MessageResponse<TRes>>;
 }

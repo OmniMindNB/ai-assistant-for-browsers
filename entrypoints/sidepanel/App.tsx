@@ -43,7 +43,7 @@ export default function App() {
     error,
     pendingConfirmation,
     turnHasChanges,
-    userScriptsBlockedNotice,
+    userScriptsWait,
     providers,
     selectedProviderId,
     selectedModel,
@@ -176,11 +176,14 @@ export default function App() {
                 ))
               )}
               {toolActivities.length > 0 && <ToolActivityList activities={toolActivities} />}
-              {userScriptsBlockedNotice && (
+              {userScriptsWait && (
                 <UserScriptsBlockedNotice
+                  attempts={userScriptsWait.attempts}
+                  elapsedSeconds={userScriptsWait.elapsedSeconds}
                   onOpenSettings={() =>
                     browser.tabs.create({ url: `chrome://extensions/?id=${browser.runtime.id}` })
                   }
+                  onCancelWait={stop}
                 />
               )}
               {pendingConfirmation && (
@@ -648,21 +651,43 @@ function ConfirmationCard({
   );
 }
 
-function UserScriptsBlockedNotice({ onOpenSettings }: { onOpenSettings: () => void }) {
+function UserScriptsBlockedNotice({
+  attempts,
+  elapsedSeconds,
+  onOpenSettings,
+  onCancelWait,
+}: {
+  attempts: number;
+  elapsedSeconds: number;
+  onOpenSettings: () => void;
+  onCancelWait: () => void;
+}) {
+  const minutes = Math.floor(elapsedSeconds / 60);
+  const seconds = elapsedSeconds % 60;
+  const elapsedLabel = minutes > 0 ? `${minutes}分${seconds}秒` : `${seconds}秒`;
   return (
     <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-900/60 dark:bg-amber-950/30">
       <div className="mb-1 font-medium text-amber-900 dark:text-amber-200">
-        ⚠️ 有一项更强的页面改造能力被挡住了
+        ⏳ 等待开启「允许用户脚本」开关……
       </div>
       <p className="mb-2 text-amber-900/90 dark:text-amber-200/90">
-        注入脚本需要先在本扩展详情页开启「允许用户脚本」开关。
+        注入脚本需要先在本扩展详情页开启「允许用户脚本」开关；已等待 {elapsedLabel}，重试
+        {attempts} 次。开启后会自动继续，无需重新提问。
       </p>
-      <button
-        onClick={onOpenSettings}
-        className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-      >
-        🔧 前往开启
-      </button>
+      <div className="flex gap-2">
+        <button
+          onClick={onOpenSettings}
+          className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+        >
+          🔧 前往开启
+        </button>
+        <button
+          onClick={onCancelWait}
+          className="rounded-lg border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-amber-800 dark:text-amber-200 dark:hover:bg-amber-900/40"
+        >
+          取消等待
+        </button>
+      </div>
     </div>
   );
 }

@@ -29,6 +29,8 @@ const POST_DOSSIER_BLOCKED_TOOLS = new Set(['browser_get_page_meta', 'browser_re
 
 export interface BrowserAgentOptions {
   provider: ProviderConfig;
+  /** 本回合固定的目标标签页 ID（ref: turn-tabid-pinning 设计文档）。 */
+  tabId: number;
   systemPrompt?: string;
   tools?: BrowserAgentTool[];
   messages?: AgentMessage[];
@@ -37,7 +39,7 @@ export interface BrowserAgentOptions {
 }
 
 export function createBrowserAgent(options: BrowserAgentOptions): Agent {
-  const tools = options.tools ?? createBrowserTools();
+  const tools = options.tools ?? createBrowserTools(options.tabId);
   const maxToolTurns = options.maxToolTurns ?? DEFAULT_MAX_TOOL_TURNS;
   let completedToolTurns = 0;
   let implementationDossierCollected = false;

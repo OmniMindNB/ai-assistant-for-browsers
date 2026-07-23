@@ -39,6 +39,7 @@ import {
   type TypeTextResult,
 } from '@/lib/messaging';
 import { analyzeScript } from '@/lib/security';
+import { resolveTargetTab } from '@/lib/agent/tab-target';
 import {
   beginSnapshotIfNeeded,
   clearSnapshot,
@@ -106,6 +107,14 @@ export default defineBackground(() => {
   });
 });
 
+// 回合开始时由侧边栏解析一次并透传的目标标签页 ID；GET_ACTIVE_TAB 之外的每条消息都要带。
+function requireTabId(message: Message): number {
+  if (typeof message.tabId !== 'number') {
+    throw new Error(`消息 ${message.type} 缺少 tabId。`);
+  }
+  return message.tabId;
+}
+
 async function handleMessage(message: Message): Promise<unknown> {
   switch (message.type) {
     case 'PING':
@@ -115,80 +124,80 @@ async function handleMessage(message: Message): Promise<unknown> {
       return getActiveTab();
 
     case 'EXTRACT_PAGE':
-      return extractActivePage();
+      return extractActivePage(requireTabId(message));
 
     case 'GET_SELECTION':
-      return getActiveSelection();
+      return getActiveSelection(requireTabId(message));
 
     case 'QUERY_DOM':
-      return queryDom(message.payload as QueryDomPayload);
+      return queryDom(message.payload as QueryDomPayload, requireTabId(message));
 
     case 'GET_HTML':
-      return getHtml(message.payload as GetHtmlPayload);
+      return getHtml(message.payload as GetHtmlPayload, requireTabId(message));
 
     case 'GET_SCRIPTS':
-      return getScripts(message.payload as GetScriptsPayload);
+      return getScripts(message.payload as GetScriptsPayload, requireTabId(message));
 
     case 'GET_STYLESHEETS':
-      return getStylesheets(message.payload as GetStylesheetsPayload);
+      return getStylesheets(message.payload as GetStylesheetsPayload, requireTabId(message));
 
     case 'GET_COMPUTED_STYLE':
-      return getComputedStyleForSelector(message.payload as GetComputedStylePayload);
+      return getComputedStyleForSelector(message.payload as GetComputedStylePayload, requireTabId(message));
 
     case 'GET_PAGE_META':
-      return getPageMeta();
+      return getPageMeta(requireTabId(message));
 
     case 'CAPTURE_SCREENSHOT':
-      return captureScreenshot(message.payload as CaptureScreenshotPayload);
+      return captureScreenshot(message.payload as CaptureScreenshotPayload, requireTabId(message));
 
     case 'SET_STYLE':
-      return setStyle(message.payload as SetStylePayload);
+      return setStyle(message.payload as SetStylePayload, requireTabId(message));
 
     case 'MODIFY_DOM':
-      return modifyDom(message.payload as ModifyDomPayload);
+      return modifyDom(message.payload as ModifyDomPayload, requireTabId(message));
 
     case 'CLICK_ELEMENT':
-      return clickElement(message.payload as ClickElementPayload);
+      return clickElement(message.payload as ClickElementPayload, requireTabId(message));
 
     case 'TYPE_TEXT':
-      return typeText(message.payload as TypeTextPayload);
+      return typeText(message.payload as TypeTextPayload, requireTabId(message));
 
     case 'SELECT_OPTION':
-      return selectOption(message.payload as SelectOptionPayload);
+      return selectOption(message.payload as SelectOptionPayload, requireTabId(message));
 
     case 'SCROLL_PAGE':
-      return scrollPage(message.payload as ScrollPagePayload);
+      return scrollPage(message.payload as ScrollPagePayload, requireTabId(message));
 
     case 'INJECT_SCRIPT':
-      return injectScript(message.payload as InjectScriptPayload);
+      return injectScript(message.payload as InjectScriptPayload, requireTabId(message));
 
     case 'RESET_TURN_SNAPSHOT':
-      return resetTurnSnapshot();
+      return resetTurnSnapshot(requireTabId(message));
 
     case 'REVERT_CHANGES':
-      return revertChanges();
+      return revertChanges(requireTabId(message));
 
     case 'NAVIGATE_TAB':
-      return navigateTab(message.payload as NavigateTabPayload);
+      return navigateTab(message.payload as NavigateTabPayload, requireTabId(message));
 
     case 'SET_STORAGE':
-      return setStorage(message.payload as SetStoragePayload);
+      return setStorage(message.payload as SetStoragePayload, requireTabId(message));
 
     default:
       throw new Error(`未处理的消息类型: ${message.type}`);
   }
 }
 
+// 例外：这是唯一保留"实时查询当前激活标签页"语义的函数，用于 GET_ACTIVE_TAB——
+// 它的用途就是让模型知道"用户现在焦点在哪"，和"本回合操作目标"是两个正交的问题。
 async function getActiveTab() {
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
   if (!tab) throw new Error('未找到活动标签页');
   return { id: tab.id, title: tab.title, url: tab.url };
 }
 
-async function extractActivePage(): Promise<PageContent> {
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) throw new Error('未找到活动标签页');
-
+async function extractActivePage(tabId: number): Promise<PageContent> {
+  const tab = await resolveTargetTab(tabId);
   const response = (await browser.tabs.sendMessage(tab.id, {
     id: `extract-${Date.now()}`,
     type: 'EXTRACT_PAGE',
@@ -200,10 +209,8 @@ async function extractActivePage(): Promise<PageContent> {
   return response.data;
 }
 
-async function getActiveSelection(): Promise<PageSelection> {
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) throw new Error('未找到活动标签页');
-
+async function getActiveSelection(tabId: number): Promise<PageSelection> {
+  const tab = await resolveTargetTab(tabId);
   const response = (await browser.tabs.sendMessage(tab.id, {
     id: `selection-${Date.now()}`,
     type: 'GET_SELECTION',
@@ -215,8 +222,8 @@ async function getActiveSelection(): Promise<PageSelection> {
   return response.data;
 }
 
-async function queryDom(payload: QueryDomPayload): Promise<QueryDomResult> {
-  return executeInActiveTab(payload, (input): QueryDomResult => {
+async function queryDom(payload: QueryDomPayload, tabId: number): Promise<QueryDomResult> {
+  return executeInTab(tabId, payload, (input): QueryDomResult => {
     const selector = input?.selector || 'body';
     const limit = Math.max(1, Math.min(100, input?.limit ?? 20));
     const nodes = Array.from(document.querySelectorAll(selector));
@@ -246,8 +253,8 @@ async function queryDom(payload: QueryDomPayload): Promise<QueryDomResult> {
   });
 }
 
-async function getHtml(payload: GetHtmlPayload): Promise<GetHtmlResult> {
-  return executeInActiveTab(payload, (input): GetHtmlResult => {
+async function getHtml(payload: GetHtmlPayload, tabId: number): Promise<GetHtmlResult> {
+  return executeInTab(tabId, payload, (input): GetHtmlResult => {
     const selector = input?.selector || 'html';
     const maxChars = Math.max(1000, input?.maxChars ?? 12000);
     const nodes = Array.from(document.querySelectorAll(selector));
@@ -262,13 +269,13 @@ async function getHtml(payload: GetHtmlPayload): Promise<GetHtmlResult> {
   });
 }
 
-async function getScripts(payload: GetScriptsPayload): Promise<GetScriptsResult> {
+async function getScripts(payload: GetScriptsPayload, tabId: number): Promise<GetScriptsResult> {
   const input = payload ?? {};
   const maxChars = Math.max(1000, input.maxChars ?? DEFAULT_TOOL_MAX_CHARS);
   const includeInline = input.includeInline ?? true;
   const includeExternal = input.includeExternal ?? true;
 
-  const scripts = await executeInActiveTab(null, (): PageScriptInfo[] =>
+  const scripts = await executeInTab(tabId, null, (): PageScriptInfo[] =>
     Array.from(document.scripts).map((script, index) => ({
       index,
       src: script.src || undefined,
@@ -312,13 +319,13 @@ async function getScripts(payload: GetScriptsPayload): Promise<GetScriptsResult>
   return { count: scripts.length, scripts: output, truncated };
 }
 
-async function getStylesheets(payload: GetStylesheetsPayload): Promise<GetStylesheetsResult> {
+async function getStylesheets(payload: GetStylesheetsPayload, tabId: number): Promise<GetStylesheetsResult> {
   const input = payload ?? {};
   const maxChars = Math.max(1000, input.maxChars ?? DEFAULT_TOOL_MAX_CHARS);
   const includeInline = input.includeInline ?? true;
   const includeExternal = input.includeExternal ?? true;
 
-  const stylesheets = await executeInActiveTab(null, (): PageStylesheetInfo[] => {
+  const stylesheets = await executeInTab(tabId, null, (): PageStylesheetInfo[] => {
     const fromStyleTags = Array.from(document.querySelectorAll('style')).map((style, index) => ({
       index,
       ownerTag: 'style',
@@ -369,8 +376,9 @@ async function getStylesheets(payload: GetStylesheetsPayload): Promise<GetStyles
 
 async function getComputedStyleForSelector(
   payload: GetComputedStylePayload,
+  tabId: number,
 ): Promise<GetComputedStyleResult> {
-  return executeInActiveTab(payload, (input): GetComputedStyleResult => {
+  return executeInTab(tabId, payload, (input): GetComputedStyleResult => {
     const selector = input?.selector || 'body';
     const element = document.querySelector(selector);
     if (!element) return { selector, found: false, styles: {} };
@@ -397,8 +405,8 @@ async function getComputedStyleForSelector(
   });
 }
 
-async function getPageMeta(): Promise<PageMetaResult> {
-  return executeInActiveTab(null, (): PageMetaResult => {
+async function getPageMeta(tabId: number): Promise<PageMetaResult> {
+  return executeInTab(tabId, null, (): PageMetaResult => {
     const global = window as any;
     const hints: string[] = [];
     if (global.React || global.__REACT_DEVTOOLS_GLOBAL_HOOK__) hints.push('react');
@@ -422,22 +430,30 @@ async function getPageMeta(): Promise<PageMetaResult> {
 
 async function captureScreenshot(
   payload: CaptureScreenshotPayload,
+  tabId: number,
 ): Promise<CaptureScreenshotResult> {
+  const tab = await resolveTargetTab(tabId);
+  if (!tab.active) {
+    // chrome.tabs.captureVisibleTab 只能截取"当前可见"的标签页，没有按 tabId 截图的 API；
+    // 如果回合固定的目标标签页当前不可见（比如用户切去了别的标签页），
+    // 与其静默截到错误的页面，不如明确报错。
+    throw new Error('目标标签页当前不是可见标签页，无法截图（Chrome 只能截取当前可见标签页）。请切换回该标签页后重试。');
+  }
   const format = payload?.format ?? 'png';
   const quality = payload?.quality;
-  const dataUrl = await browser.tabs.captureVisibleTab({
+  const dataUrl = await browser.tabs.captureVisibleTab(tab.windowId, {
     format,
     quality: format === 'jpeg' ? quality : undefined,
   });
   return { dataUrl };
 }
 
-async function executeInActiveTab<TInput, TResult>(
+async function executeInTab<TInput, TResult>(
+  tabId: number,
   input: TInput,
   func: (input: TInput) => TResult,
 ): Promise<TResult> {
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) throw new Error('未找到活动标签页');
+  const tab = await resolveTargetTab(tabId);
   const [frame] = await browser.scripting.executeScript({
     target: { tabId: tab.id },
     world: 'MAIN',
@@ -510,7 +526,8 @@ async function fetchText(
 
 async function ensureTurnSnapshot(tabId: number): Promise<void> {
   if (await hasSnapshot(tabId)) return;
-  const capture = await executeInActiveTab(
+  const capture = await executeInTab(
+    tabId,
     null,
     (): CapturePageState => ({
       url: location.href,
@@ -525,12 +542,10 @@ async function ensureTurnSnapshot(tabId: number): Promise<void> {
   await beginSnapshotIfNeeded(tabId, capture);
 }
 
-async function setStyle(payload: SetStylePayload): Promise<SetStyleResult> {
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) throw new Error('未找到活动标签页');
-  await ensureTurnSnapshot(tab.id);
+async function setStyle(payload: SetStylePayload, tabId: number): Promise<SetStyleResult> {
+  await ensureTurnSnapshot(tabId);
 
-  return executeInActiveTab(payload, (input): SetStyleResult => {
+  return executeInTab(tabId, payload, (input): SetStyleResult => {
     const selector = input?.selector || '';
     const styles = input?.styles || {};
     const nodes = Array.from(document.querySelectorAll<HTMLElement>(selector));
@@ -543,12 +558,10 @@ async function setStyle(payload: SetStylePayload): Promise<SetStyleResult> {
   });
 }
 
-async function modifyDom(payload: ModifyDomPayload): Promise<ModifyDomResult> {
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) throw new Error('未找到活动标签页');
-  await ensureTurnSnapshot(tab.id);
+async function modifyDom(payload: ModifyDomPayload, tabId: number): Promise<ModifyDomResult> {
+  await ensureTurnSnapshot(tabId);
 
-  return executeInActiveTab(payload, (input): ModifyDomResult => {
+  return executeInTab(tabId, payload, (input): ModifyDomResult => {
     const selector = input?.selector || '';
     const nodes = Array.from(document.querySelectorAll<HTMLElement>(selector));
     for (const node of nodes) {
@@ -577,12 +590,10 @@ async function modifyDom(payload: ModifyDomPayload): Promise<ModifyDomResult> {
   });
 }
 
-async function clickElement(payload: ClickElementPayload): Promise<ClickElementResult> {
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) throw new Error('未找到活动标签页');
-  await ensureTurnSnapshot(tab.id);
+async function clickElement(payload: ClickElementPayload, tabId: number): Promise<ClickElementResult> {
+  await ensureTurnSnapshot(tabId);
 
-  return executeInActiveTab(payload, (input): ClickElementResult => {
+  return executeInTab(tabId, payload, (input): ClickElementResult => {
     const selector = input?.selector || '';
     const nodes = Array.from(document.querySelectorAll<HTMLElement>(selector));
     const index = input?.index ?? 0;
@@ -592,12 +603,10 @@ async function clickElement(payload: ClickElementPayload): Promise<ClickElementR
   });
 }
 
-async function typeText(payload: TypeTextPayload): Promise<TypeTextResult> {
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) throw new Error('未找到活动标签页');
-  await ensureTurnSnapshot(tab.id);
+async function typeText(payload: TypeTextPayload, tabId: number): Promise<TypeTextResult> {
+  await ensureTurnSnapshot(tabId);
 
-  return executeInActiveTab(payload, (input): TypeTextResult => {
+  return executeInTab(tabId, payload, (input): TypeTextResult => {
     const selector = input?.selector || '';
     const target = document.querySelector(selector) as HTMLInputElement | HTMLTextAreaElement | null;
     if (!target) return { selector, matched: false, value: '' };
@@ -614,12 +623,10 @@ async function typeText(payload: TypeTextPayload): Promise<TypeTextResult> {
   });
 }
 
-async function selectOption(payload: SelectOptionPayload): Promise<SelectOptionResult> {
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) throw new Error('未找到活动标签页');
-  await ensureTurnSnapshot(tab.id);
+async function selectOption(payload: SelectOptionPayload, tabId: number): Promise<SelectOptionResult> {
+  await ensureTurnSnapshot(tabId);
 
-  return executeInActiveTab(payload, (input): SelectOptionResult => {
+  return executeInTab(tabId, payload, (input): SelectOptionResult => {
     const selector = input?.selector || '';
     const target = document.querySelector<HTMLSelectElement>(selector);
     if (!target) return { selector, matched: false, value: input?.value ?? '' };
@@ -629,12 +636,10 @@ async function selectOption(payload: SelectOptionPayload): Promise<SelectOptionR
   });
 }
 
-async function scrollPage(payload: ScrollPagePayload): Promise<ScrollPageResult> {
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) throw new Error('未找到活动标签页');
-  await ensureTurnSnapshot(tab.id);
+async function scrollPage(payload: ScrollPagePayload, tabId: number): Promise<ScrollPageResult> {
+  await ensureTurnSnapshot(tabId);
 
-  return executeInActiveTab(payload, (input): ScrollPageResult => {
+  return executeInTab(tabId, payload, (input): ScrollPageResult => {
     const behavior = input?.behavior ?? 'auto';
     if (input?.selector) {
       const target = document.querySelector(input.selector);
@@ -649,8 +654,11 @@ async function scrollPage(payload: ScrollPagePayload): Promise<ScrollPageResult>
 // 脚本注入（ref: technical-plan.md §4.2、Spec-0002）。
 // 使用 chrome.userScripts.execute（Chrome MV3 官方认可的动态脚本执行通道）而非 eval/new Function，
 // 满足 Remote Hosted Code 政策；用 IIFE 包裹以保留旧版 new Function 的 return 语义。
+// 这个函数本身只尝试一次；「允许用户脚本」开关关闭时的等待重试在侧边栏 tools.ts 里做
+// （ref: docs/superpowers/specs/2026-07-23-turn-tabid-pinning-and-userscripts-wait-design.md）。
 async function injectScript(
   payload: InjectScriptPayload,
+  tabId: number,
 ): Promise<InjectScriptResult> {
   const code = payload?.code ?? '';
   if (!code.trim()) throw new Error('脚本为空');
@@ -661,9 +669,8 @@ async function injectScript(
     throw new Error(`脚本语法错误：${report.syntaxError ?? '未知'}`);
   }
 
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) throw new Error('未找到活动标签页');
-  await ensureTurnSnapshot(tab.id);
+  await ensureTurnSnapshot(tabId);
+  const tab = await resolveTargetTab(tabId);
 
   const wrapped = `(function(){\n${code}\n})()`;
   let results;
@@ -693,21 +700,20 @@ async function injectScript(
 // 撤销"本轮"全部改动：若本轮发生过跳转，直接跳回原 URL（跳转前的 DOM 已不可复原，
 // 也没有意义）；否则依次恢复 storage、head.innerHTML、body.innerHTML、html/body 自身的属性
 // （style、class 等）、滚动位置。撤销后清空该 tab 的快照。
-async function revertChanges(): Promise<RevertChangesResult> {
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) throw new Error('未找到活动标签页');
+async function revertChanges(tabId: number): Promise<RevertChangesResult> {
+  const tab = await resolveTargetTab(tabId);
 
   const snapshot = await getSnapshot(tab.id);
   if (!snapshot) return { reverted: false };
 
-  const currentUrl = await executeInActiveTab(null, (): string => location.href);
+  const currentUrl = await executeInTab(tab.id, null, (): string => location.href);
   if (currentUrl !== snapshot.url) {
     await browser.tabs.update(tab.id, { url: snapshot.url });
     await clearSnapshot(tab.id);
     return { reverted: true, navigatedBack: true };
   }
 
-  await executeInActiveTab(snapshot, (snap): void => {
+  await executeInTab(tab.id, snapshot, (snap): void => {
     for (const entry of snap.storageEntries) {
       const store = entry.area === 'session' ? sessionStorage : localStorage;
       if (entry.previousValue === null) store.removeItem(entry.key);
@@ -733,9 +739,8 @@ async function revertChanges(): Promise<RevertChangesResult> {
   return { reverted: true, navigatedBack: false };
 }
 
-async function resetTurnSnapshot(): Promise<{ ok: true }> {
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-  if (tab?.id) await clearSnapshot(tab.id);
+async function resetTurnSnapshot(tabId: number): Promise<{ ok: true }> {
+  await clearSnapshot(tabId);
   return { ok: true };
 }
 
@@ -750,24 +755,21 @@ function isNavigableUrl(rawUrl: string): boolean {
   }
 }
 
-async function navigateTab(payload: NavigateTabPayload): Promise<NavigateTabResult> {
+async function navigateTab(payload: NavigateTabPayload, tabId: number): Promise<NavigateTabResult> {
   const url = payload?.url ?? '';
   if (!isNavigableUrl(url)) throw new Error('仅允许跳转到 http/https 地址。');
 
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) throw new Error('未找到活动标签页');
-  await ensureTurnSnapshot(tab.id);
+  await ensureTurnSnapshot(tabId);
+  const tab = await resolveTargetTab(tabId);
 
   await browser.tabs.update(tab.id, { url });
   return { url };
 }
 
-async function setStorage(payload: SetStoragePayload): Promise<SetStorageResult> {
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) throw new Error('未找到活动标签页');
-  await ensureTurnSnapshot(tab.id);
+async function setStorage(payload: SetStoragePayload, tabId: number): Promise<SetStorageResult> {
+  await ensureTurnSnapshot(tabId);
 
-  const result = await executeInActiveTab(payload, (input): SetStorageResult => {
+  const result = await executeInTab(tabId, payload, (input): SetStorageResult => {
     const store = input?.area === 'session' ? sessionStorage : localStorage;
     const key = input?.key ?? '';
     const previousValue = store.getItem(key);
@@ -776,6 +778,6 @@ async function setStorage(payload: SetStoragePayload): Promise<SetStorageResult>
     return { area: input?.area ?? 'local', key, previousValue };
   });
 
-  await recordStorageEntryIfAbsent(tab.id, { area: result.area, key: result.key, previousValue: result.previousValue });
+  await recordStorageEntryIfAbsent(tabId, { area: result.area, key: result.key, previousValue: result.previousValue });
   return result;
 }
