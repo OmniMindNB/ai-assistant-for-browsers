@@ -99,6 +99,11 @@ export default defineBackground(() => {
       return true;
     },
   );
+
+  // Tab 关闭后其"本轮"快照不再可能被用到，及时清理避免占用 storage.session 的共享配额。
+  browser.tabs.onRemoved.addListener((tabId) => {
+    clearSnapshot(tabId).catch((err: unknown) => console.error('[Aluminum] clearSnapshot on tab close:', err));
+  });
 });
 
 async function handleMessage(message: Message): Promise<unknown> {
