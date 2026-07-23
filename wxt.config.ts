@@ -7,6 +7,10 @@ export default defineConfig({
   srcDir: '.',
   vite: () => ({
     plugins: [tailwindcss()],
+    build: {
+      // pi-agent-core 传递依赖 pi-ai 的模型目录较大，属于死代码，不影响运行时开销，调高阈值消除构建噪音
+      chunkSizeWarningLimit: 1000,
+    },
   }),
   manifest: {
     name: 'Aluminum',
