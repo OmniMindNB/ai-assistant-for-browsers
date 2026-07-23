@@ -61,7 +61,7 @@ Dashboard 的 "Does your extension collect user data?" 问卷建议如下勾选�
 - **Personally identifiable information**：否（除非用户在对话中自行输入了个人信息，那属于用户主动输入内容，不是扩展主动收集）
 - **Web history**：否（不记录/上传浏览历史，仅按需读取当前页面内容用于生成回复）
 - **User activity**（如点击、滚动）：否
-- **Website content**（当前页面文本）：是——需要勾选，并注明"仅在用户主动发起操作时读取当前页面内容，发送给用户自行配置的第三方大模型 API 用于生成回复，不做其他用途，不落库到开发者服务器"
+- **Website content**（当前页面文本、HTML 源码、DOM 结构、计算样式、外部脚本/样式表源码、可见标签页截图——具体取决于当次对话里 AI 实际调用了哪些工具）：是——需要勾选，并注明"仅在用户主动发起操作时读取/截取当前页面内容，发送给用户自行配置的第三方大模型 API 用于生成回复（截图仅在配置了支持视觉输入的模型时才会一并发送），不做其他用途，不落库到开发者服务器"
 - 认证声明：需要勾选"我不会将用户数据出售给第三方""我不会将用户数据用于与核心功能无关的用途"等标准承诺条款——结合上表如实勾选即可。
 
 隐私政策 URL：https://omnimindnb.github.io/aluminum-legal/ （GitHub Pages 渲染版，对应 [privacy-policy.md](privacy-policy.md) 内容；请勿使用 github.com 仓库的 blob 链接，那只会显示源码，不是渲染后的页面）。
