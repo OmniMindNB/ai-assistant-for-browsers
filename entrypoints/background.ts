@@ -48,6 +48,7 @@ import {
   recordStorageEntryIfAbsent,
   type CapturePageState,
 } from '@/lib/agent/turn-snapshot';
+import { clearConversationIdForTab } from '@/lib/agent/tab-conversation';
 
 const DEFAULT_TOOL_MAX_CHARS = 12000;
 const SUPPORTED_MESSAGE_TYPES = [
@@ -78,11 +79,23 @@ const SUPPORTED_MESSAGE_TYPES = [
 
 // Service Worker：消息路由中心（ref: technical-plan.md §3.2）
 export default defineBackground(() => {
-  // 点击工具栏图标时打开侧边栏
+  // 全局侧边栏默认禁用；面板改为按 tab 单独启用（见下方 action.onClicked 监听器），
+  // 切到未启用过面板的 tab 时 Chrome 会自动关闭面板文档，不再像全局模式那样
+  // 跟着当前激活 tab 到处显示同一个面板实例。
   browser.runtime.onInstalled.addListener(() => {
     browser.sidePanel
-      ?.setPanelBehavior?.({ openPanelOnActionClick: true })
+      ?.setOptions?.({ enabled: false })
       .catch((err: unknown) => console.error('[Aluminum] sidePanel:', err));
+  });
+
+  // 点击工具栏图标时，只为当前这个 tab 启用并打开侧边栏——面板与这个 tab 强绑定。
+  browser.action.onClicked.addListener((tab) => {
+    if (typeof tab.id !== 'number') return;
+    const tabId = tab.id;
+    browser.sidePanel
+      ?.setOptions?.({ tabId, path: 'sidepanel.html', enabled: true })
+      .then(() => browser.sidePanel?.open?.({ tabId }))
+      .catch((err: unknown) => console.error('[Aluminum] sidePanel open:', err));
   });
 
   browser.runtime.onMessage.addListener(
@@ -101,9 +114,13 @@ export default defineBackground(() => {
     },
   );
 
-  // Tab 关闭后其"本轮"快照不再可能被用到，及时清理避免占用 storage.session 的共享配额。
+  // Tab 关闭后其"本轮"快照、以及"该 tab 上次展示的会话"记录都不再可能被用到，
+  // 及时清理避免占用 storage.session 的共享配额。
   browser.tabs.onRemoved.addListener((tabId) => {
     clearSnapshot(tabId).catch((err: unknown) => console.error('[Aluminum] clearSnapshot on tab close:', err));
+    clearConversationIdForTab(tabId).catch((err: unknown) =>
+      console.error('[Aluminum] clearConversationIdForTab on tab close:', err),
+    );
   });
 });
 
