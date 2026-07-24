@@ -82,7 +82,15 @@ export default defineBackground(() => {
   // 全局侧边栏默认禁用；面板改为按 tab 单独启用（见下方 action.onClicked 监听器），
   // 切到未启用过面板的 tab 时 Chrome 会自动关闭面板文档，不再像全局模式那样
   // 跟着当前激活 tab 到处显示同一个面板实例。
+  //
+  // openPanelOnActionClick 这个行为设置由 Chrome 按扩展持久化保存，旧版本装过之后
+  // 仅仅"这次代码不再调用"不会自动清掉它——老用户升级（onInstalled 的 reason: 'update'）
+  // 时若残留 true，点击图标会被 Chrome 直接消费掉去开全局（已禁用的）面板，
+  // action.onClicked 根本不会触发。这里显式重置为 false，避免升级路径上图标点击失效。
   browser.runtime.onInstalled.addListener(() => {
+    browser.sidePanel
+      ?.setPanelBehavior?.({ openPanelOnActionClick: false })
+      .catch((err: unknown) => console.error('[Aluminum] sidePanel setPanelBehavior:', err));
     browser.sidePanel
       ?.setOptions?.({ enabled: false })
       .catch((err: unknown) => console.error('[Aluminum] sidePanel:', err));

@@ -457,6 +457,8 @@ Expected: 构建成功，产物在 `.output/chrome-mv3`
 
 打开 Chrome，访问 `chrome://extensions`，开启"开发者模式"，点击"加载已解压的扩展程序"，选择 `.output/chrome-mv3` 目录。如果这个扩展之前已经加载过（用于开发调试），先点它的"移除"再重新加载，确保用的是这次构建的产物。
 
+**注意：** "移除后重新加载"走的是 Chrome 的全新安装路径（`onInstalled` 的 `reason: 'install'`），不会覆盖到"老版本原地升级"路径（`reason: 'update'`）。`browser.sidePanel.setPanelBehavior` 这个行为设置由 Chrome 按扩展持久化保存，不会因为新代码不再调用就自动清掉——如果之前装过还带着全局 `openPanelOnActionClick: true` 的旧版本（本功能改动前的版本），原地升级后残留的 `true` 会让 Chrome 直接消费掉图标点击去开（已禁用的）全局面板，`action.onClicked` 根本不会触发，图标点击又会失效。如果条件允许，额外走一遍这个路径：先加载改动前的一个旧版本构建，触发过一次面板打开后，不移除、直接对着同一个扩展目录点"重新加载"（对应真实的原地升级），再验证图标点击仍然正常打开面板。
+
 - [ ] **Step 3: 验证面板绑定与自动关闭**
 
 1. 打开一个网页（tab A），点击扩展工具栏图标，确认侧边栏打开。
