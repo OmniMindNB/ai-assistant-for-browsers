@@ -61,6 +61,7 @@ export default function App() {
     removeConversation,
     respondToConfirmation,
     revertTurnChanges,
+    restoreTabConversation,
   } = useChat();
 
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
@@ -79,7 +80,8 @@ export default function App() {
   useEffect(() => {
     refreshProvider();
     refreshConversations();
-  }, [refreshProvider, refreshConversations]);
+    restoreTabConversation();
+  }, [refreshProvider, refreshConversations, restoreTabConversation]);
 
   useEffect(() => {
     const onResize = () => setNarrow(window.innerWidth < SIDEBAR_BREAKPOINT);
