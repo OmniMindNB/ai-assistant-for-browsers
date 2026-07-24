@@ -23,6 +23,7 @@ import {
 } from '@/lib/db';
 import { createBrowserAgent } from '@/lib/agent/agent';
 import { summarizeToolCallForConfirmation } from '@/lib/agent/confirm-summary';
+import { getConversationIdForTab, setConversationIdForTab } from '@/lib/agent/tab-conversation';
 
 const MAX_AGENT_TOOL_TURNS = 50;
 
@@ -126,12 +127,15 @@ interface ChatState {
   removeConversation: (id: string) => Promise<void>;
   respondToConfirmation: (approved: boolean) => void;
   revertTurnChanges: () => Promise<void>;
+  restoreTabConversation: () => Promise<void>;
 }
 
 let activeAgent: Agent | null = null;
 let pendingConfirmResolve: ((approved: boolean) => void) | null = null;
 /** 当前这一轮固定下来的目标 tabId；用于 revertTurnChanges 在轮次结束后仍能撤销正确的标签页。 */
 let currentTurnTabId: number | null = null;
+/** 侧边栏面板自己绑定的 tabId；挂载时解析一次并缓存，用于把 conversationId 变化写回对应 tab 的映射。 */
+let panelTabId: number | null = null;
 
 async function resolveActiveTabId(): Promise<number> {
   const res = (await sendMessage('GET_ACTIVE_TAB')) as MessageResponse<{
@@ -306,6 +310,19 @@ export const useChat = create<ChatState>((set, get) => ({
     });
   },
 
+  restoreTabConversation: async () => {
+    const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+    const tabId = tabs[0]?.id;
+    if (typeof tabId !== 'number') return;
+    panelTabId = tabId;
+    const savedId = await getConversationIdForTab(tabId);
+    if (savedId) {
+      await get().openConversation(savedId);
+    } else {
+      await setConversationIdForTab(tabId, get().conversationId);
+    }
+  },
+
   removeConversation: async (id) => {
     await deleteConversation(id);
     await get().refreshConversations();
@@ -321,6 +338,14 @@ export const useChat = create<ChatState>((set, get) => ({
     }
   },
 }));
+
+// conversationId 的每次变化（clear() / openConversation() / removeConversation() 的兜底新建）
+// 都通过这里统一写回 tabId -> conversationId 映射，不需要在各个 action 里分别插入持久化代码。
+useChat.subscribe((state, prevState) => {
+  if (state.conversationId === prevState.conversationId) return;
+  if (panelTabId === null) return;
+  setConversationIdForTab(panelTabId, state.conversationId).catch(() => undefined);
+});
 
 async function runAgent(
   set: (partial: Partial<ChatState> | ((s: ChatState) => Partial<ChatState>)) => void,
