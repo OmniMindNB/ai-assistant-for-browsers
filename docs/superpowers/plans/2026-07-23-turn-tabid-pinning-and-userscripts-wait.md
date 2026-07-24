@@ -2841,12 +2841,12 @@ git commit -m "feat: wait and auto-retry browser_inject_script while the userScr
 
 **Files:** 无代码改动，只跑验证。
 
-- [ ] **Step 1: 全量类型检查、测试、构建**
+- [x] **Step 1: 全量类型检查、测试、构建**
 
 Run: `pnpm compile && pnpm test && pnpm build`
 Expected: 三步都成功；`pnpm test` 应该显示比改动前更多的通过用例数（新增了 `messaging.test.ts`、`tab-target.test.ts`、`tools.test.ts`）。
 
-- [ ] **Step 2: 加载最新构建，重新走一遍提交前的人工验证**
+- [x] **Step 2: 加载最新构建，重新走一遍提交前的人工验证**（2026-07-24 用户确认 5 个子步骤全部通过）
 
 1. 在 `chrome://extensions` 用「开发者模式」→「加载已解压的扩展程序」加载 `.output/chrome-mv3`（如果之前已加载过，点「重新加载」）。
 2. 确认该扩展详情页的「允许用户脚本」开关是**关闭**的。在侧边栏对某个普通网页发起一次会触发 `browser_inject_script` 的请求（例如"给这个页面加阅读模式"），确认：

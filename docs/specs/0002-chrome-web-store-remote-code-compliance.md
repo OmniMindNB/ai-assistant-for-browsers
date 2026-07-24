@@ -1,6 +1,6 @@
 # Spec-0002：Chrome 应用商店合规改造 —— browser_inject_script 迁移至 chrome.userScripts
 
-- 状态：草稿 Draft
+- 状态：已实现 Implemented（2026-07-24 全部验收标准通过，含 2026-07-23 等待重试增强，见 [PROGRESS.md](../PROGRESS.md)）
 - 日期：2026-07-21
 - 关联：docs/chrome-store-permission-justifications.md、docs/privacy-policy.md、CLAUDE.md（安全边界章节）
 
@@ -115,20 +115,22 @@ minimum_chrome_version: '138',
 
 ## 验收标准（Acceptance Criteria）
 
-- [ ] `wxt.config.ts` 的 `manifest.permissions` 包含 `'userScripts'`，并设置
+- [x] `wxt.config.ts` 的 `manifest.permissions` 包含 `'userScripts'`，并设置
       `manifest.minimum_chrome_version: '138'`
-- [ ] `entrypoints/background.ts` 的 `injectScript()` 使用 `chrome.userScripts.execute()`，
+- [x] `entrypoints/background.ts` 的 `injectScript()` 使用 `chrome.userScripts.execute()`，
       不再使用 `browser.scripting.executeScript` + `new Function()`
-- [ ] 「允许用户脚本」开关关闭时，触发 `browser_inject_script` 会返回清晰的中文错误提示
-      （手动验证：在 `chrome://extensions` 关闭该开关后触发工具调用，确认报错文案）
-- [ ] `pnpm compile` 与 `pnpm test` 通过
-- [ ] `pnpm build` 产物 `.output/chrome-mv3/manifest.json` 中包含 `userScripts` 权限
-- [ ] `docs/chrome-store-permission-justifications.md` 补充 `userScripts` 权限说明（中英双语，
+- [x] 「允许用户脚本」开关关闭时，触发 `browser_inject_script` 的用户体验清晰
+      （**行为已在 2026-07-23 升级为等待+自动重试**，不再是一次性报错，见
+      [2026-07-23-turn-tabid-pinning-and-userscripts-wait-design.md](../superpowers/specs/2026-07-23-turn-tabid-pinning-and-userscripts-wait-design.md)；
+      手动验证：2026-07-24 按该设计对应实现计划的 Task 9 Step 2 五个子步骤在真实 Chrome 里逐一验证通过）
+- [x] `pnpm compile` 与 `pnpm test` 通过
+- [x] `pnpm build` 产物 `.output/chrome-mv3/manifest.json` 中包含 `userScripts` 权限
+- [x] `docs/chrome-store-permission-justifications.md` 补充 `userScripts` 权限说明（中英双语，
       格式与现有条目一致）
-- [ ] `docs/PROGRESS.md` 变更日志新增一行记录本次迁移
-- [ ] `CLAUDE.md`"安全边界"章节中关于 MAIN world 隔离执行的描述同步更新
-- [ ] 手动在真实 Chrome（版本 ≥ 138，且已开启「允许用户脚本」开关）中验证：注入脚本工具可正常
-      执行页面改造（如阅读模式切换），且执行结果可被 `browser_revert_changes` 撤销
+- [x] `docs/PROGRESS.md` 变更日志新增一行记录本次迁移
+- [x] `CLAUDE.md`"安全边界"章节中关于 MAIN world 隔离执行的描述同步更新
+- [x] 手动在真实 Chrome（版本 ≥ 138）中验证：开关关闭时等待重试、开关开启后自动完成注入并可被
+      `browser_revert_changes` 撤销、取消等待、孤儿轮询检查——全部通过（2026-07-24）
 
 ## 开放问题（Open Questions）
 
