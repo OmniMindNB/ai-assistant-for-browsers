@@ -89,12 +89,18 @@ export default defineBackground(() => {
   });
 
   // 点击工具栏图标时，只为当前这个 tab 启用并打开侧边栏——面板与这个 tab 强绑定。
+  // sidePanel.open() 必须在用户手势的同一个事件循环内同步调用；链在 setOptions()
+  // 的 .then() 里会跨过一次 Promise resolve，Chrome 就不再把它算作用户手势触发，
+  // 抛出 "sidePanel.open() may only be called in response to a user gesture."
+  // 因此这里两个调用都在监听器函数体内同步发起，不互相等待。
   browser.action.onClicked.addListener((tab) => {
     if (typeof tab.id !== 'number') return;
     const tabId = tab.id;
     browser.sidePanel
       ?.setOptions?.({ tabId, path: 'sidepanel.html', enabled: true })
-      .then(() => browser.sidePanel?.open?.({ tabId }))
+      .catch((err: unknown) => console.error('[Aluminum] sidePanel setOptions:', err));
+    browser.sidePanel
+      ?.open?.({ tabId })
       .catch((err: unknown) => console.error('[Aluminum] sidePanel open:', err));
   });
 
