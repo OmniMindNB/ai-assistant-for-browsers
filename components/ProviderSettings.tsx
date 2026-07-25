@@ -21,6 +21,7 @@ const EMPTY_DRAFT: ProviderConfig = {
   baseURL: '',
   apiKey: '',
   model: '',
+  api: 'openai-completions',
 };
 
 /** 默认模型之外的其他可用模型（逗号分隔展示）。 */
@@ -311,6 +312,19 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
             required
             onChange={(v) => setDraft((d) => ({ ...d, baseURL: v }))}
           />
+          <label className="mb-3 block text-xs text-neutral-500 dark:text-neutral-400">
+            协议类型
+            <select
+              className="mt-1 block w-full rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-sm text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+              value={draft.api ?? 'openai-completions'}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, api: e.target.value as ProviderConfig['api'] }))
+              }
+            >
+              <option value="openai-completions">OpenAI 兼容</option>
+              <option value="anthropic-messages">Anthropic 兼容</option>
+            </select>
+          </label>
           <Field
             label="模型（默认）"
             value={draft.model}
