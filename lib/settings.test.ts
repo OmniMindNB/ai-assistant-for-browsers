@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   applyPresetToDraft,
   hasDuplicateProviderName,
+  resolveProviderApi,
   trimProviderDraft,
   type ProviderConfig,
 } from './settings';
@@ -127,5 +128,19 @@ describe('hasDuplicateProviderName', () => {
 
   it('returns false for an empty/whitespace-only name', () => {
     expect(hasDuplicateProviderName(providers, '   ')).toBe(false);
+  });
+});
+
+describe('resolveProviderApi', () => {
+  it('defaults to openai-completions when api is not configured', () => {
+    expect(resolveProviderApi(baseDraft)).toBe('openai-completions');
+  });
+
+  it('returns openai-completions when explicitly configured', () => {
+    expect(resolveProviderApi({ ...baseDraft, api: 'openai-completions' })).toBe('openai-completions');
+  });
+
+  it('returns anthropic-messages when explicitly configured', () => {
+    expect(resolveProviderApi({ ...baseDraft, api: 'anthropic-messages' })).toBe('anthropic-messages');
   });
 });

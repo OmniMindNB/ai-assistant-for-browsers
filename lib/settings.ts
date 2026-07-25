@@ -13,6 +13,8 @@ export interface ProviderConfig {
   model: string;
   /** 该 Provider 下可在输入框切换的全部模型（含 model）；为空时回退到 [model] */
   models?: string[];
+  /** 协议类型；缺省按 'openai-completions' 处理（兼容未设置该字段的历史配置） */
+  api?: 'openai-completions' | 'anthropic-messages';
 }
 
 export interface Settings {
@@ -84,6 +86,11 @@ export async function listProviders(): Promise<ProviderConfig[]> {
 /** 返回 Provider 的可用模型列表（保证非空，至少含 model）。 */
 export function providerModels(provider: ProviderConfig): string[] {
   return provider.models?.length ? provider.models : [provider.model];
+}
+
+/** 解析 Provider 的协议类型；未显式配置时统一按 OpenAI 兼容处理（历史配置兼容）。 */
+export function resolveProviderApi(provider: ProviderConfig): 'openai-completions' | 'anthropic-messages' {
+  return provider.api ?? 'openai-completions';
 }
 
 export async function saveSettings(settings: Settings): Promise<void> {
