@@ -163,6 +163,34 @@ describe('browserAnthropicStream', () => {
     }
   });
 
+  it('pushes an error event when the SSE stream sends a mid-stream error event', async () => {
+    const sse = [
+      'event: content_block_start',
+      'data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}',
+      '',
+      'event: content_block_delta',
+      'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}',
+      '',
+      'event: error',
+      'data: {"type":"error","error":{"message":"overloaded_error: the server is overloaded"}}',
+      '',
+    ].join('\n');
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse(sse)));
+
+    // Cast: fixture omits fields (timestamp/usage/etc.) not read by the code under test —
+    // the real Context/Message types require them, but they're irrelevant here.
+    const context = { messages: [{ role: 'user', content: 'hi' }] } as unknown as Context;
+    const stream = browserAnthropicStream(makeModel(), context, { apiKey: 'test-key' }) as AssistantMessageEventStream;
+    const events = await collectEvents(stream);
+
+    const errorEvent = events.at(-1);
+    expect(errorEvent?.type).toBe('error');
+    if (errorEvent?.type === 'error') {
+      expect(errorEvent.error.errorMessage).toContain('overloaded_error: the server is overloaded');
+    }
+  });
+
   it('pushes an error event when the response is not ok', async () => {
     vi.stubGlobal(
       'fetch',
