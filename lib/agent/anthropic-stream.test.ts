@@ -1,0 +1,184 @@
+// lib/agent/anthropic-stream.test.ts
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { AssistantMessageEvent, AssistantMessageEventStream, Api, Context, Model } from '@earendil-works/pi-ai';
+import { browserAnthropicStream, convertMessagesForAnthropic } from './anthropic-stream';
+
+function makeModel(): Model<Api> {
+  return {
+    id: 'claude-test',
+    name: 'claude-test',
+    api: 'anthropic-messages',
+    provider: 'test-provider',
+    baseUrl: 'https://example.com/v1',
+    reasoning: false,
+    input: ['text'],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 128000,
+    maxTokens: 4096,
+  };
+}
+
+function sseResponse(body: string, status = 200): Response {
+  const bytes = new TextEncoder().encode(body);
+  let sent = false;
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (!sent) {
+        controller.enqueue(bytes);
+        sent = true;
+      } else {
+        controller.close();
+      }
+    },
+  });
+  return new Response(stream, { status });
+}
+
+async function collectEvents(stream: AsyncIterable<AssistantMessageEvent>): Promise<AssistantMessageEvent[]> {
+  const events: AssistantMessageEvent[] = [];
+  for await (const event of stream) events.push(event);
+  return events;
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe('convertMessagesForAnthropic', () => {
+  it('converts a plain user message to a text content block', () => {
+    // Cast: fixture omits fields (timestamp/usage/etc.) not read by the code under test —
+    // the real Context/Message types require them, but they're irrelevant here.
+    const context = { messages: [{ role: 'user', content: 'hi' }] } as unknown as Context;
+    expect(convertMessagesForAnthropic(context)).toEqual([
+      { role: 'user', content: [{ type: 'text', text: 'hi' }] },
+    ]);
+  });
+
+  it('merges consecutive toolResult messages into one user message with multiple tool_result blocks', () => {
+    // Cast: fixture omits fields not read by convertMessagesForAnthropic (see note above).
+    const context = {
+      messages: [
+        { role: 'assistant', content: [{ type: 'toolCall', id: 't1', name: 'foo', arguments: {} }] },
+        { role: 'toolResult', toolCallId: 't1', toolName: 'foo', content: 'result-1' },
+        { role: 'toolResult', toolCallId: 't2', toolName: 'bar', content: 'result-2' },
+      ],
+    } as unknown as Context;
+    const converted = convertMessagesForAnthropic(context);
+    expect(converted).toHaveLength(2);
+    expect(converted[1]).toEqual({
+      role: 'user',
+      content: [
+        { type: 'tool_result', tool_use_id: 't1', content: 'result-1' },
+        { type: 'tool_result', tool_use_id: 't2', content: 'result-2' },
+      ],
+    });
+  });
+
+  it('converts an assistant message with both text and a tool call', () => {
+    // Cast: fixture omits fields not read by convertMessagesForAnthropic (see note above).
+    const context = {
+      messages: [
+        {
+          role: 'assistant',
+          content: [
+            { type: 'text', text: 'thinking...' },
+            { type: 'toolCall', id: 't1', name: 'get_weather', arguments: { city: 'NY' } },
+          ],
+        },
+      ],
+    } as unknown as Context;
+    expect(convertMessagesForAnthropic(context)).toEqual([
+      {
+        role: 'assistant',
+        content: [
+          { type: 'text', text: 'thinking...' },
+          { type: 'tool_use', id: 't1', name: 'get_weather', input: { city: 'NY' } },
+        ],
+      },
+    ]);
+  });
+});
+
+describe('browserAnthropicStream', () => {
+  it('streams text and a tool call, mapping SSE events to the internal protocol', async () => {
+    const sse = [
+      'event: content_block_start',
+      'data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}',
+      '',
+      'event: content_block_delta',
+      'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}',
+      '',
+      'event: content_block_stop',
+      'data: {"type":"content_block_stop","index":0}',
+      '',
+      'event: content_block_start',
+      'data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_1","name":"get_weather"}}',
+      '',
+      'event: content_block_delta',
+      'data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\\"city\\":"}}',
+      '',
+      'event: content_block_delta',
+      'data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"\\"NY\\"}"}}',
+      '',
+      'event: content_block_stop',
+      'data: {"type":"content_block_stop","index":1}',
+      '',
+      'event: message_stop',
+      'data: {"type":"message_stop"}',
+      '',
+    ].join('\n');
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse(sse)));
+
+    // Cast: fixture omits fields not read by browserAnthropicStream (see note above).
+    const context = {
+      systemPrompt: '你是助手',
+      messages: [{ role: 'user', content: '今天天气怎么样' }],
+    } as unknown as Context;
+    // Cast: StreamFn's declared return type is `T | Promise<T>` for generality, but this
+    // implementation always returns synchronously (matches browserOpenAIStream's pattern).
+    const stream = browserAnthropicStream(makeModel(), context, { apiKey: 'test-key' }) as AssistantMessageEventStream;
+    const events = await collectEvents(stream);
+
+    expect(fetch).toHaveBeenCalledWith(
+      'https://example.com/v1/messages',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ 'x-api-key': 'test-key', 'anthropic-version': '2023-06-01' }),
+      }),
+    );
+
+    const textDelta = events.find((e) => e.type === 'text_delta');
+    expect(textDelta).toMatchObject({ delta: 'Hello' });
+
+    const toolEnd = events.find((e) => e.type === 'toolcall_end');
+    expect(toolEnd).toMatchObject({
+      toolCall: { id: 'toolu_1', name: 'get_weather', arguments: { city: 'NY' } },
+    });
+
+    const done = events.at(-1);
+    expect(done).toMatchObject({ type: 'done', reason: 'toolUse' });
+    if (done?.type === 'done') {
+      expect(done.message.content).toContainEqual({ type: 'text', text: 'Hello' });
+    }
+  });
+
+  it('pushes an error event when the response is not ok', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response('unauthorized', { status: 401, statusText: 'Unauthorized' })),
+    );
+
+    // Cast: fixture omits fields (timestamp/usage/etc.) not read by the code under test —
+    // the real Context/Message types require them, but they're irrelevant here.
+    const context = { messages: [{ role: 'user', content: 'hi' }] } as unknown as Context;
+    const stream = browserAnthropicStream(makeModel(), context, { apiKey: 'bad-key' }) as AssistantMessageEventStream;
+    const events = await collectEvents(stream);
+
+    const errorEvent = events.at(-1);
+    expect(errorEvent?.type).toBe('error');
+    if (errorEvent?.type === 'error') {
+      expect(errorEvent.error.errorMessage).toContain('401');
+    }
+  });
+});
