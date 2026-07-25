@@ -1,7 +1,8 @@
-import { Agent, type AgentMessage, type AgentOptions } from '@earendil-works/pi-agent-core';
+import { Agent, type AgentMessage, type AgentOptions, type StreamFn } from '@earendil-works/pi-agent-core';
 import type { Api, Message, Model } from '@earendil-works/pi-ai';
-import type { ProviderConfig } from '@/lib/settings';
+import { resolveProviderApi, type ProviderConfig } from '@/lib/settings';
 import { browserOpenAIStream } from './openai-stream';
+import { browserAnthropicStream } from './anthropic-stream';
 import { beforeToolCallPermissionGate } from './permissions';
 import { createConfirmGateState, type ConfirmFn } from './confirm-gate';
 import { createBrowserTools, type BrowserAgentTool } from './tools';
@@ -51,12 +52,12 @@ export function createBrowserAgent(options: BrowserAgentOptions): Agent {
   const agentOptions: AgentOptions = {
     initialState: {
       systemPrompt: options.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
-      model: createOpenAICompatibleModel(options.provider),
+      model: createModel(options.provider),
       thinkingLevel: 'off',
       tools,
       messages: options.messages ?? [],
     },
-    streamFn: browserOpenAIStream,
+    streamFn: selectStreamFn(options.provider),
     getApiKey: () => options.provider.apiKey,
     toolExecution: 'sequential',
     beforeToolCall: async (context, signal) => {
@@ -118,11 +119,11 @@ export function createBrowserAgent(options: BrowserAgentOptions): Agent {
   return agent;
 }
 
-export function createOpenAICompatibleModel(provider: ProviderConfig): Model<Api> {
+export function createModel(provider: ProviderConfig): Model<Api> {
   return {
     id: provider.model,
     name: provider.model,
-    api: 'openai-completions',
+    api: resolveProviderApi(provider),
     provider: provider.id || provider.name,
     baseUrl: provider.baseURL,
     reasoning: false,
@@ -131,6 +132,10 @@ export function createOpenAICompatibleModel(provider: ProviderConfig): Model<Api
     contextWindow: 128000,
     maxTokens: 4096,
   };
+}
+
+export function selectStreamFn(provider: ProviderConfig): StreamFn {
+  return resolveProviderApi(provider) === 'anthropic-messages' ? browserAnthropicStream : browserOpenAIStream;
 }
 
 function isLlmMessage(message: AgentMessage): message is Message {
