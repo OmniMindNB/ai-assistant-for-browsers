@@ -262,7 +262,7 @@ function Sidebar({
         open ? 'translate-x-0 md:w-72' : '-translate-x-full md:w-0',
       ].join(' ')}
     >
-      <div className="flex w-72 shrink-0 flex-col border-r border-neutral-200 dark:border-neutral-800">
+      <div className="flex h-full w-72 shrink-0 flex-col border-r border-neutral-200 dark:border-neutral-800">
         <div className="flex items-center gap-2 px-4 py-3">
           <div className="flex h-7 w-7 items-center justify-center rounded-md bg-neutral-900 text-xs font-bold text-white dark:bg-neutral-800">
             Al
