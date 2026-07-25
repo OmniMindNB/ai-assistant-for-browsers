@@ -1,7 +1,7 @@
 import { Agent, type AgentMessage, type AgentOptions } from '@earendil-works/pi-agent-core';
 import type { Api, Message, Model } from '@earendil-works/pi-ai';
 import type { ProviderConfig } from '@/lib/settings';
-import { browserOpenAIStream } from './stream';
+import { browserOpenAIStream } from './openai-stream';
 import { beforeToolCallPermissionGate } from './permissions';
 import { createConfirmGateState, type ConfirmFn } from './confirm-gate';
 import { createBrowserTools, type BrowserAgentTool } from './tools';

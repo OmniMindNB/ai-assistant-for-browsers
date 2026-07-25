@@ -1,5 +1,7 @@
-import { createAssistantMessageEventStream, type Api, type AssistantMessage, type AssistantMessageEvent, type Context, type Model, type ToolCall, type Usage } from '@earendil-works/pi-ai';
+// lib/agent/openai-stream.ts
+import { createAssistantMessageEventStream, type Api, type AssistantMessageEvent, type Context, type Model, type ToolCall, type Usage } from '@earendil-works/pi-ai';
 import type { StreamFn } from '@earendil-works/pi-agent-core';
+import { buildPartial, createAssistantMessage, finishStream, stringifyContent, type ToolCallAccumulator } from './stream-shared';
 
 interface OpenAIStreamChunk {
   choices?: Array<{
@@ -19,21 +21,6 @@ interface OpenAIStreamChunk {
   }>;
   usage?: Partial<Usage>;
 }
-
-interface ToolCallAccumulator {
-  id: string;
-  name: string;
-  argumentsText: string;
-}
-
-const ZERO_USAGE: Usage = {
-  input: 0,
-  output: 0,
-  cacheRead: 0,
-  cacheWrite: 0,
-  totalTokens: 0,
-  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-};
 
 export const browserOpenAIStream: StreamFn = (model, context, options = {}) => {
   const stream = createAssistantMessageEventStream();
@@ -169,85 +156,6 @@ function processChunk(
       partial: buildPartial(model, startedAt, text, toolCalls, 'toolUse'),
     });
   }
-}
-
-function finishStream(
-  model: Model<Api>,
-  push: (event: AssistantMessageEvent) => void,
-  timestamp: number,
-  text: string,
-  toolCalls: Map<number, ToolCallAccumulator>,
-  fallbackReason: 'stop' | 'toolUse' | 'length',
-): void {
-  const reason = toolCalls.size > 0 ? 'toolUse' : fallbackReason;
-  const message = buildPartial(model, timestamp, text, toolCalls, reason);
-  let contentIndex = text ? 1 : 0;
-  for (const toolCall of message.content) {
-    if (toolCall.type !== 'toolCall') continue;
-    push({ type: 'toolcall_end', contentIndex, toolCall, partial: message });
-    contentIndex += 1;
-  }
-  push({ type: 'done', reason, message });
-}
-
-function buildPartial(
-  model: Model<Api>,
-  timestamp: number,
-  text: string,
-  toolCalls: Map<number, ToolCallAccumulator>,
-  stopReason: AssistantMessage['stopReason'],
-): AssistantMessage {
-  const content: AssistantMessage['content'] = [];
-  if (text) content.push({ type: 'text', text });
-  for (const call of [...toolCalls.entries()].sort(([a], [b]) => a - b).map(([, value]) => value)) {
-    content.push({
-      type: 'toolCall',
-      id: call.id,
-      name: call.name,
-      arguments: parseToolArguments(call.argumentsText),
-    } satisfies ToolCall);
-  }
-  return { ...createAssistantMessage(model, timestamp, stopReason), content };
-}
-
-function createAssistantMessage(
-  model: Model<Api>,
-  timestamp: number,
-  stopReason: AssistantMessage['stopReason'],
-  errorMessage?: string,
-): AssistantMessage {
-  return {
-    role: 'assistant',
-    content: [],
-    api: model.api,
-    provider: model.provider,
-    model: model.id,
-    usage: ZERO_USAGE,
-    stopReason,
-    errorMessage,
-    timestamp,
-  };
-}
-
-function parseToolArguments(value: string): Record<string, unknown> {
-  if (!value.trim()) return {};
-  try {
-    const parsed = JSON.parse(value);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function stringifyContent(content: unknown): string {
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => (part && typeof part === 'object' && 'text' in part ? String(part.text) : ''))
-      .filter(Boolean)
-      .join('\n');
-  }
-  return '';
 }
 
 function convertMessages(context: Context): Array<Record<string, unknown>> {
