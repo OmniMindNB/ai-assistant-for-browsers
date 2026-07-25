@@ -8,7 +8,7 @@ const ANTHROPIC_VERSION = '2023-06-01';
 interface AnthropicSseEvent {
   type: string;
   index?: number;
-  content_block?: { type?: string; id?: string; name?: string };
+  content_block?: { type?: string; id?: string; name?: string; input?: unknown };
   delta?: { type?: string; text?: string; partial_json?: string };
   error?: { message?: string };
 }
@@ -33,6 +33,7 @@ async function runAnthropicStream(
   let textStarted = false;
   const toolCalls = new Map<number, ToolCallAccumulator>();
   const toolBlockIndexes = new Set<number>();
+  const toolDeltaSeen = new Set<number>();
 
   function toolContentIndex(blockIndex: number): number {
     return (text ? 1 : 0) + [...toolCalls.keys()].sort((a, b) => a - b).indexOf(blockIndex);
@@ -101,7 +102,11 @@ async function runAnthropicStream(
           toolCalls.set(event.index, {
             id: event.content_block.id ?? `tool-${event.index}`,
             name: event.content_block.name ?? '',
-            argumentsText: '',
+            // Seed with any inline `input` the server sent up front (some Anthropic-compatible
+            // vendors emit the full arguments here and no input_json_delta events at all). If
+            // deltas do arrive later, the first one resets this and rebuilds argumentsText from
+            // scratch — see the input_json_delta handler below.
+            argumentsText: event.content_block.input ? JSON.stringify(event.content_block.input) : '',
           });
           push({
             type: 'toolcall_delta',
@@ -126,7 +131,15 @@ async function runAnthropicStream(
         ) {
           const accumulator = toolCalls.get(event.index);
           const delta = event.delta.partial_json ?? '';
-          if (accumulator) accumulator.argumentsText += delta;
+          if (accumulator) {
+            // First delta for this block wins over any inline `input` seeded at
+            // content_block_start — deltas are assembled from scratch, not appended to it.
+            if (!toolDeltaSeen.has(event.index)) {
+              toolDeltaSeen.add(event.index);
+              accumulator.argumentsText = '';
+            }
+            accumulator.argumentsText += delta;
+          }
           push({
             type: 'toolcall_delta',
             contentIndex: toolContentIndex(event.index),
@@ -188,11 +201,17 @@ export function convertMessagesForAnthropic(context: Context): Array<Record<stri
     const content: Array<Record<string, unknown>> = [];
     for (const part of message.content) {
       if (part.type === 'text') {
+        // Anthropic rejects empty-string text blocks; skip them rather than pushing `{ type: 'text', text: '' }`.
+        if (!part.text.trim()) continue;
         content.push({ type: 'text', text: part.text });
       } else if (part.type === 'toolCall') {
         content.push({ type: 'tool_use', id: part.id, name: part.name, input: part.arguments });
       }
     }
+    // Anthropic rejects messages with an empty `content` array (e.g. an assistant message left
+    // over from a generation stopped before any text/tool call streamed) — drop it entirely
+    // rather than emitting `{ role: 'assistant', content: [] }`.
+    if (content.length === 0) continue;
     result.push({ role: 'assistant', content });
   }
   return result;

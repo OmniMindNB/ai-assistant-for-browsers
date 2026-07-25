@@ -97,6 +97,40 @@ describe('convertMessagesForAnthropic', () => {
       },
     ]);
   });
+
+  it('drops an assistant message whose content is only an empty text block', () => {
+    // Cast: fixture omits fields not read by convertMessagesForAnthropic (see note above).
+    const context = {
+      messages: [
+        { role: 'user', content: 'hi' },
+        { role: 'assistant', content: [{ type: 'text', text: '' }] },
+      ],
+    } as unknown as Context;
+    const converted = convertMessagesForAnthropic(context);
+    expect(converted).toHaveLength(1);
+    expect(converted).not.toContainEqual(expect.objectContaining({ role: 'assistant' }));
+  });
+
+  it('keeps the tool_use block but drops an empty text block alongside it', () => {
+    // Cast: fixture omits fields not read by convertMessagesForAnthropic (see note above).
+    const context = {
+      messages: [
+        {
+          role: 'assistant',
+          content: [
+            { type: 'text', text: '' },
+            { type: 'toolCall', id: 't1', name: 'foo', arguments: {} },
+          ],
+        },
+      ],
+    } as unknown as Context;
+    expect(convertMessagesForAnthropic(context)).toEqual([
+      {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: 't1', name: 'foo', input: {} }],
+      },
+    ]);
+  });
 });
 
 describe('browserAnthropicStream', () => {
@@ -161,6 +195,32 @@ describe('browserAnthropicStream', () => {
     if (done?.type === 'done') {
       expect(done.message.content).toContainEqual({ type: 'text', text: 'Hello' });
     }
+  });
+
+  it('falls back to the inline content_block.input when no input_json_delta events arrive', async () => {
+    const sse = [
+      'event: content_block_start',
+      'data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"get_weather","input":{"city":"NY"}}}',
+      '',
+      'event: content_block_stop',
+      'data: {"type":"content_block_stop","index":0}',
+      '',
+      'event: message_stop',
+      'data: {"type":"message_stop"}',
+      '',
+    ].join('\n');
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse(sse)));
+
+    // Cast: fixture omits fields not read by browserAnthropicStream (see note above).
+    const context = { messages: [{ role: 'user', content: '今天天气怎么样' }] } as unknown as Context;
+    const stream = browserAnthropicStream(makeModel(), context, { apiKey: 'test-key' }) as AssistantMessageEventStream;
+    const events = await collectEvents(stream);
+
+    const toolEnd = events.find((e) => e.type === 'toolcall_end');
+    expect(toolEnd).toMatchObject({
+      toolCall: { id: 'toolu_1', name: 'get_weather', arguments: { city: 'NY' } },
+    });
   });
 
   it('pushes an error event when the SSE stream sends a mid-stream error event', async () => {

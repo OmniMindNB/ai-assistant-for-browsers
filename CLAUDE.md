@@ -41,12 +41,12 @@ Every message has a `MessageType` (see the union in `lib/messaging.ts`) and a ty
 
 The agent is built on `@earendil-works/pi-agent-core`'s `Agent`, configured in `agent.ts`:
 
-- **`agent.ts`** — wires the model (OpenAI-compatible chat completions via `createOpenAICompatibleModel`), the tool list from `tools.ts`, and lifecycle hooks: `beforeToolCall` (permission gate + tool-turn/dossier throttling), `afterToolCall` (turn counting, steers the agent after the aggregate inspection tool fires), `transformContext` (message compaction: keeps last `MAX_CONTEXT_MESSAGES`, truncates long tool results to `MAX_TOOL_RESULT_CHARS`).
+- **`agent.ts`** — wires the model (`createModel` selects between OpenAI-compatible chat completions and the Anthropic Messages protocol based on `ProviderConfig.api`, via `resolveProviderApi`; `selectStreamFn` picks the matching `streamFn` the same way), the tool list from `tools.ts`, and lifecycle hooks: `beforeToolCall` (permission gate + tool-turn/dossier throttling), `afterToolCall` (turn counting, steers the agent after the aggregate inspection tool fires), `transformContext` (message compaction: keeps last `MAX_CONTEXT_MESSAGES`, truncates long tool results to `MAX_TOOL_RESULT_CHARS`).
 - **`tools.ts`** — every `browser_*` AgentTool. Read-only tools (`browser_read_page`, `browser_query_dom`, `browser_get_html`, `browser_get_scripts`, `browser_get_stylesheets`, `browser_get_computed_style`, `browser_get_page_meta`, `browser_screenshot`) vs. write/interactive tools (`browser_set_style`, `browser_modify_dom`, `browser_click`, `browser_type`, `browser_select`, `browser_scroll`, `browser_navigate`, `browser_set_storage`, `browser_inject_script`) vs. `browser_revert_changes`. `browser_inspect_page_implementation` is an aggregate tool that gathers meta/text/HTML/DOM/scripts/stylesheets/computed-styles in one call plus a keyword-matched `evidenceSummary`, meant to short-circuit the "how is this page implemented" class of question in a single round-trip.
 - **`permissions.ts`** — Deny-First policy: `decideToolPermission` classifies every tool into `always_allow` (read-only) / `auto_allow` (`browser_revert_changes`) / `confirm` (all write/interactive tools) / `deny` (unknown tools, and tool-specific hard blocks like non-http(s) navigation or scripts that fail `analyzeScript`).
 - **`confirm-gate.ts`** — implements "confirm once per turn": the first `confirm`-level tool call in a turn awaits the UI's `onConfirm`; the approve/deny decision is cached in `ConfirmGateState` and reused for the rest of that turn without re-prompting.
 - **`turn-snapshot.ts`** — per-tab snapshot (URL, `body.innerHTML`, scroll position, storage entries touched) captured lazily on the first write in a turn; `browser_revert_changes` restores it (or navigates back if the turn included a navigation, since DOM state pre-navigation isn't recoverable).
-- **`stream.ts`** — the browser-side `streamFn` (SSE parsing) fed to `Agent`.
+- **`stream-shared.ts`** — protocol-agnostic streaming helpers (accumulator/event-building) shared by both stream implementations; **`openai-stream.ts`** — the OpenAI-compatible `streamFn` (SSE parsing); **`anthropic-stream.ts`** — the Anthropic Messages `streamFn`. `agent.ts` picks between the latter two via `selectStreamFn`.
 
 When adding a new write tool: register it in `tools.ts`, add it to `CONFIRM_TOOLS` (or another bucket) in `permissions.ts`, and call `ensureTurnSnapshot`/similar in its `background.ts` handler before mutating anything — the confirm gate and undo flow both depend on this being consistent.
 
@@ -60,7 +60,7 @@ When adding a new write tool: register it in `tools.ts`, add it to `CONFIRM_TOOL
 ### Storage
 
 - `lib/db.ts` — Dexie (IndexedDB) for chat session/message persistence.
-- `lib/settings.ts` — `chrome.storage.local` for Provider configs (OpenAI-compatible baseURL/apiKey/model); never synced to the cloud, by design (privacy).
+- `lib/settings.ts` — `chrome.storage.local` for Provider configs (baseURL/apiKey/model, plus an `api` field selecting the OpenAI-compatible or Anthropic Messages protocol); never synced to the cloud, by design (privacy).
 
 ## Documentation-driven development
 
