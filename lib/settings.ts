@@ -67,6 +67,32 @@ export const PROVIDER_PRESETS: Array<Omit<ProviderConfig, 'id' | 'apiKey'>> = [
   },
 ];
 
+/**
+ * 「自定义」在「快速预设」下拉中的哨兵值。
+ * `__` 前缀确保不与任何 PROVIDER_PRESETS.name 冲突。
+ */
+export const CUSTOM_PRESET_VALUE: string = '__custom__';
+
+/**
+ * 「自定义」= 一个空预设：语义上等价于「不套用任何厂商」。
+ * 穿过 applyPresetToDraft 时，添加态（!isEditing）整体覆盖 → 清空字段；
+ * 编辑态（isEditing）「非空不覆盖」→ 已保存的值不被误清。
+ */
+export const CUSTOM_PRESET: Omit<ProviderConfig, 'id' | 'apiKey'> = {
+  name: '',
+  baseURL: '',
+  model: '',
+};
+
+/** 下拉值 → 预设；返回 undefined 表示占位符态（不做任何填充）。 */
+export function resolvePresetSelection(
+  value: string,
+): Omit<ProviderConfig, 'id' | 'apiKey'> | undefined {
+  // 哨兵优先判断：即使将来出现同名预设也不会被误解析。
+  if (value === CUSTOM_PRESET_VALUE) return CUSTOM_PRESET;
+  return PROVIDER_PRESETS.find((p) => p.name === value);
+}
+
 export const STORAGE_KEY = 'aluminum:settings';
 
 const DEFAULT_SETTINGS: Settings = {

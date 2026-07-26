@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyPresetToDraft,
+  CUSTOM_PRESET,
+  CUSTOM_PRESET_VALUE,
   hasDuplicateProviderName,
+  resolvePresetSelection,
   resolveProviderApi,
   trimProviderDraft,
   type ProviderConfig,
@@ -142,5 +145,60 @@ describe('resolveProviderApi', () => {
 
   it('returns anthropic-messages when explicitly configured', () => {
     expect(resolveProviderApi({ ...baseDraft, api: 'anthropic-messages' })).toBe('anthropic-messages');
+  });
+});
+
+describe('resolvePresetSelection', () => {
+  it('returns the empty custom preset for the sentinel value', () => {
+    expect(resolvePresetSelection(CUSTOM_PRESET_VALUE)).toEqual({
+      name: '',
+      baseURL: '',
+      model: '',
+    });
+  });
+
+  it('returns the matching built-in preset by name', () => {
+    const preset = resolvePresetSelection('DeepSeek');
+    expect(preset?.baseURL).toBe('https://api.deepseek.com');
+  });
+
+  it('returns undefined for the empty placeholder value', () => {
+    expect(resolvePresetSelection('')).toBeUndefined();
+  });
+
+  it('returns undefined for an unknown vendor name', () => {
+    expect(resolvePresetSelection('NoSuchVendor')).toBeUndefined();
+  });
+});
+
+describe('applyPresetToDraft with the custom (empty) preset', () => {
+  const filled: ProviderConfig = {
+    id: '',
+    name: 'DeepSeek',
+    baseURL: 'https://api.deepseek.com',
+    apiKey: 'sk-keep-me',
+    model: 'deepseek-v4-pro',
+    api: 'anthropic-messages',
+  };
+
+  it('clears name/baseURL/model when adding a new provider', () => {
+    const { draft } = applyPresetToDraft(filled, 'extra-a', CUSTOM_PRESET, false);
+    expect(draft.name).toBe('');
+    expect(draft.baseURL).toBe('');
+    expect(draft.model).toBe('');
+  });
+
+  it('leaves apiKey, api and extrasText untouched when adding a new provider', () => {
+    const result = applyPresetToDraft(filled, 'extra-a', CUSTOM_PRESET, false);
+    expect(result.draft.apiKey).toBe('sk-keep-me');
+    expect(result.draft.api).toBe('anthropic-messages');
+    expect(result.extrasText).toBe('extra-a');
+  });
+
+  it('does not clear already-saved values when editing an existing provider', () => {
+    const { draft } = applyPresetToDraft(filled, '', CUSTOM_PRESET, true);
+    expect(draft.name).toBe('DeepSeek');
+    expect(draft.baseURL).toBe('https://api.deepseek.com');
+    expect(draft.model).toBe('deepseek-v4-pro');
   });
 });
