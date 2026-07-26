@@ -23,6 +23,8 @@ import {
 } from '@/lib/db';
 import {
   conversationTitle,
+  findMessageIndex,
+  isEditableMessage,
   toMessageRecords,
   type ChatMessage,
 } from '@/lib/chat/messages';
@@ -120,6 +122,7 @@ interface ChatState {
   setSelectedModel: (model: string) => void;
   selectProviderAndModel: (providerId: string, model: string) => void;
   send: (text?: string) => Promise<void>;
+  editMessage: (id: string, newContent: string) => Promise<void>;
   summarizePage: () => Promise<void>;
   explainSelection: () => Promise<void>;
   stop: () => void;
@@ -221,6 +224,15 @@ export const useChat = create<ChatState>((set, get) => ({
     const content = (text ?? get().input).trim();
     if (!content || get().busy) return;
     await runAgent(set, get, makeMessage('user', content, 'input'), content);
+  },
+
+  editMessage: async (id, newContent) => {
+    const trimmed = newContent.trim();
+    if (!trimmed || get().busy) return;
+    const messages = get().messages;
+    const index = findMessageIndex(messages, id);
+    if (index < 0 || !isEditableMessage(messages[index])) return;
+    await runAgent(set, get, makeMessage('user', trimmed, 'input'), trimmed, undefined, index);
   },
 
   summarizePage: async () => {
@@ -373,6 +385,7 @@ async function runAgent(
   display: UIMessage,
   agentUserContent: string,
   presetTabId?: number,
+  truncateTo?: number,
 ): Promise<void> {
   const all = get().providers;
   const provider =
@@ -402,7 +415,10 @@ async function runAgent(
   }
   currentTurnTabId = tabId;
 
-  const history = get().messages;
+  // 截断必须放在 Provider 校验与 resolveActiveTabId 之后：那两处失败会 set({ error }) 直接 return，
+  // 若此时历史已被截断，用户的消息就被不可恢复地丢弃了，而这是用户完全没有预期的失败路径
+  // （ref: docs/superpowers/specs/2026-07-26-edit-history-message-design.md §4）。
+  const history = truncateTo === undefined ? get().messages : get().messages.slice(0, truncateTo);
   set({
     messages: [...history, display, makeMessage('assistant', '')],
     toolActivities: [],
