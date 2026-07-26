@@ -5,12 +5,34 @@ import { buildPartial, createAssistantMessage, finishStream, stringifyContent, t
 
 const ANTHROPIC_VERSION = '2023-06-01';
 
+// OpenAI 与 Anthropic 两个生态对 base_url 的约定相反：OpenAI 把版本段写在 base_url 里
+// （客户端只补 `/chat/completions`），Anthropic 则约定 base_url 不带版本段、由客户端补
+// `/v1/messages`。厂商文档照搬各自生态的写法，所以 Provider 设置里填的 baseURL 两种形态
+// 都会出现 —— 官方 `https://api.anthropic.com`、火山方舟
+// `https://ark.cn-beijing.volces.com/api/coding` 都不带版本段。若只补 `/messages`，请求会
+// 打到不存在的路径；方舟网关对未命中的路由返回的是 401 AuthenticationError 而非 404，
+// 排查时极易误判成 API key 的问题。这里两种形态都兼容。
+export function anthropicMessagesUrl(baseUrl: string): string {
+  const base = baseUrl.replace(/\/+$/, '');
+  return /\/v\d+$/.test(base) ? `${base}/messages` : `${base}/v1/messages`;
+}
+
 interface AnthropicSseEvent {
   type: string;
   index?: number;
   content_block?: { type?: string; id?: string; name?: string; input?: unknown };
-  delta?: { type?: string; text?: string; partial_json?: string };
+  delta?: { type?: string; text?: string; partial_json?: string; stop_reason?: string };
   error?: { message?: string };
+}
+
+// Anthropic's own "stop_reason" on the final `message_delta` event, mapped to pi-ai's StopReason.
+// "max_tokens" in particular matters here: reasoning models spend part of `max_tokens` on a hidden
+// `thinking` block before any visible text, so a response can be truncated with nothing visible at
+// all — without reading this field that truncation is silently reported as a normal "stop".
+function mapAnthropicStopReason(stopReason: string | undefined, hasToolCalls: boolean): 'stop' | 'toolUse' | 'length' {
+  if (hasToolCalls || stopReason === 'tool_use') return 'toolUse';
+  if (stopReason === 'max_tokens') return 'length';
+  return 'stop';
 }
 
 export const browserAnthropicStream: StreamFn = (model, context, options = {}) => {
@@ -34,6 +56,7 @@ async function runAnthropicStream(
   const toolCalls = new Map<number, ToolCallAccumulator>();
   const toolBlockIndexes = new Set<number>();
   const toolDeltaSeen = new Set<number>();
+  let anthropicStopReason: string | undefined;
 
   function toolContentIndex(blockIndex: number): number {
     return (text ? 1 : 0) + [...toolCalls.keys()].sort((a, b) => a - b).indexOf(blockIndex);
@@ -42,7 +65,7 @@ async function runAnthropicStream(
   push({ type: 'start', partial });
 
   try {
-    const response = await fetch(`${model.baseUrl.replace(/\/+$/, '')}/messages`, {
+    const response = await fetch(anthropicMessagesUrl(model.baseUrl), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -149,6 +172,11 @@ async function runAnthropicStream(
           continue;
         }
 
+        if (event.type === 'message_delta' && event.delta?.stop_reason) {
+          anthropicStopReason = event.delta.stop_reason;
+          continue;
+        }
+
         if (event.type === 'error') {
           throw new Error(event.error?.message ?? 'Anthropic 流式请求返回错误');
         }
@@ -157,7 +185,7 @@ async function runAnthropicStream(
           if (textStarted) {
             push({ type: 'text_end', contentIndex: 0, content: text, partial: buildPartial(model, startedAt, text, toolCalls, 'stop') });
           }
-          finishStream(model, push, startedAt, text, toolCalls, 'stop');
+          finishStream(model, push, startedAt, text, toolCalls, mapAnthropicStopReason(anthropicStopReason, toolCalls.size > 0));
           return;
         }
       }
@@ -166,7 +194,7 @@ async function runAnthropicStream(
     if (textStarted) {
       push({ type: 'text_end', contentIndex: 0, content: text, partial: buildPartial(model, startedAt, text, toolCalls, 'stop') });
     }
-    finishStream(model, push, startedAt, text, toolCalls, toolCalls.size > 0 ? 'toolUse' : 'stop');
+    finishStream(model, push, startedAt, text, toolCalls, mapAnthropicStopReason(anthropicStopReason, toolCalls.size > 0));
   } catch (error) {
     const message = createAssistantMessage(model, startedAt, 'error', error instanceof Error ? error.message : String(error));
     push({ type: 'error', reason: options?.signal?.aborted ? 'aborted' : 'error', error: message });

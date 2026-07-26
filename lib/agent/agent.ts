@@ -130,7 +130,11 @@ export function createModel(provider: ProviderConfig): Model<Api> {
     input: ['text'],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 128000,
-    maxTokens: 4096,
+    // Reasoning models (e.g. Anthropic-compatible providers that emit a `thinking` block before
+    // any text/tool_use) spend part of this budget on hidden reasoning tokens before answering —
+    // too low a ceiling here means the whole response can be consumed by thinking with nothing
+    // left to say anything, cutting off with stop_reason "max_tokens" and empty visible content.
+    maxTokens: 16000,
   };
 }
 

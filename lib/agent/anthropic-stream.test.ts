@@ -1,7 +1,7 @@
 // lib/agent/anthropic-stream.test.ts
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AssistantMessageEvent, AssistantMessageEventStream, Api, Context, Model } from '@earendil-works/pi-ai';
-import { browserAnthropicStream, convertMessagesForAnthropic } from './anthropic-stream';
+import { anthropicMessagesUrl, browserAnthropicStream, convertMessagesForAnthropic } from './anthropic-stream';
 
 function makeModel(): Model<Api> {
   return {
@@ -42,6 +42,32 @@ async function collectEvents(stream: AsyncIterable<AssistantMessageEvent>): Prom
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe('anthropicMessagesUrl', () => {
+  // Anthropic 生态的约定与 OpenAI 相反：base_url 不带版本段，由客户端补 /v1/messages。
+  // 只补 /messages 会让官方端点和火山方舟 Anthropic 兼容端点都打不中（方舟还会把
+  // 路由未命中报成 401 AuthenticationError，看起来像 key 的问题）。
+  it('appends /v1/messages when the base URL carries no version segment', () => {
+    expect(anthropicMessagesUrl('https://api.anthropic.com')).toBe('https://api.anthropic.com/v1/messages');
+    expect(anthropicMessagesUrl('https://ark.cn-beijing.volces.com/api/coding')).toBe(
+      'https://ark.cn-beijing.volces.com/api/coding/v1/messages',
+    );
+  });
+
+  it('appends only /messages when the base URL already ends with a version segment', () => {
+    expect(anthropicMessagesUrl('https://api.anthropic.com/v1')).toBe('https://api.anthropic.com/v1/messages');
+    expect(anthropicMessagesUrl('https://ark.cn-beijing.volces.com/api/coding/v1')).toBe(
+      'https://ark.cn-beijing.volces.com/api/coding/v1/messages',
+    );
+  });
+
+  it('tolerates trailing slashes', () => {
+    expect(anthropicMessagesUrl('https://ark.cn-beijing.volces.com/api/coding/')).toBe(
+      'https://ark.cn-beijing.volces.com/api/coding/v1/messages',
+    );
+    expect(anthropicMessagesUrl('https://api.anthropic.com/v1//')).toBe('https://api.anthropic.com/v1/messages');
+  });
 });
 
 describe('convertMessagesForAnthropic', () => {
@@ -248,6 +274,49 @@ describe('browserAnthropicStream', () => {
     expect(errorEvent?.type).toBe('error');
     if (errorEvent?.type === 'error') {
       expect(errorEvent.error.errorMessage).toContain('overloaded_error: the server is overloaded');
+    }
+  });
+
+  it('reports "length" (not "stop") when max_tokens is hit inside a thinking block before any text', async () => {
+    // Reproduces a reasoning-model provider (e.g. Anthropic-compatible Kimi K2) whose entire
+    // max_tokens budget is consumed by the hidden `thinking` block before any visible text or
+    // tool_use — content_block_start "text" opens but no text_delta ever arrives.
+    const sse = [
+      'event: content_block_start',
+      'data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}',
+      '',
+      'event: content_block_delta',
+      'data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"reasoning..."}}',
+      '',
+      'event: content_block_stop',
+      'data: {"type":"content_block_stop","index":0}',
+      '',
+      'event: content_block_start',
+      'data: {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}',
+      '',
+      'event: content_block_stop',
+      'data: {"type":"content_block_stop","index":1}',
+      '',
+      'event: message_delta',
+      'data: {"type":"message_delta","delta":{"stop_reason":"max_tokens","stop_sequence":null}}',
+      '',
+      'event: message_stop',
+      'data: {"type":"message_stop"}',
+      '',
+    ].join('\n');
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse(sse)));
+
+    const context = { messages: [{ role: 'user', content: 'hi' }] } as unknown as Context;
+    const stream = browserAnthropicStream(makeModel(), context, { apiKey: 'test-key' }) as AssistantMessageEventStream;
+    const events = await collectEvents(stream);
+
+    expect(events.some((e) => e.type === 'text_delta')).toBe(false);
+
+    const done = events.at(-1);
+    expect(done).toMatchObject({ type: 'done', reason: 'length' });
+    if (done?.type === 'done') {
+      expect(done.message.content).toEqual([]);
     }
   });
 

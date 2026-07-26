@@ -22,6 +22,15 @@ interface OpenAIStreamChunk {
   usage?: Partial<Usage>;
 }
 
+// Mirrors mapAnthropicStopReason in anthropic-stream.ts: without reading `finish_reason`, a
+// response truncated by the token limit (e.g. a reasoning model whose thinking/commentary ate the
+// whole budget before any visible content) is silently reported as a normal "stop".
+function mapOpenAiFinishReason(finishReason: string | null | undefined, hasToolCalls: boolean): 'stop' | 'toolUse' | 'length' {
+  if (hasToolCalls || finishReason === 'tool_calls') return 'toolUse';
+  if (finishReason === 'length') return 'length';
+  return 'stop';
+}
+
 export const browserOpenAIStream: StreamFn = (model, context, options = {}) => {
   const stream = createAssistantMessageEventStream();
 
@@ -40,6 +49,7 @@ async function runOpenAIStream(
   const partial = createAssistantMessage(model, startedAt, 'stop');
   let text = '';
   let textStarted = false;
+  let finishReason: string | null | undefined;
   const toolCalls = new Map<number, ToolCallAccumulator>();
 
   push({ type: 'start', partial });
@@ -100,10 +110,12 @@ async function runOpenAIStream(
               partial: buildPartial(model, startedAt, text, toolCalls, 'stop'),
             });
           }
-          finishStream(model, push, startedAt, text, toolCalls, 'stop');
+          finishStream(model, push, startedAt, text, toolCalls, mapOpenAiFinishReason(finishReason, toolCalls.size > 0));
           return;
         }
-        processChunk(JSON.parse(data) as OpenAIStreamChunk, model, push, startedAt, text, toolCalls, (delta) => {
+        const chunk = JSON.parse(data) as OpenAIStreamChunk;
+        if (chunk.choices?.[0]?.finish_reason) finishReason = chunk.choices[0].finish_reason;
+        processChunk(chunk, model, push, startedAt, text, toolCalls, (delta) => {
           if (!textStarted) {
             textStarted = true;
             push({ type: 'text_start', contentIndex: 0, partial: buildPartial(model, startedAt, text, toolCalls, 'stop') });
@@ -117,7 +129,7 @@ async function runOpenAIStream(
     if (textStarted) {
       push({ type: 'text_end', contentIndex: 0, content: text, partial: buildPartial(model, startedAt, text, toolCalls, 'stop') });
     }
-    finishStream(model, push, startedAt, text, toolCalls, toolCalls.size > 0 ? 'toolUse' : 'stop');
+    finishStream(model, push, startedAt, text, toolCalls, mapOpenAiFinishReason(finishReason, toolCalls.size > 0));
   } catch (error) {
     const message = createAssistantMessage(model, startedAt, 'error', error instanceof Error ? error.message : String(error));
     push({ type: 'error', reason: options?.signal?.aborted ? 'aborted' : 'error', error: message });

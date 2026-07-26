@@ -482,7 +482,19 @@ async function runAgent(
 
     await agent.prompt(agentUserContent);
     if (!acc.trim()) {
-      acc = extractLastAssistantText(agent.state.messages) || '本次 Agent 运行没有生成文本结果。';
+      // pi-agent-core 不会为流式错误抛异常：agent-loop 遇到 stopReason "error"/"aborted" 时
+      // 直接 return，所以 agent.prompt() 正常 resolve。真正的错误信息只存在于最后一条
+      // assistant 消息的 errorMessage 上——不读它，任何 HTTP 400 / 中途错误都会退化成
+      // 一句无信息量的「没有生成文本结果」。
+      const last = findLastAssistant(agent.state.messages);
+      acc = extractLastAssistantText(agent.state.messages) || describeEmptyAgentRun(last);
+      if (!extractLastAssistantText(agent.state.messages)) {
+        console.error('[Aluminum] Agent 未产生文本结果', {
+          stopReason: last?.stopReason,
+          errorMessage: last?.errorMessage,
+          lastAssistantContent: last?.content,
+        });
+      }
       replaceLastAssistant(set, acc);
     }
     await persist(get().conversationId, display.content, acc);
@@ -550,6 +562,40 @@ function extractLastAssistantText(messages: unknown[]): string {
       .trim();
   }
   return '';
+}
+
+interface LastAssistantInfo {
+  stopReason?: string;
+  errorMessage?: string;
+  content?: unknown;
+}
+
+function findLastAssistant(messages: unknown[]): LastAssistantInfo | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!message || typeof message !== 'object' || (message as { role?: unknown }).role !== 'assistant') continue;
+    return message as LastAssistantInfo;
+  }
+  return undefined;
+}
+
+// 一轮 Agent 运行结束却没有任何文本时，尽可能说明原因，而不是只丢一句「没有生成文本结果」。
+function describeEmptyAgentRun(last: LastAssistantInfo | undefined): string {
+  if (last?.stopReason === 'error') {
+    return `模型调用失败：${last.errorMessage || '未知错误'}\n\n请检查设置中的 Base URL、API Key 和模型名称是否正确。`;
+  }
+  if (last?.stopReason === 'length') {
+    return '模型在生成过程中达到了 token 上限（可能是思考阶段耗尽了预算），未能给出正式回复。请重试或简化问题。';
+  }
+  if (last?.stopReason === 'aborted') return '本次生成已被中止。';
+  const onlyToolCalls =
+    Array.isArray(last?.content) &&
+    last.content.length > 0 &&
+    last.content.every((part) => (part as { type?: unknown })?.type === 'toolCall');
+  if (onlyToolCalls) {
+    return '模型只发起了工具调用就结束了本轮，没有给出文字回答。请再问一次，或换一个更具体的问题。';
+  }
+  return '本次 Agent 运行没有生成文本结果。详情见侧边栏控制台日志（右键「检查」）。';
 }
 
 function upsertToolActivity(
