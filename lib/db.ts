@@ -9,6 +9,11 @@ export interface ChatMessageRecord {
   role: 'user' | 'assistant' | 'system';
   content: string;
   createdAt: number;
+  /**
+   * 仅用户消息有意义：input = 普通输入（可编辑），action = 快捷操作（不可编辑）。
+   * 不建索引，因此无需 Dexie 版本迁移；存量记录无此字段，按 input 处理。
+   */
+  kind?: 'input' | 'action';
 }
 
 export interface ConversationRecord {
