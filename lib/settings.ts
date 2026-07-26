@@ -71,7 +71,7 @@ export const PROVIDER_PRESETS: Array<Omit<ProviderConfig, 'id' | 'apiKey'>> = [
  * 「自定义」在「快速预设」下拉中的哨兵值。
  * `__` 前缀确保不与任何 PROVIDER_PRESETS.name 冲突。
  */
-export const CUSTOM_PRESET_VALUE: string = '__custom__';
+export const CUSTOM_PRESET_VALUE = '__custom__';
 
 /**
  * 「自定义」= 一个空预设：语义上等价于「不套用任何厂商」。
@@ -88,7 +88,7 @@ export const CUSTOM_PRESET: Omit<ProviderConfig, 'id' | 'apiKey'> = {
 export function resolvePresetSelection(
   value: string,
 ): Omit<ProviderConfig, 'id' | 'apiKey'> | undefined {
-  // 哨兵优先判断：即使将来出现同名预设也不会被误解析。
+  // 哨兵优先判断：正确性不依赖 `__` 前缀命名约定是否被严格遵守。
   if (value === CUSTOM_PRESET_VALUE) return CUSTOM_PRESET;
   return PROVIDER_PRESETS.find((p) => p.name === value);
 }
@@ -105,8 +105,8 @@ export interface DraftPlaceholders {
 const CUSTOM_PLACEHOLDERS: DraftPlaceholders = {
   name: '例如 我的中转站',
   baseURL: 'https://your-host/v1',
-  model: '例如 gpt-4o',
-  extras: '例如 gpt-4o-mini, o3-mini',
+  model: '例如 模型名',
+  extras: '例如 备用模型名, 另一个模型名',
 };
 
 /** 占位符态（尚未选择任何预设）沿用既有的 DeepSeek 风格示例。 */
@@ -130,7 +130,8 @@ export function draftPlaceholders(value: string): DraftPlaceholders {
     name: `例如 ${preset.name}`,
     baseURL: preset.baseURL,
     model: preset.model,
-    extras: extras.length ? `例如 ${extras.join(', ')}` : DEFAULT_PLACEHOLDERS.extras,
+    // 无其他模型可举例时不给提示：给错厂商的示例比不给示例更糟。
+    extras: extras.length ? `例如 ${extras.join(', ')}` : '',
   };
 }
 

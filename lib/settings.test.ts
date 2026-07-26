@@ -209,13 +209,13 @@ describe('draftPlaceholders', () => {
     const p = draftPlaceholders(CUSTOM_PRESET_VALUE);
     expect(p.name).toBe('例如 我的中转站');
     expect(p.baseURL).toBe('https://your-host/v1');
-    expect(p.model).toBe('例如 gpt-4o');
-    expect(p.extras).toBe('例如 gpt-4o-mini, o3-mini');
+    expect(p.model).toBe('例如 模型名');
+    expect(p.extras).toBe('例如 备用模型名, 另一个模型名');
   });
 
   it('never mentions DeepSeek under the custom selection', () => {
     const p = draftPlaceholders(CUSTOM_PRESET_VALUE);
-    expect(JSON.stringify(p)).not.toContain('deepseek');
+    expect(JSON.stringify(p)).not.toMatch(/deepseek/i);
   });
 
   it('uses the selected preset own values as examples', () => {
