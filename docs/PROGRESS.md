@@ -98,6 +98,7 @@
 
 | 日期 | 内容 | 关联 |
 |------|------|------|
+| 2026-07-26 | 真机接入 Anthropic 兼容端点（火山方舟 Kimi K2）暴露的「空回复」问题修复：`anthropic-stream.ts`/`openai-stream.ts` 读取 `stop_reason`/`finish_reason` 并映射为真实 StopReason（此前 `max_tokens` 截断被当作正常 `stop`）；`agent.ts` 的 `maxTokens` 4096 → 16000，避免推理模型的 thinking 块吃掉全部预算；`store.ts` 在无文本结果时读取末条 assistant 的 `stopReason`/`errorMessage` 给出具体原因并打印控制台日志，取代无信息量的「没有生成文本结果」；`anthropicMessagesUrl()` 兼容带/不带版本段的 baseURL（方舟对未命中路由返回 401，极易误判为 API Key 问题） | 2026-07-25-anthropic-compatible-provider.md |
 | 2026-07-25 | 新增 Anthropic Messages 协议支持：`ProviderConfig.api` 协议字段（缺省 OpenAI 兼容）、设置页协议下拉框、`lib/agent/anthropic-stream.ts` 实现 Anthropic 消息格式转换（含 tool_result 合并）与 SSE 解析；`lib/agent/stream.ts` 拆分出协议无关的 `stream-shared.ts` 供两种协议共用。代码层已通过类型检查、96/96 单测、生产构建；真机加载扩展 + 真实 Anthropic 兼容端点的端到端手动验证待用户执行确认 | [[2026-07-25-anthropic-compatible-provider-design]], 2026-07-25-anthropic-compatible-provider.md |
 | 2026-07-24 | Spec-0002 全部验收标准通过：真机验证 `browser_inject_script` 的开关等待+自动重试/取消/孤儿轮询三条路径均正常；状态更新为已实现；同步修正 submission guide 中过时的"一次性报错"描述为等待重试流程 | Spec-0002, 2026-07-23-turn-tabid-pinning-and-userscripts-wait.md Task 9 |
 | 2026-07-21 | Chrome 应用商店合规修复：`browser_inject_script` 从 `new Function` 迁移到 `chrome.userScripts.execute`，消除 Remote Hosted Code 政策违规；新增 `userScripts` manifest 权限与 Chrome 138 版本下限 | Spec-0002 |
