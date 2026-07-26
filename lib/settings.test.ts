@@ -3,6 +3,7 @@ import {
   applyPresetToDraft,
   CUSTOM_PRESET,
   CUSTOM_PRESET_VALUE,
+  draftPlaceholders,
   hasDuplicateProviderName,
   resolvePresetSelection,
   resolveProviderApi,
@@ -200,5 +201,40 @@ describe('applyPresetToDraft with the custom (empty) preset', () => {
     expect(draft.name).toBe('DeepSeek');
     expect(draft.baseURL).toBe('https://api.deepseek.com');
     expect(draft.model).toBe('deepseek-v4-pro');
+  });
+});
+
+describe('draftPlaceholders', () => {
+  it('gives vendor-neutral examples for the custom selection', () => {
+    const p = draftPlaceholders(CUSTOM_PRESET_VALUE);
+    expect(p.name).toBe('例如 我的中转站');
+    expect(p.baseURL).toBe('https://your-host/v1');
+    expect(p.model).toBe('例如 gpt-4o');
+    expect(p.extras).toBe('例如 gpt-4o-mini, o3-mini');
+  });
+
+  it('never mentions DeepSeek under the custom selection', () => {
+    const p = draftPlaceholders(CUSTOM_PRESET_VALUE);
+    expect(JSON.stringify(p)).not.toContain('deepseek');
+  });
+
+  it('uses the selected preset own values as examples', () => {
+    const p = draftPlaceholders('OpenAI');
+    expect(p.name).toBe('例如 OpenAI');
+    expect(p.baseURL).toBe('https://api.openai.com/v1');
+    expect(p.model).toBe('gpt-5.6-sol');
+    expect(p.extras).toBe('例如 gpt-5.6-terra, gpt-5.6-luna');
+  });
+
+  it('keeps the existing DeepSeek-flavoured examples for the empty placeholder state', () => {
+    const p = draftPlaceholders('');
+    expect(p.name).toBe('例如 DeepSeek');
+    expect(p.baseURL).toBe('https://api.deepseek.com');
+    expect(p.model).toBe('deepseek-v4-pro');
+    expect(p.extras).toBe('例如 deepseek-v4-flash');
+  });
+
+  it('falls back to the default placeholders for an unknown vendor name', () => {
+    expect(draftPlaceholders('NoSuchVendor')).toEqual(draftPlaceholders(''));
   });
 });

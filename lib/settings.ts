@@ -93,6 +93,47 @@ export function resolvePresetSelection(
   return PROVIDER_PRESETS.find((p) => p.name === value);
 }
 
+/** 「添加/编辑 Provider」表单四个输入框的 placeholder 文案。 */
+export interface DraftPlaceholders {
+  name: string;
+  baseURL: string;
+  model: string;
+  extras: string;
+}
+
+/** 自定义态：示例必须与具体厂商无关，否则会误导用户以为该字段有固定取值。 */
+const CUSTOM_PLACEHOLDERS: DraftPlaceholders = {
+  name: '例如 我的中转站',
+  baseURL: 'https://your-host/v1',
+  model: '例如 gpt-4o',
+  extras: '例如 gpt-4o-mini, o3-mini',
+};
+
+/** 占位符态（尚未选择任何预设）沿用既有的 DeepSeek 风格示例。 */
+const DEFAULT_PLACEHOLDERS: DraftPlaceholders = {
+  name: '例如 DeepSeek',
+  baseURL: 'https://api.deepseek.com',
+  model: 'deepseek-v4-pro',
+  extras: '例如 deepseek-v4-flash',
+};
+
+/**
+ * 下拉值 → 各输入框 placeholder。
+ * 「其他可用模型」不被任何预设填充，故其 placeholder 需随选中预设切换，展示该厂商的其他模型示例。
+ */
+export function draftPlaceholders(value: string): DraftPlaceholders {
+  if (value === CUSTOM_PRESET_VALUE) return CUSTOM_PLACEHOLDERS;
+  const preset = PROVIDER_PRESETS.find((p) => p.name === value);
+  if (!preset) return DEFAULT_PLACEHOLDERS;
+  const extras = (preset.models ?? []).filter((m) => m !== preset.model);
+  return {
+    name: `例如 ${preset.name}`,
+    baseURL: preset.baseURL,
+    model: preset.model,
+    extras: extras.length ? `例如 ${extras.join(', ')}` : DEFAULT_PLACEHOLDERS.extras,
+  };
+}
+
 export const STORAGE_KEY = 'aluminum:settings';
 
 const DEFAULT_SETTINGS: Settings = {
