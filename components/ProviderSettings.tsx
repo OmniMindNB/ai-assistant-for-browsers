@@ -7,8 +7,11 @@ import {
   saveSettings,
   newProviderId,
   applyPresetToDraft,
+  draftPlaceholders,
   hasDuplicateProviderName,
+  resolvePresetSelection,
   trimProviderDraft,
+  CUSTOM_PRESET_VALUE,
   PROVIDER_PRESETS,
   STORAGE_KEY,
   type ProviderConfig,
@@ -27,13 +30,6 @@ const EMPTY_DRAFT: ProviderConfig = {
 /** 默认模型之外的其他可用模型（逗号分隔展示）。 */
 function extrasOf(p: ProviderConfig): string {
   return (p.models ?? []).filter((m) => m !== p.model).join(', ');
-}
-
-/** 「其他可用模型」输入框的提示文案：随当前选中的预设切换，展示该厂商的其他模型示例。 */
-function extrasPlaceholder(selectedPreset: string): string {
-  const preset = PROVIDER_PRESETS.find((p) => p.name === selectedPreset);
-  const extras = (preset?.models ?? []).filter((m) => m !== preset?.model);
-  return extras.length ? `例如 ${extras.join(', ')}` : '例如 deepseek-v4-flash';
 }
 
 /** 根据默认模型 + 其他模型文本，重建去重后的 models 列表。 */
@@ -120,7 +116,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
 
   function applyPreset(name: string) {
     setSelectedPreset(name);
-    const preset = PROVIDER_PRESETS.find((p) => p.name === name);
+    const preset = resolvePresetSelection(name);
     if (!preset) return;
     const result = applyPresetToDraft(draft, extrasText, preset, isEditing);
     setDraft(result.draft);
@@ -197,6 +193,8 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
   async function setActive(id: string) {
     await persist({ ...settings, activeProviderId: id });
   }
+
+  const placeholders = draftPlaceholders(selectedPreset);
 
   return (
     <>
@@ -289,6 +287,9 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
                 {p.name}
               </option>
             ))}
+            {/* 用 disabled option 而非 <hr>：<hr> in <select> 仅较新 Chromium 支持，项目同时构建 Firefox */}
+            <option disabled>──────────</option>
+            <option value={CUSTOM_PRESET_VALUE}>自定义（手动填写）</option>
           </select>
         </label>
 
@@ -301,14 +302,14 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
           <Field
             label="名称"
             value={draft.name}
-            placeholder="例如 DeepSeek"
+            placeholder={placeholders.name}
             required
             onChange={(v) => setDraft((d) => ({ ...d, name: v }))}
           />
           <Field
             label="Base URL"
             value={draft.baseURL}
-            placeholder="https://api.deepseek.com"
+            placeholder={placeholders.baseURL}
             required
             onChange={(v) => setDraft((d) => ({ ...d, baseURL: v }))}
           />
@@ -328,14 +329,14 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
           <Field
             label="模型（默认）"
             value={draft.model}
-            placeholder="deepseek-v4-pro"
+            placeholder={placeholders.model}
             required
             onChange={(v) => setDraft((d) => ({ ...d, model: v }))}
           />
           <Field
             label="其他可用模型（逗号分隔，可选）"
             value={extrasText}
-            placeholder={extrasPlaceholder(selectedPreset)}
+            placeholder={placeholders.extras}
             onChange={setExtrasText}
           />
           <Field
