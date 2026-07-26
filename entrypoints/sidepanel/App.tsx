@@ -101,8 +101,12 @@ export default function App() {
   }, [conversationId]);
 
   async function submitEdit(id: string, content: string) {
-    setEditingId(null);
-    await editMessage(id, content);
+    // 只有 editMessage 真正成功发起（截断+提交）才关闭编辑框；busy / id 未命中 /
+    // 不可编辑 / 空内容 / Provider 未配置 / API Key 缺失 / 标签页解析失败等前置失败
+    // 都会返回 false，此时编辑框保持打开、用户刚敲的内容原样保留，页面上方的
+    // error 提示负责说明失败原因，不在编辑框里再加一套错误 UI。
+    const ok = await editMessage(id, content);
+    if (ok) setEditingId(null);
   }
 
   useEffect(() => {
@@ -616,6 +620,11 @@ function Message({
       </div>
     );
   }
+  // 会话中段的空 assistant 占位（例如第一个 token 到达前中止了一轮，随后又发了新消息）
+  // 是 toMessageRecords 设计明确要保留的（承载轮次结构），但渲染层没有理由把它画出来：
+  // 非 busy 且无内容时整行都不渲染，避免出现「一个头像 + 一张空卡片」。
+  // busy && !content（当前这一轮还没收到首个 token）必须继续走下面的 TypingDots 分支。
+  if (!busy && !content) return null;
   return (
     <div className="flex gap-3">
       <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-neutral-900 text-[11px] font-bold text-white dark:bg-neutral-800">

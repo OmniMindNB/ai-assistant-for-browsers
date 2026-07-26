@@ -137,6 +137,10 @@ export function toMessageRecords(
 
 /** 会话标题：首条用户消息前 40 字；无用户消息时返回 '新对话' */
 export function conversationTitle(messages: ChatMessage[]): string;
+
+/** 编辑该条消息后将被一并丢弃的后续消息条数；id 未命中时返回 0。服务于编辑框里
+ * 「提交后将丢弃后续 N 条消息」的提示，让用户在提交前就知道这次编辑的代价。 */
+export function discardedCount(messages: ChatMessage[], id: string): number;
 ```
 
 `toMessageRecords` 丢弃尾部空 assistant 消息的原因：一轮出错或被中止时 UI 上会留下一个空的
@@ -219,8 +223,24 @@ await replaceConversationMessages(
   用户的心智模型里「重问一次」就是对着眼前的页面问，绑回旧 tab 反而反直觉。
 - **被丢弃轮次对页面的改动不会撤销**。撤销条（`turnHasChanges`）本就只覆盖最新一轮，
   `RESET_TURN_SNAPSHOT` 也只管当前轮，行为与现状一致。
-- **同一会话在两个侧边栏同时打开时，全量重写会互相覆盖**。这是本方案的已知代价；
-  `tab-conversation.ts` 按 tab 分配会话使该场景罕见，且现有的追加式写入在该场景下同样不正确。
+- **同一会话在两个侧边栏同时打开时，全量重写会互相覆盖，后果比旧的追加式写入更重**。
+  这不是「同样不正确」的等价风险，两者的后果差异很大：
+  - 旧的追加式写入下，两个面板各自往同一会话追加，产生的是交错/重复的行——难看，
+    但**可恢复**（消息都还在，顺序乱而已），**什么都没丢**。
+  - 现在的 `replaceConversationMessages` 下，面板 A 结束一轮会先
+    `db.messages.where('conversationId').equals(id).delete()` 整体删除该会话的消息，
+    再用 A 的**内存数组**（截止到 A 上一次读取该会话时的状态）整体写回。如果面板 B
+    在此期间往同一会话新增过任意一轮，那些行在 A 落盘的瞬间被**永久删除**，且不可恢复
+    （没有软删除、没有版本历史）。丢多少取决于 B 在 A 读取之后新增了几轮——理论上可以是
+    B 那一侧的全部新内容。
+  - 可达性确实被限制住：单个浏览器窗口不可能有两个活的侧边栏，必须打开两个窗口，
+    并且在第二个窗口里主动从历史列表打开**同一个**会话才会触发。这个前提足够窄，
+    可以带着这条已知风险发版。
+
+  接受此风险，但记一个未来的廉价护栏方向：加载会话时记下当时的 `updatedAt`，
+  `replaceConversationMessages` 写入前用同一事务读一次该会话行的当前 `updatedAt`，
+  与加载时记的值不一致就说明另一侧已经写过，此时拒绝这次写入（或至少弹出告警），
+  而不是静默覆盖。
 - **编辑期间发起其他操作**：`busy` 时不渲染编辑入口，已打开的编辑框在 `conversationId` 变化时关闭。
 - **`role: 'system'` 记录**：`openConversation` 现在会过滤掉它们（`store.ts:300`），
   全量重写会将其删除。当前代码库中没有任何位置写入 system 记录，无实际影响。

@@ -25,11 +25,14 @@ export default function MessageEditor({
   }, []);
 
   // 随内容自动调整高度：先归零再读 scrollHeight，否则删字时高度只增不减。
+  // 封顶到视口高度的 40%：粘贴超长内容时不会把 textarea 撑出视口
+  // （超出部分交给下面的 max-h-[40vh] overflow-y-auto 内部滚动）。
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${el.scrollHeight}px`;
+    const cap = window.innerHeight * 0.4;
+    el.style.height = `${Math.min(el.scrollHeight, cap)}px`;
   }, [text]);
 
   const canSubmit = text.trim().length > 0;
@@ -56,7 +59,7 @@ export default function MessageEditor({
         onChange={(e) => setText(e.target.value)}
         onKeyDown={onKeyDown}
         aria-label="编辑消息"
-        className="w-full resize-none rounded-2xl border border-neutral-300 bg-white px-4 py-2.5 text-sm text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+        className="max-h-[40vh] w-full resize-none overflow-y-auto rounded-2xl border border-neutral-300 bg-white px-4 py-2.5 text-sm text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
       />
       <div className="flex items-center justify-between gap-3">
         <span className="min-w-0 text-xs text-neutral-500 dark:text-neutral-400">
