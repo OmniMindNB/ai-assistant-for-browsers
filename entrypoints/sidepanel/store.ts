@@ -15,12 +15,17 @@ import {
   type ProviderConfig,
 } from '@/lib/settings';
 import {
-  db,
   deleteConversation,
   getConversationMessages,
   listConversations,
+  replaceConversationMessages,
   type ConversationRecord,
 } from '@/lib/db';
+import {
+  conversationTitle,
+  toMessageRecords,
+  type ChatMessage,
+} from '@/lib/chat/messages';
 import { createBrowserAgent } from '@/lib/agent/agent';
 import { summarizeToolCallForConfirmation } from '@/lib/agent/confirm-summary';
 import { getConversationIdForTab, setConversationIdForTab } from '@/lib/agent/tab-conversation';
@@ -71,10 +76,7 @@ const WRITE_TOOL_NAMES = new Set([
   'browser_set_storage',
 ]);
 
-export interface UIMessage {
-  role: 'user' | 'assistant';
-  content: string;
-}
+export type UIMessage = ChatMessage;
 
 export interface ToolActivity {
   id: string;
@@ -153,6 +155,18 @@ function genConversationId(): string {
   return `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function genMessageId(): string {
+  return `m-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function makeMessage(
+  role: 'user' | 'assistant',
+  content: string,
+  kind?: 'input' | 'action',
+): UIMessage {
+  return { id: genMessageId(), role, content, createdAt: Date.now(), kind };
+}
+
 export const useChat = create<ChatState>((set, get) => ({
   messages: [],
   toolActivities: [],
@@ -206,12 +220,12 @@ export const useChat = create<ChatState>((set, get) => ({
   send: async (text) => {
     const content = (text ?? get().input).trim();
     if (!content || get().busy) return;
-    await runAgent(set, get, { role: 'user', content }, content);
+    await runAgent(set, get, makeMessage('user', content, 'input'), content);
   },
 
   summarizePage: async () => {
     if (get().busy) return;
-    const display: UIMessage = { role: 'user', content: '📄 总结当前网页' };
+    const display = makeMessage('user', '📄 总结当前网页', 'action');
     const prompt = '请读取当前网页内容并总结，给出 3-5 个要点和一段简短摘要。';
     await runAgent(set, get, display, prompt);
   },
@@ -237,7 +251,7 @@ export const useChat = create<ChatState>((set, get) => ({
     set({ busy: false });
     const preview =
       selection.text.length > 80 ? `${selection.text.slice(0, 80)}…` : selection.text;
-    const display: UIMessage = { role: 'user', content: `💬 解释：${preview}` };
+    const display = makeMessage('user', `💬 解释：${preview}`, 'action');
     const prompt =
       `请解释以下选中的内容，必要时给出背景、定义或通俗说明：\n\n` +
       `"""${selection.text.slice(0, MAX_SELECTION_CHARS)}"""`;
@@ -298,7 +312,13 @@ export const useChat = create<ChatState>((set, get) => ({
     const records = await getConversationMessages(id);
     const messages: UIMessage[] = records
       .filter((r) => r.role !== 'system')
-      .map((r) => ({ role: r.role as 'user' | 'assistant', content: r.content }));
+      .map((r) => ({
+        id: genMessageId(),
+        role: r.role as 'user' | 'assistant',
+        content: r.content,
+        createdAt: r.createdAt,
+        kind: r.kind,
+      }));
     set({
       messages,
       toolActivities: [],
@@ -384,7 +404,7 @@ async function runAgent(
 
   const history = get().messages;
   set({
-    messages: [...history, display, { role: 'assistant', content: '' }],
+    messages: [...history, display, makeMessage('assistant', '')],
     toolActivities: [],
     userScriptsWait: null,
     input: '',
@@ -476,7 +496,6 @@ async function runAgent(
         `\n\n缺失消息类型：${missingTypes.join(', ')}` +
         '\n\n请在浏览器扩展管理页点击 Aluminum 的「重新加载」，然后刷新当前网页并重新打开侧边栏。';
       replaceLastAssistant(set, acc);
-      await persist(get().conversationId, display.content, acc);
       return;
     }
 
@@ -497,7 +516,6 @@ async function runAgent(
       }
       replaceLastAssistant(set, acc);
     }
-    await persist(get().conversationId, display.content, acc);
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') {
       // 用户主动停止，保留已生成的部分内容
@@ -508,6 +526,7 @@ async function runAgent(
     unsubscribe();
     set({ busy: false });
     if (activeAgent === agent) activeAgent = null;
+    await persistConversation(get);
   }
 }
 
@@ -517,7 +536,9 @@ function replaceLastAssistant(
 ): void {
   set((state) => {
     const messages = state.messages.slice();
-    messages[messages.length - 1] = { role: 'assistant', content };
+    const last = messages[messages.length - 1];
+    if (!last) return { error: null };
+    messages[messages.length - 1] = { ...last, content };
     return { messages, error: null };
   });
 }
@@ -642,31 +663,22 @@ async function getMissingAgentMessageTypes(): Promise<string[]> {
   }
 }
 
-async function persist(
-  conversationId: string,
-  userContent: string,
-  assistantContent: string,
-): Promise<void> {
-  if (!assistantContent) return;
-  const now = Date.now();
-  const existing = await db.conversations.get(conversationId);
-  if (!existing) {
-    await db.conversations.put({
-      id: conversationId,
-      title: userContent.slice(0, 40),
-      createdAt: now,
-      updatedAt: now,
-    });
-  } else {
-    await db.conversations.update(conversationId, { updatedAt: now });
+/**
+ * 每轮结束时用当前 UI 消息整体重写该会话。
+ * 放在 runAgent 的 finally 里，覆盖成功 / 模型出错 / 用户中止 / 后台协议过旧提前 return 四条路径。
+ */
+async function persistConversation(get: () => ChatState): Promise<void> {
+  const conversationId = get().conversationId;
+  const messages = get().messages;
+  try {
+    await replaceConversationMessages(
+      conversationId,
+      toMessageRecords(conversationId, messages),
+      conversationTitle(messages),
+    );
+  } catch (e) {
+    console.error('[Aluminum] 持久化会话失败', e);
   }
-  await db.messages.add({ conversationId, role: 'user', content: userContent, createdAt: now });
-  await db.messages.add({
-    conversationId,
-    role: 'assistant',
-    content: assistantContent,
-    createdAt: now + 1,
-  });
 }
 
 function errMsg(e: unknown): string {
