@@ -85,6 +85,28 @@ export function parseToolArguments(value: string): Record<string, unknown> {
   }
 }
 
+/**
+ * 统一描述 LLM HTTP 失败。协议下拉框与 Base URL 是两个互不校验的独立字段，任一填错都只表现为
+ * 一句 4xx：不带请求 URL 就分不清「路径拼错」还是「模型名在该端点不存在」（方舟对后者返回
+ * 404 "The model or endpoint xxx does not exist"），而网关直接拒绝时 body 往往是空的，此时
+ * 旧文案会退化成没有任何信息的 "LLM 请求失败 (404 )"。所以 URL 和模型名必须写进报错本身。
+ */
+export function describeHttpFailure(
+  status: number,
+  statusText: string,
+  detail: string,
+  url: string,
+  modelId: string,
+): string {
+  const head = `LLM 请求失败 (${[status, statusText].filter(Boolean).join(' ')})`;
+  const body = detail.trim() ? `：${detail.trim()}` : '：服务端未返回错误详情';
+  const hint =
+    status === 404
+      ? '\n404 通常意味着请求路径或模型名不存在（API Key 本身是有效的），请核对设置页的「协议」下拉框是否与 Base URL 匹配，以及该模型在此端点下是否可用。'
+      : '';
+  return `${head}${body}\n请求地址：${url}\n模型：${modelId}${hint}`;
+}
+
 export function stringifyContent(content: unknown): string {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {

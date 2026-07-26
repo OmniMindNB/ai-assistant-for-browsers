@@ -338,4 +338,22 @@ describe('browserAnthropicStream', () => {
       expect(errorEvent.error.errorMessage).toContain('401');
     }
   });
+
+  // 协议下拉框与 Base URL 是两个独立字段，填错任一个都表现为一句没有上下文的 4xx。
+  // 报错必须自带真实请求 URL 和模型名，否则「404」既可能是路径拼错、也可能是模型名在该端点
+  // 不存在，用户和我们都只能靠猜。
+  it('includes the request URL and model id in the error message', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 404 })));
+
+    const context = { messages: [{ role: 'user', content: 'hi' }] } as unknown as Context;
+    const stream = browserAnthropicStream(makeModel(), context, { apiKey: 'k' }) as AssistantMessageEventStream;
+    const events = await collectEvents(stream);
+
+    const errorEvent = events.at(-1);
+    expect(errorEvent?.type).toBe('error');
+    if (errorEvent?.type === 'error') {
+      expect(errorEvent.error.errorMessage).toContain('https://example.com/v1/messages');
+      expect(errorEvent.error.errorMessage).toContain('claude-test');
+    }
+  });
 });

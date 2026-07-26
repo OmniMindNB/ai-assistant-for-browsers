@@ -1,7 +1,16 @@
 // lib/agent/openai-stream.ts
 import { createAssistantMessageEventStream, type Api, type AssistantMessageEvent, type Context, type Model, type ToolCall, type Usage } from '@earendil-works/pi-ai';
 import type { StreamFn } from '@earendil-works/pi-agent-core';
-import { buildPartial, createAssistantMessage, finishStream, stringifyContent, type ToolCallAccumulator } from './stream-shared';
+import { buildPartial, createAssistantMessage, describeHttpFailure, finishStream, stringifyContent, type ToolCallAccumulator } from './stream-shared';
+
+// OpenAI 生态的约定与 Anthropic 相反：版本段写在 base_url 里，客户端只补 `/chat/completions`
+// （参见 anthropicMessagesUrl 的反向说明）。这里不替用户补版本段——各厂商版本段互不相同
+// （OpenAI `/v1`、智谱 `/v4`、方舟 Coding Plan `/api/coding/v3`），猜错只会把 404 换个地方报。
+// 唯一兜底的是「整条端点粘进设置页」这个高频手滑，避免拼成 `/chat/completions/chat/completions`。
+export function openAiCompletionsUrl(baseUrl: string): string {
+  const base = baseUrl.replace(/\/+$/, '');
+  return base.endsWith('/chat/completions') ? base : `${base}/chat/completions`;
+}
 
 interface OpenAIStreamChunk {
   choices?: Array<{
@@ -55,7 +64,8 @@ async function runOpenAIStream(
   push({ type: 'start', partial });
 
   try {
-    const response = await fetch(`${model.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+    const url = openAiCompletionsUrl(model.baseUrl);
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -83,7 +93,7 @@ async function runOpenAIStream(
 
     if (!response.ok || !response.body) {
       const detail = await response.text().catch(() => '');
-      throw new Error(`LLM 请求失败 (${response.status} ${response.statusText})${detail ? `：${detail}` : ''}`);
+      throw new Error(describeHttpFailure(response.status, response.statusText, detail, url, model.id));
     }
 
     const reader = response.body.getReader();

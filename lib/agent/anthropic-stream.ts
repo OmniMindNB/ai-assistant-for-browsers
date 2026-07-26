@@ -1,7 +1,7 @@
 // lib/agent/anthropic-stream.ts
 import { createAssistantMessageEventStream, type Api, type AssistantMessageEvent, type Context, type Model } from '@earendil-works/pi-ai';
 import type { StreamFn } from '@earendil-works/pi-agent-core';
-import { buildPartial, createAssistantMessage, finishStream, stringifyContent, type ToolCallAccumulator } from './stream-shared';
+import { buildPartial, createAssistantMessage, describeHttpFailure, finishStream, stringifyContent, type ToolCallAccumulator } from './stream-shared';
 
 const ANTHROPIC_VERSION = '2023-06-01';
 
@@ -65,7 +65,8 @@ async function runAnthropicStream(
   push({ type: 'start', partial });
 
   try {
-    const response = await fetch(anthropicMessagesUrl(model.baseUrl), {
+    const url = anthropicMessagesUrl(model.baseUrl);
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -91,7 +92,7 @@ async function runAnthropicStream(
 
     if (!response.ok || !response.body) {
       const detail = await response.text().catch(() => '');
-      throw new Error(`LLM 请求失败 (${response.status} ${response.statusText})${detail ? `：${detail}` : ''}`);
+      throw new Error(describeHttpFailure(response.status, response.statusText, detail, url, model.id));
     }
 
     const reader = response.body.getReader();
