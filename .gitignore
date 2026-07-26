@@ -35,3 +35,6 @@ web-ext.config.ts
 !public/icons/*.png
 !docs/store-assets/*.png
 .gstack/
+
+# Git worktrees (superpowers isolated workspaces)
+.worktrees/
