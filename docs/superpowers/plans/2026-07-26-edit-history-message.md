@@ -509,36 +509,21 @@ async function persistConversation(get: () => ChatState): Promise<void> {
   }
 ```
 
-- [ ] **Step 8: 顺手让历史消息带上真实时间戳**
+`toAgentMessages` 不改动——它现有的 `timestamp: Date.now()` 与本功能无关。
 
-`toAgentMessages`（第 525-548 行）里两处 `timestamp: Date.now()` 改为 `timestamp: message.createdAt`。用户分支：
-
-```ts
-    if (message.role === 'user') {
-      return { role: 'user', content: message.content, timestamp: message.createdAt };
-    }
-```
-
-助手分支里的 `timestamp: Date.now(),` 改为 `timestamp: message.createdAt,`。
-
-- [ ] **Step 9: 校验**
+- [ ] **Step 8: 校验**
 
 Run: `pnpm compile && pnpm test`
 Expected: 两条命令均退出码 0。若 `pnpm compile` 报 `'db' is declared but its value is never read`，说明 Step 2 漏删了 `db` 的 import。
 
-- [ ] **Step 10: 手动验证持久化行为**
+> **人工验收（实现者跳过，由人在浏览器里完成）**
+>
+> `pnpm build` 后在 `chrome://extensions` 加载 `.output/chrome-mv3`，打开侧边栏（需先配好 Provider）：
+> 1. 发一条消息等回复完成 → 历史列表中会话标题为该消息前 40 字。
+> 2. 再发一条消息，回复中途点「停止」→ 关闭侧边栏再从历史列表打开该会话 → 用户消息与已生成的部分回复都在（改造前用户消息会丢失）。
+> 3. 会话里的消息没有重复条目（验证「删除后重建」没写成「只追加」）。
 
-```bash
-pnpm build
-```
-
-在 `chrome://extensions` 加载 `.output/chrome-mv3`，打开侧边栏（需先在设置里配好 Provider）：
-
-1. 发一条消息，等回复完成 → 打开侧边栏历史列表，会话标题为该消息前 40 字。
-2. 再发一条消息，回复中途点「停止」→ 关闭侧边栏再从历史列表打开该会话 → 用户消息与已生成的部分回复都在（改造前用户消息会丢失）。
-3. 会话里的消息没有重复条目（验证「删除后重建」没有写成「只追加」）。
-
-- [ ] **Step 11: 提交**
+- [ ] **Step 9: 提交**
 
 ```bash
 git add lib/db.ts entrypoints/sidepanel/store.ts
@@ -626,26 +611,19 @@ async function runAgent(
 Run: `pnpm compile && pnpm test`
 Expected: 两条命令均退出码 0
 
-- [ ] **Step 7: 在真实扩展里验证逻辑（UI 尚未接线，走控制台）**
+> **人工验收（实现者跳过，由人在浏览器里完成）**
+>
+> `store.ts` 末尾的 `if (import.meta.env.DEV)` 只在开发构建挂 `__useChat`，所以本步须用
+> `pnpm dev`（watch 进程，实现者不要运行）。加载 `.output/chrome-mv3` 后打开侧边栏，
+> 右键 →「检查」打开 DevTools 控制台：
+> 1. 先发两轮普通对话（共 4 条消息）。
+> 2. `__useChat.getState().messages.map(m => [m.id, m.role, m.kind])`，记下第一条用户消息的 id。
+> 3. `await __useChat.getState().editMessage('<那个 id>', '换一个问题')`。
+> 4. 预期：界面上第一条之后的三条消息消失，新问题与新回复出现，`messages.length === 2`。
+> 5. 关闭侧边栏再从历史列表打开该会话，仍是编辑后的两条，被丢弃的三条没有复活。
+> 6. 对快捷操作消息（先点「总结本页」产生一条）调用 `editMessage` 应当无任何反应（静默 return）。
 
-`store.ts` 末尾的 `if (import.meta.env.DEV)` 只在开发构建挂 `__useChat`，所以本步用 `pnpm dev`
-而不是 `pnpm build`：
-
-```bash
-pnpm dev
-```
-
-在 `chrome://extensions` 加载 `.output/chrome-mv3`，打开侧边栏，右键侧边栏 →「检查」打开
-DevTools 控制台，依次执行：
-
-1. 先发两轮普通对话（共 4 条消息）。
-2. 执行 `__useChat.getState().messages.map(m => [m.id, m.role, m.kind])`，记下第一条用户消息的 id。
-3. 执行 `await __useChat.getState().editMessage('<那个 id>', '换一个问题')`。
-4. 预期：界面上第一条之后的三条消息消失，新问题与新回复出现，`messages.length === 2`。
-5. 关闭侧边栏再从历史列表打开该会话，预期看到的仍是编辑后的两条，被丢弃的三条没有复活。
-6. 对快捷操作消息（先点「总结本页」产生一条）调用 `editMessage` 应当无任何反应（静默 return）。
-
-- [ ] **Step 8: 提交**
+- [ ] **Step 7: 提交**
 
 ```bash
 git add entrypoints/sidepanel/store.ts
@@ -917,27 +895,27 @@ function Message({
 Run: `pnpm compile && pnpm test`
 Expected: 两条命令均退出码 0
 
-- [ ] **Step 9: 手动走完整套验收标准**
+- [ ] **Step 9: 构建校验**
 
-```bash
-pnpm build
-```
+Run: `pnpm build`
+Expected: 退出码 0，产物写入 `.output/chrome-mv3`（验证 WXT 能打包新组件，不只是 tsc 过）
 
-在 `chrome://extensions` 重新加载 `.output/chrome-mv3`，打开侧边栏逐条核对：
-
-1. 普通输入的用户消息 hover 时，气泡左侧出现铅笔按钮；反复按 Tab 也能聚焦到它（按钮显现）。
-2. 点「总结本页」产生的「📄 总结当前网页」消息 hover 时**没有**铅笔按钮。
-3. 助手消息 hover 时没有铅笔按钮。
-4. 生成过程中（busy）所有铅笔按钮消失。
-5. 点铅笔 → 气泡变为 textarea，内容为原文、光标在末尾；输入多行时高度自动增长，删字时高度回缩。
-6. Esc 取消回到气泡；Shift+Enter 换行不提交；Enter 提交。
-7. 清空编辑框内容后「发送」按钮变灰不可点。
-8. 发两轮对话（4 条消息），编辑第 1 条：提示显示「提交后将丢弃后续 3 条消息」；编辑第 3 条（最后一条用户消息）：显示「后续 1 条」。
-9. 提交后该条之后的消息从界面消失，agent 以新内容重跑一轮。
-10. 关闭侧边栏后从历史列表重开该会话，被丢弃的消息没有复活。
-11. 编辑首条用户消息并提交后，历史列表中该会话的标题变为新内容的前 40 字。
-12. 在「设置」里删掉全部 Provider，回到对话点编辑并提交：出现「未配置 Provider」错误提示，且**历史消息一条没少**。
-13. 编辑框打开状态下从历史列表切到另一个会话，编辑框关闭。
+> **人工验收（实现者跳过，由人在浏览器里完成）**
+>
+> 在 `chrome://extensions` 重新加载 `.output/chrome-mv3`，打开侧边栏逐条核对：
+> 1. 普通输入的用户消息 hover 时，气泡左侧出现铅笔按钮；反复按 Tab 也能聚焦到它（按钮显现）。
+> 2. 点「总结本页」产生的「📄 总结当前网页」消息 hover 时**没有**铅笔按钮。
+> 3. 助手消息 hover 时没有铅笔按钮。
+> 4. 生成过程中（busy）所有铅笔按钮消失。
+> 5. 点铅笔 → 气泡变为 textarea，内容为原文、光标在末尾；输入多行时高度自动增长，删字时高度回缩。
+> 6. Esc 取消回到气泡；Shift+Enter 换行不提交；Enter 提交。
+> 7. 清空编辑框内容后「发送」按钮变灰不可点。
+> 8. 发两轮对话（4 条消息），编辑第 1 条：提示显示「提交后将丢弃后续 3 条消息」；编辑第 3 条（最后一条用户消息）：显示「后续 1 条」。
+> 9. 提交后该条之后的消息从界面消失，agent 以新内容重跑一轮。
+> 10. 关闭侧边栏后从历史列表重开该会话，被丢弃的消息没有复活。
+> 11. 编辑首条用户消息并提交后，历史列表中该会话的标题变为新内容的前 40 字。
+> 12. 在「设置」里删掉全部 Provider，回到对话点编辑并提交：出现「未配置 Provider」错误提示，且**历史消息一条没少**。
+> 13. 编辑框打开状态下从历史列表切到另一个会话，编辑框关闭。
 
 - [ ] **Step 10: 更新 `docs/PROGRESS.md`**
 

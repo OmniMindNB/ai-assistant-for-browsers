@@ -46,6 +46,8 @@
 - [x] 对话历史持久化（IndexedDB / Dexie）
 - [x] Markdown 渲染 + 代码高亮（`Markdown.tsx`，react-markdown + rehype-highlight）
 - [x] 历史会话列表 UI（查看/打开/删除，`lib/db.ts` 辅助函数）
+- [x] 编辑历史用户消息并从该处重新生成（截断后续消息 + 会话全量重写持久化，
+      见 [设计](superpowers/specs/2026-07-26-edit-history-message-design.md)）
 - [ ] 长页面 Map-Reduce / RAG（待增强）
 
 > 测试：在 `lib/dev-config.ts` 中填入 DeepSeek 等测试 Key 并将 `enabled` 改为 true，

@@ -15,12 +15,19 @@ import {
   type ProviderConfig,
 } from '@/lib/settings';
 import {
-  db,
   deleteConversation,
   getConversationMessages,
   listConversations,
+  replaceConversationMessages,
   type ConversationRecord,
 } from '@/lib/db';
+import {
+  conversationTitle,
+  findMessageIndex,
+  isEditableMessage,
+  toMessageRecords,
+  type ChatMessage,
+} from '@/lib/chat/messages';
 import { createBrowserAgent } from '@/lib/agent/agent';
 import { summarizeToolCallForConfirmation } from '@/lib/agent/confirm-summary';
 import { getConversationIdForTab, setConversationIdForTab } from '@/lib/agent/tab-conversation';
@@ -71,10 +78,7 @@ const WRITE_TOOL_NAMES = new Set([
   'browser_set_storage',
 ]);
 
-export interface UIMessage {
-  role: 'user' | 'assistant';
-  content: string;
-}
+export type UIMessage = ChatMessage;
 
 export interface ToolActivity {
   id: string;
@@ -118,6 +122,8 @@ interface ChatState {
   setSelectedModel: (model: string) => void;
   selectProviderAndModel: (providerId: string, model: string) => void;
   send: (text?: string) => Promise<void>;
+  /** 成功发起（截断+提交）返回 true；任一前置校验失败返回 false，调用方据此决定是否关闭编辑框。 */
+  editMessage: (id: string, newContent: string) => Promise<boolean>;
   summarizePage: () => Promise<void>;
   explainSelection: () => Promise<void>;
   stop: () => void;
@@ -151,6 +157,24 @@ async function resolveActiveTabId(): Promise<number> {
 
 function genConversationId(): string {
   return `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+// 单调自增序号：openConversation 会在同一毫秒内为一批消息连续调用 genMessageId，
+// 仅靠 Date.now() + 6 位随机 base36 在低概率下会撞车，重复的 React key 是真实的渲染 bug。
+// 加一个每次调用必增的序号后缀即可让同一次运行内的 id 严格唯一，代价可以忽略。
+let messageIdSeq = 0;
+
+function genMessageId(): string {
+  messageIdSeq += 1;
+  return `m-${Date.now()}-${messageIdSeq}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function makeMessage(
+  role: 'user' | 'assistant',
+  content: string,
+  kind?: 'input' | 'action',
+): UIMessage {
+  return { id: genMessageId(), role, content, createdAt: Date.now(), kind };
 }
 
 export const useChat = create<ChatState>((set, get) => ({
@@ -206,12 +230,23 @@ export const useChat = create<ChatState>((set, get) => ({
   send: async (text) => {
     const content = (text ?? get().input).trim();
     if (!content || get().busy) return;
-    await runAgent(set, get, { role: 'user', content }, content);
+    await runAgent(set, get, makeMessage('user', content, 'input'), content);
+  },
+
+  editMessage: async (id, newContent) => {
+    const trimmed = newContent.trim();
+    if (!trimmed || get().busy) return false;
+    const messages = get().messages;
+    const index = findMessageIndex(messages, id);
+    if (index < 0 || !isEditableMessage(messages[index])) return false;
+    // 传给 runAgent 的是 id 而不是这里算出的下标：runAgent 内部要等待若干 await 之后
+    // 才会真正截断，届时会用 id 重新解析下标，避免下标跨 await 失效（见 runAgent 内注释）。
+    return runAgent(set, get, makeMessage('user', trimmed, 'input'), trimmed, undefined, id);
   },
 
   summarizePage: async () => {
     if (get().busy) return;
-    const display: UIMessage = { role: 'user', content: '📄 总结当前网页' };
+    const display = makeMessage('user', '📄 总结当前网页', 'action');
     const prompt = '请读取当前网页内容并总结，给出 3-5 个要点和一段简短摘要。';
     await runAgent(set, get, display, prompt);
   },
@@ -237,7 +272,7 @@ export const useChat = create<ChatState>((set, get) => ({
     set({ busy: false });
     const preview =
       selection.text.length > 80 ? `${selection.text.slice(0, 80)}…` : selection.text;
-    const display: UIMessage = { role: 'user', content: `💬 解释：${preview}` };
+    const display = makeMessage('user', `💬 解释：${preview}`, 'action');
     const prompt =
       `请解释以下选中的内容，必要时给出背景、定义或通俗说明：\n\n` +
       `"""${selection.text.slice(0, MAX_SELECTION_CHARS)}"""`;
@@ -298,7 +333,13 @@ export const useChat = create<ChatState>((set, get) => ({
     const records = await getConversationMessages(id);
     const messages: UIMessage[] = records
       .filter((r) => r.role !== 'system')
-      .map((r) => ({ role: r.role as 'user' | 'assistant', content: r.content }));
+      .map((r) => ({
+        id: genMessageId(),
+        role: r.role as 'user' | 'assistant',
+        content: r.content,
+        createdAt: r.createdAt,
+        kind: r.kind,
+      }));
     set({
       messages,
       toolActivities: [],
@@ -353,7 +394,8 @@ async function runAgent(
   display: UIMessage,
   agentUserContent: string,
   presetTabId?: number,
-): Promise<void> {
+  truncateToId?: string,
+): Promise<boolean> {
   const all = get().providers;
   const provider =
     all.find((p) => p.id === get().selectedProviderId) ??
@@ -361,11 +403,11 @@ async function runAgent(
     null;
   if (!provider) {
     set({ error: '未配置 Provider，请在「设置」中添加 API Key。' });
-    return;
+    return false;
   }
   if (!provider.apiKey) {
     set({ error: '当前 Provider 未填写 API Key，请在「设置」中补全。' });
-    return;
+    return false;
   }
 
   // 输入框选中的模型覆盖 Provider 默认模型
@@ -378,13 +420,33 @@ async function runAgent(
     tabId = presetTabId ?? (await resolveActiveTabId());
   } catch (e) {
     set({ error: errMsg(e) });
-    return;
+    return false;
   }
   currentTurnTabId = tabId;
 
-  const history = get().messages;
+  // 截断必须放在 Provider 校验与 resolveActiveTabId 之后：那两处失败会 set({ error }) 直接 return，
+  // 若此时历史已被截断，用户的消息就被不可恢复地丢弃了，而这是用户完全没有预期的失败路径
+  // （ref: docs/superpowers/specs/2026-07-26-edit-history-message-design.md §4）。
+  //
+  // 这里用 id 重新解析下标，而不是复用 editMessage 里同步算出的下标：从那里到这里之间
+  // 经过了上面两个 await（getActiveProvider / resolveActiveTabId），若用户在这个 10-50ms
+  // 窗口内切换到了另一个会话，get().messages 已经变成了另一个会话的数组，此时若仍拿着
+  // 「对旧会话算出的下标」去 slice，会把错误的切片当成新历史提交；而 replaceConversationMessages
+  // 是先整体删除该会话的消息再整体写入，届时会把用户根本没有编辑的会话静默且不可恢复地截断。
+  // 用 id 在这个最后一次 await 之后重新查找，天然规避了这个问题：id 在另一个会话里查不到，
+  // 会直接落入下面的「未命中」分支报错退出，不会误伤。
+  const current = get().messages;
+  let history = current;
+  if (truncateToId !== undefined) {
+    const index = findMessageIndex(current, truncateToId);
+    if (index < 0) {
+      set({ error: '这条消息已不在当前对话中。' });
+      return false;
+    }
+    history = current.slice(0, index);
+  }
   set({
-    messages: [...history, display, { role: 'assistant', content: '' }],
+    messages: [...history, display, makeMessage('assistant', '')],
     toolActivities: [],
     userScriptsWait: null,
     input: '',
@@ -476,8 +538,9 @@ async function runAgent(
         `\n\n缺失消息类型：${missingTypes.join(', ')}` +
         '\n\n请在浏览器扩展管理页点击 Aluminum 的「重新加载」，然后刷新当前网页并重新打开侧边栏。';
       replaceLastAssistant(set, acc);
-      await persist(get().conversationId, display.content, acc);
-      return;
+      // 到这里历史已经截断并提交（上面的 set({ messages: ... }) 已执行），
+      // 对 editMessage 来说这是「成功发起」，只是后台协议过旧导致本轮没能真正跑起来。
+      return true;
     }
 
     await agent.prompt(agentUserContent);
@@ -497,7 +560,6 @@ async function runAgent(
       }
       replaceLastAssistant(set, acc);
     }
-    await persist(get().conversationId, display.content, acc);
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') {
       // 用户主动停止，保留已生成的部分内容
@@ -508,7 +570,11 @@ async function runAgent(
     unsubscribe();
     set({ busy: false });
     if (activeAgent === agent) activeAgent = null;
+    await persistConversation(get);
   }
+  // 走到这里说明历史已经截断并提交（正常完成 / 模型出错 / 用户中止都在 try/catch 内处理，
+  // 不会抛出到这里），对调用方而言就是「成功发起」。
+  return true;
 }
 
 function replaceLastAssistant(
@@ -517,7 +583,9 @@ function replaceLastAssistant(
 ): void {
   set((state) => {
     const messages = state.messages.slice();
-    messages[messages.length - 1] = { role: 'assistant', content };
+    const last = messages[messages.length - 1];
+    if (!last) return { error: null };
+    messages[messages.length - 1] = { ...last, content };
     return { messages, error: null };
   });
 }
@@ -642,31 +710,22 @@ async function getMissingAgentMessageTypes(): Promise<string[]> {
   }
 }
 
-async function persist(
-  conversationId: string,
-  userContent: string,
-  assistantContent: string,
-): Promise<void> {
-  if (!assistantContent) return;
-  const now = Date.now();
-  const existing = await db.conversations.get(conversationId);
-  if (!existing) {
-    await db.conversations.put({
-      id: conversationId,
-      title: userContent.slice(0, 40),
-      createdAt: now,
-      updatedAt: now,
-    });
-  } else {
-    await db.conversations.update(conversationId, { updatedAt: now });
+/**
+ * 每轮结束时用当前 UI 消息整体重写该会话。
+ * 放在 runAgent 的 finally 里，覆盖成功 / 模型出错 / 用户中止 / 后台协议过旧提前 return 四条路径。
+ */
+async function persistConversation(get: () => ChatState): Promise<void> {
+  const conversationId = get().conversationId;
+  const messages = get().messages;
+  try {
+    await replaceConversationMessages(
+      conversationId,
+      toMessageRecords(conversationId, messages),
+      conversationTitle(messages),
+    );
+  } catch (e) {
+    console.error('[Aluminum] 持久化会话失败', e);
   }
-  await db.messages.add({ conversationId, role: 'user', content: userContent, createdAt: now });
-  await db.messages.add({
-    conversationId,
-    role: 'assistant',
-    content: assistantContent,
-    createdAt: now + 1,
-  });
 }
 
 function errMsg(e: unknown): string {

@@ -9,7 +9,9 @@ import AppearanceSettings from '@/components/AppearanceSettings';
 import { useTheme, type ThemeMode } from '@/lib/theme';
 import { providerModels, type ProviderConfig } from '@/lib/settings';
 import type { ConversationRecord } from '@/lib/db';
-import type { PendingConfirmation, ToolActivity } from './store';
+import { discardedCount, isEditableMessage } from '@/lib/chat/messages';
+import MessageEditor from './MessageEditor';
+import type { PendingConfirmation, ToolActivity, UIMessage } from './store';
 import {
   IconArrowLeft,
   IconCheck,
@@ -22,6 +24,7 @@ import {
   IconMessage,
   IconMonitor,
   IconMoon,
+  IconPencil,
   IconPlus,
   IconSend,
   IconSparkles,
@@ -48,11 +51,13 @@ export default function App() {
     selectedProviderId,
     selectedModel,
     conversations,
+    conversationId,
     setInput,
     refreshProvider,
     refreshConversations,
     selectProviderAndModel,
     send,
+    editMessage,
     summarizePage,
     explainSelection,
     stop,
@@ -72,6 +77,7 @@ export default function App() {
   const [narrow, setNarrow] = useState<boolean>(() =>
     typeof window !== 'undefined' ? window.innerWidth < SIDEBAR_BREAKPOINT : false,
   );
+  const [editingId, setEditingId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const selectedProvider =
@@ -88,6 +94,20 @@ export default function App() {
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
+
+  // 切换会话 / 新建会话 / 删除当前会话时，关闭尚未提交的编辑框。
+  useEffect(() => {
+    setEditingId(null);
+  }, [conversationId]);
+
+  async function submitEdit(id: string, content: string) {
+    // 只有 editMessage 真正成功发起（截断+提交）才关闭编辑框；busy / id 未命中 /
+    // 不可编辑 / 空内容 / Provider 未配置 / API Key 缺失 / 标签页解析失败等前置失败
+    // 都会返回 false，此时编辑框保持打开、用户刚敲的内容原样保留，页面上方的
+    // error 提示负责说明失败原因，不在编辑框里再加一套错误 UI。
+    const ok = await editMessage(id, content);
+    if (ok) setEditingId(null);
+  }
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -173,8 +193,17 @@ export default function App() {
               {messages.length === 0 ? (
                 <EmptyState busy={busy} onSummarize={summarizePage} onExplain={explainSelection} />
               ) : (
-                messages.map((m, i) => (
-                  <Message key={i} role={m.role} content={m.content} busy={busy} />
+                messages.map((m) => (
+                  <Message
+                    key={m.id}
+                    message={m}
+                    busy={busy}
+                    editing={editingId === m.id}
+                    discardCount={editingId === m.id ? discardedCount(messages, m.id) : 0}
+                    onBeginEdit={() => setEditingId(m.id)}
+                    onCancelEdit={() => setEditingId(null)}
+                    onSubmitEdit={(content) => submitEdit(m.id, content)}
+                  />
                 ))
               )}
               {toolActivities.length > 0 && <ToolActivityList activities={toolActivities} />}
@@ -538,23 +567,64 @@ function EmptyState({
 }
 
 function Message({
-  role,
-  content,
+  message,
   busy,
+  editing,
+  discardCount,
+  onBeginEdit,
+  onCancelEdit,
+  onSubmitEdit,
 }: {
-  role: 'user' | 'assistant';
-  content: string;
+  message: UIMessage;
   busy: boolean;
+  editing: boolean;
+  discardCount: number;
+  onBeginEdit: () => void;
+  onCancelEdit: () => void;
+  onSubmitEdit: (content: string) => void;
 }) {
+  const { role, content } = message;
+
   if (role === 'user') {
+    if (editing) {
+      return (
+        <div className="flex justify-end">
+          <div className="w-full max-w-[85%]">
+            <MessageEditor
+              initialContent={content}
+              discardCount={discardCount}
+              onCancel={onCancelEdit}
+              onSubmit={onSubmitEdit}
+            />
+          </div>
+        </div>
+      );
+    }
     return (
-      <div className="flex justify-end">
+      <div className="group flex items-center justify-end gap-1.5">
+        {!busy && isEditableMessage(message) && (
+          <button
+            type="button"
+            onClick={onBeginEdit}
+            aria-label="编辑这条消息"
+            title="编辑这条消息"
+            // 只挂 hover 会让这个功能对键盘用户不存在，因此同时响应 focus-visible。
+            className="shrink-0 rounded-md p-1.5 text-neutral-400 opacity-0 transition-opacity hover:text-neutral-600 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 group-hover:opacity-100 dark:hover:text-neutral-200"
+          >
+            <IconPencil className="h-3.5 w-3.5" />
+          </button>
+        )}
         <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-neutral-900 px-4 py-2.5 text-sm text-white dark:bg-neutral-700">
           {content}
         </div>
       </div>
     );
   }
+  // 会话中段的空 assistant 占位（例如第一个 token 到达前中止了一轮，随后又发了新消息）
+  // 是 toMessageRecords 设计明确要保留的（承载轮次结构），但渲染层没有理由把它画出来：
+  // 非 busy 且无内容时整行都不渲染，避免出现「一个头像 + 一张空卡片」。
+  // busy && !content（当前这一轮还没收到首个 token）必须继续走下面的 TypingDots 分支。
+  if (!busy && !content) return null;
   return (
     <div className="flex gap-3">
       <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-neutral-900 text-[11px] font-bold text-white dark:bg-neutral-800">
