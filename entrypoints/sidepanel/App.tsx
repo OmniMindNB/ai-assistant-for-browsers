@@ -9,7 +9,9 @@ import AppearanceSettings from '@/components/AppearanceSettings';
 import { useTheme, type ThemeMode } from '@/lib/theme';
 import { providerModels, type ProviderConfig } from '@/lib/settings';
 import type { ConversationRecord } from '@/lib/db';
-import type { PendingConfirmation, ToolActivity } from './store';
+import { discardedCount, isEditableMessage } from '@/lib/chat/messages';
+import MessageEditor from './MessageEditor';
+import type { PendingConfirmation, ToolActivity, UIMessage } from './store';
 import {
   IconArrowLeft,
   IconCheck,
@@ -22,6 +24,7 @@ import {
   IconMessage,
   IconMonitor,
   IconMoon,
+  IconPencil,
   IconPlus,
   IconSend,
   IconSparkles,
@@ -48,11 +51,13 @@ export default function App() {
     selectedProviderId,
     selectedModel,
     conversations,
+    conversationId,
     setInput,
     refreshProvider,
     refreshConversations,
     selectProviderAndModel,
     send,
+    editMessage,
     summarizePage,
     explainSelection,
     stop,
@@ -72,6 +77,7 @@ export default function App() {
   const [narrow, setNarrow] = useState<boolean>(() =>
     typeof window !== 'undefined' ? window.innerWidth < SIDEBAR_BREAKPOINT : false,
   );
+  const [editingId, setEditingId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const selectedProvider =
@@ -88,6 +94,16 @@ export default function App() {
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
+
+  // 切换会话 / 新建会话 / 删除当前会话时，关闭尚未提交的编辑框。
+  useEffect(() => {
+    setEditingId(null);
+  }, [conversationId]);
+
+  async function submitEdit(id: string, content: string) {
+    setEditingId(null);
+    await editMessage(id, content);
+  }
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -173,8 +189,17 @@ export default function App() {
               {messages.length === 0 ? (
                 <EmptyState busy={busy} onSummarize={summarizePage} onExplain={explainSelection} />
               ) : (
-                messages.map((m, i) => (
-                  <Message key={i} role={m.role} content={m.content} busy={busy} />
+                messages.map((m) => (
+                  <Message
+                    key={m.id}
+                    message={m}
+                    busy={busy}
+                    editing={editingId === m.id}
+                    discardCount={editingId === m.id ? discardedCount(messages, m.id) : 0}
+                    onBeginEdit={() => setEditingId(m.id)}
+                    onCancelEdit={() => setEditingId(null)}
+                    onSubmitEdit={(content) => submitEdit(m.id, content)}
+                  />
                 ))
               )}
               {toolActivities.length > 0 && <ToolActivityList activities={toolActivities} />}
@@ -538,17 +563,53 @@ function EmptyState({
 }
 
 function Message({
-  role,
-  content,
+  message,
   busy,
+  editing,
+  discardCount,
+  onBeginEdit,
+  onCancelEdit,
+  onSubmitEdit,
 }: {
-  role: 'user' | 'assistant';
-  content: string;
+  message: UIMessage;
   busy: boolean;
+  editing: boolean;
+  discardCount: number;
+  onBeginEdit: () => void;
+  onCancelEdit: () => void;
+  onSubmitEdit: (content: string) => void;
 }) {
+  const { role, content } = message;
+
   if (role === 'user') {
+    if (editing) {
+      return (
+        <div className="flex justify-end">
+          <div className="w-full max-w-[85%]">
+            <MessageEditor
+              initialContent={content}
+              discardCount={discardCount}
+              onCancel={onCancelEdit}
+              onSubmit={onSubmitEdit}
+            />
+          </div>
+        </div>
+      );
+    }
     return (
-      <div className="flex justify-end">
+      <div className="group flex items-center justify-end gap-1.5">
+        {!busy && isEditableMessage(message) && (
+          <button
+            type="button"
+            onClick={onBeginEdit}
+            aria-label="编辑这条消息"
+            title="编辑这条消息"
+            // 只挂 hover 会让这个功能对键盘用户不存在，因此同时响应 focus-visible。
+            className="shrink-0 rounded-md p-1.5 text-neutral-400 opacity-0 transition-opacity hover:text-neutral-600 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 group-hover:opacity-100 dark:hover:text-neutral-200"
+          >
+            <IconPencil className="h-3.5 w-3.5" />
+          </button>
+        )}
         <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-neutral-900 px-4 py-2.5 text-sm text-white dark:bg-neutral-700">
           {content}
         </div>
