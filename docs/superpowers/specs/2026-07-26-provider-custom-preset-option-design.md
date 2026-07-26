@@ -68,7 +68,7 @@ export function draftPlaceholders(
 
 `draftPlaceholders` 三个分支：
 
-- 自定义态 → 与厂商无关的通用示例（如「例如 我的中转站」/「https://your-host/v1」/「例如 gpt-4o」）。
+- 自定义态 → 与厂商无关的通用示例（如「例如 我的中转站」/「https://your-host/v1」/「例如 模型名」）。
 - 命中某预设 → 以该预设自身的 `name`/`baseURL`/`model` 为示例，`extras` 取该预设 `models` 中除默认模型外的项。
 - 占位符态 → 维持现状的 DeepSeek 风格示例。
 

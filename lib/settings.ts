@@ -67,6 +67,74 @@ export const PROVIDER_PRESETS: Array<Omit<ProviderConfig, 'id' | 'apiKey'>> = [
   },
 ];
 
+/**
+ * 「自定义」在「快速预设」下拉中的哨兵值。
+ * `__` 前缀确保不与任何 PROVIDER_PRESETS.name 冲突。
+ */
+export const CUSTOM_PRESET_VALUE = '__custom__';
+
+/**
+ * 「自定义」= 一个空预设：语义上等价于「不套用任何厂商」。
+ * 穿过 applyPresetToDraft 时，添加态（!isEditing）整体覆盖 → 清空字段；
+ * 编辑态（isEditing）「非空不覆盖」→ 已保存的值不被误清。
+ */
+export const CUSTOM_PRESET: Omit<ProviderConfig, 'id' | 'apiKey'> = {
+  name: '',
+  baseURL: '',
+  model: '',
+};
+
+/** 下拉值 → 预设；返回 undefined 表示占位符态（不做任何填充）。 */
+export function resolvePresetSelection(
+  value: string,
+): Omit<ProviderConfig, 'id' | 'apiKey'> | undefined {
+  // 哨兵优先判断：正确性不依赖 `__` 前缀命名约定是否被严格遵守。
+  if (value === CUSTOM_PRESET_VALUE) return CUSTOM_PRESET;
+  return PROVIDER_PRESETS.find((p) => p.name === value);
+}
+
+/** 「添加/编辑 Provider」表单四个输入框的 placeholder 文案。 */
+export interface DraftPlaceholders {
+  name: string;
+  baseURL: string;
+  model: string;
+  extras: string;
+}
+
+/** 自定义态：示例必须与具体厂商无关，否则会误导用户以为该字段有固定取值。 */
+const CUSTOM_PLACEHOLDERS: DraftPlaceholders = {
+  name: '例如 我的中转站',
+  baseURL: 'https://your-host/v1',
+  model: '例如 模型名',
+  extras: '例如 备用模型名, 另一个模型名',
+};
+
+/** 占位符态（尚未选择任何预设）沿用既有的 DeepSeek 风格示例。 */
+const DEFAULT_PLACEHOLDERS: DraftPlaceholders = {
+  name: '例如 DeepSeek',
+  baseURL: 'https://api.deepseek.com',
+  model: 'deepseek-v4-pro',
+  extras: '例如 deepseek-v4-flash',
+};
+
+/**
+ * 下拉值 → 各输入框 placeholder。
+ * 「其他可用模型」不被任何预设填充，故其 placeholder 需随选中预设切换，展示该厂商的其他模型示例。
+ */
+export function draftPlaceholders(value: string): DraftPlaceholders {
+  if (value === CUSTOM_PRESET_VALUE) return CUSTOM_PLACEHOLDERS;
+  const preset = PROVIDER_PRESETS.find((p) => p.name === value);
+  if (!preset) return DEFAULT_PLACEHOLDERS;
+  const extras = (preset.models ?? []).filter((m) => m !== preset.model);
+  return {
+    name: `例如 ${preset.name}`,
+    baseURL: preset.baseURL,
+    model: preset.model,
+    // 无其他模型可举例时不给提示：给错厂商的示例比不给示例更糟。
+    extras: extras.length ? `例如 ${extras.join(', ')}` : '',
+  };
+}
+
 export const STORAGE_KEY = 'aluminum:settings';
 
 const DEFAULT_SETTINGS: Settings = {

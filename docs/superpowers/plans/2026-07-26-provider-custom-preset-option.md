@@ -38,7 +38,7 @@
 **Interfaces:**
 - Consumes: 现有的 `ProviderConfig`、`PROVIDER_PRESETS`、`applyPresetToDraft`（均不修改）。
 - Produces:
-  - `export const CUSTOM_PRESET_VALUE = '__custom__'`（类型推断为 `string`，须显式标注为 `string` 以便与任意下拉值比较）
+  - `export const CUSTOM_PRESET_VALUE = '__custom__'`
   - `export const CUSTOM_PRESET: Omit<ProviderConfig, 'id' | 'apiKey'>`
   - `export function resolvePresetSelection(value: string): Omit<ProviderConfig, 'id' | 'apiKey'> | undefined`
 
@@ -132,7 +132,7 @@ Expected: FAIL —— 报错形如 `No "CUSTOM_PRESET" export is defined on the 
  * 「自定义」在「快速预设」下拉中的哨兵值。
  * `__` 前缀确保不与任何 PROVIDER_PRESETS.name 冲突。
  */
-export const CUSTOM_PRESET_VALUE: string = '__custom__';
+export const CUSTOM_PRESET_VALUE = '__custom__';
 
 /**
  * 「自定义」= 一个空预设：语义上等价于「不套用任何厂商」。
@@ -214,8 +214,8 @@ describe('draftPlaceholders', () => {
     const p = draftPlaceholders(CUSTOM_PRESET_VALUE);
     expect(p.name).toBe('例如 我的中转站');
     expect(p.baseURL).toBe('https://your-host/v1');
-    expect(p.model).toBe('例如 gpt-4o');
-    expect(p.extras).toBe('例如 gpt-4o-mini, o3-mini');
+    expect(p.model).toBe('例如 模型名');
+    expect(p.extras).toBe('例如 备用模型名, 另一个模型名');
   });
 
   it('never mentions DeepSeek under the custom selection', () => {
@@ -267,8 +267,8 @@ export interface DraftPlaceholders {
 const CUSTOM_PLACEHOLDERS: DraftPlaceholders = {
   name: '例如 我的中转站',
   baseURL: 'https://your-host/v1',
-  model: '例如 gpt-4o',
-  extras: '例如 gpt-4o-mini, o3-mini',
+  model: '例如 模型名',
+  extras: '例如 备用模型名, 另一个模型名',
 };
 
 /** 占位符态（尚未选择任何预设）沿用既有的 DeepSeek 风格示例。 */
@@ -292,7 +292,8 @@ export function draftPlaceholders(value: string): DraftPlaceholders {
     name: `例如 ${preset.name}`,
     baseURL: preset.baseURL,
     model: preset.model,
-    extras: extras.length ? `例如 ${extras.join(', ')}` : DEFAULT_PLACEHOLDERS.extras,
+    // 无其他模型可举例时不给提示（该分支目前不可达——现有 PROVIDER_PRESETS 每项 models 都 ≥ 2 个）。
+    extras: extras.length ? `例如 ${extras.join(', ')}` : '',
   };
 }
 ```
@@ -456,7 +457,7 @@ Run: `pnpm build`，然后在 `chrome://extensions` → 开发者模式 → 加�
 1. 「快速预设」下拉末尾出现一条不可选的 `──────────` 分隔项，其下是「自定义（手动填写）」。
 2. 添加态：先选 DeepSeek（字段被填充）→ 再选「自定义」→ 名称 / Base URL / 模型（默认）三个框被清空。
 3. 承上：API Key、协议类型、「其他可用模型」的内容保持不变。
-4. 承上：三个空框的 placeholder 变为「例如 我的中转站」「https://your-host/v1」「例如 gpt-4o」，「其他可用模型」的 placeholder 为「例如 gpt-4o-mini, o3-mini」。
+4. 承上：三个空框的 placeholder 变为「例如 我的中转站」「https://your-host/v1」「例如 模型名」，「其他可用模型」的 placeholder 为「例如 备用模型名, 另一个模型名」。
 5. 编辑态：先添加并保存一条 Provider → 点「编辑」→ 选「自定义」→ 已填字段不被清空。
 6. 选中某预设后手改 Base URL，下拉仍显示该预设名（不自动跳回「自定义」）。
 
