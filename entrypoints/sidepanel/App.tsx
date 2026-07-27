@@ -6,7 +6,9 @@ import { useChat } from './store';
 const Markdown = lazy(() => import('./Markdown'));
 import ProviderSettings from '@/components/ProviderSettings';
 import AppearanceSettings from '@/components/AppearanceSettings';
+import LanguageSettings from '@/components/LanguageSettings';
 import { useTheme, type ThemeMode } from '@/lib/theme';
+import { useTranslation, type LocaleMode } from '@/lib/i18n';
 import { providerModels, type ProviderConfig } from '@/lib/settings';
 import type { ConversationRecord } from '@/lib/db';
 import { discardedCount, isEditableMessage } from '@/lib/chat/messages';
@@ -71,6 +73,7 @@ export default function App() {
   } = useChat();
 
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
+  const { t, locale: localeMode, setLocale } = useTranslation();
   const [view, setView] = useState<View>('chat');
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(() =>
     typeof window !== 'undefined' ? window.innerWidth >= SIDEBAR_BREAKPOINT : false,
@@ -214,6 +217,8 @@ export default function App() {
         <SettingsView
           themeMode={themeMode}
           onSetTheme={setThemeMode}
+          localeMode={localeMode}
+          onSetLocale={setLocale}
           onBack={() => setView('chat')}
           onChange={refreshProvider}
         />
@@ -284,7 +289,7 @@ export default function App() {
                 className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 shadow-lg transition-colors hover:bg-neutral-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
               >
                 <IconChevronDown className="h-3.5 w-3.5" />
-                回到底部
+                {t('chat.jumpToBottom')}
               </button>
             )}
           </div>
@@ -334,9 +339,10 @@ function Sidebar({
   onRemove: (id: string) => void;
   onOpenSettings: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <aside
-      aria-label="会话与设置"
+      aria-label={t('sidebar.ariaLabel')}
       className={[
         'z-40 flex h-full flex-col overflow-hidden bg-white text-neutral-700 dark:bg-neutral-900 dark:text-neutral-300',
         'transition-[width,transform] duration-200 ease-out motion-reduce:transition-none',
@@ -352,7 +358,7 @@ function Sidebar({
           <span className="text-sm font-semibold text-neutral-900 dark:text-white">Aluminum</span>
           <button
             onClick={onClose}
-            aria-label="收起侧边栏"
+            aria-label={t('common.collapseSidebar')}
             className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded-md text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white md:hidden"
           >
             <IconClose className="h-5 w-5" />
@@ -364,16 +370,16 @@ function Sidebar({
             onClick={onNewChat}
             className="flex w-full items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-800 transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100 dark:hover:bg-neutral-700"
           >
-            <IconPlus className="h-4 w-4" /> 新对话
+            <IconPlus className="h-4 w-4" /> {t('common.newChat')}
           </button>
         </div>
 
-        <nav aria-label="历史会话" className="flex-1 overflow-y-auto px-2 py-2">
+        <nav aria-label={t('sidebar.historyLabel')} className="flex-1 overflow-y-auto px-2 py-2">
           <div className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
-            历史会话
+            {t('sidebar.historyLabel')}
           </div>
           {conversations.length === 0 ? (
-            <p className="px-2 py-4 text-xs text-neutral-400 dark:text-neutral-600">暂无历史会话</p>
+            <p className="px-2 py-4 text-xs text-neutral-400 dark:text-neutral-600">{t('sidebar.noHistory')}</p>
           ) : (
             <ul className="space-y-0.5">
               {conversations.map((c) => (
@@ -391,7 +397,7 @@ function Sidebar({
                 provider?.apiKey ? 'bg-emerald-500' : 'bg-neutral-400 dark:bg-neutral-600',
               ].join(' ')}
             />
-            <span className="truncate">{provider ? provider.name : '未配置 Provider'}</span>
+            <span className="truncate">{provider ? provider.name : t('sidebar.noProvider')}</span>
           </div>
           <div className="flex items-center gap-1">
             <ThemeToggle mode={themeMode} onSet={onSetTheme} />
@@ -399,7 +405,7 @@ function Sidebar({
               onClick={onOpenSettings}
               className="flex flex-1 items-center gap-2 rounded-lg px-3 py-2 text-sm text-neutral-700 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
             >
-              <IconGear className="h-4 w-4" /> 设置
+              <IconGear className="h-4 w-4" /> {t('common.settings')}
             </button>
           </div>
         </div>
@@ -409,13 +415,15 @@ function Sidebar({
 }
 
 function ThemeToggle({ mode, onSet }: { mode: ThemeMode; onSet: (m: ThemeMode) => void }) {
+  const { t } = useTranslation();
   const next: ThemeMode = mode === 'auto' ? 'light' : mode === 'light' ? 'dark' : 'auto';
-  const label = mode === 'auto' ? '跟随浏览器' : mode === 'light' ? '浅色' : '深色';
+  const label =
+    mode === 'auto' ? t('common.followSystem') : mode === 'light' ? t('appearance.light') : t('appearance.dark');
   return (
     <button
       onClick={() => onSet(next)}
-      aria-label={`主题：${label}，点击切换`}
-      title={`主题：${label}`}
+      aria-label={t('appearance.themeAriaLabel', { label })}
+      title={t('appearance.themeTitle', { label })}
       className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
     >
       {mode === 'auto' ? (
@@ -438,12 +446,13 @@ function ConversationItem({
   onPick: (id: string) => void;
   onRemove: (id: string) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <li>
       <div className="group flex items-center gap-1 rounded-lg px-2 py-2 transition-colors hover:bg-neutral-100 dark:hover:bg-neutral-800">
         <button onClick={() => onPick(c.id)} className="min-w-0 flex-1 text-left">
           <div className="truncate text-sm text-neutral-800 dark:text-neutral-200">
-            {c.title || '未命名会话'}
+            {c.title || t('sidebar.untitledConversation')}
           </div>
           <div className="truncate text-xs text-neutral-400 dark:text-neutral-500">
             {new Date(c.updatedAt).toLocaleString()}
@@ -451,7 +460,7 @@ function ConversationItem({
         </button>
         <button
           onClick={() => onRemove(c.id)}
-          aria-label={`删除会话 ${c.title || ''}`}
+          aria-label={t('sidebar.deleteConversationAriaLabel', { title: c.title || '' })}
           className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-neutral-400 opacity-0 transition-opacity hover:bg-neutral-200 hover:text-red-600 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 group-hover:opacity-100 dark:text-neutral-500 dark:hover:bg-neutral-700 dark:hover:text-red-400"
         >
           <IconTrash className="h-4 w-4" />
@@ -476,11 +485,12 @@ function TopBar({
   onToggleSidebar: () => void;
   onNewChat: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <header className="flex items-center gap-1 border-b border-neutral-200 bg-neutral-50/80 px-2 py-2 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/80">
       <button
         onClick={onToggleSidebar}
-        aria-label={sidebarOpen ? '收起侧边栏' : '展开侧边栏'}
+        aria-label={sidebarOpen ? t('common.collapseSidebar') : t('common.expandSidebar')}
         className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-neutral-600 transition-colors hover:bg-neutral-200/70 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
       >
         <IconMenu className="h-5 w-5" />
@@ -501,8 +511,8 @@ function TopBar({
       <div className="ml-auto flex items-center gap-1">
         <button
           onClick={onNewChat}
-          aria-label="新对话"
-          title="新对话"
+          aria-label={t('common.newChat')}
+          title={t('common.newChat')}
           className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-neutral-600 transition-colors hover:bg-neutral-200/70 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
         >
           <IconPlus className="h-5 w-5" />
@@ -513,16 +523,17 @@ function TopBar({
 }
 
 function ProviderBanner({ onOpenSettings }: { onOpenSettings: () => void }) {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-wrap items-center gap-1 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
-      <span>未检测到模型 Provider，请前往</span>
+      <span>{t('banner.noProviderPrefix')}</span>
       <button
         onClick={onOpenSettings}
         className="font-medium underline underline-offset-2 hover:text-amber-900 dark:hover:text-amber-200"
       >
-        设置
+        {t('common.settings')}
       </button>
-      <span>填写 API Key。</span>
+      <span>{t('banner.noProviderSuffix')}</span>
     </div>
   );
 }
@@ -532,34 +543,40 @@ function ProviderBanner({ onOpenSettings }: { onOpenSettings: () => void }) {
 function SettingsView({
   themeMode,
   onSetTheme,
+  localeMode,
+  onSetLocale,
   onBack,
   onChange,
 }: {
   themeMode: ThemeMode;
   onSetTheme: (m: ThemeMode) => void;
+  localeMode: LocaleMode;
+  onSetLocale: (m: LocaleMode) => void;
   onBack: () => void;
   onChange: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="flex min-w-0 flex-1 flex-col">
       <header className="flex items-center gap-2 border-b border-neutral-200 bg-neutral-50/80 px-2 py-2 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/80">
         <button
           onClick={onBack}
-          aria-label="返回对话"
+          aria-label={t('settings.backAriaLabel')}
           className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-neutral-600 transition-colors hover:bg-neutral-200/70 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
         >
           <IconArrowLeft className="h-5 w-5" />
         </button>
-        <span className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">设置</span>
+        <span className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{t('common.settings')}</span>
       </header>
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-2xl p-4 text-neutral-900 dark:text-neutral-100">
           <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
-            配置 OpenAI 兼容的模型 Provider。API Key 仅保存在本机
+            {t('settings.descriptionPrefix')}
             <code className="mx-1 rounded bg-neutral-100 px-1 dark:bg-neutral-800">chrome.storage.local</code>
-            ，不会上传或同步。
+            {t('settings.descriptionSuffix')}
           </p>
           <AppearanceSettings mode={themeMode} onSet={onSetTheme} />
+          <LanguageSettings mode={localeMode} onSet={onSetLocale} />
           <ProviderSettings onChange={onChange} />
         </div>
       </div>
