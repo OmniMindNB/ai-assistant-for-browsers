@@ -8,7 +8,7 @@ import ProviderSettings from '@/components/ProviderSettings';
 import AppearanceSettings from '@/components/AppearanceSettings';
 import LanguageSettings from '@/components/LanguageSettings';
 import { useTheme, type ThemeMode } from '@/lib/theme';
-import { useTranslation, type LocaleMode } from '@/lib/i18n';
+import { useTranslation, type LocaleMode, type Translate } from '@/lib/i18n';
 import { providerModels, type ProviderConfig } from '@/lib/settings';
 import type { ConversationRecord } from '@/lib/db';
 import { discardedCount, isEditableMessage } from '@/lib/chat/messages';
@@ -595,14 +595,15 @@ function EmptyState({
   onSummarize: () => void;
   onExplain: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="m-auto flex w-full max-w-md flex-col items-center text-center">
       <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-neutral-900 text-white dark:bg-neutral-800">
         <IconSparkles className="h-6 w-6" />
       </div>
-      <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">和 Aluminum 对话</h2>
+      <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{t('chat.emptyTitle')}</h2>
       <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-        我可以总结当前网页、解释划词内容，或回答任何问题。
+        {t('chat.emptySubtitle')}
       </p>
       <div className="mt-5 grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
         <button
@@ -614,8 +615,8 @@ function EmptyState({
             <IconFileText className="h-5 w-5" />
           </span>
           <span className="min-w-0">
-            <span className="block font-medium text-neutral-900 dark:text-neutral-100">总结当前网页</span>
-            <span className="block text-xs text-neutral-500 dark:text-neutral-400">快速提炼要点</span>
+            <span className="block font-medium text-neutral-900 dark:text-neutral-100">{t('chat.summarizeCardTitle')}</span>
+            <span className="block text-xs text-neutral-500 dark:text-neutral-400">{t('chat.summarizeCardSubtitle')}</span>
           </span>
         </button>
         <button
@@ -627,8 +628,8 @@ function EmptyState({
             <IconMessage className="h-5 w-5" />
           </span>
           <span className="min-w-0">
-            <span className="block font-medium text-neutral-900 dark:text-neutral-100">解释划词内容</span>
-            <span className="block text-xs text-neutral-500 dark:text-neutral-400">选中页面文本即可</span>
+            <span className="block font-medium text-neutral-900 dark:text-neutral-100">{t('chat.explainCardTitle')}</span>
+            <span className="block text-xs text-neutral-500 dark:text-neutral-400">{t('chat.explainCardSubtitle')}</span>
           </span>
         </button>
       </div>
@@ -653,6 +654,7 @@ function Message({
   onCancelEdit: () => void;
   onSubmitEdit: (content: string) => void;
 }) {
+  const { t } = useTranslation();
   const { role, content } = message;
 
   if (role === 'user') {
@@ -676,8 +678,8 @@ function Message({
           <button
             type="button"
             onClick={onBeginEdit}
-            aria-label="编辑这条消息"
-            title="编辑这条消息"
+            aria-label={t('chat.editMessageAriaLabel')}
+            title={t('chat.editMessageAriaLabel')}
             // 只挂 hover 会让这个功能对键盘用户不存在，因此同时响应 focus-visible。
             className="shrink-0 rounded-md p-1.5 text-neutral-400 opacity-0 transition-opacity hover:text-neutral-600 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 group-hover:opacity-100 dark:hover:text-neutral-200"
           >
@@ -714,8 +716,9 @@ function Message({
 }
 
 function TypingDots() {
+  const { t } = useTranslation();
   return (
-    <span className="inline-flex items-center gap-1 py-1" aria-label="正在生成">
+    <span className="inline-flex items-center gap-1 py-1" aria-label={t('chat.generatingAriaLabel')}>
       <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-neutral-400 [animation-delay:-0.3s] motion-reduce:animate-none dark:bg-neutral-500" />
       <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-neutral-400 [animation-delay:-0.15s] motion-reduce:animate-none dark:bg-neutral-500" />
       <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-neutral-400 motion-reduce:animate-none dark:bg-neutral-500" />
@@ -724,21 +727,22 @@ function TypingDots() {
 }
 
 function ToolActivityList({ activities }: { activities: ToolActivity[] }) {
+  const { t } = useTranslation();
   const running = activities.filter((a) => a.status === 'running' || a.status === 'confirming').length;
   return (
     <details className="group rounded-xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs text-neutral-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-neutral-300">
         <IconChevronRight className="h-3.5 w-3.5 text-neutral-400 transition-transform group-open:rotate-90 dark:text-neutral-500" />
-        <span className="font-medium text-neutral-700 dark:text-neutral-200">Agent 工具调用</span>
+        <span className="font-medium text-neutral-700 dark:text-neutral-200">{t('chat.toolCallsLabel')}</span>
         <span className="text-neutral-400 dark:text-neutral-500">
           · {activities.length}
-          {running ? `（${running} 运行中）` : ''}
+          {running ? t('chat.toolCallsRunningSuffix', { count: running }) : ''}
         </span>
       </summary>
       <ul className="space-y-1 border-t border-neutral-100 px-3 py-2 dark:border-neutral-800">
         {activities.map((a) => (
           <li key={a.id} className="flex items-start gap-2 text-xs">
-            <span className={statusColor(a.status)}>{statusLabel(a.status)}</span>
+            <span className={statusColor(a.status)}>{statusLabel(a.status, t)}</span>
             <span className="min-w-0 flex-1">
               <span className="font-mono text-[11px] text-neutral-700 dark:text-neutral-300">{a.name}</span>
               {a.detail && (
@@ -761,10 +765,11 @@ function ConfirmationCard({
   onApprove: () => void;
   onDeny: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-900/60 dark:bg-amber-950/30">
       <div className="mb-2 flex items-center gap-2 font-medium text-amber-900 dark:text-amber-200">
-        🔒 修改页面前，先请你确认
+        {t('confirm.title')}
       </div>
       <p className="mb-2 text-amber-900/90 dark:text-amber-200/90">{confirmation.summary}</p>
       {confirmation.codePreview && (
@@ -777,17 +782,17 @@ function ConfirmationCard({
           onClick={onApprove}
           className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
-          批准本轮操作
+          {t('confirm.approve')}
         </button>
         <button
           onClick={onDeny}
           className="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
         >
-          拒绝
+          {t('confirm.deny')}
         </button>
       </div>
       <p className="mt-2 text-[11px] text-amber-800/70 dark:text-amber-300/60">
-        批准后，本轮内后续的写操作会自动执行，无需逐条确认；这轮做的所有改动之后都能一键撤销。
+        {t('confirm.approveHint')}
       </p>
     </div>
   );
@@ -804,30 +809,33 @@ function UserScriptsBlockedNotice({
   onOpenSettings: () => void;
   onCancelWait: () => void;
 }) {
+  const { t } = useTranslation();
   const minutes = Math.floor(elapsedSeconds / 60);
   const seconds = elapsedSeconds % 60;
-  const elapsedLabel = minutes > 0 ? `${minutes}分${seconds}秒` : `${seconds}秒`;
+  const elapsedLabel =
+    minutes > 0
+      ? t('confirm.elapsedMinutesSeconds', { minutes, seconds })
+      : t('confirm.elapsedSecondsOnly', { seconds });
   return (
     <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-900/60 dark:bg-amber-950/30">
       <div className="mb-1 font-medium text-amber-900 dark:text-amber-200">
-        ⏳ 等待开启「允许用户脚本」开关……
+        {t('confirm.userScriptsWaitingTitle')}
       </div>
       <p className="mb-2 text-amber-900/90 dark:text-amber-200/90">
-        注入脚本需要先在本扩展详情页开启「允许用户脚本」开关；已等待 {elapsedLabel}，重试
-        {attempts} 次。开启后会自动继续，无需重新提问。
+        {t('confirm.userScriptsWaitingBody', { elapsed: elapsedLabel, attempts })}
       </p>
       <div className="flex gap-2">
         <button
           onClick={onOpenSettings}
           className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
-          🔧 前往开启
+          {t('confirm.openExtensionSettings')}
         </button>
         <button
           onClick={onCancelWait}
           className="rounded-lg border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-amber-800 dark:text-amber-200 dark:hover:bg-amber-900/40"
         >
-          取消等待
+          {t('confirm.cancelWait')}
         </button>
       </div>
     </div>
@@ -835,31 +843,32 @@ function UserScriptsBlockedNotice({
 }
 
 function UndoBar({ onRevert }: { onRevert: () => void }) {
+  const { t } = useTranslation();
   return (
     <div className="flex items-center justify-between rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs dark:border-neutral-800 dark:bg-neutral-900">
-      <span className="text-emerald-600 dark:text-emerald-400">● 本轮已修改页面</span>
+      <span className="text-emerald-600 dark:text-emerald-400">{t('confirm.undoBarStatus')}</span>
       <button
         onClick={onRevert}
         className="font-medium text-red-600 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-red-400"
       >
-        撤销本轮更改
+        {t('confirm.undoBarButton')}
       </button>
     </div>
   );
 }
 
-function statusLabel(status: ToolActivity['status']): string {
+function statusLabel(status: ToolActivity['status'], t: Translate): string {
   switch (status) {
     case 'running':
-      return '运行中';
+      return t('status.running');
     case 'confirming':
-      return '待确认';
+      return t('status.confirming');
     case 'blocked':
-      return '已拦截';
+      return t('status.blocked');
     case 'error':
-      return '失败';
+      return t('status.error');
     default:
-      return '完成';
+      return t('status.done');
   }
 }
 
@@ -907,6 +916,7 @@ function Composer({
   onExplain: () => void;
   onSelectProviderModel: (providerId: string, model: string) => void;
 }) {
+  const { t } = useTranslation();
   const taRef = useRef<HTMLTextAreaElement>(null);
   const canSend = input.trim().length > 0 && !busy;
 
@@ -929,8 +939,8 @@ function Composer({
               onSelect={onSelectProviderModel}
             />
           )}
-          <Chip onClick={onSummarize} disabled={busy} icon={<IconFileText className="h-3.5 w-3.5" />} label="总结本页" />
-          <Chip onClick={onExplain} disabled={busy} icon={<IconMessage className="h-3.5 w-3.5" />} label="解释划词" />
+          <Chip onClick={onSummarize} disabled={busy} icon={<IconFileText className="h-3.5 w-3.5" />} label={t('chat.summarizeChipLabel')} />
+          <Chip onClick={onExplain} disabled={busy} icon={<IconMessage className="h-3.5 w-3.5" />} label={t('chat.explainChipLabel')} />
         </div>
         <div className="flex items-end gap-2 rounded-2xl border border-neutral-300 bg-white p-2 shadow-sm transition-colors focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/30 dark:border-neutral-700 dark:bg-neutral-900">
           <textarea
@@ -939,15 +949,15 @@ function Composer({
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKeyDown}
             rows={1}
-            aria-label="消息输入框"
-            placeholder="输入消息，Enter 发送，Shift+Enter 换行"
+            aria-label={t('chat.composerAriaLabel')}
+            placeholder={t('chat.composerPlaceholder')}
             className="max-h-40 min-h-[40px] flex-1 resize-none bg-transparent px-2 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none dark:text-neutral-100 dark:placeholder:text-neutral-600"
           />
           {busy ? (
             <button
               onClick={onStop}
-              aria-label="停止生成"
-              title="停止生成"
+              aria-label={t('chat.stopGenerating')}
+              title={t('chat.stopGenerating')}
               className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-neutral-900 text-white transition-colors hover:bg-neutral-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:bg-neutral-700 dark:hover:bg-neutral-600"
             >
               <IconStop className="h-5 w-5" />
@@ -956,8 +966,8 @@ function Composer({
             <button
               onClick={onSend}
               disabled={!canSend}
-              aria-label="发送消息"
-              title="发送消息"
+              aria-label={t('chat.sendMessage')}
+              title={t('chat.sendMessage')}
               className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white transition-colors hover:bg-indigo-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-400 dark:disabled:bg-neutral-800 dark:disabled:text-neutral-600"
             >
               <IconSend className="h-5 w-5" />
@@ -992,6 +1002,7 @@ function ModelPicker({
     return () => document.removeEventListener('mousedown', onDoc);
   }, [open]);
 
+  const { t } = useTranslation();
   const selected = providers.find((p) => p.id === selectedProviderId);
   const currentModel = selectedModel || selected?.model || '';
 
@@ -1000,13 +1011,13 @@ function ModelPicker({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        aria-label="选择 Provider 与模型"
+        aria-label={t('chat.selectProviderModelAriaLabel')}
         aria-haspopup="menu"
         aria-expanded={open}
         className="inline-flex max-w-[60vw] items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
       >
         {selected && <span className="shrink-0 text-neutral-400 dark:text-neutral-500">{selected.name}</span>}
-        <span className="truncate font-medium text-neutral-700 dark:text-neutral-200">{currentModel || '未选择'}</span>
+        <span className="truncate font-medium text-neutral-700 dark:text-neutral-200">{currentModel || t('chat.noModelSelected')}</span>
         <IconChevronDown className="h-3.5 w-3.5 shrink-0 text-neutral-400 dark:text-neutral-500" />
       </button>
       {open && (
