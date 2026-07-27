@@ -10,6 +10,7 @@ import { useTheme, type ThemeMode } from '@/lib/theme';
 import { providerModels, type ProviderConfig } from '@/lib/settings';
 import type { ConversationRecord } from '@/lib/db';
 import { discardedCount, isEditableMessage } from '@/lib/chat/messages';
+import { isNearBottom } from '@/lib/scroll';
 import MessageEditor from './MessageEditor';
 import type { PendingConfirmation, ToolActivity, UIMessage } from './store';
 import {
@@ -79,6 +80,10 @@ export default function App() {
   );
   const [editingId, setEditingId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // 是否仍处于“跟随最新内容”状态；用户向上滚动后置 false，直到手动回到底部或发起新一轮。
+  const atBottomRef = useRef(true);
+  const busyRef = useRef(busy);
+  const [showJumpToBottom, setShowJumpToBottom] = useState(false);
 
   const selectedProvider =
     providers.find((p) => p.id === selectedProviderId) ?? providers[0] ?? null;
@@ -95,9 +100,26 @@ export default function App() {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  // 切换会话 / 新建会话 / 删除当前会话时，关闭尚未提交的编辑框。
+  useEffect(() => {
+    busyRef.current = busy;
+  }, [busy]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const atBottom = isNearBottom(el);
+      atBottomRef.current = atBottom;
+      setShowJumpToBottom(!atBottom && busyRef.current);
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, []);
+
+  // 切换会话 / 新建会话 / 删除当前会话时，关闭尚未提交的编辑框，并回到“跟随最新内容”状态。
   useEffect(() => {
     setEditingId(null);
+    resetToFollowing();
   }, [conversationId]);
 
   async function submitEdit(id: string, content: string) {
@@ -105,18 +127,37 @@ export default function App() {
     // 不可编辑 / 空内容 / Provider 未配置 / API Key 缺失 / 标签页解析失败等前置失败
     // 都会返回 false，此时编辑框保持打开、用户刚敲的内容原样保留，页面上方的
     // error 提示负责说明失败原因，不在编辑框里再加一套错误 UI。
+    resetToFollowing();
     const ok = await editMessage(id, content);
     if (ok) setEditingId(null);
   }
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    if (atBottomRef.current) {
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    }
   }, [messages, toolActivities]);
+
+  function resetToFollowing() {
+    atBottomRef.current = true;
+    setShowJumpToBottom(false);
+  }
+
+  function jumpToBottom() {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+    atBottomRef.current = true;
+    setShowJumpToBottom(false);
+  }
+
+  function submitMessage() {
+    resetToFollowing();
+    send();
+  }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      send();
+      submitMessage();
     }
   }
 
@@ -188,53 +229,65 @@ export default function App() {
 
           {providers.length === 0 && <ProviderBanner onOpenSettings={openSettings} />}
 
-          <main ref={scrollRef} className="flex-1 overflow-y-auto">
-            <div className="mx-auto flex min-h-full max-w-3xl flex-col gap-6 px-4 py-6">
-              {messages.length === 0 ? (
-                <EmptyState busy={busy} onSummarize={summarizePage} onExplain={explainSelection} />
-              ) : (
-                messages.map((m) => (
-                  <Message
-                    key={m.id}
-                    message={m}
-                    busy={busy}
-                    editing={editingId === m.id}
-                    discardCount={editingId === m.id ? discardedCount(messages, m.id) : 0}
-                    onBeginEdit={() => setEditingId(m.id)}
-                    onCancelEdit={() => setEditingId(null)}
-                    onSubmitEdit={(content) => submitEdit(m.id, content)}
+          <div className="relative flex-1 overflow-hidden">
+            <main ref={scrollRef} className="h-full overflow-y-auto">
+              <div className="mx-auto flex min-h-full max-w-3xl flex-col gap-6 px-4 py-6">
+                {messages.length === 0 ? (
+                  <EmptyState busy={busy} onSummarize={summarizePage} onExplain={explainSelection} />
+                ) : (
+                  messages.map((m) => (
+                    <Message
+                      key={m.id}
+                      message={m}
+                      busy={busy}
+                      editing={editingId === m.id}
+                      discardCount={editingId === m.id ? discardedCount(messages, m.id) : 0}
+                      onBeginEdit={() => setEditingId(m.id)}
+                      onCancelEdit={() => setEditingId(null)}
+                      onSubmitEdit={(content) => submitEdit(m.id, content)}
+                    />
+                  ))
+                )}
+                {toolActivities.length > 0 && <ToolActivityList activities={toolActivities} />}
+                {userScriptsWait && (
+                  <UserScriptsBlockedNotice
+                    attempts={userScriptsWait.attempts}
+                    elapsedSeconds={userScriptsWait.elapsedSeconds}
+                    onOpenSettings={() =>
+                      browser.tabs.create({ url: `chrome://extensions/?id=${browser.runtime.id}` })
+                    }
+                    onCancelWait={stop}
                   />
-                ))
-              )}
-              {toolActivities.length > 0 && <ToolActivityList activities={toolActivities} />}
-              {userScriptsWait && (
-                <UserScriptsBlockedNotice
-                  attempts={userScriptsWait.attempts}
-                  elapsedSeconds={userScriptsWait.elapsedSeconds}
-                  onOpenSettings={() =>
-                    browser.tabs.create({ url: `chrome://extensions/?id=${browser.runtime.id}` })
-                  }
-                  onCancelWait={stop}
-                />
-              )}
-              {pendingConfirmation && (
-                <ConfirmationCard
-                  confirmation={pendingConfirmation}
-                  onApprove={() => respondToConfirmation(true)}
-                  onDeny={() => respondToConfirmation(false)}
-                />
-              )}
-              {!busy && !pendingConfirmation && turnHasChanges && <UndoBar onRevert={revertTurnChanges} />}
-              {error && (
-                <div
-                  role="alert"
-                  className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300"
-                >
-                  {error}
-                </div>
-              )}
-            </div>
-          </main>
+                )}
+                {pendingConfirmation && (
+                  <ConfirmationCard
+                    confirmation={pendingConfirmation}
+                    onApprove={() => respondToConfirmation(true)}
+                    onDeny={() => respondToConfirmation(false)}
+                  />
+                )}
+                {!busy && !pendingConfirmation && turnHasChanges && <UndoBar onRevert={revertTurnChanges} />}
+                {error && (
+                  <div
+                    role="alert"
+                    className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300"
+                  >
+                    {error}
+                  </div>
+                )}
+              </div>
+            </main>
+            {busy && showJumpToBottom && (
+              <button
+                type="button"
+                onClick={jumpToBottom}
+                className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 shadow-lg transition-colors hover:bg-neutral-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
+              >
+                <IconChevronDown className="h-3.5 w-3.5" />
+                回到底部
+              </button>
+            )}
+          </div>
 
           <Composer
             input={input}
@@ -244,7 +297,7 @@ export default function App() {
             selectedModel={selectedModel}
             setInput={setInput}
             onKeyDown={onKeyDown}
-            onSend={() => send()}
+            onSend={() => submitMessage()}
             onStop={stop}
             onSummarize={summarizePage}
             onExplain={explainSelection}
