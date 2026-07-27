@@ -20,4 +20,8 @@ export const en: Record<keyof typeof zh, string> = {
   'language.heading': 'Language',
   'language.zh': '中文',
   'language.en': 'English',
+  'settings.pageTitle': 'Aluminum Settings',
+  'settings.descriptionPrefix':
+    'Configure an OpenAI-compatible model provider. The API key is stored only on this device in',
+  'settings.optionsDescriptionSuffix': ', and is never uploaded or synced (ref: technical-plan.md §6).',
 };

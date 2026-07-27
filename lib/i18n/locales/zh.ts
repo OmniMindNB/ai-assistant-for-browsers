@@ -18,4 +18,7 @@ export const zh = {
   'language.heading': '语言',
   'language.zh': '中文',
   'language.en': 'English',
+  'settings.pageTitle': 'Aluminum 设置',
+  'settings.descriptionPrefix': '配置 OpenAI 兼容的模型 Provider。API Key 仅保存在本机',
+  'settings.optionsDescriptionSuffix': '，不会上传或同步（ref: technical-plan.md §6）。',
 } as const;
