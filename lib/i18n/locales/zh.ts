@@ -15,4 +15,7 @@ export const zh = {
   'appearance.dark': '深色',
   'appearance.themeAriaLabel': '主题：{label}，点击切换',
   'appearance.themeTitle': '主题：{label}',
+  'language.heading': '语言',
+  'language.zh': '中文',
+  'language.en': 'English',
 } as const;

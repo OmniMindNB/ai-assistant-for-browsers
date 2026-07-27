@@ -17,4 +17,7 @@ export const en: Record<keyof typeof zh, string> = {
   'appearance.dark': 'Dark',
   'appearance.themeAriaLabel': 'Theme: {label}, click to toggle',
   'appearance.themeTitle': 'Theme: {label}',
+  'language.heading': 'Language',
+  'language.zh': '中文',
+  'language.en': 'English',
 };
