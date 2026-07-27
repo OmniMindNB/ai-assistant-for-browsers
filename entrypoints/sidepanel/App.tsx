@@ -233,7 +233,7 @@ export default function App() {
             <main ref={scrollRef} className="h-full overflow-y-auto">
               <div className="mx-auto flex min-h-full max-w-3xl flex-col gap-6 px-4 py-6">
                 {messages.length === 0 ? (
-                  <EmptyState busy={busy} onSummarize={summarizePage} onExplain={explainSelection} />
+                  <EmptyState busy={busy} onSummarize={() => { resetToFollowing(); summarizePage(); }} onExplain={() => { resetToFollowing(); explainSelection(); }} />
                 ) : (
                   messages.map((m) => (
                     <Message
@@ -299,8 +299,8 @@ export default function App() {
             onKeyDown={onKeyDown}
             onSend={() => submitMessage()}
             onStop={stop}
-            onSummarize={summarizePage}
-            onExplain={explainSelection}
+            onSummarize={() => { resetToFollowing(); summarizePage(); }}
+            onExplain={() => { resetToFollowing(); explainSelection(); }}
             onSelectProviderModel={selectProviderAndModel}
           />
         </div>
