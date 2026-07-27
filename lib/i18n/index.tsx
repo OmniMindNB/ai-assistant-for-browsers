@@ -41,7 +41,7 @@ export function interpolate(template: string, vars?: Record<string, string | num
   return template.replace(/\{(\w+)\}/g, (match, name: string) => (name in vars ? String(vars[name]) : match));
 }
 
-let currentLocale: ResolvedLocale = 'zh';
+let currentLocale: ResolvedLocale = resolveLocale('auto');
 
 /** 把解析后的语言应用到 <html lang>，并更新供非 React 代码（如 store.ts）使用的模块级当前语言。 */
 export function applyLocale(mode: LocaleMode): ResolvedLocale {
