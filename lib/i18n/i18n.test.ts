@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { interpolate, localeFromLanguageTag, resolveLocale } from './index';
+import { interpolate, localeFromLanguageTag, resolveLocale, t } from './index';
 
 describe('localeFromLanguageTag', () => {
   it('maps zh-prefixed tags to zh', () => {
@@ -39,5 +39,12 @@ describe('interpolate', () => {
 
   it('leaves unknown placeholders untouched', () => {
     expect(interpolate('hello {name}', { other: 'x' })).toBe('hello {name}');
+  });
+});
+
+describe('t (module-level singleton)', () => {
+  it('starts already synced with resolveLocale(\'auto\') at module load time', () => {
+    expect(resolveLocale('auto')).toBe('en');
+    expect(t('common.cancel')).toBe('Cancel');
   });
 });
