@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { interpolate, localeFromLanguageTag, resolveLocale, t } from './index';
+import { afterEach, describe, expect, it } from 'vitest';
+import { interpolate, loadLocale, localeFromLanguageTag, resolveLocale, saveLocale, t } from './index';
 
 describe('localeFromLanguageTag', () => {
   it('maps zh-prefixed tags to zh', () => {
@@ -46,5 +46,36 @@ describe('t (module-level singleton)', () => {
   it('starts already synced with resolveLocale(\'auto\') at module load time', () => {
     expect(resolveLocale('auto')).toBe('en');
     expect(t('common.cancel')).toBe('Cancel');
+  });
+});
+
+describe('loadLocale / saveLocale', () => {
+  const originalBrowser = (globalThis as any).browser;
+
+  afterEach(() => {
+    (globalThis as any).browser = originalBrowser;
+  });
+
+  it('round-trips a saved locale through browser.storage.local', async () => {
+    const store: Record<string, unknown> = {};
+    (globalThis as any).browser = {
+      storage: {
+        local: {
+          get: async (key: string) => (key in store ? { [key]: store[key] } : {}),
+          set: async (items: Record<string, unknown>) => {
+            Object.assign(store, items);
+          },
+        },
+      },
+    };
+    await saveLocale('en');
+    expect(await loadLocale()).toBe('en');
+  });
+
+  it("falls back to 'auto' when nothing is stored", async () => {
+    (globalThis as any).browser = {
+      storage: { local: { get: async () => ({}) } },
+    };
+    expect(await loadLocale()).toBe('auto');
   });
 });

@@ -1,6 +1,6 @@
 # Aluminum
 
-[中文](README.md) | **English**
+**English** | [中文](README.md)
 
 > A trustworthy browser page agent — asks for your confirmation before every page change, with one-click undo at any time; answers are grounded in page evidence, not generic guesses. Bring your own model with your own API key; conversation history stays local and is never uploaded.
 
