@@ -18,7 +18,7 @@ export default defineConfig({
     },
   }),
   manifest: {
-    default_locale: 'zh_CN',
+    default_locale: 'en',
     name: '__MSG_extName__',
     description: '__MSG_extDescription__',
     permissions: ['sidePanel', 'storage', 'scripting', 'activeTab', 'tabs', 'userScripts'],

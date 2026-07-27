@@ -4,7 +4,7 @@
     "description": "Extension name"
   },
   "extDescription": {
-    "message": "AI sidebar assistant: summarize, understand, transform, and automate the current page",
+    "message": "AI sidebar agent to understand, transform, and automate the current page—with your approval",
     "description": "Extension description shown in the Chrome Web Store"
   }
 }
