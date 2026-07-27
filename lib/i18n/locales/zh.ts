@@ -1,0 +1,18 @@
+export const zh = {
+  'common.cancel': '取消',
+  'common.delete': '删除',
+  'common.edit': '编辑',
+  'common.hide': '隐藏',
+  'common.show': '显示',
+  'common.settings': '设置',
+  'common.newChat': '新对话',
+  'common.collapseSidebar': '收起侧边栏',
+  'common.expandSidebar': '展开侧边栏',
+  'common.send': '发送',
+  'common.followSystem': '跟随浏览器',
+  'appearance.heading': '外观',
+  'appearance.light': '浅色',
+  'appearance.dark': '深色',
+  'appearance.themeAriaLabel': '主题：{label}，点击切换',
+  'appearance.themeTitle': '主题：{label}',
+} as const;
