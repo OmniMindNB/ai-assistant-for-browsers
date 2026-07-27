@@ -99,4 +99,25 @@ export const en: Record<keyof typeof zh, string> = {
   'chat.sendMessage': 'Send message',
   'chat.selectProviderModelAriaLabel': 'Select provider and model',
   'chat.noModelSelected': 'Not selected',
+  'store.noActiveTab': 'No active tab found. Make sure a webpage is open.',
+  'store.summarizeDisplay': '📄 Summarize this page',
+  'store.getSelectionFailed': 'Failed to get selection',
+  'store.noSelection': 'No selected text detected. Please select some text on the page first.',
+  'store.explainDisplay': '💬 Explain: {preview}',
+  'store.noRevertTabInfo': 'No tab information available to undo.',
+  'store.revertFailed': 'Undo failed',
+  'store.noChangesToRevert': 'No changes to undo this turn.',
+  'store.noProviderConfigured': 'No provider configured. Add an API key in Settings.',
+  'store.missingApiKey': 'The current provider has no API key set. Add one in Settings.',
+  'store.messageNotFound': 'This message is no longer in the current conversation.',
+  'store.staleBackgroundWarning':
+    'The extension\'s background service is still an old version and the browser agent tools haven\'t loaded, so I won\'t guess an answer.\n\nMissing message types: {missingTypes}\n\nClick "Reload" for Aluminum on the extensions management page, then refresh this page and reopen the side panel.',
+  'store.modelCallFailed': 'Model call failed: {reason}\n\nPlease check the Base URL, API key, and model name in Settings.',
+  'store.unknownError': 'Unknown error',
+  'store.tokenLimitReached':
+    'The model hit its token limit while generating (possibly exhausted during reasoning) and did not produce a final reply. Please retry or simplify your question.',
+  'store.generationAborted': 'This generation was aborted.',
+  'store.onlyToolCalls':
+    'The model only made tool calls and ended the turn without a text reply. Please ask again, or try a more specific question.',
+  'store.noTextResult': 'This agent run produced no text result. See the side panel console log for details (right-click → Inspect).',
 };

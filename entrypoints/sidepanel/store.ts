@@ -31,6 +31,7 @@ import {
 import { createBrowserAgent } from '@/lib/agent/agent';
 import { summarizeToolCallForConfirmation } from '@/lib/agent/confirm-summary';
 import { getConversationIdForTab, setConversationIdForTab } from '@/lib/agent/tab-conversation';
+import { t } from '@/lib/i18n';
 
 const MAX_AGENT_TOOL_TURNS = 50;
 
@@ -150,7 +151,7 @@ async function resolveActiveTabId(): Promise<number> {
     url?: string;
   }>;
   if (!res.ok || typeof res.data?.id !== 'number') {
-    throw new Error(res.error ?? '未找到当前标签页，请确保有一个网页处于打开状态。');
+    throw new Error(res.error ?? t('store.noActiveTab'));
   }
   return res.data.id;
 }
@@ -246,7 +247,7 @@ export const useChat = create<ChatState>((set, get) => ({
 
   summarizePage: async () => {
     if (get().busy) return;
-    const display = makeMessage('user', '📄 总结当前网页', 'action');
+    const display = makeMessage('user', t('store.summarizeDisplay'), 'action');
     const prompt = '请读取当前网页内容并总结，给出 3-5 个要点和一段简短摘要。';
     await runAgent(set, get, display, prompt);
   },
@@ -259,20 +260,20 @@ export const useChat = create<ChatState>((set, get) => ({
     try {
       tabId = await resolveActiveTabId();
       const res = (await sendMessage('GET_SELECTION', undefined, tabId)) as MessageResponse<PageSelection>;
-      if (!res.ok || !res.data) throw new Error(res.error ?? '获取选区失败');
+      if (!res.ok || !res.data) throw new Error(res.error ?? t('store.getSelectionFailed'));
       selection = res.data;
     } catch (e) {
       set({ busy: false, error: errMsg(e) });
       return;
     }
     if (!selection.text) {
-      set({ busy: false, error: '未检测到选中的文本，请先在页面中划选内容。' });
+      set({ busy: false, error: t('store.noSelection') });
       return;
     }
     set({ busy: false });
     const preview =
       selection.text.length > 80 ? `${selection.text.slice(0, 80)}…` : selection.text;
-    const display = makeMessage('user', `💬 解释：${preview}`, 'action');
+    const display = makeMessage('user', t('store.explainDisplay', { preview }), 'action');
     const prompt =
       `请解释以下选中的内容，必要时给出背景、定义或通俗说明：\n\n` +
       `"""${selection.text.slice(0, MAX_SELECTION_CHARS)}"""`;
@@ -293,14 +294,14 @@ export const useChat = create<ChatState>((set, get) => ({
 
   revertTurnChanges: async () => {
     if (currentTurnTabId === null) {
-      set({ error: '没有可撤销的标签页信息。' });
+      set({ error: t('store.noRevertTabInfo') });
       return;
     }
     try {
       const res = (await sendMessage('REVERT_CHANGES', undefined, currentTurnTabId)) as MessageResponse<RevertChangesResult>;
-      if (!res.ok) throw new Error(res.error ?? '撤销失败');
+      if (!res.ok) throw new Error(res.error ?? t('store.revertFailed'));
       if (!res.data?.reverted) {
-        set({ turnHasChanges: false, error: '本轮没有可撤销的改动。' });
+        set({ turnHasChanges: false, error: t('store.noChangesToRevert') });
         return;
       }
       set({ turnHasChanges: false });
@@ -402,11 +403,11 @@ async function runAgent(
     (await getActiveProvider()) ??
     null;
   if (!provider) {
-    set({ error: '未配置 Provider，请在「设置」中添加 API Key。' });
+    set({ error: t('store.noProviderConfigured') });
     return false;
   }
   if (!provider.apiKey) {
-    set({ error: '当前 Provider 未填写 API Key，请在「设置」中补全。' });
+    set({ error: t('store.missingApiKey') });
     return false;
   }
 
@@ -440,7 +441,7 @@ async function runAgent(
   if (truncateToId !== undefined) {
     const index = findMessageIndex(current, truncateToId);
     if (index < 0) {
-      set({ error: '这条消息已不在当前对话中。' });
+      set({ error: t('store.messageNotFound') });
       return false;
     }
     history = current.slice(0, index);
@@ -533,10 +534,7 @@ async function runAgent(
   try {
     const missingTypes = await getMissingAgentMessageTypes();
     if (missingTypes.length > 0) {
-      acc =
-        '当前扩展后台服务仍是旧版本，浏览器 Agent 工具尚未加载，因此我不会基于猜测回答。' +
-        `\n\n缺失消息类型：${missingTypes.join(', ')}` +
-        '\n\n请在浏览器扩展管理页点击 Aluminum 的「重新加载」，然后刷新当前网页并重新打开侧边栏。';
+      acc = t('store.staleBackgroundWarning', { missingTypes: missingTypes.join(', ') });
       replaceLastAssistant(set, acc);
       // 到这里历史已经截断并提交（上面的 set({ messages: ... }) 已执行），
       // 对 editMessage 来说这是「成功发起」，只是后台协议过旧导致本轮没能真正跑起来。
@@ -650,20 +648,20 @@ function findLastAssistant(messages: unknown[]): LastAssistantInfo | undefined {
 // 一轮 Agent 运行结束却没有任何文本时，尽可能说明原因，而不是只丢一句「没有生成文本结果」。
 function describeEmptyAgentRun(last: LastAssistantInfo | undefined): string {
   if (last?.stopReason === 'error') {
-    return `模型调用失败：${last.errorMessage || '未知错误'}\n\n请检查设置中的 Base URL、API Key 和模型名称是否正确。`;
+    return t('store.modelCallFailed', { reason: last.errorMessage || t('store.unknownError') });
   }
   if (last?.stopReason === 'length') {
-    return '模型在生成过程中达到了 token 上限（可能是思考阶段耗尽了预算），未能给出正式回复。请重试或简化问题。';
+    return t('store.tokenLimitReached');
   }
-  if (last?.stopReason === 'aborted') return '本次生成已被中止。';
+  if (last?.stopReason === 'aborted') return t('store.generationAborted');
   const onlyToolCalls =
     Array.isArray(last?.content) &&
     last.content.length > 0 &&
     last.content.every((part) => (part as { type?: unknown })?.type === 'toolCall');
   if (onlyToolCalls) {
-    return '模型只发起了工具调用就结束了本轮，没有给出文字回答。请再问一次，或换一个更具体的问题。';
+    return t('store.onlyToolCalls');
   }
-  return '本次 Agent 运行没有生成文本结果。详情见侧边栏控制台日志（右键「检查」）。';
+  return t('store.noTextResult');
 }
 
 function upsertToolActivity(
