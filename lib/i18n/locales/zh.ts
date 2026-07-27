@@ -21,4 +21,6 @@ export const zh = {
   'settings.pageTitle': 'Aluminum 设置',
   'settings.descriptionPrefix': '配置 OpenAI 兼容的模型 Provider。API Key 仅保存在本机',
   'settings.optionsDescriptionSuffix': '，不会上传或同步（ref: technical-plan.md §6）。',
+  'chat.editMessageEditorAriaLabel': '编辑消息',
+  'chat.editDiscardWarning': '提交后将丢弃后续 {count} 条消息',
 } as const;

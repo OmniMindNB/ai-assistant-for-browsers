@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useTranslation } from '@/lib/i18n';
 
 // 用户消息的就地编辑框。提交后由 store 的 editMessage 截断历史并重跑
 // （ref: docs/superpowers/specs/2026-07-26-edit-history-message-design.md §5）。
@@ -13,6 +14,7 @@ export default function MessageEditor({
   onCancel: () => void;
   onSubmit: (content: string) => void;
 }) {
+  const { t } = useTranslation();
   const [text, setText] = useState(initialContent);
   const ref = useRef<HTMLTextAreaElement>(null);
 
@@ -58,12 +60,12 @@ export default function MessageEditor({
         rows={1}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={onKeyDown}
-        aria-label="编辑消息"
+        aria-label={t('chat.editMessageEditorAriaLabel')}
         className="max-h-[40vh] w-full resize-none overflow-y-auto rounded-2xl border border-neutral-300 bg-white px-4 py-2.5 text-sm text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
       />
       <div className="flex items-center justify-between gap-3">
         <span className="min-w-0 text-xs text-neutral-500 dark:text-neutral-400">
-          {discardCount > 0 ? `提交后将丢弃后续 ${discardCount} 条消息` : ''}
+          {discardCount > 0 ? t('chat.editDiscardWarning', { count: discardCount }) : ''}
         </span>
         <span className="flex shrink-0 gap-2">
           <button
@@ -71,7 +73,7 @@ export default function MessageEditor({
             onClick={onCancel}
             className="rounded-lg px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-neutral-300 dark:hover:bg-neutral-800"
           >
-            取消
+            {t('common.cancel')}
           </button>
           <button
             type="button"
@@ -79,7 +81,7 @@ export default function MessageEditor({
             onClick={() => onSubmit(text)}
             className="rounded-lg bg-neutral-900 px-3 py-1.5 text-xs text-white disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:bg-neutral-700"
           >
-            发送
+            {t('common.send')}
           </button>
         </span>
       </div>

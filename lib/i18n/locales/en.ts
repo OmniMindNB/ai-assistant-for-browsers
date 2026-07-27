@@ -24,4 +24,6 @@ export const en: Record<keyof typeof zh, string> = {
   'settings.descriptionPrefix':
     'Configure an OpenAI-compatible model provider. The API key is stored only on this device in',
   'settings.optionsDescriptionSuffix': ', and is never uploaded or synced (ref: technical-plan.md §6).',
+  'chat.editMessageEditorAriaLabel': 'Edit message',
+  'chat.editDiscardWarning': 'Submitting will discard the following {count} message(s)',
 };
