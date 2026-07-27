@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "Aluminum",
+    "description": "Extension name"
+  },
+  "extDescription": {
+    "message": "AI 助手侧边栏：总结、理解、改造与自动化当前网页",
+    "description": "Extension description shown in the Chrome Web Store"
+  }
+}

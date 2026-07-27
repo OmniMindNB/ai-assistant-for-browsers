@@ -18,8 +18,9 @@ export default defineConfig({
     },
   }),
   manifest: {
-    name: 'Aluminum',
-    description: 'AI 助手侧边栏：总结、理解、改造与自动化当前网页',
+    default_locale: 'zh_CN',
+    name: '__MSG_extName__',
+    description: '__MSG_extDescription__',
     permissions: ['sidePanel', 'storage', 'scripting', 'activeTab', 'tabs', 'userScripts'],
     host_permissions: ['<all_urls>'],
     minimum_chrome_version: '138',
@@ -30,7 +31,7 @@ export default defineConfig({
       128: 'icons/icon-128.png',
     },
     action: {
-      default_title: 'Aluminum',
+      default_title: '__MSG_extName__',
       default_icon: {
         16: 'icons/icon-16.png',
         32: 'icons/icon-32.png',

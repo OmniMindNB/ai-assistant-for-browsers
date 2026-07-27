@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "Aluminum",
+    "description": "Extension name"
+  },
+  "extDescription": {
+    "message": "AI sidebar assistant: summarize, understand, transform, and automate the current page",
+    "description": "Extension description shown in the Chrome Web Store"
+  }
+}
