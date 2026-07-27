@@ -101,37 +101,59 @@ export interface DraftPlaceholders {
   extras: string;
 }
 
+/** draftPlaceholders 的语言参数；与 lib/i18n 的 ResolvedLocale 同构，但本文件不依赖 lib/i18n。 */
+export type ProviderPlaceholderLocale = 'zh' | 'en';
+
 /** 自定义态：示例必须与具体厂商无关，否则会误导用户以为该字段有固定取值。 */
-const CUSTOM_PLACEHOLDERS: DraftPlaceholders = {
-  name: '例如 我的中转站',
-  baseURL: 'https://your-host/v1',
-  model: '例如 模型名',
-  extras: '例如 备用模型名, 另一个模型名',
+const CUSTOM_PLACEHOLDERS_BY_LOCALE: Record<ProviderPlaceholderLocale, DraftPlaceholders> = {
+  zh: {
+    name: '例如 我的中转站',
+    baseURL: 'https://your-host/v1',
+    model: '例如 模型名',
+    extras: '例如 备用模型名, 另一个模型名',
+  },
+  en: {
+    name: 'e.g. My Relay Station',
+    baseURL: 'https://your-host/v1',
+    model: 'e.g. model name',
+    extras: 'e.g. backup-model, another-model',
+  },
 };
 
-/** 占位符态（尚未选择任何预设）沿用既有的 DeepSeek 风格示例。 */
-const DEFAULT_PLACEHOLDERS: DraftPlaceholders = {
-  name: '例如 DeepSeek',
-  baseURL: 'https://api.deepseek.com',
-  model: 'deepseek-v4-pro',
-  extras: '例如 deepseek-v4-flash',
-};
+/** 「例如 X」/「e.g. X」——预设分支的示例值本身语言中立（品牌/模型名），只有这层前缀按语言切换。 */
+function examplePrefix(locale: ProviderPlaceholderLocale, value: string): string {
+  return locale === 'en' ? `e.g. ${value}` : `例如 ${value}`;
+}
+
+/** 占位符态（尚未选择任何预设）沿用既有的 DeepSeek 风格示例；品牌/模型名本身不翻译。 */
+function defaultPlaceholders(locale: ProviderPlaceholderLocale): DraftPlaceholders {
+  return {
+    name: examplePrefix(locale, 'DeepSeek'),
+    baseURL: 'https://api.deepseek.com',
+    model: 'deepseek-v4-pro',
+    extras: examplePrefix(locale, 'deepseek-v4-flash'),
+  };
+}
 
 /**
  * 下拉值 → 各输入框 placeholder。
  * 「其他可用模型」不被任何预设填充，故其 placeholder 需随选中预设切换，展示该厂商的其他模型示例。
+ * locale 默认 'zh'，保持调用方不传时的既有行为不变。
  */
-export function draftPlaceholders(value: string): DraftPlaceholders {
-  if (value === CUSTOM_PRESET_VALUE) return CUSTOM_PLACEHOLDERS;
+export function draftPlaceholders(
+  value: string,
+  locale: ProviderPlaceholderLocale = 'zh',
+): DraftPlaceholders {
+  if (value === CUSTOM_PRESET_VALUE) return CUSTOM_PLACEHOLDERS_BY_LOCALE[locale];
   const preset = PROVIDER_PRESETS.find((p) => p.name === value);
-  if (!preset) return DEFAULT_PLACEHOLDERS;
+  if (!preset) return defaultPlaceholders(locale);
   const extras = (preset.models ?? []).filter((m) => m !== preset.model);
   return {
-    name: `例如 ${preset.name}`,
+    name: examplePrefix(locale, preset.name),
     baseURL: preset.baseURL,
     model: preset.model,
     // 无其他模型可举例时不给提示：给错厂商的示例比不给示例更糟。
-    extras: extras.length ? `例如 ${extras.join(', ')}` : '',
+    extras: extras.length ? examplePrefix(locale, extras.join(', ')) : '',
   };
 }
 

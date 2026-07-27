@@ -237,4 +237,28 @@ describe('draftPlaceholders', () => {
   it('falls back to the default placeholders for an unknown vendor name', () => {
     expect(draftPlaceholders('NoSuchVendor')).toEqual(draftPlaceholders(''));
   });
+
+  it('gives English examples for the custom selection when locale is en', () => {
+    const p = draftPlaceholders(CUSTOM_PRESET_VALUE, 'en');
+    expect(p.name).toBe('e.g. My Relay Station');
+    expect(p.baseURL).toBe('https://your-host/v1');
+    expect(p.model).toBe('e.g. model name');
+    expect(p.extras).toBe('e.g. backup-model, another-model');
+  });
+
+  it('uses an "e.g." prefix for preset examples when locale is en', () => {
+    const p = draftPlaceholders('OpenAI', 'en');
+    expect(p.name).toBe('e.g. OpenAI');
+    expect(p.baseURL).toBe('https://api.openai.com/v1');
+    expect(p.model).toBe('gpt-5.6-sol');
+    expect(p.extras).toBe('e.g. gpt-5.6-terra, gpt-5.6-luna');
+  });
+
+  it('keeps DeepSeek-flavoured examples with an "e.g." prefix for the empty state in en', () => {
+    const p = draftPlaceholders('', 'en');
+    expect(p.name).toBe('e.g. DeepSeek');
+    expect(p.baseURL).toBe('https://api.deepseek.com');
+    expect(p.model).toBe('deepseek-v4-pro');
+    expect(p.extras).toBe('e.g. deepseek-v4-flash');
+  });
 });
