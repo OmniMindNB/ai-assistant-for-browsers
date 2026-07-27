@@ -162,6 +162,19 @@ export function useTranslation(): {
 - [ ] `README.en.md` 存在，与 `README.md` 顶部互相有语言切换链接。
 - [ ] `pnpm compile` 与 `pnpm test` 通过。
 
-## 开放问题
+## 附录：范围补充（写计划阶段发现）
 
-- 无。
+写实现计划时发现 `entrypoints/sidepanel/store.ts`（原设计未列出）里混有两类文本：
+
+- **用户可见**：`error: '...'` 状态提示（约 12 处，如「未配置 Provider，请在『设置』中添加 API Key。」）、
+  以及总结/解释操作注入的聊天气泡（`📄 总结当前网页`、`💬 解释：{preview}`）。这些属于本设计
+  「状态提示」验收标准的一部分，纳入翻译范围，用 `t()` 替换。
+- **Agent 输入**：`SYSTEM_PROMPT` 常量、`summarizePage`/`explainSelection` 里发给模型的 `prompt`
+  变量（用户看不到，只有 `display` 气泡可见）。这些不属于「界面」，维持非目标里「不改 Agent
+  系统提示词」的既定边界，不翻译、不改动，包括其中「默认用中文回答，除非用户使用其他语言」的
+  指令。
+
+`store.ts` 是 Zustand store（非 React 组件），不能用 `useTranslation()` hook。`lib/i18n` 因此在
+Context 之外再导出一个模块级、非 hook 的 `t()`（读取一个由 `applyLocale()` 同步维护的模块级
+`currentLocale` 变量），`useTranslation()` 返回的 `t` 与之是同一个函数引用；React 侧的 Context
+只负责在语言变化时触发重渲染，不是 `t()` 正确性的必要条件。
