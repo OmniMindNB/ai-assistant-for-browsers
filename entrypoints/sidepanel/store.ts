@@ -29,6 +29,7 @@ import {
   type ChatMessage,
 } from '@/lib/chat/messages';
 import { createBrowserAgent } from '@/lib/agent/agent';
+import { buildExplainSelectionPrompt, buildSummarizePagePrompt } from '@/lib/chat/shortcut-prompts';
 import { summarizeToolCallForConfirmation } from '@/lib/agent/confirm-summary';
 import { getConversationIdForTab, setConversationIdForTab } from '@/lib/agent/tab-conversation';
 import { t } from '@/lib/i18n';
@@ -240,7 +241,7 @@ export const useChat = create<ChatState>((set, get) => ({
   summarizePage: async () => {
     if (get().busy) return;
     const display = makeMessage('user', t('store.summarizeDisplay'), 'action');
-    const prompt = '请读取当前网页内容并总结，给出 3-5 个要点和一段简短摘要。';
+    const prompt = buildSummarizePagePrompt(t);
     await runAgent(set, get, display, prompt);
   },
 
@@ -266,9 +267,7 @@ export const useChat = create<ChatState>((set, get) => ({
     const preview =
       selection.text.length > 80 ? `${selection.text.slice(0, 80)}…` : selection.text;
     const display = makeMessage('user', t('store.explainDisplay', { preview }), 'action');
-    const prompt =
-      `请解释以下选中的内容，必要时给出背景、定义或通俗说明：\n\n` +
-      `"""${selection.text.slice(0, MAX_SELECTION_CHARS)}"""`;
+    const prompt = buildExplainSelectionPrompt(t, selection.text, MAX_SELECTION_CHARS);
     await runAgent(set, get, display, prompt, tabId);
   },
 

@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import storeConfig from '../wxt.config';
 import { createBrowserTools } from './agent/tools';
@@ -31,5 +33,32 @@ describe('privacy consent translations', () => {
       'API Key、当前提示词、近期对话上下文和相关页面结果会直接发送到你配置的 AI Provider 端点',
     );
     expect(zh['privacy.noBackendBody']).toContain('不运营开发者后端，也不收集分析数据');
+  });
+});
+
+describe('side-panel shortcut localization wiring', () => {
+  const storeSource = fs.readFileSync(
+    path.resolve(process.cwd(), 'entrypoints/sidepanel/store.ts'),
+    'utf8',
+  );
+
+  it('uses localized prompt builders for both shortcut actions', () => {
+    expect(storeSource).toContain('buildSummarizePagePrompt(t)');
+    expect(storeSource).toContain(
+      'buildExplainSelectionPrompt(t, selection.text, MAX_SELECTION_CHARS)',
+    );
+    expect(storeSource).not.toContain(
+      '请读取当前网页内容并总结，给出 3-5 个要点和一段简短摘要。',
+    );
+    expect(storeSource).not.toContain('请解释以下选中的内容，必要时给出背景、定义或通俗说明');
+  });
+
+  it('keeps ordinary user messages unchanged', () => {
+    expect(storeSource).toContain(
+      "await runAgent(set, get, makeMessage('user', content, 'input'), content);",
+    );
+    expect(storeSource).toContain(
+      "return runAgent(set, get, makeMessage('user', trimmed, 'input'), trimmed, undefined, id);",
+    );
   });
 });
