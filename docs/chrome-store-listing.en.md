@@ -1,0 +1,64 @@
+# Aluminum Chrome Web Store Listing — English
+
+Paste-ready fields for the default English Chrome Web Store listing.
+
+## Name
+
+```text
+Aluminum
+```
+
+## Short description
+
+```text
+AI sidebar agent to understand, transform, and automate the current page—with your approval.
+```
+
+## Category
+
+```text
+Productivity
+```
+
+## Single purpose
+
+```text
+Aluminum is one controllable AI sidebar agent that helps the user understand and work with the current web page, including making user-requested page changes after approval.
+```
+
+## Detailed description
+
+```text
+Aluminum is a controllable AI agent in your browser side panel. It helps you understand and work with the page you are currently viewing without switching context.
+
+Use Aluminum to:
+
+• Summarize the current page and ask page-grounded questions.
+• Inspect page evidence such as readable text, HTML, DOM structure, scripts, stylesheets, and computed styles for technical analysis.
+• Request page transformations and browser-page actions. Before write actions run, Aluminum shows the planned operation and asks for your approval; that decision applies to the current turn.
+• Undo page changes made during the current modified turn with one click.
+• Connect your own OpenAI-compatible or Anthropic-compatible AI provider, including a custom endpoint.
+
+Aluminum is local-first: provider settings, API keys, consent state, and conversation history are stored in your browser. Aluminum has no developer-operated backend, analytics, or advertising SDK. When you use an AI feature, recent conversation content and relevant current-page tool results are transmitted directly from the extension to the AI provider endpoint you configured. That provider processes the request under its own terms and privacy policy.
+
+Aluminum reads or changes a page only after you open the product and initiate an action. Page-changing tools require approval before they run. Some advanced script-based transformations also require Chrome’s separate “Allow User Scripts” setting.
+```
+
+## Screenshot captions
+
+1. `Understand any page — Summaries and answers grounded in the current page.`
+2. `See the evidence — Inspect DOM, styles, scripts, and computed behavior.`
+3. `You stay in control — Review the planned page action and approve it before write tools run.`
+4. `Undo the whole turn — Restore page changes from the current modified turn with one click.`
+
+## Privacy-policy URL
+
+```text
+https://omnimindnb.github.io/aluminum-legal/
+```
+
+## Support contact
+
+```text
+liudong.ucas@gmail.com
+```
