@@ -8,6 +8,30 @@ Complete. No Chrome Web Store upload or review submission was performed.
 
 `92b9cbab242e5b3c1bad4c0497bab342f1fc2811` — `fix: remove user scripts from store release`
 
+## Follow-Up: Consent Heading and Plan Scope
+
+`0c5b505961e57aa1ee221a9420e9e99048fba05b` — `fix: clarify consent storage wording`
+
+- Replaced the broad local-only consent headings with `Stored locally in your browser` and `保存在浏览器本地`.
+- Added a dated, user-approved Option A amendment to the active relaunch plan and corrected its permission and retained-tool manual-QA lines.
+
+RED command:
+
+```bash
+CI=true pnpm vitest run lib/final-review.test.ts
+```
+
+Result: failed as expected with the old English `Your data stays local` and Chinese `数据保留在本机` headings.
+
+GREEN commands:
+
+```bash
+CI=true pnpm vitest run lib/final-review.test.ts
+CI=true pnpm compile
+```
+
+Result: focused runtime suite passed 3/3 and TypeScript compilation passed. A plan scan found no remaining contradictory `userScripts` permission or wait/cancel/retry QA line; the only remaining text is the superseding amendment itself.
+
 ## Files Changed
 
 - Store capability removal: `wxt.config.ts`, `lib/messaging.ts`, `entrypoints/background.ts`, `lib/agent/tools.ts`, `lib/agent/permissions.ts`, `lib/agent/agent.ts`, `lib/agent/confirm-summary.ts`, `entrypoints/sidepanel/store.ts`, `entrypoints/sidepanel/App.tsx`, and `lib/agent/tab-target.ts`.
