@@ -9,5 +9,7 @@ export function buildExplainSelectionPrompt(
   selection: string,
   maxChars: number,
 ): string {
-  return `${translate('store.explainPrompt')}\n\n\"\"\"${selection.slice(0, maxChars)}\"\"\"`;
+  return translate('store.explainPrompt', {
+    selection: JSON.stringify(selection.slice(0, maxChars)),
+  });
 }
