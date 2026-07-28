@@ -83,3 +83,26 @@ Result: compile passed; 19 test files and 179 tests passed; production build and
 
 - Chrome-only interactive regression checks remain deferred because no interactive Chrome runtime is available here.
 - `pnpm` required `CI=true` after its dependency-state guard requested a modules-directory purge; dependencies were restored with an approved registry install before validation.
+
+## Scoped Re-review Residual: Opaque Redirects
+
+The scoped reviewer confirmed the consent and `userScripts` findings were resolved, but identified that Chrome represents a manual redirect as an `opaqueredirect` response with status `0` and hidden headers. The original synthetic 3xx tests did not model that browser behavior.
+
+RED command:
+
+```bash
+CI=true pnpm vitest run lib/page-resource-fetch.test.ts
+```
+
+Result: failed 1/19 because the opaque redirect returned the generic error `0 ` rather than an explicit safe failure.
+
+Resolution: detect `opaqueredirect`/status `0` and reject it with a clear error instead of following an address Chrome does not expose for validation. The bilingual repository and live privacy policies now describe this fail-closed behavior.
+
+GREEN commands:
+
+```bash
+CI=true pnpm vitest run lib/page-resource-fetch.test.ts
+CI=true pnpm compile
+```
+
+Result: 19/19 focused tests passed and TypeScript compilation passed.

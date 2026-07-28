@@ -71,6 +71,9 @@ export async function fetchPageResourceText(
 
     try {
       const response = await request(currentUrl, { redirect: 'manual' });
+      if (response.type === 'opaqueredirect' || response.status === 0) {
+        return { length: 0, truncated: false, error: '已阻止：浏览器未公开重定向目标，无法安全验证重定向目标。' };
+      }
       if (response.status >= 300 && response.status < 400) {
         if (redirects >= MAX_REDIRECTS) {
           return { length: 0, truncated: false, error: '重定向次数过多。' };

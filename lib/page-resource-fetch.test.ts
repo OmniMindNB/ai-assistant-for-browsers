@@ -23,6 +23,17 @@ describe('isPageResourceUrlAllowed', () => {
 });
 
 describe('fetchPageResourceText', () => {
+  it('fails closed when Chrome hides a manual redirect as opaqueredirect', async () => {
+    const opaqueRedirect = Response.error();
+    Object.defineProperty(opaqueRedirect, 'type', { value: 'opaqueredirect' });
+    const request = vi.fn().mockResolvedValue(opaqueRedirect);
+
+    await expect(fetchPageResourceText('https://example.com/start', 100, request)).resolves.toMatchObject({
+      error: expect.stringContaining('无法安全验证重定向目标'),
+    });
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
   it('validates each manual redirect target and resolves a relative Location header', async () => {
     const request = vi
       .fn()
