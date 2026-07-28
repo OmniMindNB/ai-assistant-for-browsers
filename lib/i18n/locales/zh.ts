@@ -90,9 +90,13 @@ export const zh = {
   'chat.noModelSelected': '未选择',
   'store.noActiveTab': '未找到当前标签页，请确保有一个网页处于打开状态。',
   'store.summarizeDisplay': '📄 总结当前网页',
+  'store.summarizePrompt':
+    '请读取当前网页内容并总结，给出 3-5 个要点和一段简短摘要。请使用中文回答。',
   'store.getSelectionFailed': '获取选区失败',
   'store.noSelection': '未检测到选中的文本，请先在页面中划选内容。',
   'store.explainDisplay': '💬 解释：{preview}',
+  'store.explainPrompt':
+    '请解释以下选中的内容，必要时给出背景、定义或通俗说明。请使用中文回答：',
   'store.noRevertTabInfo': '没有可撤销的标签页信息。',
   'store.revertFailed': '撤销失败',
   'store.noChangesToRevert': '本轮没有可撤销的改动。',

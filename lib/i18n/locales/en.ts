@@ -94,9 +94,13 @@ export const en: Record<keyof typeof zh, string> = {
   'chat.noModelSelected': 'Not selected',
   'store.noActiveTab': 'No active tab found. Make sure a webpage is open.',
   'store.summarizeDisplay': '📄 Summarize this page',
+  'store.summarizePrompt':
+    'Summarize the current page in 3-5 key points followed by a short overview. Respond in English.',
   'store.getSelectionFailed': 'Failed to get selection',
   'store.noSelection': 'No selected text detected. Please select some text on the page first.',
   'store.explainDisplay': '💬 Explain: {preview}',
+  'store.explainPrompt':
+    'Explain the selected text, adding background, definitions, or a plain-language explanation when useful. Respond in English:',
   'store.noRevertTabInfo': 'No tab information available to undo.',
   'store.revertFailed': 'Undo failed',
   'store.noChangesToRevert': 'No changes to undo this turn.',

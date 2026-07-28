@@ -56,7 +56,7 @@ describe('shortcut action prompts', () => {
 
   it('asks for a Chinese summary in the Chinese UI', () => {
     const prompt = buildSummarizePagePrompt(translate(zh));
-    expect(prompt).toContain('总结当前网页');
+    expect(prompt).toContain('总结');
     expect(prompt).toContain('请使用中文回答');
   });
 
