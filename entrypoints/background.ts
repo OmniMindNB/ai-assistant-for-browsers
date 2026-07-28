@@ -11,8 +11,6 @@ import {
   type GetScriptsResult,
   type GetStylesheetsPayload,
   type GetStylesheetsResult,
-  type InjectScriptPayload,
-  type InjectScriptResult,
   type Message,
   type MessageResponse,
   type ModifyDomPayload,
@@ -38,7 +36,7 @@ import {
   type TypeTextPayload,
   type TypeTextResult,
 } from '@/lib/messaging';
-import { analyzeScript } from '@/lib/security';
+import { fetchPageResourceText } from '@/lib/page-resource-fetch';
 import { resolveTargetTab } from '@/lib/agent/tab-target';
 import {
   beginSnapshotIfNeeded,
@@ -63,7 +61,6 @@ const SUPPORTED_MESSAGE_TYPES = [
   'GET_COMPUTED_STYLE',
   'GET_PAGE_META',
   'CAPTURE_SCREENSHOT',
-  'INJECT_SCRIPT',
   'SET_STYLE',
   'MODIFY_DOM',
   'CLICK_ELEMENT',
@@ -199,9 +196,6 @@ async function handleMessage(message: Message): Promise<unknown> {
     case 'SCROLL_PAGE':
       return scrollPage(message.payload as ScrollPagePayload, requireTabId(message));
 
-    case 'INJECT_SCRIPT':
-      return injectScript(message.payload as InjectScriptPayload, requireTabId(message));
-
     case 'RESET_TURN_SNAPSHOT':
       return resetTurnSnapshot(requireTabId(message));
 
@@ -326,7 +320,7 @@ async function getScripts(payload: GetScriptsPayload, tabId: number): Promise<Ge
     const next = { ...script };
     if (script.src) {
       if (includeExternal && remaining > 0) {
-        const fetched = await fetchText(script.src, remaining);
+        const fetched = await fetchPageResourceText(script.src, remaining);
         next.text = fetched.text;
         next.length = fetched.length;
         next.truncated = fetched.truncated;
@@ -381,7 +375,7 @@ async function getStylesheets(payload: GetStylesheetsPayload, tabId: number): Pr
     const next = { ...sheet };
     if (sheet.href) {
       if (includeExternal && remaining > 0) {
-        const fetched = await fetchText(sheet.href, remaining);
+        const fetched = await fetchPageResourceText(sheet.href, remaining);
         next.text = fetched.text;
         next.length = fetched.length;
         next.truncated = fetched.truncated;
@@ -492,67 +486,6 @@ async function executeInTab<TInput, TResult>(
     func,
   });
   return frame.result as TResult;
-}
-
-// 拒绝内网/回环/链路本地地址与非 http(s) 协议，防止页面通过 script/link 的
-// src/href 诱导扩展（拥有 <all_urls> 权限、可绕过 CORS）探测内网服务（SSRF）。
-function isDisallowedHost(hostname: string): boolean {
-  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
-  if (host === 'localhost' || host === '0.0.0.0') return true;
-
-  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (ipv4) {
-    const a = Number(ipv4[1]);
-    const b = Number(ipv4[2]);
-    if (a === 127 || a === 10 || a === 0) return true; // loopback / 10.0.0.0/8
-    if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
-    if (a === 192 && b === 168) return true; // 192.168.0.0/16
-    if (a === 169 && b === 254) return true; // 169.254.0.0/16 (incl. cloud metadata)
-    return false;
-  }
-
-  if (host === '::1') return true; // loopback
-  if (host.startsWith('fe80')) return true; // link-local
-  if (host.startsWith('fc') || host.startsWith('fd')) return true; // fc00::/7 unique local
-  return false;
-}
-
-function isFetchUrlAllowed(rawUrl: string): boolean {
-  let parsed: URL;
-  try {
-    parsed = new URL(rawUrl);
-  } catch {
-    return false;
-  }
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
-  return !isDisallowedHost(parsed.hostname);
-}
-
-async function fetchText(
-  url: string,
-  maxChars: number,
-): Promise<{ text?: string; length: number; truncated: boolean; error?: string }> {
-  if (!isFetchUrlAllowed(url)) {
-    return {
-      length: 0,
-      truncated: false,
-      error: '已阻止：目标地址不允许访问（非 http/https 协议，或指向内网/回环/链路本地地址）',
-    };
-  }
-  try {
-    const response = await fetch(url);
-    if (!response.ok) {
-      return { length: 0, truncated: false, error: `${response.status} ${response.statusText}` };
-    }
-    const text = await response.text();
-    return { text: text.slice(0, maxChars), length: text.length, truncated: text.length > maxChars };
-  } catch (error) {
-    return {
-      length: 0,
-      truncated: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
 }
 
 async function ensureTurnSnapshot(tabId: number): Promise<void> {
@@ -680,52 +613,6 @@ async function scrollPage(payload: ScrollPagePayload, tabId: number): Promise<Sc
     }
     return { selector: input?.selector, x: window.scrollX, y: window.scrollY };
   });
-}
-
-// 脚本注入（ref: technical-plan.md §4.2、Spec-0002）。
-// 使用 chrome.userScripts.execute（Chrome MV3 官方认可的动态脚本执行通道）而非 eval/new Function，
-// 满足 Remote Hosted Code 政策；用 IIFE 包裹以保留旧版 new Function 的 return 语义。
-// 这个函数本身只尝试一次；「允许用户脚本」开关关闭时的等待重试在侧边栏 tools.ts 里做
-// （ref: docs/superpowers/specs/2026-07-23-turn-tabid-pinning-and-userscripts-wait-design.md）。
-async function injectScript(
-  payload: InjectScriptPayload,
-  tabId: number,
-): Promise<InjectScriptResult> {
-  const code = payload?.code ?? '';
-  if (!code.trim()) throw new Error('脚本为空');
-
-  // 后端二次校验：语法非法直接拒绝（安全纵深）
-  const report = analyzeScript(code);
-  if (!report.valid) {
-    throw new Error(`脚本语法错误：${report.syntaxError ?? '未知'}`);
-  }
-
-  await ensureTurnSnapshot(tabId);
-  const tab = await resolveTargetTab(tabId);
-
-  const wrapped = `(function(){\n${code}\n})()`;
-  let results;
-  try {
-    results = await browser.userScripts.execute({
-      target: { tabId: tab.id },
-      world: 'MAIN',
-      js: [{ code: wrapped }],
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    throw new Error(
-      `脚本注入失败：${message}。请在 chrome://extensions 打开本扩展详情页，开启「允许用户脚本」（Allow User Scripts）开关后重试。`,
-    );
-  }
-
-  const out = results[0];
-  if (!out || out.error) {
-    throw new Error(out?.error ?? '脚本执行失败');
-  }
-  return {
-    result: out.result === undefined ? '' : String(out.result),
-    snapshotSaved: true,
-  };
 }
 
 // 撤销"本轮"全部改动：若本轮发生过跳转，直接跳回原 URL（跳转前的 DOM 已不可复原，

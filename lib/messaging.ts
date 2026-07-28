@@ -13,7 +13,6 @@ export type MessageType =
   | 'GET_COMPUTED_STYLE'
   | 'GET_PAGE_META'
   | 'CAPTURE_SCREENSHOT'
-  | 'INJECT_SCRIPT'
   | 'SET_STYLE'
   | 'MODIFY_DOM'
   | 'CLICK_ELEMENT'
@@ -177,19 +176,6 @@ export interface CaptureScreenshotPayload {
 
 export interface CaptureScreenshotResult {
   dataUrl: string;
-}
-
-/** INJECT_SCRIPT 请求载荷 */
-export interface InjectScriptPayload {
-  code: string;
-}
-
-/** INJECT_SCRIPT 返回结果 */
-export interface InjectScriptResult {
-  /** 脚本返回值的文本化表示（如有） */
-  result?: string;
-  /** 是否已保存可撤销快照 */
-  snapshotSaved?: boolean;
 }
 
 export interface RevertChangesResult {

@@ -2,7 +2,7 @@
   "name": "aluminum",
   "description": "Aluminum — Chromium 浏览器 AI 助手侧边栏插件",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "scripts": {
     "dev": "wxt",
@@ -33,7 +33,6 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@wxt-dev/module-react": "^1.1.5",
-    "acorn": "^8.16.0",
     "tailwindcss": "^4.3.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10",

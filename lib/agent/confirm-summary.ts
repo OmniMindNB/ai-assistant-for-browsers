@@ -15,8 +15,6 @@ export function summarizeToolCallForConfirmation(toolName: string, args: unknown
   const str = (key: string): string => (typeof record[key] === 'string' ? (record[key] as string) : '');
 
   switch (toolName) {
-    case 'browser_inject_script':
-      return { summary: 'AI 想要注入一段脚本来修改当前页面。', codePreview: str('code') };
     case 'browser_set_style':
       return { summary: `AI 想要修改匹配 "${str('selector')}" 的元素样式。` };
     case 'browser_modify_dom': {

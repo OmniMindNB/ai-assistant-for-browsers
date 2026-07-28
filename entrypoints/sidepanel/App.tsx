@@ -49,7 +49,6 @@ export default function App() {
     error,
     pendingConfirmation,
     turnHasChanges,
-    userScriptsWait,
     providers,
     selectedProviderId,
     selectedModel,
@@ -254,16 +253,6 @@ export default function App() {
                   ))
                 )}
                 {toolActivities.length > 0 && <ToolActivityList activities={toolActivities} />}
-                {userScriptsWait && (
-                  <UserScriptsBlockedNotice
-                    attempts={userScriptsWait.attempts}
-                    elapsedSeconds={userScriptsWait.elapsedSeconds}
-                    onOpenSettings={() =>
-                      browser.tabs.create({ url: `chrome://extensions/?id=${browser.runtime.id}` })
-                    }
-                    onCancelWait={stop}
-                  />
-                )}
                 {pendingConfirmation && (
                   <ConfirmationCard
                     confirmation={pendingConfirmation}
@@ -794,50 +783,6 @@ function ConfirmationCard({
       <p className="mt-2 text-[11px] text-amber-800/70 dark:text-amber-300/60">
         {t('confirm.approveHint')}
       </p>
-    </div>
-  );
-}
-
-function UserScriptsBlockedNotice({
-  attempts,
-  elapsedSeconds,
-  onOpenSettings,
-  onCancelWait,
-}: {
-  attempts: number;
-  elapsedSeconds: number;
-  onOpenSettings: () => void;
-  onCancelWait: () => void;
-}) {
-  const { t } = useTranslation();
-  const minutes = Math.floor(elapsedSeconds / 60);
-  const seconds = elapsedSeconds % 60;
-  const elapsedLabel =
-    minutes > 0
-      ? t('confirm.elapsedMinutesSeconds', { minutes, seconds })
-      : t('confirm.elapsedSecondsOnly', { seconds });
-  return (
-    <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-900/60 dark:bg-amber-950/30">
-      <div className="mb-1 font-medium text-amber-900 dark:text-amber-200">
-        {t('confirm.userScriptsWaitingTitle')}
-      </div>
-      <p className="mb-2 text-amber-900/90 dark:text-amber-200/90">
-        {t('confirm.userScriptsWaitingBody', { elapsed: elapsedLabel, attempts })}
-      </p>
-      <div className="flex gap-2">
-        <button
-          onClick={onOpenSettings}
-          className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-        >
-          {t('confirm.openExtensionSettings')}
-        </button>
-        <button
-          onClick={onCancelWait}
-          className="rounded-lg border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-amber-800 dark:text-amber-200 dark:hover:bg-amber-900/40"
-        >
-          {t('confirm.cancelWait')}
-        </button>
-      </div>
     </div>
   );
 }

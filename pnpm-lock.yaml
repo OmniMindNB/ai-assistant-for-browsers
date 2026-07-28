@@ -54,9 +54,6 @@ importers:
       '@wxt-dev/module-react':
         specifier: ^1.1.5
         version: 1.2.2(vite@8.0.16(@types/node@25.9.2)(esbuild@0.27.7)(jiti@2.7.0)(yaml@2.9.0))(wxt@0.20.26(@types/node@25.9.2)(jiti@2.7.0)(rolldown@1.0.3)(yaml@2.9.0))
-      acorn:
-        specifier: ^8.16.0
-        version: 8.16.0
       tailwindcss:
         specifier: ^4.3.0
         version: 4.3.0

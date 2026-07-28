@@ -87,18 +87,19 @@
 
 参考：[Spec-0001](specs/0001-agent-write-tools-and-permission-ui.md)、[实现计划（已归档）](superpowers/plans/archive/2026-07-20-agent-write-tools-and-permission-ui.md)
 
-- [x] 10 个写入/交互工具注册：browser_set_style、browser_modify_dom、browser_click、browser_type、browser_select、browser_scroll、browser_navigate、browser_set_storage、browser_inject_script、browser_revert_changes（`lib/agent/tools.ts`）
+- [x] 9 个写入/交互工具注册：browser_set_style、browser_modify_dom、browser_click、browser_type、browser_select、browser_scroll、browser_navigate、browser_set_storage、browser_revert_changes（`lib/agent/tools.ts`）；`browser_inject_script` 已在 1.1.0 Store 最终审查中移除。
 - [x] 每轮一次确认闸门：`lib/agent/confirm-gate.ts`（`resolveConfirmGate`/`raceWithAbort`）+ `lib/agent/permissions.ts`（`beforeToolCallPermissionGate` 真正等待用户确认，取代此前的硬拒绝占位）
 - [x] `browser_navigate` 硬拒绝非 http/https 协议（权限层 + 后端 `isNavigableUrl` 双重校验）
 - [x] 整轮撤销：`lib/agent/turn-snapshot.ts` 每 tab 一份快照，`RESET_TURN_SNAPSHOT`/`REVERT_CHANGES` 取代旧的单槽 `UNDO_SCRIPT`
-- [x] 侧边栏 UI：确认卡片（含代码预览、批准/拒绝）、撤销条、工具调用列表新增「待确认」状态（`entrypoints/sidepanel/store.ts`、`App.tsx`）
+- [x] 侧边栏 UI：确认卡片（批准/拒绝）、撤销条、工具调用列表新增「待确认」状态（`entrypoints/sidepanel/store.ts`、`App.tsx`）
 - [x] 系统提示词补充写工具说明（原提示词完全面向只读分析，模型不会主动调用写工具）
 
-> 实现过程中发现并修复两处计划外的缺口：`browser_inject_script` 从未被注册为 Agent 工具（补上）；系统提示词从未提及写工具存在，导致模型即使有工具也不会调用（补上）。均已通过真实 LLM 会话（DeepSeek deepseek-v4-pro）现场验证：确认卡片每轮仅弹出一次、批准后同轮后续写操作自动执行、页面确实按要求改变、撤销能还原、拒绝后模型能正常收敛而不崩溃或重试、新一轮会重新要求确认。
+> 写工具的确认和撤销行为已通过真实 LLM 会话验证；1.1.0 Store 最终审查已移除 `browser_inject_script` 和对应的 `userScripts` 权限，保留其余结构化页面工具。
 
 ## 变更日志
 
 | 日期 | 内容 | 关联 |
+| 2026-07-28 | Chrome Web Store 1.1.0 最终审查：移除 AI 生成 JavaScript 执行、`browser_inject_script`、`userScripts` 权限及等待 UI；新增可测试的资源获取模块，拒绝 IPv6 本地/未指定/链路本地/唯一本地与 IPv4 映射内网地址，并对 Chrome 隐藏目标的不透明重定向安全失败；同步修正双语同意说明、隐私政策和 Store 材料 | 2026-07-27-chrome-web-store-1-1-relaunch |
 |------|------|------|
 | 2026-07-27 | 侧边栏 + 设置页新增「跟随浏览器 / 中文 / English」三态语言切换（默认跟随浏览器，偏好存 `chrome.storage.local`）：新增 `lib/i18n` 模块（zh/en 字典 + `useTranslation()` Context + 供 `store.ts` 用的非 hook `t()`，与 `lib/theme.ts` 的 auto/手动覆盖模式一致），全量迁移侧边栏/设置页/Provider 表单/错误提示与注入聊天气泡（Agent 系统提示词与发给模型的 prompt 变量维持中文不译）；Chrome Web Store 商店列表（扩展名称/描述）通过 `default_locale` + `_locales/{zh_CN,en}/messages.json` 独立本地化；新增 `README.en.md` 并与中文版互链。代码层已通过类型检查、154/154 单测、生产构建；中英文界面切换的真机视觉验收待用户执行确认 | [[2026-07-27-english-language-support-design]], 2026-07-27-english-language-support.md |
 | 2026-07-26 | 「添加 Provider」表单的「快速预设」下拉新增「自定义（手动填写）」选项（末尾，上方带不可选分隔项）。自定义被建模为空预设 `{ name: '', baseURL: '', model: '' }`，复用 `applyPresetToDraft` 已有的双分支语义：添加态整体覆盖 → 清空厂商字段，编辑态「非空不覆盖」→ 保护已保存值不被误清。新增 `resolvePresetSelection()`/`draftPlaceholders()` 两个纯函数，后者把组件内写死的 DeepSeek 风格 placeholder 收进 `lib/settings.ts` 并按选中预设切换（自定义态给与厂商无关的通用示例）。起因：厂商字段本就是自由文本、配置任意中转站早已可行，但下拉只列内置厂商，用户会误以为必须从中选一个。代码层已通过类型检查、单测、生产构建；两项真机验收待用户执行确认：不可选分隔项在 Chrome + Firefox 下的跨引擎渲染表现，以及添加态的冒烟流程（选 DeepSeek 填充 → 选自定义 → 三个字段清空并显示新占位文案） | [[2026-07-26-provider-custom-preset-option-design]], 2026-07-26-provider-custom-preset-option.md |

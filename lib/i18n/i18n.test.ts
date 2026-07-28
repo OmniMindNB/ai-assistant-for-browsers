@@ -1,5 +1,36 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { interpolate, loadLocale, localeFromLanguageTag, resolveLocale, saveLocale, t } from './index';
+import { en } from './locales/en';
+import { zh } from './locales/zh';
+
+const privacyKeys = [
+  'privacy.loading',
+  'privacy.title',
+  'privacy.intro',
+  'privacy.pageDataTitle',
+  'privacy.pageDataBody',
+  'privacy.localDataTitle',
+  'privacy.localDataBody',
+  'privacy.noBackendTitle',
+  'privacy.noBackendBody',
+  'privacy.readPolicy',
+  'privacy.notNow',
+  'privacy.agree',
+  'privacy.saving',
+  'privacy.deferred',
+  'privacy.saveFailed',
+] as const;
+
+describe('privacy consent translations', () => {
+  it('provides every required string in English and Chinese', () => {
+    for (const key of privacyKeys) {
+      expect(en[key]).toEqual(expect.any(String));
+      expect(en[key]).not.toBe('');
+      expect(zh[key]).toEqual(expect.any(String));
+      expect(zh[key]).not.toBe('');
+    }
+  });
+});
 
 describe('localeFromLanguageTag', () => {
   it('maps zh-prefixed tags to zh', () => {

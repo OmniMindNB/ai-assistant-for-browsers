@@ -82,13 +82,6 @@ export const en: Record<keyof typeof zh, string> = {
   'confirm.deny': 'Deny',
   'confirm.approveHint':
     'Once approved, further write actions this turn run automatically without asking again; every change made this turn can be undone with one click.',
-  'confirm.elapsedMinutesSeconds': '{minutes}m {seconds}s',
-  'confirm.elapsedSecondsOnly': '{seconds}s',
-  'confirm.userScriptsWaitingTitle': '⏳ Waiting for "Allow User Scripts" to be enabled…',
-  'confirm.userScriptsWaitingBody':
-    'Injecting a script requires enabling "Allow User Scripts" on this extension\'s details page; waited {elapsed}, retried {attempts} time(s). It will continue automatically once enabled — no need to ask again.',
-  'confirm.openExtensionSettings': '🔧 Open settings',
-  'confirm.cancelWait': 'Cancel waiting',
   'confirm.undoBarStatus': '● Page modified this turn',
   'confirm.undoBarButton': 'Undo this turn',
   'chat.summarizeChipLabel': 'Summarize page',
@@ -120,4 +113,21 @@ export const en: Record<keyof typeof zh, string> = {
   'store.onlyToolCalls':
     'The model only made tool calls and ended the turn without a text reply. Please ask again, or try a more specific question.',
   'store.noTextResult': 'This agent run produced no text result. See the side panel console log for details (right-click → Inspect).',
+  'privacy.loading': 'Loading privacy notice…',
+  'privacy.title': 'Privacy & data use',
+  'privacy.intro': 'Before you continue, please review how Aluminum handles your data.',
+  'privacy.pageDataTitle': 'Page data is sent to your AI provider',
+  'privacy.pageDataBody':
+    'When you make an AI request, your API key, current prompt, recent conversation context, and relevant page-derived results are sent directly to your configured AI provider endpoint.',
+  'privacy.localDataTitle': 'Stored locally in your browser',
+  'privacy.localDataBody':
+    'Provider settings, API keys, consent state, and conversation history are stored locally in your browser.',
+  'privacy.noBackendTitle': 'No Aluminum backend or analytics',
+  'privacy.noBackendBody': 'Aluminum has no developer-operated backend or analytics.',
+  'privacy.readPolicy': 'Read the Privacy Policy',
+  'privacy.notNow': 'Not now',
+  'privacy.agree': 'Agree & continue',
+  'privacy.saving': 'Saving…',
+  'privacy.deferred': 'Please agree to this notice before using Aluminum.',
+  'privacy.saveFailed': 'Couldn’t save your consent. Please try again.',
 };

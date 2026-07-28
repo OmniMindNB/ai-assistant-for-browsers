@@ -33,7 +33,7 @@ The relaunch must also align the product, Store disclosures, public privacy poli
 - Change the package version from `1.0.0` to `1.1.0`.
 - Change the manifest `default_locale` from `zh_CN` to `en`.
 - Keep `en` and `zh_CN` Chrome locale catalogs.
-- Keep the existing permissions and host permissions unchanged.
+- Remove `userScripts` from the Store build; keep the remaining permissions and host permission unchanged.
 - Treat the release as a normal update to the existing Store item.
 
 Existing `1.0.0` users must complete the new privacy consent gate the first time they open `1.1.0`. The consent record stays only in `chrome.storage.local`.
@@ -45,7 +45,7 @@ Existing `1.0.0` users must complete the new privacy consent gate the first time
 Before consent, both the side panel and Options page show a dedicated full-page privacy notice instead of the normal product UI. The page explains:
 
 - Page content, screenshots, and conversations may be sent to the AI provider configured by the user.
-- API keys, provider settings, consent state, and conversation history remain in browser-local storage.
+- Provider settings, API keys, consent state, and conversation history remain in browser-local storage. For an AI request, the API key, current prompt, recent conversation context, and relevant page-derived results go directly to the configured provider endpoint.
 - Aluminum has no developer-operated backend, analytics, or advertising SDK.
 
 The page provides:
@@ -109,7 +109,6 @@ The release materials include paste-ready English and Chinese answers for:
 - `scripting`.
 - `storage`.
 - `sidePanel`.
-- `userScripts`.
 - `<all_urls>` host access.
 - Data collection and use.
 
@@ -213,7 +212,7 @@ Verify:
 - `Agree & continue` persists across reopening the side panel and Options page.
 - Storage failures do not bypass consent.
 - English and Chinese versions render complete copy and correct links.
-- Provider configuration, summarization, confirmation, undo, and the `userScripts` wait flow still work after consent.
+- Provider configuration, summarization, confirmation, and undo still work after consent.
 - No page extraction or provider request occurs before consent.
 - Both public privacy-policy routes are live and equivalent.
 - The final English and Chinese screenshots match the released UI.

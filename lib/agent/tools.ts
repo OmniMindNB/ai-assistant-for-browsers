@@ -14,8 +14,6 @@ import {
   type GetScriptsResult,
   type GetStylesheetsPayload,
   type GetStylesheetsResult,
-  type InjectScriptPayload,
-  type InjectScriptResult,
   type MessageResponse,
   type MessageType,
   type ModifyDomPayload,
@@ -38,10 +36,6 @@ import {
   type TypeTextPayload,
   type TypeTextResult,
 } from '@/lib/messaging';
-import { isUserScriptsToggleBlocked } from './inject-script-blocked';
-
-const USER_SCRIPTS_RETRY_INTERVAL_MS = 2500;
-const USER_SCRIPTS_WAIT_TIMEOUT_MS = 3 * 60 * 1000;
 
 export type BrowserAgentTool = AgentTool<any, Record<string, unknown>>;
 
@@ -65,7 +59,6 @@ export function createBrowserTools(tabId: number): BrowserAgentTool[] {
     makeScrollTool(tabId),
     makeNavigateTool(tabId),
     makeSetStorageTool(tabId),
-    makeInjectScriptTool(tabId),
     makeRevertChangesTool(tabId),
   ];
 }
@@ -546,64 +539,6 @@ function makeSetStorageTool(tabId: number): BrowserAgentTool {
   };
 }
 
-function makeInjectScriptTool(tabId: number): BrowserAgentTool {
-  return {
-    name: 'browser_inject_script',
-    label: 'Inject Script',
-    description:
-      "Inject and execute a JavaScript snippet in the current page (MAIN world) via Chrome's userScripts API for page modifications not covered by the other structured tools — e.g. reading mode, dark theme, or complex layout changes. The script is statically scanned for dangerous APIs before execution.",
-    parameters: Type.Object({
-      code: Type.String({ description: 'JavaScript source to execute in the page.' }),
-    }),
-    execute: async (_toolCallId, params, signal, onUpdate) => {
-      const payload = params as InjectScriptPayload;
-      const attemptInject = () =>
-        sendMessage<InjectScriptPayload, InjectScriptResult>('INJECT_SCRIPT', payload, tabId) as Promise<
-          MessageResponse<InjectScriptResult>
-        >;
-      const successResult = (data: InjectScriptResult, waited: boolean) =>
-        textResult(
-          (data.result ? `已注入并执行脚本，返回值：${data.result}` : '已注入并执行脚本。') +
-            (waited ? '（等待用户开启「允许用户脚本」开关后完成注入）' : ''),
-          data as unknown as Record<string, unknown>,
-        );
-
-      let response = await attemptInject();
-      if (response.ok && response.data) return successResult(response.data, false);
-      if (!isUserScriptsToggleBlocked('browser_inject_script', response.error)) {
-        throw new Error(response.error ?? '脚本注入失败');
-      }
-
-      const startedAt = Date.now();
-      let attempts = 0;
-      while (true) {
-        if (signal?.aborted) {
-          throw new DOMException('用户取消了等待「允许用户脚本」开关开启。', 'AbortError');
-        }
-        const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
-        if (Date.now() - startedAt >= USER_SCRIPTS_WAIT_TIMEOUT_MS) {
-          throw new Error('等待「允许用户脚本」开关开启超时（3 分钟），已放弃注入。');
-        }
-        attempts += 1;
-        onUpdate?.({
-          content: [
-            { type: 'text', text: `等待用户开启「允许用户脚本」开关……已重试 ${attempts} 次（${elapsedSeconds}s）` },
-          ],
-          details: { waitingForUserScriptsToggle: true, attempts, elapsedSeconds },
-        });
-
-        await sleep(USER_SCRIPTS_RETRY_INTERVAL_MS, signal);
-
-        response = await attemptInject();
-        if (response.ok && response.data) return successResult(response.data, true);
-        if (!isUserScriptsToggleBlocked('browser_inject_script', response.error)) {
-          throw new Error(response.error ?? '脚本注入失败');
-        }
-      }
-    },
-  };
-}
-
 function makeRevertChangesTool(tabId: number): BrowserAgentTool {
   return {
     name: 'browser_revert_changes',
@@ -625,23 +560,6 @@ function makeRevertChangesTool(tabId: number): BrowserAgentTool {
   };
 }
 
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(new DOMException('用户取消了等待「允许用户脚本」开关开启。', 'AbortError'));
-      return;
-    }
-    const onAbort = () => {
-      clearTimeout(timer);
-      reject(new DOMException('用户取消了等待「允许用户脚本」开关开启。', 'AbortError'));
-    };
-    const timer = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort);
-      resolve();
-    }, ms);
-    signal?.addEventListener('abort', onAbort, { once: true });
-  });
-}
 
 function textResult(text: string, details: Record<string, unknown>) {
   return {

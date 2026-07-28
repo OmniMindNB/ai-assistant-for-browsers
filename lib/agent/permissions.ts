@@ -1,5 +1,4 @@
 import type { BeforeToolCallContext, BeforeToolCallResult } from '@earendil-works/pi-agent-core';
-import { analyzeScript } from '@/lib/security';
 import { resolveConfirmGate, type ConfirmFn, type ConfirmGateState } from './confirm-gate';
 
 export type PermissionLevel = 'always_allow' | 'auto_allow' | 'confirm' | 'deny';
@@ -25,7 +24,6 @@ const READ_ONLY_TOOLS = new Set([
 const AUTO_ALLOW_TOOLS = new Set(['browser_revert_changes']);
 
 const CONFIRM_TOOLS = new Set([
-  'browser_inject_script',
   'browser_set_style',
   'browser_modify_dom',
   'browser_click',
@@ -41,17 +39,6 @@ const DENY_TOOLS = new Set(['browser_eval_raw']);
 export function decideToolPermission(toolName: string, args: unknown): PermissionDecision {
   if (DENY_TOOLS.has(toolName)) {
     return { level: 'deny', reason: `工具 ${toolName} 被全局禁止。` };
-  }
-
-  if (toolName === 'browser_inject_script') {
-    const code = extractStringArg(args, 'code');
-    if (!code.trim()) return { level: 'deny', reason: '注入脚本为空。' };
-    const report = analyzeScript(code);
-    if (!report.valid) {
-      return { level: 'deny', reason: `脚本语法错误：${report.syntaxError ?? '未知'}` };
-    }
-    const danger = report.issues.find((issue) => issue.level === 'danger');
-    if (danger) return { level: 'deny', reason: danger.message };
   }
 
   if (toolName === 'browser_navigate') {
