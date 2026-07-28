@@ -5,7 +5,7 @@ Release date: 2026-07-28
 ## Package
 
 - [x] ZIP: `/Users/dongliu/startup/ai-assistant-for-browsers/.output/aluminum-1.1.0-chrome.zip`
-- [x] SHA-256: `98723a04ff2e35a52e0f54c05bea136b60f65b6dec6be726167b07b8a1e7a6c6`
+- [x] SHA-256: `7a204f4483156de747b031bdf882c4b9fc3852ffb59c22d112b7b379714afe5a`
 - [x] Generated manifest: `/Users/dongliu/startup/ai-assistant-for-browsers/.output/chrome-mv3/manifest.json`
 - [x] Archive manifest matches the generated manifest exactly.
 - [x] Archive manifest declares version `1.1.0` and `default_locale: "en"`.
