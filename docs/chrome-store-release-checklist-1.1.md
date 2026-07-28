@@ -5,12 +5,12 @@ Release date: 2026-07-28
 ## Package
 
 - [x] ZIP: `/Users/dongliu/startup/ai-assistant-for-browsers/.worktrees/chrome-store-1-1-relaunch/.output/aluminum-1.1.0-chrome.zip`
-- [x] SHA-256: `e97ab36b72d2b21f2e6d2b2c7684fda81bd3b3f7b0985b063f4bdf0126205514`
+- [x] SHA-256: `b533e6ad5d32b6342bbd20812f6444188a2afc88093c22efff226b9f4a972390`
 - [x] Generated manifest: `/Users/dongliu/startup/ai-assistant-for-browsers/.worktrees/chrome-store-1-1-relaunch/.output/chrome-mv3/manifest.json`
 - [x] Archive manifest matches the generated manifest exactly.
 - [x] Archive manifest declares version `1.1.0` and `default_locale: "en"`.
 - [x] Archive contains `_locales/en/messages.json` and `_locales/zh_CN/messages.json`.
-- [x] Permissions are unchanged from release base commit `0029452`: `sidePanel`, `storage`, `scripting`, `activeTab`, `tabs`, and `userScripts`; host permission remains `<all_urls>`.
+- [x] Permissions: `sidePanel`, `storage`, `scripting`, `activeTab`, and `tabs`; host permission remains `<all_urls>`. The Store build does not request `userScripts`.
 
 ## Store Content and Policy
 
@@ -30,7 +30,7 @@ Release date: 2026-07-28
 ## Automated Verification
 
 - [x] `pnpm compile` — exit `0`; `tsc --noEmit` produced no diagnostics.
-- [x] `pnpm test` — exit `0`; 19 test files and 169 tests passed.
+- [x] `pnpm test` — exit `0`; 19 test files and 179 tests passed.
 - [x] `pnpm build` — exit `0`; WXT built `.output/chrome-mv3` for production.
 - [x] `pnpm zip` — exit `0`; WXT generated the release ZIP above.
 - [x] `unzip -l .output/aluminum-1.1.0-chrome.zip` — archive contains 44 entries, including both locale directories.
@@ -48,7 +48,6 @@ No interactive Chrome extension runtime is available in this environment. The fo
 - [ ] DEFERRED — Provider configuration with a real test provider.
 - [ ] DEFERRED — Summarization and evidence analysis with a real provider.
 - [ ] DEFERRED — Confirmation flow and turn-level undo in Chrome.
-- [ ] DEFERRED — `userScripts` permission wait, cancel, and retry behavior in Chrome.
 
 ## Submission Gate
 

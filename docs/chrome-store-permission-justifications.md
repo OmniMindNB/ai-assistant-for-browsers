@@ -1,9 +1,9 @@
 # Chrome Web Store Permission and Data-Use Answers
 
-Paste-ready answers for the Chrome Web Store Developer Dashboard. The release keeps the existing permission set unchanged:
+Paste-ready answers for the Chrome Web Store Developer Dashboard. The `1.1.0` Store build uses this permission set:
 
 ```text
-permissions: sidePanel, storage, scripting, activeTab, tabs, userScripts
+permissions: sidePanel, storage, scripting, activeTab, tabs
 host_permissions: <all_urls>
 ```
 
@@ -56,13 +56,13 @@ Used to identify and validate the user-selected target tab, read its title and U
 **English**
 
 ```text
-Used to run functions packaged with Aluminum in the target tab for page reading, structured page changes, and turn-level undo snapshots. Page-changing tools run only after the user starts a request and approves the write action. AI-generated JavaScript is not executed through eval or new Function; it uses the separate userScripts permission described below.
+Used to run functions packaged with Aluminum in the target tab for page reading, structured page changes, and turn-level undo snapshots. Page-changing tools run only after the user starts a request and approves the write action. Aluminum does not execute AI-generated JavaScript.
 ```
 
 **简体中文**
 
 ```text
-用于在目标标签页中运行随 Aluminum 打包的函数，以读取页面、执行结构化页面修改并保存轮次级撤销快照。页面写入工具只会在用户发起请求并批准写操作后运行。AI 生成的 JavaScript 不通过 eval 或 new Function 执行，而是使用下述独立的 userScripts 权限。
+用于在目标标签页中运行随 Aluminum 打包的函数，以读取页面、执行结构化页面修改并保存轮次级撤销快照。页面写入工具只会在用户发起请求并批准写操作后运行。Aluminum 不执行 AI 生成的 JavaScript。
 ```
 
 ## `storage`
@@ -91,20 +91,6 @@ Used to host Aluminum’s primary user interface: the AI conversation and page-a
 
 ```text
 用于承载 Aluminum 的主要用户界面，即 AI 对话与页面操作侧边栏。
-```
-
-## `userScripts`
-
-**English**
-
-```text
-Used to execute AI-generated JavaScript in the current page through Chrome’s official chrome.userScripts.execute() API for user-requested transformations not covered by packaged structured tools. The code is syntax-checked and screened for dangerous APIs, is shown in the confirmation UI, and runs only after user approval. Chrome also requires the user to enable “Allow User Scripts” on the extension details page; Aluminum waits or reports clearly when that setting is disabled.
-```
-
-**简体中文**
-
-```text
-用于通过 Chrome 官方 chrome.userScripts.execute() API，在当前页面执行 AI 生成的 JavaScript，以完成随扩展打包的结构化工具无法覆盖、且由用户请求的页面改造。代码会进行语法校验和危险 API 扫描，在确认界面中展示，并且只在用户批准后运行。Chrome 还要求用户在扩展详情页开启“允许用户脚本”；该设置关闭时，Aluminum 会等待或明确提示。
 ```
 
 ## Host access: `<all_urls>`

@@ -39,9 +39,9 @@ Use Aluminum to:
 • Undo page changes made during the current modified turn with one click.
 • Connect your own OpenAI-compatible or Anthropic-compatible AI provider, including a custom endpoint.
 
-Aluminum is local-first: provider settings, API keys, consent state, and conversation history are stored in your browser. Aluminum has no developer-operated backend, analytics, or advertising SDK. When you use an AI feature, recent conversation content and relevant current-page tool results are transmitted directly from the extension to the AI provider endpoint you configured. That provider processes the request under its own terms and privacy policy.
+Aluminum is local-first: provider settings, API keys, consent state, and conversation history are stored in your browser. Aluminum has no developer-operated backend, analytics, or advertising SDK. When you use an AI feature, your API key, current prompt, recent conversation context, and relevant current-page tool results are transmitted directly from the extension to the AI provider endpoint you configured. That provider processes the request under its own terms and privacy policy.
 
-Aluminum reads or changes a page only after you open the product and initiate an action. Page-changing tools require approval before they run. Some advanced script-based transformations also require Chrome’s separate “Allow User Scripts” setting.
+Aluminum reads or changes a page only after you open the product and initiate an action. Page-changing tools require approval before they run.
 ```
 
 ## Screenshot captions

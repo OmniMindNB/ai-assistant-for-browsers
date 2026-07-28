@@ -37,7 +37,7 @@ const MAX_AGENT_TOOL_TURNS = 50;
 
 const SYSTEM_PROMPT =
   '你是 Aluminum，一个深入浏览器、值得信赖的 AI Agent。你可以按需读取当前网页的正文、DOM、HTML、脚本、样式表、计算样式、页面元信息和截图，再回答用户。' +
-  '你还拥有页面写入与交互工具（browser_set_style、browser_modify_dom、browser_click、browser_type、browser_select、browser_scroll、browser_navigate、browser_set_storage、browser_inject_script、browser_revert_changes）。' +
+  '你还拥有页面写入与交互工具（browser_set_style、browser_modify_dom、browser_click、browser_type、browser_select、browser_scroll、browser_navigate、browser_set_storage、browser_revert_changes）。' +
   '当用户要求修改或操作当前页面（例如去广告、切换阅读模式、改样式、移除元素、填写表单、点击、跳转、撤销更改等）时，请直接调用对应的写工具去完成，不需要先做完整的实现巡检；只有在必须先定位具体元素或选择器时，才用 browser_query_dom / browser_get_html 做少量确认。写工具首次调用会触发一次性用户确认——这些操作会逐一向用户展示并需要确认，且整轮改动可通过 browser_revert_changes 完整撤销，因此可以放心直接调用，用户批准后本轮内的同类调用会自动执行，不要因为担心权限而绕过工具去建议用户手动操作。' +
   '当用户询问页面实现方式（例如滚动效果、动画、布局、交互、脚本逻辑）时，不要只依据正文猜测；请优先调用 browser_inspect_page_implementation 一次性收集证据，并在回答时点名引用具体的 DOM class、脚本片段、样式规则或 computed style，而不是给笼统的描述。' +
   `工具预算最多 ${MAX_AGENT_TOOL_TURNS} 次；实现分析类问题先用 browser_inspect_page_implementation，必要时只做少量定向补查，避免重复调用 scripts/stylesheets/query_dom/computed_style。` +
@@ -68,7 +68,6 @@ const REQUIRED_AGENT_MESSAGE_TYPES = [
 ] as const;
 
 const WRITE_TOOL_NAMES = new Set([
-  'browser_inject_script',
   'browser_set_style',
   'browser_modify_dom',
   'browser_click',
@@ -94,11 +93,6 @@ export interface PendingConfirmation {
   codePreview?: string;
 }
 
-export interface UserScriptsWaitState {
-  attempts: number;
-  elapsedSeconds: number;
-}
-
 interface ChatState {
   messages: UIMessage[];
   toolActivities: ToolActivity[];
@@ -107,7 +101,6 @@ interface ChatState {
   error: string | null;
   pendingConfirmation: PendingConfirmation | null;
   turnHasChanges: boolean;
-  userScriptsWait: UserScriptsWaitState | null;
   provider: ProviderConfig | null;
   /** 全部已配置 Provider（输入框选择器枚举用） */
   providers: ProviderConfig[];
@@ -186,7 +179,6 @@ export const useChat = create<ChatState>((set, get) => ({
   error: null,
   pendingConfirmation: null,
   turnHasChanges: false,
-  userScriptsWait: null,
   provider: null,
   providers: [],
   selectedProviderId: null,
@@ -283,7 +275,7 @@ export const useChat = create<ChatState>((set, get) => ({
   stop: () => {
     activeAgent?.abort();
     pendingConfirmResolve = null;
-    set({ pendingConfirmation: null, userScriptsWait: null });
+    set({ pendingConfirmation: null });
   },
 
   respondToConfirmation: (approved) => {
@@ -316,7 +308,6 @@ export const useChat = create<ChatState>((set, get) => ({
     set({
       messages: [],
       toolActivities: [],
-      userScriptsWait: null,
       error: null,
       conversationId: genConversationId(),
       turnHasChanges: false,
@@ -344,7 +335,6 @@ export const useChat = create<ChatState>((set, get) => ({
     set({
       messages,
       toolActivities: [],
-      userScriptsWait: null,
       conversationId: id,
       error: null,
       turnHasChanges: false,
@@ -372,7 +362,6 @@ export const useChat = create<ChatState>((set, get) => ({
       set({
         messages: [],
         toolActivities: [],
-        userScriptsWait: null,
         conversationId: genConversationId(),
         turnHasChanges: false,
         pendingConfirmation: null,
@@ -449,7 +438,6 @@ async function runAgent(
   set({
     messages: [...history, display, makeMessage('assistant', '')],
     toolActivities: [],
-    userScriptsWait: null,
     input: '',
     busy: true,
     error: null,
@@ -493,15 +481,6 @@ async function runAgent(
     }
 
     if (event.type === 'tool_execution_update') {
-      const details = (event.partialResult as { details?: Record<string, unknown> } | undefined)?.details;
-      if (event.toolName === 'browser_inject_script' && details?.waitingForUserScriptsToggle) {
-        set({
-          userScriptsWait: {
-            attempts: typeof details.attempts === 'number' ? details.attempts : 0,
-            elapsedSeconds: typeof details.elapsedSeconds === 'number' ? details.elapsedSeconds : 0,
-          },
-        });
-      }
       upsertToolActivity(set, {
         id: event.toolCallId,
         name: event.toolName,
@@ -518,9 +497,6 @@ async function runAgent(
         status: blocked ? 'blocked' : event.isError ? 'error' : 'done',
         detail: event.isError ? compactJson(event.result) : undefined,
       });
-      if (event.toolName === 'browser_inject_script') {
-        set({ userScriptsWait: null });
-      }
       if (!event.isError) {
         if (event.toolName === 'browser_revert_changes') {
           set({ turnHasChanges: false });

@@ -2,12 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { summarizeToolCallForConfirmation } from './confirm-summary';
 
 describe('summarizeToolCallForConfirmation', () => {
-  it('summarizes inject_script with a code preview', () => {
-    const result = summarizeToolCallForConfirmation('browser_inject_script', { code: 'document.title = "x"' });
-    expect(result.summary).toContain('注入');
-    expect(result.codePreview).toBe('document.title = "x"');
-  });
-
   it('summarizes set_style with the selector', () => {
     const result = summarizeToolCallForConfirmation('browser_set_style', { selector: '.ad', styles: { display: 'none' } });
     expect(result.summary).toContain('.ad');

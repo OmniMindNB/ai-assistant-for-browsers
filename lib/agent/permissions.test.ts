@@ -31,7 +31,6 @@ describe('decideToolPermission', () => {
 
   it('requires confirmation for the write/interaction tools', () => {
     for (const tool of [
-      'browser_inject_script',
       'browser_set_style',
       'browser_modify_dom',
       'browser_click',
@@ -42,10 +41,6 @@ describe('decideToolPermission', () => {
     ]) {
       expect(decideToolPermission(tool, { code: 'void 0' }).level).toBe('confirm');
     }
-  });
-
-  it('denies inject_script with dangerous code', () => {
-    expect(decideToolPermission('browser_inject_script', { code: 'eval("x")' }).level).toBe('deny');
   });
 
   it('denies navigate to a javascript: URL', () => {

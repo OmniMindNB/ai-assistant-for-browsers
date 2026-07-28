@@ -19,7 +19,7 @@ pnpm zip
 
 - 产物为 `.output/aluminum-1.1.0-chrome.zip`。
 - 产物 `manifest.json` 中 `version` 为 `1.1.0`，`default_locale` 为 `en`。
-- 权限仍为 `sidePanel`、`storage`、`scripting`、`activeTab`、`tabs`、`userScripts`，主机访问权限仍为 `<all_urls>`。
+- 权限为 `sidePanel`、`storage`、`scripting`、`activeTab`、`tabs`，主机访问权限为 `<all_urls>`；不包含 `userScripts`。
 - `_locales/en/` 与 `_locales/zh_CN/` 均已包含在 ZIP 中。
 - ZIP 不包含 API Key、个人邮箱截图、测试账号信息或无关文件。
 

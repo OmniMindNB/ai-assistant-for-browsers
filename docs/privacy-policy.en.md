@@ -65,7 +65,6 @@ Aluminum `1.1.0` uses this permission set:
 | `scripting` | Runs packaged read and structured-write functions in the target page and captures undo state |
 | `storage` | Stores local settings and consent plus temporary session and undo state |
 | `sidePanel` | Hosts Aluminum’s primary interface |
-| `userScripts` | Runs AI-generated JavaScript for approved transformations through Chrome’s official user-scripts API; Chrome also requires the user to enable “Allow User Scripts” |
 | Host access: `<all_urls>` | Lets the same current-page Agent work on user-selected HTTP and HTTPS sites and fetch page-referenced resources |
 
 Read-only page tools may run after you initiate an Agent request. Page-changing tools require confirmation before the first write action in a turn. Aluminum does not passively build a browsing-history profile.
@@ -74,7 +73,7 @@ Read-only page tools may run after you initiate an Agent request. Page-changing 
 
 For page-implementation analysis, Aluminum may follow HTTP or HTTPS URLs found in the current page’s `<script src>` and stylesheet `<link href>` elements to retrieve source text. The request goes directly to the referenced resource host, which can receive normal network metadata such as your IP address.
 
-Before fetching, Aluminum rejects non-HTTP(S) URLs and literal hosts matching localhost, unspecified, loopback, common private-network, link-local, and IPv6 unique-local ranges. Allowed source text may be sent to your configured AI provider as part of the requested analysis. These checks reduce server-side request forgery (SSRF) risk but are not a guarantee against every network or DNS-based attack; use Aluminum on pages and networks you trust.
+Before fetching, Aluminum rejects non-HTTP(S) URLs and literal hosts matching localhost, unspecified, loopback, common private-network, link-local, IPv6 unique-local, and IPv4-mapped IPv6 forms of those ranges. It follows redirects manually, resolves relative redirect locations, and validates each redirect target before requesting it. Allowed source text may be sent to your configured AI provider as part of the requested analysis. These checks reduce server-side request forgery (SSRF) risk but are not a guarantee against every network or DNS-based attack; use Aluminum on pages and networks you trust.
 
 ## 9. Children’s privacy
 
