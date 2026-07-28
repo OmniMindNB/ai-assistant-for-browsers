@@ -74,7 +74,7 @@ Result: compile passed; 19 test files and 179 tests passed; production build and
 ## ZIP Metadata
 
 - ZIP: `.output/aluminum-1.1.0-chrome.zip`
-- SHA-256: `b533e6ad5d32b6342bbd20812f6444188a2afc88093c22efff226b9f4a972390`
+- SHA-256: `b18d8c6f8f342d628a5b4044f2c587b4832c3ec798bf74d2f5f84bd3cfd0afb6`
 - Entries: `44`
 - Permissions: `sidePanel`, `storage`, `scripting`, `activeTab`, `tabs`
 - Host permission: `<all_urls>`
