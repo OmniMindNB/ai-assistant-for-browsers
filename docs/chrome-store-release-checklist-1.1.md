@@ -5,7 +5,7 @@ Release date: 2026-07-28
 ## Package
 
 - [x] ZIP: `/Users/dongliu/startup/ai-assistant-for-browsers/.output/aluminum-1.1.0-chrome.zip`
-- [x] SHA-256: `7ef7cffb825abf3abecfec50b58a1c7df9347f2f5f204fbecb0eb7b1e6bac659`
+- [x] SHA-256: `98723a04ff2e35a52e0f54c05bea136b60f65b6dec6be726167b07b8a1e7a6c6`
 - [x] Generated manifest: `/Users/dongliu/startup/ai-assistant-for-browsers/.output/chrome-mv3/manifest.json`
 - [x] Archive manifest matches the generated manifest exactly.
 - [x] Archive manifest declares version `1.1.0` and `default_locale: "en"`.
@@ -30,7 +30,7 @@ Release date: 2026-07-28
 ## Automated Verification
 
 - [x] `pnpm compile` — exit `0`; `tsc --noEmit` produced no diagnostics.
-- [x] `pnpm test` — exit `0`; 19 test files and 180 tests passed.
+- [x] `pnpm test` — exit `0`; 20 test files and 187 tests passed.
 - [x] `pnpm build` — exit `0`; WXT built `.output/chrome-mv3` for production.
 - [x] `pnpm zip` — exit `0`; WXT generated the release ZIP above.
 - [x] `unzip -l .output/aluminum-1.1.0-chrome.zip` — archive contains 44 entries, including both locale directories.
@@ -45,6 +45,7 @@ No interactive Chrome extension runtime is available in this environment. The fo
 - [ ] DEFERRED — Upgrade from Aluminum `1.0.0`.
 - [ ] DEFERRED — Consent decline, acceptance, cross-surface persistence, and storage-write failure in Chrome. Automated component/storage coverage passes, but browser UI verification is pending.
 - [ ] DEFERRED — English and Simplified Chinese language switching in Chrome.
+- [ ] DEFERRED — Under the English UI, both `Summarize page` and `Explain selection` answer in English; under the Simplified Chinese UI, both shortcuts answer in Chinese.
 - [ ] DEFERRED — Provider configuration with a real test provider.
 - [ ] DEFERRED — Summarization and evidence analysis with a real provider.
 - [ ] DEFERRED — Confirmation flow and turn-level undo in Chrome.
