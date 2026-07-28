@@ -69,12 +69,12 @@ CI=true pnpm build
 CI=true pnpm zip
 ```
 
-Result: compile passed; 19 test files and 179 tests passed; production build and ZIP creation passed. Generated and archived manifests were both checked for version `1.1.0`, `default_locale: "en"`, the `en` and `zh_CN` locale catalogs, and the absence of `userScripts`.
+Result: compile passed; 19 test files and 180 tests passed; production build and ZIP creation passed. Generated and archived manifests were both checked for version `1.1.0`, `default_locale: "en"`, the `en` and `zh_CN` locale catalogs, and the absence of `userScripts`.
 
 ## ZIP Metadata
 
 - ZIP: `.output/aluminum-1.1.0-chrome.zip`
-- SHA-256: `b18d8c6f8f342d628a5b4044f2c587b4832c3ec798bf74d2f5f84bd3cfd0afb6`
+- SHA-256: `cb29846193c173181e1d38b41f8240cb4f8596c9573b35155109610b9f1c3b46`
 - Entries: `44`
 - Permissions: `sidePanel`, `storage`, `scripting`, `activeTab`, `tabs`
 - Host permission: `<all_urls>`

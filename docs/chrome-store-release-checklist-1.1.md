@@ -5,7 +5,7 @@ Release date: 2026-07-28
 ## Package
 
 - [x] ZIP: `/Users/dongliu/startup/ai-assistant-for-browsers/.worktrees/chrome-store-1-1-relaunch/.output/aluminum-1.1.0-chrome.zip`
-- [x] SHA-256: `b18d8c6f8f342d628a5b4044f2c587b4832c3ec798bf74d2f5f84bd3cfd0afb6`
+- [x] SHA-256: `cb29846193c173181e1d38b41f8240cb4f8596c9573b35155109610b9f1c3b46`
 - [x] Generated manifest: `/Users/dongliu/startup/ai-assistant-for-browsers/.worktrees/chrome-store-1-1-relaunch/.output/chrome-mv3/manifest.json`
 - [x] Archive manifest matches the generated manifest exactly.
 - [x] Archive manifest declares version `1.1.0` and `default_locale: "en"`.
@@ -30,7 +30,7 @@ Release date: 2026-07-28
 ## Automated Verification
 
 - [x] `pnpm compile` — exit `0`; `tsc --noEmit` produced no diagnostics.
-- [x] `pnpm test` — exit `0`; 19 test files and 179 tests passed.
+- [x] `pnpm test` — exit `0`; 19 test files and 180 tests passed.
 - [x] `pnpm build` — exit `0`; WXT built `.output/chrome-mv3` for production.
 - [x] `pnpm zip` — exit `0`; WXT generated the release ZIP above.
 - [x] `unzip -l .output/aluminum-1.1.0-chrome.zip` — archive contains 44 entries, including both locale directories.
