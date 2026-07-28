@@ -4,9 +4,9 @@ Release date: 2026-07-28
 
 ## Package
 
-- [x] ZIP: `/Users/dongliu/startup/ai-assistant-for-browsers/.worktrees/chrome-store-1-1-relaunch/.output/aluminum-1.1.0-chrome.zip`
-- [x] SHA-256: `cb29846193c173181e1d38b41f8240cb4f8596c9573b35155109610b9f1c3b46`
-- [x] Generated manifest: `/Users/dongliu/startup/ai-assistant-for-browsers/.worktrees/chrome-store-1-1-relaunch/.output/chrome-mv3/manifest.json`
+- [x] ZIP: `/Users/dongliu/startup/ai-assistant-for-browsers/.output/aluminum-1.1.0-chrome.zip`
+- [x] SHA-256: `7ef7cffb825abf3abecfec50b58a1c7df9347f2f5f204fbecb0eb7b1e6bac659`
+- [x] Generated manifest: `/Users/dongliu/startup/ai-assistant-for-browsers/.output/chrome-mv3/manifest.json`
 - [x] Archive manifest matches the generated manifest exactly.
 - [x] Archive manifest declares version `1.1.0` and `default_locale: "en"`.
 - [x] Archive contains `_locales/en/messages.json` and `_locales/zh_CN/messages.json`.
@@ -14,17 +14,17 @@ Release date: 2026-07-28
 
 ## Store Content and Policy
 
-- [x] English listing document: `/Users/dongliu/startup/ai-assistant-for-browsers/.worktrees/chrome-store-1-1-relaunch/docs/chrome-store-listing.en.md`
-- [x] Simplified Chinese listing document: `/Users/dongliu/startup/ai-assistant-for-browsers/.worktrees/chrome-store-1-1-relaunch/docs/chrome-store-listing.zh-CN.md`
-- [x] Permission and data-disclosure answers: `/Users/dongliu/startup/ai-assistant-for-browsers/.worktrees/chrome-store-1-1-relaunch/docs/chrome-store-permission-justifications.md`
+- [x] English listing document: `/Users/dongliu/startup/ai-assistant-for-browsers/docs/chrome-store-listing.en.md`
+- [x] Simplified Chinese listing document: `/Users/dongliu/startup/ai-assistant-for-browsers/docs/chrome-store-listing.zh-CN.md`
+- [x] Permission and data-disclosure answers: `/Users/dongliu/startup/ai-assistant-for-browsers/docs/chrome-store-permission-justifications.md`
 - [x] English privacy policy: `https://omnimindnb.github.io/aluminum-legal/` returned HTTP `200`.
 - [x] Simplified Chinese privacy policy: `https://omnimindnb.github.io/aluminum-legal/zh-CN/` returned HTTP `200`.
 - [ ] PENDING — Confirm the final Dashboard category choices against the live Chrome Web Store privacy-practices form before saving a draft.
 
 ## Store Images
 
-- [ ] DEFERRED — English source directory: `/Users/dongliu/startup/ai-assistant-for-browsers/.worktrees/chrome-store-1-1-relaunch/docs/store-assets/source/en/`; real Aluminum screenshots are not available.
-- [ ] DEFERRED — Simplified Chinese source directory: `/Users/dongliu/startup/ai-assistant-for-browsers/.worktrees/chrome-store-1-1-relaunch/docs/store-assets/source/zh-CN/`; real Aluminum screenshots are not available.
+- [ ] DEFERRED — English source directory: `/Users/dongliu/startup/ai-assistant-for-browsers/docs/store-assets/source/en/`; real Aluminum screenshots are not available.
+- [ ] DEFERRED — Simplified Chinese source directory: `/Users/dongliu/startup/ai-assistant-for-browsers/docs/store-assets/source/zh-CN/`; real Aluminum screenshots are not available.
 - [ ] DEFERRED — Store screenshots and small promo images; Task 7 is skipped. Do not upload or represent any existing PNG as a verified 1.1.0 Store image asset.
 
 ## Automated Verification
