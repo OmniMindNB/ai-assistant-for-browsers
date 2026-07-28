@@ -113,7 +113,7 @@ export const zh = {
   'privacy.pageDataTitle': '网页数据会发送给 AI Provider',
   'privacy.pageDataBody':
     '当你发起 AI 请求时，API Key、当前提示词、近期对话上下文和相关页面结果会直接发送到你配置的 AI Provider 端点。',
-  'privacy.localDataTitle': '数据保留在本机',
+  'privacy.localDataTitle': '保存在浏览器本地',
   'privacy.localDataBody': 'Provider 设置、API Key、同意状态和对话历史保存在浏览器本地。',
   'privacy.noBackendTitle': '没有 Aluminum 后端或分析服务',
   'privacy.noBackendBody': 'Aluminum 不运营开发者后端，也不收集分析数据。',

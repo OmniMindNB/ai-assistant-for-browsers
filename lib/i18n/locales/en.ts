@@ -119,7 +119,7 @@ export const en: Record<keyof typeof zh, string> = {
   'privacy.pageDataTitle': 'Page data is sent to your AI provider',
   'privacy.pageDataBody':
     'When you make an AI request, your API key, current prompt, recent conversation context, and relevant page-derived results are sent directly to your configured AI provider endpoint.',
-  'privacy.localDataTitle': 'Your data stays local',
+  'privacy.localDataTitle': 'Stored locally in your browser',
   'privacy.localDataBody':
     'Provider settings, API keys, consent state, and conversation history are stored locally in your browser.',
   'privacy.noBackendTitle': 'No Aluminum backend or analytics',

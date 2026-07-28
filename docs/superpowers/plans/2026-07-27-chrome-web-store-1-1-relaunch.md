@@ -8,12 +8,16 @@
 
 **Tech Stack:** WXT Manifest V3, React 19, TypeScript 5.9, Vitest, Tailwind CSS 4, static HTML/CSS, Chrome Web Store, GitHub Pages.
 
+## Amendment — 2026-07-28 (User-Approved Option A)
+
+The final-review decision for the Chrome Web Store `1.1.0` build supersedes this plan wherever it describes AI-generated JavaScript execution. The Store build must not request `userScripts`, expose `browser_inject_script`, execute model-generated JavaScript, or include the associated Allow User Scripts wait/cancel/retry flow. Keep the remaining structured page tools and their confirmation behavior. This amendment also supersedes the permission and final manual-QA lines below.
+
 ## Global Constraints
 
 - Update the existing Chrome Web Store item; preserve its item ID.
 - Set the release version to exactly `1.1.0`.
 - Set English as the manifest and Store default; keep complete `zh_CN` localization.
-- Keep the permission and host-permission sets unchanged.
+- Use `sidePanel`, `storage`, `scripting`, `activeTab`, and `tabs` permissions with `<all_urls>` host access; do not request `userScripts`.
 - Store consent only in `chrome.storage.local`.
 - Fail closed when consent cannot be read or written.
 - Do not add analytics, accounts, a backend, cloud sync, or new dependencies.
@@ -351,7 +355,7 @@ Expected:
 ```text
 version: 1.1.0
 default_locale: en
-permissions: sidePanel, storage, scripting, activeTab, tabs, userScripts
+permissions: sidePanel, storage, scripting, activeTab, tabs
 host_permissions: <all_urls>
 ```
 
@@ -732,7 +736,7 @@ Confirm version `1.1.0`, `default_locale: "en"`, both `_locales` directories, an
 
 - [ ] **Step 3: Run final manual regression QA**
 
-Verify new install, `1.0.0` upgrade, consent decline/accept/persistence/failure, English/Chinese switching, Provider configuration, summarization, evidence analysis, confirmation, undo, and `userScripts` wait/cancel/retry.
+Verify new install, `1.0.0` upgrade, consent decline/accept/persistence/failure, English/Chinese switching, Provider configuration, summarization, evidence analysis, confirmation, undo, and the retained structured page tools.
 
 - [ ] **Step 4: Write the release checklist**
 
