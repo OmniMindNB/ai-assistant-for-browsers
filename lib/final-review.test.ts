@@ -67,17 +67,43 @@ describe('side-panel custom shortcut wiring', () => {
     );
   });
 
-  it('routes the existing built-in controls through the generic shortcut action', () => {
-    expect(appSource).toContain(
-      'shortcuts.find((shortcut) => shortcut.id === BUILTIN_SUMMARIZE_ID)',
-    );
-    expect(appSource).toContain(
-      'shortcuts.find((shortcut) => shortcut.id === BUILTIN_EXPLAIN_ID)',
-    );
+  it('routes shortcut controls through the generic shortcut action', () => {
     expect(appSource).toContain('refreshShortcuts();');
     expect(appSource).toContain('runShortcut(shortcut);');
     expect(appSource).not.toContain('summarizePage,');
     expect(appSource).not.toContain('explainSelection,');
+  });
+});
+
+describe('side-panel shortcut rendering', () => {
+  const source = fs.readFileSync(
+    path.resolve(process.cwd(), 'entrypoints/sidepanel/App.tsx'),
+    'utf8',
+  );
+
+  it('shows three direct shortcuts and puts the rest in a More menu', () => {
+    expect(source).toContain('splitShortcutList(shortcuts, 3)');
+    expect(source).toContain('overflow.length');
+    expect(source).toContain("t('chat.moreShortcuts'");
+    expect(source).toContain('onRunShortcut');
+  });
+
+  it('subscribes to external shortcut storage changes', () => {
+    expect(source).toContain('SHORTCUTS_STORAGE_KEY');
+    expect(source).toContain('browser.storage.onChanged.addListener');
+    expect(source).toContain('browser.storage.onChanged.removeListener');
+  });
+
+  it('removes the two hard-coded empty-state cards', () => {
+    expect(source).not.toContain('chat.summarizeCardTitle');
+    expect(source).not.toContain('chat.explainCardTitle');
+  });
+
+  it('exposes the overflow menu to assistive technology and keyboard users', () => {
+    expect(source).toContain('aria-haspopup="menu"');
+    expect(source).toContain('aria-expanded={open}');
+    expect(source).toContain("aria-label={t('chat.moreShortcutsAriaLabel'");
+    expect(source).toContain("event.key === 'Escape'");
   });
 });
 
