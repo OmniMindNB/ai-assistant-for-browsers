@@ -7,12 +7,20 @@ const Markdown = lazy(() => import('./Markdown'));
 import ProviderSettings from '@/components/ProviderSettings';
 import AppearanceSettings from '@/components/AppearanceSettings';
 import LanguageSettings from '@/components/LanguageSettings';
+import ShortcutSettings from '@/components/ShortcutSettings';
 import { useTheme, type ThemeMode } from '@/lib/theme';
 import { useTranslation, type LocaleMode, type Translate } from '@/lib/i18n';
 import { providerModels, type ProviderConfig } from '@/lib/settings';
 import type { ConversationRecord } from '@/lib/db';
 import { discardedCount, isEditableMessage } from '@/lib/chat/messages';
 import { isNearBottom } from '@/lib/scroll';
+import {
+  resolveShortcut,
+  SHORTCUTS_STORAGE_KEY,
+  splitShortcutList,
+  type ResolvedShortcut,
+  type ShortcutConfig,
+} from '@/lib/shortcuts';
 import MessageEditor from './MessageEditor';
 import type { PendingConfirmation, ToolActivity, UIMessage } from './store';
 import {
@@ -21,10 +29,8 @@ import {
   IconChevronDown,
   IconChevronRight,
   IconClose,
-  IconFileText,
   IconGear,
   IconMenu,
-  IconMessage,
   IconMonitor,
   IconMoon,
   IconPencil,
@@ -54,14 +60,16 @@ export default function App() {
     selectedModel,
     conversations,
     conversationId,
+    shortcuts,
+    shortcutErrors,
     setInput,
     refreshProvider,
+    refreshShortcuts,
     refreshConversations,
     selectProviderAndModel,
     send,
     editMessage,
-    summarizePage,
-    explainSelection,
+    runShortcut,
     stop,
     clear,
     openConversation,
@@ -89,12 +97,30 @@ export default function App() {
 
   const selectedProvider =
     providers.find((p) => p.id === selectedProviderId) ?? providers[0] ?? null;
+  const resolvedShortcuts = shortcuts.map((config) => ({
+    config,
+    resolved: resolveShortcut(config, t),
+  }));
 
   useEffect(() => {
     refreshProvider();
+    refreshShortcuts();
     refreshConversations();
     restoreTabConversation();
-  }, [refreshProvider, refreshConversations, restoreTabConversation]);
+  }, [refreshProvider, refreshShortcuts, refreshConversations, restoreTabConversation]);
+
+  useEffect(() => {
+    const listener = (
+      changes: Record<string, { oldValue?: unknown; newValue?: unknown }>,
+      areaName: string,
+    ) => {
+      if (areaName === 'local' && SHORTCUTS_STORAGE_KEY in changes) {
+        refreshShortcuts();
+      }
+    };
+    browser.storage.onChanged.addListener(listener);
+    return () => browser.storage.onChanged.removeListener(listener);
+  }, [refreshShortcuts]);
 
   useEffect(() => {
     const onResize = () => setNarrow(window.innerWidth < SIDEBAR_BREAKPOINT);
@@ -154,6 +180,11 @@ export default function App() {
   function submitMessage() {
     resetToFollowing();
     send();
+  }
+
+  function executeShortcut(shortcut: ShortcutConfig) {
+    resetToFollowing();
+    runShortcut(shortcut);
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -237,7 +268,7 @@ export default function App() {
             <main ref={scrollRef} className="h-full overflow-y-auto">
               <div className="mx-auto flex min-h-full max-w-3xl flex-col gap-6 px-4 py-6">
                 {messages.length === 0 ? (
-                  <EmptyState busy={busy} onSummarize={() => { resetToFollowing(); summarizePage(); }} onExplain={() => { resetToFollowing(); explainSelection(); }} />
+                  <EmptyState />
                 ) : (
                   messages.map((m) => (
                     <Message
@@ -269,6 +300,14 @@ export default function App() {
                     {error}
                   </div>
                 )}
+                {shortcutErrors.length > 0 && (
+                  <div
+                    role="alert"
+                    className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300"
+                  >
+                    {t('chat.shortcutConfigError')}
+                  </div>
+                )}
               </div>
             </main>
             {busy && showJumpToBottom && (
@@ -293,8 +332,8 @@ export default function App() {
             onKeyDown={onKeyDown}
             onSend={() => submitMessage()}
             onStop={stop}
-            onSummarize={() => { resetToFollowing(); summarizePage(); }}
-            onExplain={() => { resetToFollowing(); explainSelection(); }}
+            shortcuts={resolvedShortcuts}
+            onRunShortcut={executeShortcut}
             onSelectProviderModel={selectProviderAndModel}
           />
         </div>
@@ -566,6 +605,7 @@ function SettingsView({
           </p>
           <AppearanceSettings mode={themeMode} onSet={onSetTheme} />
           <LanguageSettings mode={localeMode} onSet={onSetLocale} />
+          <ShortcutSettings />
           <ProviderSettings onChange={onChange} />
         </div>
       </div>
@@ -575,15 +615,7 @@ function SettingsView({
 
 /* ---------------- 消息区 ---------------- */
 
-function EmptyState({
-  busy,
-  onSummarize,
-  onExplain,
-}: {
-  busy: boolean;
-  onSummarize: () => void;
-  onExplain: () => void;
-}) {
+function EmptyState() {
   const { t } = useTranslation();
   return (
     <div className="m-auto flex w-full max-w-md flex-col items-center text-center">
@@ -594,34 +626,6 @@ function EmptyState({
       <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
         {t('chat.emptySubtitle')}
       </p>
-      <div className="mt-5 grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
-        <button
-          onClick={onSummarize}
-          disabled={busy}
-          className="flex items-center gap-3 rounded-xl border border-neutral-200 bg-white px-3 py-3 text-left text-sm transition-colors hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-neutral-800 dark:bg-neutral-900 dark:hover:bg-neutral-800/60"
-        >
-          <span className="text-neutral-500 dark:text-neutral-400">
-            <IconFileText className="h-5 w-5" />
-          </span>
-          <span className="min-w-0">
-            <span className="block font-medium text-neutral-900 dark:text-neutral-100">{t('chat.summarizeCardTitle')}</span>
-            <span className="block text-xs text-neutral-500 dark:text-neutral-400">{t('chat.summarizeCardSubtitle')}</span>
-          </span>
-        </button>
-        <button
-          onClick={onExplain}
-          disabled={busy}
-          className="flex items-center gap-3 rounded-xl border border-neutral-200 bg-white px-3 py-3 text-left text-sm transition-colors hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-neutral-800 dark:bg-neutral-900 dark:hover:bg-neutral-800/60"
-        >
-          <span className="text-neutral-500 dark:text-neutral-400">
-            <IconMessage className="h-5 w-5" />
-          </span>
-          <span className="min-w-0">
-            <span className="block font-medium text-neutral-900 dark:text-neutral-100">{t('chat.explainCardTitle')}</span>
-            <span className="block text-xs text-neutral-500 dark:text-neutral-400">{t('chat.explainCardSubtitle')}</span>
-          </span>
-        </button>
-      </div>
     </div>
   );
 }
@@ -844,8 +848,8 @@ function Composer({
   onKeyDown,
   onSend,
   onStop,
-  onSummarize,
-  onExplain,
+  shortcuts,
+  onRunShortcut,
   onSelectProviderModel,
 }: {
   input: string;
@@ -857,8 +861,8 @@ function Composer({
   onKeyDown: (e: KeyboardEvent<HTMLTextAreaElement>) => void;
   onSend: () => void;
   onStop: () => void;
-  onSummarize: () => void;
-  onExplain: () => void;
+  shortcuts: Array<{ config: ShortcutConfig; resolved: ResolvedShortcut }>;
+  onRunShortcut: (shortcut: ShortcutConfig) => void;
   onSelectProviderModel: (providerId: string, model: string) => void;
 }) {
   const { t } = useTranslation();
@@ -884,8 +888,7 @@ function Composer({
               onSelect={onSelectProviderModel}
             />
           )}
-          <Chip onClick={onSummarize} disabled={busy} icon={<IconFileText className="h-3.5 w-3.5" />} label={t('chat.summarizeChipLabel')} />
-          <Chip onClick={onExplain} disabled={busy} icon={<IconMessage className="h-3.5 w-3.5" />} label={t('chat.explainChipLabel')} />
+          <ShortcutBar shortcuts={shortcuts} busy={busy} onRun={onRunShortcut} />
         </div>
         <div className="flex items-end gap-2 rounded-2xl border border-neutral-300 bg-white p-2 shadow-sm transition-colors focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/30 dark:border-neutral-700 dark:bg-neutral-900">
           <textarea
@@ -920,6 +923,135 @@ function Composer({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function ShortcutBar({
+  shortcuts,
+  busy,
+  onRun,
+}: {
+  shortcuts: Array<{ config: ShortcutConfig; resolved: ResolvedShortcut }>;
+  busy: boolean;
+  onRun: (shortcut: ShortcutConfig) => void;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const { visible, overflow } = splitShortcutList(shortcuts, 3);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
+    };
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (overflow.length === 0 || busy) setOpen(false);
+  }, [busy, overflow.length]);
+
+  function openAndFocus(index: number) {
+    setOpen(true);
+    requestAnimationFrame(() => itemRefs.current[index]?.focus());
+  }
+
+  function moveMenuFocus(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+    let nextIndex: number | undefined;
+    if (event.key === 'ArrowDown') nextIndex = (index + 1) % overflow.length;
+    if (event.key === 'ArrowUp') nextIndex = (index - 1 + overflow.length) % overflow.length;
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = overflow.length - 1;
+    if (nextIndex !== undefined) {
+      event.preventDefault();
+      itemRefs.current[nextIndex]?.focus();
+    }
+  }
+
+  if (shortcuts.length === 0) return null;
+
+  return (
+    <div ref={ref} className="relative flex flex-wrap items-center gap-2">
+      {visible.map(({ config, resolved }) => (
+        <Chip
+          key={config.id}
+          onClick={() => onRun(config)}
+          disabled={busy}
+          icon={<IconSparkles className="h-3.5 w-3.5" />}
+          label={resolved.name}
+        />
+      ))}
+      {overflow.length > 0 && (
+        <>
+          <button
+            ref={triggerRef}
+            type="button"
+            onClick={() => setOpen((value) => !value)}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                openAndFocus(0);
+              } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                openAndFocus(overflow.length - 1);
+              }
+            }}
+            disabled={busy}
+            aria-label={t('chat.moreShortcutsAriaLabel', { count: overflow.length })}
+            aria-haspopup="menu"
+            aria-expanded={open}
+            className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
+          >
+            <span className="text-neutral-500 dark:text-neutral-400">
+              <IconChevronDown className="h-3.5 w-3.5" />
+            </span>
+            {t('chat.moreShortcuts', { count: overflow.length })}
+          </button>
+          {open && (
+            <div
+              role="menu"
+              className="absolute bottom-full left-0 z-20 mb-2 w-64 rounded-xl border border-neutral-200 bg-white p-1 shadow-lg dark:border-neutral-800 dark:bg-neutral-900"
+            >
+              {overflow.map(({ config, resolved }, index) => (
+                <button
+                  key={config.id}
+                  ref={(element) => {
+                    itemRefs.current[index] = element;
+                  }}
+                  type="button"
+                  role="menuitem"
+                  disabled={busy}
+                  title={resolved.name}
+                  aria-label={resolved.name}
+                  onKeyDown={(event) => moveMenuFocus(event, index)}
+                  onClick={() => {
+                    setOpen(false);
+                    onRun(config);
+                  }}
+                  className="block w-full truncate rounded-lg px-3 py-2 text-left text-sm hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:hover:bg-neutral-800"
+                >
+                  {resolved.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -1018,12 +1150,15 @@ function Chip({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       disabled={disabled}
-      className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
+      title={label}
+      aria-label={label}
+      className="inline-flex max-w-[10rem] cursor-pointer items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
     >
-      <span className="text-neutral-500 dark:text-neutral-400">{icon}</span>
-      {label}
+      <span className="shrink-0 text-neutral-500 dark:text-neutral-400">{icon}</span>
+      <span className="min-w-0 truncate">{label}</span>
     </button>
   );
 }

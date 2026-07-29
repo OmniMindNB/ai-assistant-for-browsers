@@ -36,29 +36,154 @@ describe('privacy consent translations', () => {
   });
 });
 
-describe('side-panel shortcut localization wiring', () => {
+describe('side-panel custom shortcut wiring', () => {
   const storeSource = fs.readFileSync(
     path.resolve(process.cwd(), 'entrypoints/sidepanel/store.ts'),
     'utf8',
   );
+  const appSource = fs.readFileSync(
+    path.resolve(process.cwd(), 'entrypoints/sidepanel/App.tsx'),
+    'utf8',
+  );
 
-  it('uses localized prompt builders for both shortcut actions', () => {
-    expect(storeSource).toContain('buildSummarizePagePrompt(t)');
+  it('uses one generic shortcut action instead of hard-coded actions', () => {
+    expect(storeSource).toContain('runShortcut: async (shortcut) =>');
     expect(storeSource).toContain(
-      'buildExplainSelectionPrompt(t, selection.text, MAX_SELECTION_CHARS)',
+      'buildShortcutExecution(resolved, t, selection?.text)',
     );
-    expect(storeSource).not.toContain(
-      '请读取当前网页内容并总结，给出 3-5 个要点和一段简短摘要。',
-    );
-    expect(storeSource).not.toContain('请解释以下选中的内容，必要时给出背景、定义或通俗说明');
+    expect(storeSource).not.toContain('summarizePage: async');
+    expect(storeSource).not.toContain('explainSelection: async');
+  });
+
+  it('passes an empty tool list for isolated scopes', () => {
+    expect(storeSource).toContain('tools: options.withoutBrowserTools ? [] : undefined');
+    expect(storeSource).toContain('withoutBrowserTools: execution.browserTools ===');
+    expect(storeSource).toContain("'none'");
   });
 
   it('keeps ordinary user messages unchanged', () => {
     expect(storeSource).toContain(
       "await runAgent(set, get, makeMessage('user', content, 'input'), content);",
     );
-    expect(storeSource).toContain(
-      "return runAgent(set, get, makeMessage('user', trimmed, 'input'), trimmed, undefined, id);",
+  });
+
+  it('routes shortcut controls through the generic shortcut action', () => {
+    expect(appSource).toContain('refreshShortcuts();');
+    expect(appSource).toContain('runShortcut(shortcut);');
+    expect(appSource).not.toContain('summarizePage,');
+    expect(appSource).not.toContain('explainSelection,');
+  });
+});
+
+describe('side-panel shortcut rendering', () => {
+  const source = fs.readFileSync(
+    path.resolve(process.cwd(), 'entrypoints/sidepanel/App.tsx'),
+    'utf8',
+  );
+
+  it('shows three direct shortcuts and puts the rest in a More menu', () => {
+    expect(source).toContain('splitShortcutList(shortcuts, 3)');
+    expect(source).toContain('overflow.length');
+    expect(source).toContain("t('chat.moreShortcuts'");
+    expect(source).toContain('onRunShortcut');
+  });
+
+  it('subscribes to external shortcut storage changes', () => {
+    expect(source).toContain('SHORTCUTS_STORAGE_KEY');
+    expect(source).toContain('browser.storage.onChanged.addListener');
+    expect(source).toContain('browser.storage.onChanged.removeListener');
+  });
+
+  it('removes the two hard-coded empty-state cards', () => {
+    expect(source).not.toContain('chat.summarizeCardTitle');
+    expect(source).not.toContain('chat.explainCardTitle');
+  });
+
+  it('exposes the overflow menu to assistive technology and keyboard users', () => {
+    expect(source).toContain('aria-haspopup="menu"');
+    expect(source).toContain('aria-expanded={open}');
+    expect(source).toContain("aria-label={t('chat.moreShortcutsAriaLabel'");
+    expect(source).toContain("event.key === 'Escape'");
+  });
+
+  it('truncates long shortcut names while preserving the full accessible name and title', () => {
+    expect(source).toContain('max-w-[10rem]');
+    expect(source).toContain('title={label}');
+    expect(source).toContain('aria-label={label}');
+    expect(source).toContain('<span className="min-w-0 truncate">{label}</span>');
+    expect(source).toContain('title={resolved.name}');
+    expect(source).toContain('aria-label={resolved.name}');
+  });
+});
+
+describe('shortcut settings wiring', () => {
+  const read = (file: string) => {
+    const absolute = path.resolve(process.cwd(), file);
+    return fs.existsSync(absolute) ? fs.readFileSync(absolute, 'utf8') : '';
+  };
+  const componentSource = read('components/ShortcutSettings.tsx');
+  const optionsSource = read('entrypoints/options/App.tsx');
+  const sidepanelSource = read('entrypoints/sidepanel/App.tsx');
+
+  it('provides reusable CRUD, restore, drag, and keyboard reorder controls', () => {
+    expect(componentSource).toContain('updateShortcutConfigs');
+    expect(componentSource).toContain('restoreDefaultShortcuts');
+    expect(componentSource).toContain('moveShortcut');
+    expect(componentSource).toContain('draggable');
+    expect(componentSource).toContain("move(item.id, 'up')");
+    expect(componentSource).toContain("move(item.id, 'down')");
+  });
+
+  it('uses the shortcut settings in both settings surfaces', () => {
+    expect(optionsSource).toContain('<ShortcutSettings />');
+    expect(optionsSource).toContain("'shortcuts'");
+    expect(sidepanelSource).toContain('<ShortcutSettings />');
+  });
+
+  it('locates required-field errors and focuses the first invalid field', () => {
+    expect(componentSource).toContain('const [fieldErrors, setFieldErrors]');
+    expect(componentSource).toContain('nameInputRef.current?.focus()');
+    expect(componentSource).toContain('promptInputRef.current?.focus()');
+    expect(componentSource).toContain('aria-invalid={Boolean(fieldErrors.name)}');
+    expect(componentSource).toContain(
+      "aria-describedby={fieldErrors.name ? 'shortcut-name-error' : undefined}",
     );
+    expect(componentSource).toContain('aria-invalid={Boolean(fieldErrors.prompt)}');
+    expect(componentSource).toContain(
+      "aria-describedby={fieldErrors.prompt ? 'shortcut-prompt-error' : undefined}",
+    );
+  });
+
+  it('keeps malformed-config diagnostics out of both localized interfaces', () => {
+    expect(componentSource).not.toContain('...result.errors');
+    expect(componentSource).not.toContain('setErrors(details)');
+    expect(componentSource).toContain('console.error');
+    expect(zh['shortcut.invalidConfig']).toBe('快捷方式配置无效。');
+    expect(en['shortcut.invalidConfig']).toBe('The shortcut configuration is invalid.');
+  });
+
+  it('offers a confirmed bilingual repair action without rendering raw invalid records', () => {
+    expect(componentSource).toContain('repairShortcutConfigs');
+    expect(componentSource).toContain(
+      "if (!window.confirm(t('shortcut.confirmRepairInvalid'))) return;",
+    );
+    expect(componentSource).toContain('const next = await repairShortcutConfigs();');
+    expect(componentSource).toContain("{t('shortcut.repairInvalid')}");
+    expect(componentSource).toContain("setFlash(t('shortcut.repaired'))");
+    expect(zh['shortcut.repairInvalid']).toBe('删除无效项');
+    expect(zh['shortcut.confirmRepairInvalid']).toBe(
+      '删除无效的快捷方式并保留有效项？此操作无法撤销。',
+    );
+    expect(en['shortcut.repairInvalid']).toBe('Remove invalid items');
+    expect(en['shortcut.confirmRepairInvalid']).toBe(
+      'Remove invalid shortcuts and keep valid ones? This cannot be undone.',
+    );
+  });
+
+  it('provides localized field-level guidance in both languages', () => {
+    expect(zh['shortcut.nameRequired']).toBe('请输入快捷方式名称');
+    expect(zh['shortcut.promptRequired']).toBe('请输入提示词');
+    expect(en['shortcut.nameRequired']).toBe('Enter a shortcut name');
+    expect(en['shortcut.promptRequired']).toBe('Enter a prompt');
   });
 });
