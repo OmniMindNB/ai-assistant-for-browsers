@@ -13,6 +13,11 @@ import { providerModels, type ProviderConfig } from '@/lib/settings';
 import type { ConversationRecord } from '@/lib/db';
 import { discardedCount, isEditableMessage } from '@/lib/chat/messages';
 import { isNearBottom } from '@/lib/scroll';
+import {
+  BUILTIN_EXPLAIN_ID,
+  BUILTIN_SUMMARIZE_ID,
+  type ShortcutConfig,
+} from '@/lib/shortcuts';
 import MessageEditor from './MessageEditor';
 import type { PendingConfirmation, ToolActivity, UIMessage } from './store';
 import {
@@ -54,14 +59,15 @@ export default function App() {
     selectedModel,
     conversations,
     conversationId,
+    shortcuts,
     setInput,
     refreshProvider,
+    refreshShortcuts,
     refreshConversations,
     selectProviderAndModel,
     send,
     editMessage,
-    summarizePage,
-    explainSelection,
+    runShortcut,
     stop,
     clear,
     openConversation,
@@ -89,12 +95,15 @@ export default function App() {
 
   const selectedProvider =
     providers.find((p) => p.id === selectedProviderId) ?? providers[0] ?? null;
+  const summarizeShortcut = shortcuts.find((shortcut) => shortcut.id === BUILTIN_SUMMARIZE_ID);
+  const explainShortcut = shortcuts.find((shortcut) => shortcut.id === BUILTIN_EXPLAIN_ID);
 
   useEffect(() => {
     refreshProvider();
+    refreshShortcuts();
     refreshConversations();
     restoreTabConversation();
-  }, [refreshProvider, refreshConversations, restoreTabConversation]);
+  }, [refreshProvider, refreshShortcuts, refreshConversations, restoreTabConversation]);
 
   useEffect(() => {
     const onResize = () => setNarrow(window.innerWidth < SIDEBAR_BREAKPOINT);
@@ -154,6 +163,12 @@ export default function App() {
   function submitMessage() {
     resetToFollowing();
     send();
+  }
+
+  function executeShortcut(shortcut: ShortcutConfig | undefined) {
+    if (!shortcut) return;
+    resetToFollowing();
+    runShortcut(shortcut);
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -237,7 +252,11 @@ export default function App() {
             <main ref={scrollRef} className="h-full overflow-y-auto">
               <div className="mx-auto flex min-h-full max-w-3xl flex-col gap-6 px-4 py-6">
                 {messages.length === 0 ? (
-                  <EmptyState busy={busy} onSummarize={() => { resetToFollowing(); summarizePage(); }} onExplain={() => { resetToFollowing(); explainSelection(); }} />
+                  <EmptyState
+                    busy={busy}
+                    onSummarize={() => executeShortcut(summarizeShortcut)}
+                    onExplain={() => executeShortcut(explainShortcut)}
+                  />
                 ) : (
                   messages.map((m) => (
                     <Message
@@ -293,8 +312,8 @@ export default function App() {
             onKeyDown={onKeyDown}
             onSend={() => submitMessage()}
             onStop={stop}
-            onSummarize={() => { resetToFollowing(); summarizePage(); }}
-            onExplain={() => { resetToFollowing(); explainSelection(); }}
+            onSummarize={() => executeShortcut(summarizeShortcut)}
+            onExplain={() => executeShortcut(explainShortcut)}
             onSelectProviderModel={selectProviderAndModel}
           />
         </div>

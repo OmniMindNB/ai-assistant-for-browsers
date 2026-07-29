@@ -36,29 +36,47 @@ describe('privacy consent translations', () => {
   });
 });
 
-describe('side-panel shortcut localization wiring', () => {
+describe('side-panel custom shortcut wiring', () => {
   const storeSource = fs.readFileSync(
     path.resolve(process.cwd(), 'entrypoints/sidepanel/store.ts'),
     'utf8',
   );
+  const appSource = fs.readFileSync(
+    path.resolve(process.cwd(), 'entrypoints/sidepanel/App.tsx'),
+    'utf8',
+  );
 
-  it('uses localized prompt builders for both shortcut actions', () => {
-    expect(storeSource).toContain('buildSummarizePagePrompt(t)');
+  it('uses one generic shortcut action instead of hard-coded actions', () => {
+    expect(storeSource).toContain('runShortcut: async (shortcut) =>');
     expect(storeSource).toContain(
-      'buildExplainSelectionPrompt(t, selection.text, MAX_SELECTION_CHARS)',
+      'buildShortcutExecution(resolved, t, selection?.text)',
     );
-    expect(storeSource).not.toContain(
-      '请读取当前网页内容并总结，给出 3-5 个要点和一段简短摘要。',
-    );
-    expect(storeSource).not.toContain('请解释以下选中的内容，必要时给出背景、定义或通俗说明');
+    expect(storeSource).not.toContain('summarizePage: async');
+    expect(storeSource).not.toContain('explainSelection: async');
+  });
+
+  it('passes an empty tool list for isolated scopes', () => {
+    expect(storeSource).toContain('tools: options.withoutBrowserTools ? [] : undefined');
+    expect(storeSource).toContain('withoutBrowserTools: execution.browserTools ===');
+    expect(storeSource).toContain("'none'");
   });
 
   it('keeps ordinary user messages unchanged', () => {
     expect(storeSource).toContain(
       "await runAgent(set, get, makeMessage('user', content, 'input'), content);",
     );
-    expect(storeSource).toContain(
-      "return runAgent(set, get, makeMessage('user', trimmed, 'input'), trimmed, undefined, id);",
+  });
+
+  it('routes the existing built-in controls through the generic shortcut action', () => {
+    expect(appSource).toContain(
+      'shortcuts.find((shortcut) => shortcut.id === BUILTIN_SUMMARIZE_ID)',
     );
+    expect(appSource).toContain(
+      'shortcuts.find((shortcut) => shortcut.id === BUILTIN_EXPLAIN_ID)',
+    );
+    expect(appSource).toContain('refreshShortcuts();');
+    expect(appSource).toContain('runShortcut(shortcut);');
+    expect(appSource).not.toContain('summarizePage,');
+    expect(appSource).not.toContain('explainSelection,');
   });
 });
