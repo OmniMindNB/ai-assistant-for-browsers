@@ -9,6 +9,7 @@ import {
   defaultShortcutConfigs,
   loadShortcutConfigs,
   moveShortcut,
+  repairShortcutConfigs,
   resolveShortcut,
   restoreDefaultShortcuts,
   saveShortcutConfigs,
@@ -17,6 +18,7 @@ import {
   validateShortcutConfigs,
   type ShortcutConfig,
 } from './shortcuts';
+import { buildShortcutExecution } from './chat/shortcut-prompts';
 
 function translator(dict: Record<TranslationKey, string>): Translate {
   return ((key: TranslationKey, vars?: Record<string, string | number>) => {
@@ -118,6 +120,57 @@ describe('shortcut storage semantics', () => {
     expect(result.errors).toHaveLength(1);
   });
 
+  it('rejects a custom shortcut whose customized flag is false', () => {
+    const result = validateShortcutConfigs([
+      {
+        id: 'custom-not-customized',
+        origin: 'custom',
+        scope: 'none',
+        customized: false,
+        name: 'Custom name',
+        prompt: 'Custom prompt',
+      },
+    ]);
+    expect(result.shortcuts).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+  });
+
+  it('filters a forged uncustomized explain shortcut before it can receive page tools', async () => {
+    const forged = [
+      {
+        id: BUILTIN_EXPLAIN_ID,
+        origin: 'builtin',
+        scope: 'page',
+        customized: false,
+      },
+    ];
+    installStorage({ [SHORTCUTS_STORAGE_KEY]: forged });
+
+    const loaded = await loadShortcutConfigs();
+    const browserToolModes = loaded.shortcuts.map((config) =>
+      buildShortcutExecution(resolveShortcut(config, translator(en)), translator(en)).browserTools,
+    );
+
+    expect(loaded.shortcuts).toEqual([]);
+    expect(loaded.errors).toHaveLength(1);
+    expect(browserToolModes).not.toContain('all');
+  });
+
+  it('rejects persisted text on an uncustomized built-in shortcut', () => {
+    const result = validateShortcutConfigs([
+      {
+        id: BUILTIN_SUMMARIZE_ID,
+        origin: 'builtin',
+        scope: 'page',
+        customized: false,
+        name: 'Stored name',
+        prompt: 'Stored prompt',
+      },
+    ]);
+    expect(result.shortcuts).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+  });
+
   it('rejects a duplicate id after its first record is otherwise malformed', () => {
     const result = validateShortcutConfigs([
       {
@@ -146,6 +199,55 @@ describe('shortcut storage semantics', () => {
     await updateShortcutConfigs((items) => items.slice(1));
     expect((await loadShortcutConfigs()).shortcuts.map((item) => item.id)).toEqual([
       BUILTIN_EXPLAIN_ID,
+    ]);
+  });
+
+  it('explicitly repairs malformed storage by preserving valid records and restoring CRUD', async () => {
+    const valid: ShortcutConfig = {
+      id: 'custom-valid',
+      origin: 'custom',
+      scope: 'none',
+      customized: true,
+      name: 'Valid shortcut',
+      prompt: 'Valid prompt',
+    };
+    const invalid = {
+      id: 'custom-invalid',
+      origin: 'custom',
+      scope: 'invalid',
+      customized: true,
+      name: 'Invalid shortcut',
+      prompt: 'PRIVATE INVALID PROMPT',
+    };
+    const { data, set } = installStorage({
+      [SHORTCUTS_STORAGE_KEY]: [valid, invalid],
+    });
+
+    const loaded = await loadShortcutConfigs();
+    expect(loaded.shortcuts).toEqual([valid]);
+    expect(loaded.errors).toHaveLength(1);
+    expect(set).not.toHaveBeenCalled();
+
+    const repaired = await repairShortcutConfigs();
+    expect(repaired).toEqual([valid]);
+    expect(data[SHORTCUTS_STORAGE_KEY]).toEqual([valid]);
+    expect(JSON.stringify(data[SHORTCUTS_STORAGE_KEY])).not.toContain('PRIVATE INVALID PROMPT');
+    expect(set).toHaveBeenCalledTimes(1);
+
+    const updated = await updateShortcutConfigs((items) => [
+      ...items,
+      {
+        id: 'custom-after-repair',
+        origin: 'custom',
+        scope: 'page',
+        customized: true,
+        name: 'After repair',
+        prompt: 'Works again',
+      },
+    ]);
+    expect(updated.map((item) => item.id)).toEqual([
+      'custom-valid',
+      'custom-after-repair',
     ]);
   });
 });

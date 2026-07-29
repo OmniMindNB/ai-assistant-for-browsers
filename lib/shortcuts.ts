@@ -117,6 +117,21 @@ export function validateShortcutConfigs(value: unknown): ShortcutLoadResult {
       errors.push(`${label} cannot use a reserved built-in id: ${id}.`);
       return;
     }
+    if (item.origin === 'custom' && !item.customized) {
+      errors.push(`${label} must mark a custom shortcut as customized.`);
+      return;
+    }
+    if (item.origin === 'builtin' && !item.customized) {
+      const builtin = BUILTINS.find((candidate) => candidate.id === id)!;
+      if (item.scope !== builtin.scope) {
+        errors.push(`${label} must use the default scope for an uncustomized built-in.`);
+        return;
+      }
+      if (item.name !== undefined || item.prompt !== undefined) {
+        errors.push(`${label} cannot persist text for an uncustomized built-in.`);
+        return;
+      }
+    }
 
     const requiresText = item.origin === 'custom' || item.customized;
     const name = typeof item.name === 'string' ? item.name.trim() : undefined;
@@ -160,6 +175,13 @@ export async function saveShortcutConfigs(shortcuts: ShortcutConfig[]): Promise<
     throw new Error(parsed.errors.join('\n'));
   }
   await browser.storage.local.set({ [SHORTCUTS_STORAGE_KEY]: parsed.shortcuts });
+}
+
+export async function repairShortcutConfigs(): Promise<ShortcutConfig[]> {
+  const current = await loadShortcutConfigs();
+  if (current.errors.length === 0) return current.shortcuts;
+  await saveShortcutConfigs(current.shortcuts);
+  return current.shortcuts;
 }
 
 export async function updateShortcutConfigs(

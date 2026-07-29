@@ -120,6 +120,10 @@ export const en: Record<keyof typeof zh, string> = {
   'shortcut.promptRequired': 'Enter a prompt',
   'shortcut.storageError': 'Could not save shortcuts.',
   'shortcut.invalidConfig': 'The shortcut configuration is invalid.',
+  'shortcut.repairInvalid': 'Remove invalid items',
+  'shortcut.confirmRepairInvalid':
+    'Remove invalid shortcuts and keep valid ones? This cannot be undone.',
+  'shortcut.repaired': 'Invalid items removed',
   'chat.composerAriaLabel': 'Message input',
   'chat.composerPlaceholder': 'Type a message. Enter to send, Shift+Enter for a new line',
   'chat.stopGenerating': 'Stop generating',

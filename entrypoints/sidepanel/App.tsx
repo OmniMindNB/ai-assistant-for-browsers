@@ -1036,6 +1036,8 @@ function ShortcutBar({
                   type="button"
                   role="menuitem"
                   disabled={busy}
+                  title={resolved.name}
+                  aria-label={resolved.name}
                   onKeyDown={(event) => moveMenuFocus(event, index)}
                   onClick={() => {
                     setOpen(false);
@@ -1148,12 +1150,15 @@ function Chip({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       disabled={disabled}
-      className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
+      title={label}
+      aria-label={label}
+      className="inline-flex max-w-[10rem] cursor-pointer items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
     >
-      <span className="text-neutral-500 dark:text-neutral-400">{icon}</span>
-      {label}
+      <span className="shrink-0 text-neutral-500 dark:text-neutral-400">{icon}</span>
+      <span className="min-w-0 truncate">{label}</span>
     </button>
   );
 }

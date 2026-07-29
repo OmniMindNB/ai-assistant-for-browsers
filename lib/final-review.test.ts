@@ -105,6 +105,15 @@ describe('side-panel shortcut rendering', () => {
     expect(source).toContain("aria-label={t('chat.moreShortcutsAriaLabel'");
     expect(source).toContain("event.key === 'Escape'");
   });
+
+  it('truncates long shortcut names while preserving the full accessible name and title', () => {
+    expect(source).toContain('max-w-[10rem]');
+    expect(source).toContain('title={label}');
+    expect(source).toContain('aria-label={label}');
+    expect(source).toContain('<span className="min-w-0 truncate">{label}</span>');
+    expect(source).toContain('title={resolved.name}');
+    expect(source).toContain('aria-label={resolved.name}');
+  });
 });
 
 describe('shortcut settings wiring', () => {
@@ -147,9 +156,28 @@ describe('shortcut settings wiring', () => {
 
   it('keeps malformed-config diagnostics out of both localized interfaces', () => {
     expect(componentSource).not.toContain('...result.errors');
+    expect(componentSource).not.toContain('setErrors(details)');
     expect(componentSource).toContain('console.error');
     expect(zh['shortcut.invalidConfig']).toBe('快捷方式配置无效。');
     expect(en['shortcut.invalidConfig']).toBe('The shortcut configuration is invalid.');
+  });
+
+  it('offers a confirmed bilingual repair action without rendering raw invalid records', () => {
+    expect(componentSource).toContain('repairShortcutConfigs');
+    expect(componentSource).toContain(
+      "if (!window.confirm(t('shortcut.confirmRepairInvalid'))) return;",
+    );
+    expect(componentSource).toContain('const next = await repairShortcutConfigs();');
+    expect(componentSource).toContain("{t('shortcut.repairInvalid')}");
+    expect(componentSource).toContain("setFlash(t('shortcut.repaired'))");
+    expect(zh['shortcut.repairInvalid']).toBe('删除无效项');
+    expect(zh['shortcut.confirmRepairInvalid']).toBe(
+      '删除无效的快捷方式并保留有效项？此操作无法撤销。',
+    );
+    expect(en['shortcut.repairInvalid']).toBe('Remove invalid items');
+    expect(en['shortcut.confirmRepairInvalid']).toBe(
+      'Remove invalid shortcuts and keep valid ones? This cannot be undone.',
+    );
   });
 
   it('provides localized field-level guidance in both languages', () => {

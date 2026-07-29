@@ -11,6 +11,7 @@ import {
   loadShortcutConfigs,
   moveShortcut,
   newShortcutId,
+  repairShortcutConfigs,
   resolveShortcut,
   restoreDefaultShortcuts,
   updateShortcutConfigs,
@@ -49,6 +50,7 @@ export default function ShortcutSettings() {
   const { t } = useTranslation();
   const [items, setItems] = useState<ShortcutConfig[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
+  const [hasInvalidConfig, setHasInvalidConfig] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<ShortcutDraft | null>(null);
@@ -92,16 +94,37 @@ export default function ShortcutSettings() {
 
   function showValidationErrors(details: string[]) {
     if (details.length === 0) {
+      setHasInvalidConfig(false);
       setErrors([]);
       return;
     }
     console.error('[ShortcutSettings] Invalid shortcut configuration:', details);
-    setErrors([t('shortcut.invalidConfig')]);
+    setHasInvalidConfig(true);
+    setErrors([]);
   }
 
   function storageErrorMessage(error: unknown) {
     console.error('[ShortcutSettings] Shortcut storage operation failed:', error);
     return t('shortcut.storageError');
+  }
+
+  async function repairInvalid() {
+    if (saving) return;
+    if (!window.confirm(t('shortcut.confirmRepairInvalid'))) return;
+    setSaving(true);
+    setErrors([]);
+    setFlash(null);
+    try {
+      const next = await repairShortcutConfigs();
+      setItems(next);
+      setHasInvalidConfig(false);
+      setErrors([]);
+      setFlash(t('shortcut.repaired'));
+    } catch (error) {
+      setErrors([storageErrorMessage(error)]);
+    } finally {
+      setSaving(false);
+    }
   }
 
   function beginAdd() {
@@ -286,7 +309,7 @@ export default function ShortcutSettings() {
         <div className="flex gap-2">
           <button
             type="button"
-            disabled={saving}
+            disabled={saving || hasInvalidConfig}
             onClick={restore}
             className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
           >
@@ -294,7 +317,7 @@ export default function ShortcutSettings() {
           </button>
           <button
             type="button"
-            disabled={saving}
+            disabled={saving || hasInvalidConfig}
             onClick={beginAdd}
             className="rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-white"
           >
@@ -303,7 +326,28 @@ export default function ShortcutSettings() {
         </div>
       </div>
 
-      {errors.length > 0 && (
+      {hasInvalidConfig && (
+        <div
+          role="alert"
+          className="mb-3 rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300"
+        >
+          <p>{t('shortcut.invalidConfig')}</p>
+          {errors.map((error) => (
+            <p key={error} className="mt-1">
+              {error}
+            </p>
+          ))}
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => void repairInvalid()}
+            className="mt-2 rounded-md border border-red-300 bg-white px-3 py-1.5 font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200 dark:hover:bg-red-900/40"
+          >
+            {t('shortcut.repairInvalid')}
+          </button>
+        </div>
+      )}
+      {!hasInvalidConfig && errors.length > 0 && (
         <div
           role="alert"
           className="mb-3 rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300"
@@ -333,7 +377,7 @@ export default function ShortcutSettings() {
             return (
               <li
                 key={item.id}
-                draggable={!saving}
+                draggable={!saving && !hasInvalidConfig}
                 onDragStart={(event) => startDrag(event, item.id)}
                 onDragEnd={() => setDraggedId(null)}
                 onDragOver={(event) => event.preventDefault()}
@@ -367,7 +411,7 @@ export default function ShortcutSettings() {
                   <div className="flex flex-wrap justify-end gap-1">
                     <button
                       type="button"
-                      disabled={saving || index === 0}
+                      disabled={saving || hasInvalidConfig || index === 0}
                       onClick={() => void move(item.id, 'up')}
                       aria-label={t('shortcut.moveUp')}
                       title={t('shortcut.moveUp')}
@@ -377,7 +421,7 @@ export default function ShortcutSettings() {
                     </button>
                     <button
                       type="button"
-                      disabled={saving || index === items.length - 1}
+                      disabled={saving || hasInvalidConfig || index === items.length - 1}
                       onClick={() => void move(item.id, 'down')}
                       aria-label={t('shortcut.moveDown')}
                       title={t('shortcut.moveDown')}
@@ -387,7 +431,7 @@ export default function ShortcutSettings() {
                     </button>
                     <button
                       type="button"
-                      disabled={saving}
+                      disabled={saving || hasInvalidConfig}
                       onClick={() => beginEdit(item)}
                       className="rounded px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-100 disabled:opacity-50 dark:text-neutral-300 dark:hover:bg-neutral-800"
                     >
@@ -395,7 +439,7 @@ export default function ShortcutSettings() {
                     </button>
                     <button
                       type="button"
-                      disabled={saving}
+                      disabled={saving || hasInvalidConfig}
                       onClick={() => void remove(item.id)}
                       className="rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/40"
                     >
@@ -497,7 +541,7 @@ export default function ShortcutSettings() {
             </button>
             <button
               type="button"
-              disabled={saving}
+              disabled={saving || hasInvalidConfig}
               onClick={() => void saveDraft()}
               className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
