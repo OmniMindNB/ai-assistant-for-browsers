@@ -118,6 +118,29 @@ describe('shortcut storage semantics', () => {
     expect(result.errors).toHaveLength(1);
   });
 
+  it('rejects a duplicate id after its first record is otherwise malformed', () => {
+    const result = validateShortcutConfigs([
+      {
+        id: 'custom-duplicate',
+        origin: 'custom',
+        scope: 'invalid',
+        customized: true,
+        name: 'Broken',
+        prompt: 'Broken prompt',
+      },
+      {
+        id: 'custom-duplicate',
+        origin: 'custom',
+        scope: 'page',
+        customized: true,
+        name: 'Valid',
+        prompt: 'Valid prompt',
+      },
+    ]);
+    expect(result.shortcuts).toEqual([]);
+    expect(result.errors).toHaveLength(2);
+  });
+
   it('reloads the latest array before applying a mutation', async () => {
     installStorage({ [SHORTCUTS_STORAGE_KEY]: defaultShortcutConfigs() });
     await updateShortcutConfigs((items) => items.slice(1));

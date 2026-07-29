@@ -96,6 +96,7 @@ export function validateShortcutConfigs(value: unknown): ShortcutLoadResult {
       errors.push(`${label} has a duplicate id: ${id}.`);
       return;
     }
+    ids.add(id);
     if (item.origin !== 'builtin' && item.origin !== 'custom') {
       errors.push(`${label} has an invalid origin.`);
       return;
@@ -130,7 +131,6 @@ export function validateShortcutConfigs(value: unknown): ShortcutLoadResult {
       return;
     }
 
-    ids.add(id);
     shortcuts.push({
       id,
       origin: item.origin,
