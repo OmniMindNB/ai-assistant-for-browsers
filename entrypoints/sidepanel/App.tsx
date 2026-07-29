@@ -7,6 +7,7 @@ const Markdown = lazy(() => import('./Markdown'));
 import ProviderSettings from '@/components/ProviderSettings';
 import AppearanceSettings from '@/components/AppearanceSettings';
 import LanguageSettings from '@/components/LanguageSettings';
+import ShortcutSettings from '@/components/ShortcutSettings';
 import { useTheme, type ThemeMode } from '@/lib/theme';
 import { useTranslation, type LocaleMode, type Translate } from '@/lib/i18n';
 import { providerModels, type ProviderConfig } from '@/lib/settings';
@@ -585,6 +586,7 @@ function SettingsView({
           </p>
           <AppearanceSettings mode={themeMode} onSet={onSetTheme} />
           <LanguageSettings mode={localeMode} onSet={onSetLocale} />
+          <ShortcutSettings />
           <ProviderSettings onChange={onChange} />
         </div>
       </div>

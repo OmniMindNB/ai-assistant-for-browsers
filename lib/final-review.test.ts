@@ -80,3 +80,28 @@ describe('side-panel custom shortcut wiring', () => {
     expect(appSource).not.toContain('explainSelection,');
   });
 });
+
+describe('shortcut settings wiring', () => {
+  const read = (file: string) => {
+    const absolute = path.resolve(process.cwd(), file);
+    return fs.existsSync(absolute) ? fs.readFileSync(absolute, 'utf8') : '';
+  };
+  const componentSource = read('components/ShortcutSettings.tsx');
+  const optionsSource = read('entrypoints/options/App.tsx');
+  const sidepanelSource = read('entrypoints/sidepanel/App.tsx');
+
+  it('provides reusable CRUD, restore, drag, and keyboard reorder controls', () => {
+    expect(componentSource).toContain('updateShortcutConfigs');
+    expect(componentSource).toContain('restoreDefaultShortcuts');
+    expect(componentSource).toContain('moveShortcut');
+    expect(componentSource).toContain('draggable');
+    expect(componentSource).toContain("move(item.id, 'up')");
+    expect(componentSource).toContain("move(item.id, 'down')");
+  });
+
+  it('uses the shortcut settings in both settings surfaces', () => {
+    expect(optionsSource).toContain('<ShortcutSettings />');
+    expect(optionsSource).toContain("'shortcuts'");
+    expect(sidepanelSource).toContain('<ShortcutSettings />');
+  });
+});
