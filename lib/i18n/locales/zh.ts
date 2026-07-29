@@ -82,6 +82,12 @@ export const zh = {
   'confirm.undoBarButton': '撤销本轮更改',
   'chat.summarizeChipLabel': '总结本页',
   'chat.explainChipLabel': '解释划词',
+  'shortcut.builtinSummarizeName': '总结本页',
+  'shortcut.builtinSummarizePrompt':
+    '请读取当前网页内容并总结，给出 3-5 个要点和一段简短摘要。请使用中文回答。',
+  'shortcut.builtinExplainName': '解释划词',
+  'shortcut.builtinExplainPrompt':
+    '请解释选中的内容，必要时给出背景、定义或通俗说明。请使用中文回答。',
   'chat.composerAriaLabel': '消息输入框',
   'chat.composerPlaceholder': '输入消息，Enter 发送，Shift+Enter 换行',
   'chat.stopGenerating': '停止生成',

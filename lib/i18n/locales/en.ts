@@ -86,6 +86,12 @@ export const en: Record<keyof typeof zh, string> = {
   'confirm.undoBarButton': 'Undo this turn',
   'chat.summarizeChipLabel': 'Summarize page',
   'chat.explainChipLabel': 'Explain selection',
+  'shortcut.builtinSummarizeName': 'Summarize page',
+  'shortcut.builtinSummarizePrompt':
+    'Summarize the current page in 3-5 key points followed by a short overview. Respond in English.',
+  'shortcut.builtinExplainName': 'Explain selection',
+  'shortcut.builtinExplainPrompt':
+    'Explain the selected text, adding background, definitions, or a plain-language explanation when useful. Respond in English.',
   'chat.composerAriaLabel': 'Message input',
   'chat.composerPlaceholder': 'Type a message. Enter to send, Shift+Enter for a new line',
   'chat.stopGenerating': 'Stop generating',
