@@ -117,6 +117,8 @@ export const en: Record<keyof typeof zh, string> = {
   'shortcut.saved': 'Shortcut saved',
   'shortcut.restored': 'Preset shortcuts restored',
   'shortcut.required': 'Enter a name and prompt',
+  'shortcut.nameRequired': 'Enter a shortcut name',
+  'shortcut.promptRequired': 'Enter a prompt',
   'shortcut.storageError': 'Could not save shortcuts.',
   'shortcut.invalidConfig': 'The shortcut configuration is invalid.',
   'chat.composerAriaLabel': 'Message input',

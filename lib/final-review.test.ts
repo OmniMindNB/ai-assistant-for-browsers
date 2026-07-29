@@ -104,4 +104,32 @@ describe('shortcut settings wiring', () => {
     expect(optionsSource).toContain("'shortcuts'");
     expect(sidepanelSource).toContain('<ShortcutSettings />');
   });
+
+  it('locates required-field errors and focuses the first invalid field', () => {
+    expect(componentSource).toContain('const [fieldErrors, setFieldErrors]');
+    expect(componentSource).toContain('nameInputRef.current?.focus()');
+    expect(componentSource).toContain('promptInputRef.current?.focus()');
+    expect(componentSource).toContain('aria-invalid={Boolean(fieldErrors.name)}');
+    expect(componentSource).toContain(
+      "aria-describedby={fieldErrors.name ? 'shortcut-name-error' : undefined}",
+    );
+    expect(componentSource).toContain('aria-invalid={Boolean(fieldErrors.prompt)}');
+    expect(componentSource).toContain(
+      "aria-describedby={fieldErrors.prompt ? 'shortcut-prompt-error' : undefined}",
+    );
+  });
+
+  it('keeps malformed-config diagnostics out of both localized interfaces', () => {
+    expect(componentSource).not.toContain('...result.errors');
+    expect(componentSource).toContain('console.error');
+    expect(zh['shortcut.invalidConfig']).toBe('快捷方式配置无效。');
+    expect(en['shortcut.invalidConfig']).toBe('The shortcut configuration is invalid.');
+  });
+
+  it('provides localized field-level guidance in both languages', () => {
+    expect(zh['shortcut.nameRequired']).toBe('请输入快捷方式名称');
+    expect(zh['shortcut.promptRequired']).toBe('请输入提示词');
+    expect(en['shortcut.nameRequired']).toBe('Enter a shortcut name');
+    expect(en['shortcut.promptRequired']).toBe('Enter a prompt');
+  });
 });

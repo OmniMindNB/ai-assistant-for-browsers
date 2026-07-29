@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useRef,
   useState,
   type DragEvent,
   type ReactNode,
@@ -25,6 +26,11 @@ interface ShortcutDraft {
   prompt: string;
 }
 
+interface ShortcutFieldErrors {
+  name?: string;
+  prompt?: string;
+}
+
 function normalizedDraft(draft: ShortcutDraft): ShortcutDraft {
   return {
     name: draft.name.trim(),
@@ -46,8 +52,11 @@ export default function ShortcutSettings() {
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<ShortcutDraft | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<ShortcutFieldErrors>({});
   const [flash, setFlash] = useState<string | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  const promptInputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     let active = true;
@@ -55,11 +64,7 @@ export default function ShortcutSettings() {
       .then((result) => {
         if (!active) return;
         setItems(result.shortcuts);
-        setErrors(
-          result.errors.length > 0
-            ? [t('shortcut.invalidConfig'), ...result.errors]
-            : [],
-        );
+        showValidationErrors(result.errors);
       })
       .catch((error: unknown) => {
         if (!active) return;
@@ -75,11 +80,7 @@ export default function ShortcutSettings() {
       if (!change) return;
       const result = validateShortcutConfigs(change.newValue);
       setItems(result.shortcuts);
-      setErrors(
-        result.errors.length > 0
-          ? [t('shortcut.invalidConfig'), ...result.errors]
-          : [],
-      );
+      showValidationErrors(result.errors);
     };
 
     browser.storage.onChanged.addListener(handleStorageChange);
@@ -89,14 +90,24 @@ export default function ShortcutSettings() {
     };
   }, [t]);
 
+  function showValidationErrors(details: string[]) {
+    if (details.length === 0) {
+      setErrors([]);
+      return;
+    }
+    console.error('[ShortcutSettings] Invalid shortcut configuration:', details);
+    setErrors([t('shortcut.invalidConfig')]);
+  }
+
   function storageErrorMessage(error: unknown) {
-    const detail = error instanceof Error ? error.message : String(error);
-    return `${t('shortcut.storageError')} ${detail}`;
+    console.error('[ShortcutSettings] Shortcut storage operation failed:', error);
+    return t('shortcut.storageError');
   }
 
   function beginAdd() {
     setEditingId(null);
     setDraft({ ...EMPTY_DRAFT });
+    setFieldErrors({});
     setErrors([]);
     setFlash(null);
   }
@@ -109,6 +120,7 @@ export default function ShortcutSettings() {
       scope: resolved.scope,
       prompt: resolved.prompt,
     });
+    setFieldErrors({});
     setErrors([]);
     setFlash(null);
   }
@@ -116,6 +128,7 @@ export default function ShortcutSettings() {
   function cancelEdit() {
     setEditingId(null);
     setDraft(null);
+    setFieldErrors({});
     setErrors([]);
   }
 
@@ -123,11 +136,22 @@ export default function ShortcutSettings() {
     if (!draft || saving) return;
     const nextDraft = normalizedDraft(draft);
     if (!nextDraft.name || !nextDraft.prompt) {
-      setErrors([t('shortcut.required')]);
+      const nextFieldErrors: ShortcutFieldErrors = {
+        ...(!nextDraft.name ? { name: t('shortcut.nameRequired') } : {}),
+        ...(!nextDraft.prompt ? { prompt: t('shortcut.promptRequired') } : {}),
+      };
+      setFieldErrors(nextFieldErrors);
+      setErrors([]);
+      if (nextFieldErrors.name) {
+        nameInputRef.current?.focus();
+      } else {
+        promptInputRef.current?.focus();
+      }
       return;
     }
 
     setSaving(true);
+    setFieldErrors({});
     setErrors([]);
     try {
       const next = await updateShortcutConfigs((current) => {
@@ -154,6 +178,7 @@ export default function ShortcutSettings() {
       setItems(next);
       setEditingId(null);
       setDraft(null);
+      setFieldErrors({});
       setFlash(t('shortcut.saved'));
     } catch (error) {
       setErrors([storageErrorMessage(error)]);
@@ -174,6 +199,7 @@ export default function ShortcutSettings() {
       if (editingId === id) {
         setEditingId(null);
         setDraft(null);
+        setFieldErrors({});
       }
     } catch (error) {
       setErrors([storageErrorMessage(error)]);
@@ -392,15 +418,27 @@ export default function ShortcutSettings() {
             <label className="block text-xs text-neutral-600 dark:text-neutral-300">
               <span className="mb-1 block">{t('shortcut.name')}</span>
               <input
+                ref={nameInputRef}
                 value={draft.name}
                 disabled={saving}
-                onChange={(event) =>
+                aria-invalid={Boolean(fieldErrors.name)}
+                aria-describedby={fieldErrors.name ? 'shortcut-name-error' : undefined}
+                onChange={(event) => {
                   setDraft((current) =>
                     current ? { ...current, name: event.target.value } : current,
-                  )
-                }
+                  );
+                  setFieldErrors((current) => ({ ...current, name: undefined }));
+                }}
                 className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
               />
+              {fieldErrors.name && (
+                <span
+                  id="shortcut-name-error"
+                  className="mt-1 block text-xs text-red-600 dark:text-red-400"
+                >
+                  {fieldErrors.name}
+                </span>
+              )}
             </label>
             <label className="block text-xs text-neutral-600 dark:text-neutral-300">
               <span className="mb-1 block">{t('shortcut.scope')}</span>
@@ -424,16 +462,28 @@ export default function ShortcutSettings() {
             <label className="block text-xs text-neutral-600 dark:text-neutral-300">
               <span className="mb-1 block">{t('shortcut.prompt')}</span>
               <textarea
+                ref={promptInputRef}
                 value={draft.prompt}
                 disabled={saving}
                 rows={5}
-                onChange={(event) =>
+                aria-invalid={Boolean(fieldErrors.prompt)}
+                aria-describedby={fieldErrors.prompt ? 'shortcut-prompt-error' : undefined}
+                onChange={(event) => {
                   setDraft((current) =>
                     current ? { ...current, prompt: event.target.value } : current,
-                  )
-                }
+                  );
+                  setFieldErrors((current) => ({ ...current, prompt: undefined }));
+                }}
                 className="w-full resize-y rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
               />
+              {fieldErrors.prompt && (
+                <span
+                  id="shortcut-prompt-error"
+                  className="mt-1 block text-xs text-red-600 dark:text-red-400"
+                >
+                  {fieldErrors.prompt}
+                </span>
+              )}
             </label>
           </div>
           <div className="mt-3 flex justify-end gap-2">

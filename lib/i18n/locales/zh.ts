@@ -113,6 +113,8 @@ export const zh = {
   'shortcut.saved': '快捷方式已保存',
   'shortcut.restored': '预设快捷方式已恢复',
   'shortcut.required': '请填写名称和提示词',
+  'shortcut.nameRequired': '请输入快捷方式名称',
+  'shortcut.promptRequired': '请输入提示词',
   'shortcut.storageError': '无法保存快捷方式。',
   'shortcut.invalidConfig': '快捷方式配置无效。',
   'chat.composerAriaLabel': '消息输入框',
