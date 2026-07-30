@@ -5,7 +5,7 @@ import { useChat } from './store';
 // 避免其阻塞侧边栏首次渲染（消息为空时完全不需要加载）。
 const Markdown = lazy(() => import('./Markdown'));
 import { useTheme } from '@/lib/theme';
-import { useTranslation, type Translate } from '@/lib/i18n';
+import { useTranslation } from '@/lib/i18n';
 import { providerModels, type ProviderConfig } from '@/lib/settings';
 import { discardedCount, isEditableMessage } from '@/lib/chat/messages';
 import { isNearBottom } from '@/lib/scroll';
@@ -22,13 +22,13 @@ import { ModeSwitch } from './components/ModeSwitch';
 import { PageContextBar } from './components/PageContextBar';
 import { WorkbenchEmptyState } from './components/WorkbenchEmptyState';
 import { WorkbenchHeader } from './components/WorkbenchHeader';
-import type { PendingConfirmation, ToolActivity, UIMessage } from './store';
+import { AgentActivityCard } from './components/AgentActivityCard';
+import type { PendingConfirmation, UIMessage } from './store';
 import type { WorkbenchMode } from '@/lib/workbench/preferences';
 import type { ResolvedShortcutCommand } from '@/lib/workbench/presentation';
 import {
   IconCheck,
   IconChevronDown,
-  IconChevronRight,
   IconPencil,
   IconSend,
   IconSparkles,
@@ -298,7 +298,7 @@ export default function App() {
                     />
                   ))
                 )}
-                {toolActivities.length > 0 && <ToolActivityList activities={toolActivities} />}
+                {toolActivities.length > 0 && <AgentActivityCard activities={toolActivities} />}
                 {pendingConfirmation && (
                   <ConfirmationCard
                     confirmation={pendingConfirmation}
@@ -463,36 +463,6 @@ function TypingDots() {
   );
 }
 
-function ToolActivityList({ activities }: { activities: ToolActivity[] }) {
-  const { t } = useTranslation();
-  const running = activities.filter((a) => a.status === 'running' || a.status === 'confirming').length;
-  return (
-    <details className="group rounded-xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
-      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs text-neutral-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-neutral-300">
-        <IconChevronRight className="h-3.5 w-3.5 text-neutral-400 transition-transform group-open:rotate-90 dark:text-neutral-500" />
-        <span className="font-medium text-neutral-700 dark:text-neutral-200">{t('chat.toolCallsLabel')}</span>
-        <span className="text-neutral-400 dark:text-neutral-500">
-          · {activities.length}
-          {running ? t('chat.toolCallsRunningSuffix', { count: running }) : ''}
-        </span>
-      </summary>
-      <ul className="space-y-1 border-t border-neutral-100 px-3 py-2 dark:border-neutral-800">
-        {activities.map((a) => (
-          <li key={a.id} className="flex items-start gap-2 text-xs">
-            <span className={statusColor(a.status)}>{statusLabel(a.status, t)}</span>
-            <span className="min-w-0 flex-1">
-              <span className="font-mono text-[11px] text-neutral-700 dark:text-neutral-300">{a.name}</span>
-              {a.detail && (
-                <span className="ml-1 break-all text-neutral-400 dark:text-neutral-500">{a.detail}</span>
-              )}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </details>
-  );
-}
-
 function ConfirmationCard({
   confirmation,
   onApprove,
@@ -548,36 +518,6 @@ function UndoBar({ onRevert }: { onRevert: () => void }) {
       </button>
     </div>
   );
-}
-
-function statusLabel(status: ToolActivity['status'], t: Translate): string {
-  switch (status) {
-    case 'running':
-      return t('status.running');
-    case 'confirming':
-      return t('status.confirming');
-    case 'blocked':
-      return t('status.blocked');
-    case 'error':
-      return t('status.error');
-    default:
-      return t('status.done');
-  }
-}
-
-function statusColor(status: ToolActivity['status']): string {
-  switch (status) {
-    case 'running':
-      return 'text-blue-500';
-    case 'confirming':
-      return 'text-amber-600 dark:text-amber-500';
-    case 'blocked':
-      return 'text-amber-600 dark:text-amber-500';
-    case 'error':
-      return 'text-red-500';
-    default:
-      return 'text-emerald-600 dark:text-emerald-400';
-  }
 }
 
 /* ---------------- 输入区 ---------------- */

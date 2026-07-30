@@ -5,8 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConversationRecord } from '@/lib/db';
 import { LocaleProvider } from '@/lib/i18n';
 import type { ResolvedShortcutCommand } from '@/lib/workbench/presentation';
-import type { PageContextState } from '../store';
+import type { PageContextState, ToolActivity } from '../store';
 import App from '../App';
+import { AgentActivityCard } from './AgentActivityCard';
 import { HistoryDrawer } from './HistoryDrawer';
 import { ModeSwitch } from './ModeSwitch';
 import { PageContextBar } from './PageContextBar';
@@ -187,6 +188,66 @@ const emptyStateShortcuts: ResolvedShortcutCommand[] = Array.from({ length: 5 },
     prompt: `Prompt ${index + 1}`,
   },
 }));
+
+function activity(status: ToolActivity['status']): ToolActivity {
+  return {
+    id: `tool-${status}`,
+    name: 'browser_read_page',
+    status,
+  };
+}
+
+const activities: ToolActivity[] = [
+  { id: 'read', name: 'browser_read_page', status: 'done' },
+  { id: 'style', name: 'browser_set_style', status: 'running' },
+];
+
+describe('agent activity timeline', () => {
+  it.each([
+    ['running', 'Running browser task'],
+    ['confirming', 'Waiting for approval'],
+    ['blocked', 'Blocked'],
+    ['error', 'Task failed'],
+    ['done', 'Task complete'],
+  ] as const)('renders %s tool state with text', (status, label) => {
+    render(
+      <LocaleProvider>
+        <AgentActivityCard activities={[activity(status)]} />
+      </LocaleProvider>,
+    );
+
+    expect(screen.getByText(label)).toBeVisible();
+    expect(screen.getByRole('button').textContent).toContain(status === 'done' ? '1 / 1' : '0 / 1');
+  });
+
+  it('expands ordered tool details', async () => {
+    const user = userEvent.setup();
+    render(
+      <LocaleProvider>
+        <AgentActivityCard activities={activities} />
+      </LocaleProvider>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Show task details' }));
+    expect(screen.getAllByRole('listitem').map((item) => item.textContent)).toEqual([
+      'Read pageDone',
+      'Set styleRunning',
+    ]);
+  });
+
+  it('does not expose raw tool payloads in expanded details', async () => {
+    const user = userEvent.setup();
+    const rawPayload = '{"selector":"body","css":"body { color: red; }"}';
+    render(
+      <LocaleProvider>
+        <AgentActivityCard activities={[{ ...activity('running'), detail: rawPayload }]} />
+      </LocaleProvider>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Show task details' }));
+    expect(screen.queryByText(rawPayload)).not.toBeInTheDocument();
+  });
+});
 
 describe('workbench context controls', () => {
   it('shows the active page title and allows one-turn detachment', async () => {
