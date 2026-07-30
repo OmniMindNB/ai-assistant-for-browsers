@@ -131,6 +131,8 @@ export const zh = {
   'chat.toolCallsRunningSuffix': '（{count} 运行中）',
   'agentActivity.showDetails': '显示任务详情',
   'agentActivity.hideDetails': '隐藏任务详情',
+  'agentActivity.cardLabel': 'Agent 活动',
+  'agentActivity.liveStatus': 'Agent 状态：{status}',
   'agentActivity.status.running': '正在执行浏览器任务',
   'agentActivity.status.confirming': '等待批准',
   'agentActivity.status.blocked': '已拦截',

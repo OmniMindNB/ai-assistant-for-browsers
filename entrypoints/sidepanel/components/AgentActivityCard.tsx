@@ -32,7 +32,7 @@ export function AgentActivityCard({ activities }: { activities: ToolActivity[] }
   const summary = summarizeToolActivities(activities);
 
   return (
-    <section className="rounded-xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
+    <section role="region" aria-label={t('agentActivity.cardLabel')} className="rounded-xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
       <button
         type="button"
         aria-expanded={expanded}
@@ -46,6 +46,9 @@ export function AgentActivityCard({ activities }: { activities: ToolActivity[] }
         <span className={statusColor(summary.status)}>{summaryStatusLabel(summary.status, t)}</span>
         <span className="text-neutral-400 dark:text-neutral-500">{summary.completed} / {summary.total}</span>
       </button>
+      <span role="status" aria-live="polite" aria-atomic="true" aria-label={t('agentActivity.cardLabel')} className="sr-only">
+        {t('agentActivity.liveStatus', { status: summaryStatusLabel(summary.status, t) })}
+      </span>
       {expanded && (
         <ul className="space-y-1 border-t border-neutral-100 px-3 py-2 dark:border-neutral-800">
           {summary.activities.map((activity) => (

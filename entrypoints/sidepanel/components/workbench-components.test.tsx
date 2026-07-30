@@ -478,6 +478,27 @@ describe('agent activity timeline', () => {
     expect(screen.getByRole('button').textContent).toContain(status === 'done' ? '1 / 1' : '0 / 1');
   });
 
+  it('announces only the localized summary status when activity state changes', () => {
+    const { rerender } = render(
+      <LocaleProvider>
+        <AgentActivityCard activities={[activity('running')]} />
+      </LocaleProvider>,
+    );
+
+    const status = screen.getByRole('status', { name: 'Agent activity' });
+    expect(status).toHaveAttribute('aria-live', 'polite');
+    expect(status).toHaveTextContent('Agent status: Running browser task');
+    expect(screen.getByRole('region', { name: 'Agent activity' })).toBeVisible();
+
+    rerender(
+      <LocaleProvider>
+        <AgentActivityCard activities={[activity('confirming')]} />
+      </LocaleProvider>,
+    );
+
+    expect(screen.getByRole('status', { name: 'Agent activity' })).toHaveTextContent('Agent status: Waiting for approval');
+  });
+
   it('expands ordered tool details', async () => {
     const user = userEvent.setup();
     render(
@@ -635,6 +656,46 @@ describe('workbench context controls', () => {
     expect(screen.getByText('This page cannot be read.')).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Continue without page context' }));
     expect(toggle).toHaveBeenCalledOnce();
+  });
+
+  it('uses a wrapping narrow-screen structure for restricted page context', () => {
+    render(
+      <LocaleProvider>
+        <PageContextBar
+          context={{
+            status: 'restricted',
+            tabId: 3,
+            title: 'An unusually long restricted page title that must never force a horizontal overflow',
+            url: 'chrome://extensions/',
+          }}
+          attached
+          onToggleAttached={vi.fn()}
+          onRetry={vi.fn()}
+        />
+      </LocaleProvider>,
+    );
+
+    const action = screen.getByRole('button', { name: 'Continue without page context' });
+    expect(action).toHaveClass('max-w-full', 'min-w-0', 'whitespace-normal');
+    expect(action.parentElement).toHaveClass('flex-col', 'sm:flex-row');
+    expect(screen.getByLabelText(/unusually long restricted page title/i)).toHaveClass('break-words');
+  });
+
+  it('keeps loading and retryable context states shrinkable on narrow screens', () => {
+    const { rerender } = render(
+      <LocaleProvider>
+        <PageContextBar context={{ status: 'loading' }} attached onToggleAttached={vi.fn()} onRetry={vi.fn()} />
+      </LocaleProvider>,
+    );
+    expect(screen.getByRole('status')).toHaveClass('min-w-0', 'break-words');
+
+    rerender(
+      <LocaleProvider>
+        <PageContextBar context={{ status: 'error', message: 'A long context retrieval failure message' }} attached onToggleAttached={vi.fn()} onRetry={vi.fn()} />
+      </LocaleProvider>,
+    );
+    expect(screen.getByRole('alert')).toHaveClass('flex-col', 'sm:flex-row');
+    expect(screen.getByRole('button', { name: 'Retry page context' })).toHaveClass('max-w-full', 'min-w-0', 'whitespace-normal');
   });
 
   it('changes empty suggestions between ask and agent modes', () => {

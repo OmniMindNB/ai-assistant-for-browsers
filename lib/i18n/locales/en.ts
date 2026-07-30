@@ -134,6 +134,8 @@ export const en: Record<keyof typeof zh, string> = {
   'chat.toolCallsRunningSuffix': ' ({count} running)',
   'agentActivity.showDetails': 'Show task details',
   'agentActivity.hideDetails': 'Hide task details',
+  'agentActivity.cardLabel': 'Agent activity',
+  'agentActivity.liveStatus': 'Agent status: {status}',
   'agentActivity.status.running': 'Running browser task',
   'agentActivity.status.confirming': 'Waiting for approval',
   'agentActivity.status.blocked': 'Blocked',
