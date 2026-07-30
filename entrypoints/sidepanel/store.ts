@@ -16,7 +16,7 @@ import {
   type ProviderConfig,
 } from '@/lib/settings';
 import {
-  deleteConversation,
+  deleteConversation as deleteConversationRecord,
   getConversationMessages,
   listConversations,
   replaceConversationMessages,
@@ -176,6 +176,33 @@ let pageContextRequestId = 0;
 let providerRequestId = 0;
 let workbenchPreferencesRequestId = 0;
 let conversationOpenRequestId = 0;
+const conversationMutationTails = new Map<string, Promise<void>>();
+const deletionTombstones = new Map<string, number>();
+let conversationMutationGeneration = 0;
+
+function enqueueConversationMutation(id: string, mutation: () => Promise<void>): Promise<void> {
+  const previous = conversationMutationTails.get(id) ?? Promise.resolve();
+  const next = previous.catch(() => undefined).then(mutation);
+  const tail = next.catch(() => undefined);
+  conversationMutationTails.set(id, tail);
+  void tail.finally(() => {
+    if (conversationMutationTails.get(id) === tail) conversationMutationTails.delete(id);
+  });
+  return next;
+}
+
+function beginConversationDeletion(id: string): Promise<void> {
+  const generation = ++conversationMutationGeneration;
+  deletionTombstones.set(id, generation);
+  return enqueueConversationMutation(id, async () => {
+    try {
+      await deleteConversationRecord(id);
+    } catch (error) {
+      if (deletionTombstones.get(id) === generation) deletionTombstones.delete(id);
+      throw error;
+    }
+  });
+}
 
 function captureConversationOrigin(get: () => ChatState): ConversationOrigin {
   return { conversationId: get().conversationId, conversationEpoch };
@@ -561,7 +588,12 @@ export const useChat = create<ChatState>((set, get) => ({
       invalidateActiveRun(set, get, false);
       conversationEpoch += 1;
     }
-    await deleteConversation(id);
+    try {
+      await beginConversationDeletion(id);
+    } catch (error) {
+      if (removingActive && get().conversationId === id) set({ error: errMsg(error) });
+      return;
+    }
     await get().refreshConversations();
     if (get().conversationId === id) {
       // A run can start while deletion/list refresh awaits. Do not let it
@@ -938,12 +970,18 @@ async function getMissingAgentMessageTypes(): Promise<string[]> {
  * 那会把旧轮次的数据错误写进新会话。
  */
 async function persistConversationSnapshot(conversationId: string, messages: UIMessage[]): Promise<void> {
+  // A snapshot created after deletion starts must never queue behind the delete
+  // and recreate its conversation. Snapshots already queued remain ahead of
+  // the delete in this conversation's lane, making delete authoritative.
+  if (deletionTombstones.has(conversationId)) return;
   try {
-    await replaceConversationMessages(
-      conversationId,
-      toMessageRecords(conversationId, messages),
-      conversationTitle(messages),
-    );
+    await enqueueConversationMutation(conversationId, async () => {
+      await replaceConversationMessages(
+        conversationId,
+        toMessageRecords(conversationId, messages),
+        conversationTitle(messages),
+      );
+    });
   } catch (e) {
     console.error('[Aluminum] 持久化会话失败', e);
   }

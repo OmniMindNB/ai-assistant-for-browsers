@@ -279,7 +279,7 @@ describe('chat store page context', () => {
       ] } });
       return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
     });
-    useChat.setState({ conversationId: 'A', messages: [] });
+    useChat.setState({ conversationId: 'completed-run', messages: [] });
 
     const running = useChat.getState().send('Message for A');
     await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalledOnce());
@@ -314,7 +314,7 @@ describe('chat store page context', () => {
       ] } });
       return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
     });
-    useChat.setState({ conversationId: 'A', messages: [] });
+    useChat.setState({ conversationId: 'persistence-window', messages: [] });
     mocks.getConversationMessages.mockReturnValueOnce(new Promise((resolve) => { resolveOpen = resolve; }));
 
     const opening = useChat.getState().openConversation('B');
@@ -373,7 +373,7 @@ describe('chat store page context', () => {
       ] } });
       return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
     });
-    useChat.setState({ conversationId: 'A', messages: [] });
+    useChat.setState({ conversationId: 'completed-run', messages: [] });
 
     await useChat.getState().send('Completed A');
     expect(mocks.replaceConversationMessages).toHaveBeenCalledTimes(1);
@@ -391,7 +391,7 @@ describe('chat store page context', () => {
     mocks.createBrowserAgent.mockReturnValue(agent);
     mocks.replaceConversationMessages.mockImplementationOnce(() => new Promise<void>((resolve) => { resolveSave = resolve; }));
     mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
-    useChat.setState({ conversationId: 'A', messages: [] });
+    useChat.setState({ conversationId: 'persistence-window', messages: [] });
 
     const send = useChat.getState().send('Completed A');
     await vi.waitFor(() => expect(mocks.replaceConversationMessages).toHaveBeenCalledOnce());
@@ -436,6 +436,32 @@ describe('chat store page context', () => {
     expect(useChat.getState().conversationId).not.toBe('B');
     expect(useChat.getState().messages).toEqual([]);
     expect(mocks.replaceConversationMessages).not.toHaveBeenCalledWith('B', expect.anything(), expect.anything());
+  });
+
+  it('does not enqueue a B snapshot after deletion intent while B finishes before deletion commits', async () => {
+    let resolveDelete!: () => void;
+    let resolvePrompt!: () => void;
+    const agent = makeAgent();
+    agent.prompt.mockImplementation(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    mocks.deleteConversation.mockImplementationOnce(() => new Promise<void>((resolve) => { resolveDelete = resolve; }));
+    mocks.sendMessage.mockImplementation((type: string) => {
+      if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: ['GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE', 'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION', 'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE', 'RESET_TURN_SNAPSHOT', 'REVERT_CHANGES'] } });
+      return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    });
+    useChat.setState({ conversationId: 'A', messages: [] });
+    const deleting = useChat.getState().removeConversation('B');
+    mocks.getConversationMessages.mockResolvedValueOnce([{ role: 'user', content: 'B history', createdAt: 1 }]);
+    await useChat.getState().openConversation('B');
+    const running = useChat.getState().send('B finishes before delete');
+    await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalledOnce());
+    resolvePrompt();
+    await running;
+    expect(mocks.replaceConversationMessages).not.toHaveBeenCalledWith('B', expect.anything(), expect.anything());
+    resolveDelete();
+    await deleting;
+    expect(mocks.deleteConversation).toHaveBeenCalledWith('B');
+    expect(useChat.getState().conversationId).not.toBe('B');
   });
 
   it('does not start a selection shortcut after its active-tab preflight loses the conversation', async () => {

@@ -100,6 +100,7 @@
 
 | 日期 | 内容 | 关联 |
 |------|------|------|
+| 2026-07-30 | 上下文工作台删除持久化加固：按会话串行化 Dexie 写入/删除；删除意图建立会话级 tombstone，删除前已排队的快照先完成而删除最后执行，删除开始后的快照永远跳过。成功删除保留 tombstone（会话 id 唯一），删除失败才清除，防止迟到运行重建已删除会话。验证：`pnpm test`（27 文件、341 测试）、`pnpm compile`、`pnpm build`（Chrome MV3）均通过。 | [设计](superpowers/specs/2026-07-30-sidepanel-context-workbench-redesign-design.md) |
 | 2026-07-30 | 上下文工作台生命周期最终排序修复：Agent 终态在持久化前同步释放 ActiveRun、Agent 与确认 resolver，导航不会再次中止已完成运行或写入重复快照；删除会话在完成时按最新活动会话重新判定，即使最初删除的是非活动会话，若其等待期间变为当前会话也会取消运行并替换为空白新会话。新增延迟持久化导航与非活动目标变为活动的删除回归。验证：`pnpm test`（27 文件、340 测试）、`pnpm compile`、`pnpm build`（Chrome MV3）均通过。 | [设计](superpowers/specs/2026-07-30-sidepanel-context-workbench-redesign-design.md) |
 | 2026-07-30 | 上下文工作台会话所有权加固：会话导航 epoch 与 Agent 运行 id 分离；每次 Agent/快捷指令前置请求固定来源会话与 epoch，打开、清空和删除活动会话在状态转换前再次取消间隙启动的运行。单个 ActiveRun 统一拥有 Agent、确认 resolver 与来源；终态持久化只使用来源快照，完成后清理注册，已删除会话不会被迟到 finally 复活。新增延迟打开/删除、快捷指令选区前置请求和完成运行清理回归。验证：`pnpm test`（27 文件、338 测试）、`pnpm compile`、`pnpm build`（Chrome MV3）均通过。 | [设计](superpowers/specs/2026-07-30-sidepanel-context-workbench-redesign-design.md) |
 | 2026-07-30 | 上下文工作台收尾审查修复：Agent 运行在开始时固定会话 epoch/id，打开、清空或删除当前会话会先取消运行；所有迟到文本、工具、确认、终态与持久化仅可作用于原会话，不能覆盖新会话或把已删除会话写回。统一输入区新增可点击、可触摸且可访问的 `/` 快捷指令入口；空输入写入 `/`，已有草稿保持不丢失，忙碌时禁用。当前标签页的可读性从外部资源 SSRF 策略中分离：内容脚本可读取 localhost/内网 HTTP(S) 标签页，Chrome Web Store 和非 HTTP(S) 仍受限；外部资源获取继续拒绝私有地址。验证：`pnpm test`（27 文件、334 测试）、`pnpm compile`、`pnpm build`（Chrome MV3）均通过。 | [设计](superpowers/specs/2026-07-30-sidepanel-context-workbench-redesign-design.md) |
