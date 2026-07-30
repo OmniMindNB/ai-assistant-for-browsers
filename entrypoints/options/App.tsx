@@ -1,70 +1,106 @@
-import ProviderSettings from '@/components/ProviderSettings';
+import { useState, type ReactNode } from 'react';
 import AppearanceSettings from '@/components/AppearanceSettings';
+import GeneralSettings from '@/components/GeneralSettings';
 import LanguageSettings from '@/components/LanguageSettings';
+import ProviderSettings from '@/components/ProviderSettings';
+import SettingsShell, { type SettingsSection, type SettingsSectionGroup } from '@/components/SettingsShell';
 import ShortcutSettings from '@/components/ShortcutSettings';
-import { useTheme } from '@/lib/theme';
 import { useTranslation } from '@/lib/i18n';
-import { useState } from 'react';
-
-type SettingsSection = 'appearance' | 'language' | 'shortcuts' | 'providers';
+import { useTheme } from '@/lib/theme';
 
 export default function App() {
   const { mode, setMode } = useTheme();
   const { t, locale, setLocale } = useTranslation();
-  const [section, setSection] = useState<SettingsSection>('appearance');
-  const sections: Array<{ id: SettingsSection; label: string }> = [
-    { id: 'appearance', label: t('settings.navAppearance') },
-    { id: 'language', label: t('settings.navLanguage') },
-    { id: 'shortcuts', label: t('settings.navShortcuts') },
-    { id: 'providers', label: t('settings.navProviders') },
+  const [section, setSection] = useState<SettingsSection>('general');
+  const groups: SettingsSectionGroup[] = [
+    {
+      label: t('settings.groupPreferences'),
+      sections: [
+        { id: 'general', label: t('settings.navGeneral') },
+        { id: 'appearance', label: t('settings.navAppearance') },
+        { id: 'language', label: t('settings.navLanguage') },
+      ],
+    },
+    {
+      label: t('settings.groupAiTools'),
+      sections: [
+        { id: 'providers', label: t('settings.navProviders') },
+        { id: 'shortcuts', label: t('settings.navShortcuts') },
+      ],
+    },
+    {
+      label: t('settings.groupSafety'),
+      sections: [
+        { id: 'privacy', label: t('settings.navPrivacy') },
+        { id: 'about', label: t('settings.navAbout') },
+      ],
+    },
   ];
 
   return (
-    <div className="min-h-screen bg-neutral-50 px-4 py-8 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100 sm:px-8">
-      <div className="mx-auto max-w-5xl">
-        <h1 className="mb-1 text-xl font-semibold">{t('settings.pageTitle')}</h1>
-        <p className="mb-6 text-sm text-neutral-500 dark:text-neutral-400">
-          {t('settings.descriptionPrefix')}
-          <code className="mx-1 rounded bg-neutral-100 px-1 dark:bg-neutral-800">chrome.storage.local</code>
-          {t('settings.optionsDescriptionSuffix')}
-        </p>
-        <div className="gap-8 md:grid md:grid-cols-[12rem_minmax(0,1fr)]">
-          <nav
-            aria-label={t('common.settings')}
-            className="mb-6 flex gap-1 overflow-x-auto border-b border-neutral-200 pb-2 md:mb-0 md:block md:border-b-0 md:pb-0 dark:border-neutral-800"
-          >
-            {sections.map((item) => {
-              const active = section === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setSection(item.id)}
-                  aria-current={active ? 'page' : undefined}
-                  className={[
-                    'whitespace-nowrap rounded-md px-3 py-2 text-left text-sm transition-colors md:mb-1 md:block md:w-full',
-                    active
-                      ? 'bg-neutral-200 font-medium text-neutral-900 dark:bg-neutral-800 dark:text-white'
-                      : 'text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-900 dark:hover:text-white',
-                  ].join(' ')}
-                >
-                  {item.label}
-                </button>
-              );
-            })}
-          </nav>
-          <main className="min-w-0">
-            {section === 'appearance' && (
-              <AppearanceSettings mode={mode} onSet={setMode} />
-            )}
-            {section === 'language' && (
-              <LanguageSettings mode={locale} onSet={setLocale} />
-            )}
-            {section === 'shortcuts' && <ShortcutSettings />}
-            {section === 'providers' && <ProviderSettings />}
-          </main>
-        </div>
+    <SettingsShell
+      groups={groups}
+      activeSection={section}
+      onSelect={setSection}
+      navigationLabel={t('common.settings')}
+    >
+      <header className="mb-6">
+        <h1 className="text-xl font-semibold">{t('settings.pageTitle')}</h1>
+        <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{t('settings.description')}</p>
+      </header>
+      {section === 'general' && <GeneralSettings />}
+      {section === 'appearance' && <SettingsPanel title={t('settings.navAppearance')}><AppearanceSettings mode={mode} onSet={setMode} /></SettingsPanel>}
+      {section === 'language' && <SettingsPanel title={t('settings.navLanguage')}><LanguageSettings mode={locale} onSet={setLocale} /></SettingsPanel>}
+      {section === 'providers' && <SettingsPanel title={t('settings.navProviders')}><ProviderSettings /></SettingsPanel>}
+      {section === 'shortcuts' && <SettingsPanel title={t('settings.navShortcuts')}><ShortcutSettings /></SettingsPanel>}
+      {section === 'privacy' && <PrivacySection />}
+      {section === 'about' && <AboutSection />}
+    </SettingsShell>
+  );
+}
+
+function SettingsPanel({ children, title }: { children: ReactNode; title: string }) {
+  return (
+    <section aria-labelledby="settings-panel-heading" className="max-w-3xl">
+      <h2 id="settings-panel-heading" className="mb-5 text-xl font-semibold">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+function PrivacySection() {
+  const { t } = useTranslation();
+  const disclosures = [
+    ['privacy.pageDataTitle', 'privacy.pageDataBody'],
+    ['privacy.localDataTitle', 'privacy.localDataBody'],
+    ['privacy.noBackendTitle', 'privacy.noBackendBody'],
+  ] as const;
+  return (
+    <section aria-labelledby="privacy-settings-heading" className="max-w-2xl">
+      <h2 id="privacy-settings-heading" className="text-xl font-semibold">{t('settings.navPrivacy')}</h2>
+      <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{t('settings.privacyDescription')}</p>
+      <div className="mt-5 space-y-3">
+        {disclosures.map(([title, body]) => (
+          <article key={title} className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
+            <h2 className="text-sm font-medium">{t(title)}</h2>
+            <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-300">{t(body)}</p>
+          </article>
+        ))}
       </div>
-    </div>
+    </section>
+  );
+}
+
+function AboutSection() {
+  const { t } = useTranslation();
+  const version = browser.runtime.getManifest().version;
+  return (
+    <section aria-labelledby="about-settings-heading" className="max-w-2xl">
+      <h2 id="about-settings-heading" className="text-xl font-semibold">{t('settings.navAbout')}</h2>
+      <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{t('settings.aboutDescription')}</p>
+      <p className="mt-5 rounded-xl border border-neutral-200 bg-white p-4 text-sm dark:border-neutral-800 dark:bg-neutral-900">
+        {t('settings.version', { version })}
+      </p>
+    </section>
   );
 }
