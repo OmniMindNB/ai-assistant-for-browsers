@@ -43,6 +43,7 @@ export const en: Record<keyof typeof zh, string> = {
   'settings.attachPageByDefault': 'Attach current page by default',
   'settings.attachPageDescription': 'New conversations include the current page as context by default.',
   'settings.save': 'Save',
+  'settings.loading': 'Loading preferences…',
   'settings.saving': 'Saving…',
   'settings.saved': 'Saved',
   'settings.saveFailed': 'Could not save: {message}',

@@ -72,9 +72,9 @@ export default function SettingsShell({
             <div className="flex min-w-max items-center gap-3 md:block md:min-w-0 md:space-y-5">
               {groups.map((group) => (
                 <section key={group.label} className="flex items-center gap-1 md:block">
-                  <h2 className="sr-only text-xs font-semibold uppercase tracking-wide text-neutral-500 md:not-sr-only md:mb-1 md:px-3 dark:text-neutral-400">
+                  <p className="sr-only text-xs font-semibold uppercase tracking-wide text-neutral-500 md:not-sr-only md:mb-1 md:px-3 dark:text-neutral-400">
                     {group.label}
-                  </h2>
+                  </p>
                   <div className="flex gap-1 md:block">
                     {group.sections.map((section) => {
                       const active = activeSection === section.id;

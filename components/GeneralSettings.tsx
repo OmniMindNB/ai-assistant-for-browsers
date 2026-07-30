@@ -11,6 +11,7 @@ import {
 export default function GeneralSettings() {
   const { t } = useTranslation();
   const [draft, setDraft] = useState<WorkbenchPreferences>(DEFAULT_WORKBENCH_PREFERENCES);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -23,6 +24,9 @@ export default function GeneralSettings() {
       })
       .catch((reason: unknown) => {
         if (active) setError(messageOf(reason));
+      })
+      .finally(() => {
+        if (active) setLoading(false);
       });
     return () => { active = false; };
   }, []);
@@ -40,7 +44,7 @@ export default function GeneralSettings() {
   }
 
   async function save() {
-    if (saving) return;
+    if (loading || saving) return;
     setSaving(true);
     setSaved(false);
     setError(null);
@@ -64,12 +68,14 @@ export default function GeneralSettings() {
         <div className="mt-2 space-y-2">
           <Radio
             checked={draft.defaultMode === 'ask'}
+            disabled={loading || saving}
             label={t('settings.modeAsk')}
             onChange={() => updateMode('ask')}
             value="ask"
           />
           <Radio
             checked={draft.defaultMode === 'agent'}
+            disabled={loading || saving}
             label={t('settings.modeAgent')}
             onChange={() => updateMode('agent')}
             value="agent"
@@ -81,6 +87,8 @@ export default function GeneralSettings() {
         <input
           type="checkbox"
           checked={draft.attachPageByDefault}
+          disabled={loading || saving}
+          aria-label={t('settings.attachPageByDefault')}
           onChange={(event) => updateAttachment(event.target.checked)}
           className="mt-0.5 h-4 w-4 accent-indigo-600"
         />
@@ -93,12 +101,13 @@ export default function GeneralSettings() {
       <div className="mt-5 flex flex-wrap items-center gap-3">
         <button
           type="button"
-          disabled={saving}
+          disabled={loading || saving}
           onClick={() => void save()}
           className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-white"
         >
           {saving ? t('settings.saving') : t('settings.save')}
         </button>
+        {loading && <p role="status" className="text-sm text-neutral-500 dark:text-neutral-400">{t('settings.loading')}</p>}
         {saved && <p role="status" className="text-sm text-emerald-700 dark:text-emerald-300">{t('settings.saved')}</p>}
         {error && <p role="alert" className="text-sm text-red-700 dark:text-red-300">{t('settings.saveFailed', { message: error })}</p>}
       </div>
@@ -106,10 +115,10 @@ export default function GeneralSettings() {
   );
 }
 
-function Radio({ checked, label, onChange, value }: { checked: boolean; label: string; onChange(): void; value: WorkbenchMode }) {
+function Radio({ checked, disabled, label, onChange, value }: { checked: boolean; disabled: boolean; label: string; onChange(): void; value: WorkbenchMode }) {
   return (
     <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800">
-      <input type="radio" name="default-mode" value={value} checked={checked} onChange={onChange} className="h-4 w-4 accent-indigo-600" />
+      <input type="radio" name="default-mode" value={value} checked={checked} disabled={disabled} onChange={onChange} className="h-4 w-4 accent-indigo-600" />
       {label}
     </label>
   );

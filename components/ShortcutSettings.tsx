@@ -299,9 +299,9 @@ export default function ShortcutSettings() {
     <section className="mb-6">
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+          <h3 className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
             {t('shortcut.heading')}
-          </h2>
+          </h3>
           <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
             {t('shortcut.description')}
           </p>

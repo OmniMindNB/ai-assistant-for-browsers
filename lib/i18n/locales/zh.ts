@@ -40,6 +40,7 @@ export const zh = {
   'settings.attachPageByDefault': '默认附加当前网页',
   'settings.attachPageDescription': '新对话会默认把当前网页作为上下文。',
   'settings.save': '保存',
+  'settings.loading': '正在加载偏好…',
   'settings.saving': '正在保存…',
   'settings.saved': '已保存',
   'settings.saveFailed': '无法保存：{message}',

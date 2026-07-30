@@ -18,9 +18,9 @@ export default function AppearanceSettings({
   ];
   return (
     <section className="mb-6">
-      <h2 className="mb-2 text-sm font-medium text-neutral-700 dark:text-neutral-200">
+      <h3 className="mb-2 text-sm font-medium text-neutral-700 dark:text-neutral-200">
         {t('appearance.heading')}
-      </h2>
+      </h3>
       <div className="inline-flex rounded-lg border border-neutral-300 bg-white p-0.5 dark:border-neutral-700 dark:bg-neutral-900">
         {options.map((opt) => {
           const active = mode === opt.value;

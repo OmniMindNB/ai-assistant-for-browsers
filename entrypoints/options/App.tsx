@@ -82,7 +82,7 @@ function PrivacySection() {
       <div className="mt-5 space-y-3">
         {disclosures.map(([title, body]) => (
           <article key={title} className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
-            <h2 className="text-sm font-medium">{t(title)}</h2>
+            <h3 className="text-sm font-medium">{t(title)}</h3>
             <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-300">{t(body)}</p>
           </article>
         ))}

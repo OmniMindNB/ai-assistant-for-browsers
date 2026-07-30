@@ -201,9 +201,9 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
   return (
     <>
       <section className="mb-6">
-        <h2 className="mb-2 text-sm font-medium text-neutral-700 dark:text-neutral-200">
+        <h3 className="mb-2 text-sm font-medium text-neutral-700 dark:text-neutral-200">
           {t('provider.configuredHeading')}
-        </h2>
+        </h3>
         {settings.providers.length === 0 ? (
           <p className="rounded-md border border-dashed border-neutral-300 p-4 text-xs text-neutral-400 dark:border-neutral-700 dark:text-neutral-500">
             {t('provider.emptyList')}
@@ -263,9 +263,9 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
       </section>
 
       <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
-        <h2 className="mb-3 text-sm font-medium text-neutral-700 dark:text-neutral-200">
+        <h3 className="mb-3 text-sm font-medium text-neutral-700 dark:text-neutral-200">
           {isEditing ? t('provider.editHeading') : t('provider.addHeading')}
-        </h2>
+        </h3>
 
         {editingRemoved && (
           <p className="mb-3 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-700 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
