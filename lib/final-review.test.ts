@@ -135,10 +135,10 @@ describe('shortcut settings wiring', () => {
     expect(componentSource).toContain("move(item.id, 'down')");
   });
 
-  it('uses the shortcut settings in both settings surfaces', () => {
+  it('keeps shortcut settings on the dedicated options page', () => {
     expect(optionsSource).toContain('<ShortcutSettings />');
     expect(optionsSource).toContain("'shortcuts'");
-    expect(sidepanelSource).toContain('<ShortcutSettings />');
+    expect(sidepanelSource).not.toContain('<ShortcutSettings />');
   });
 
   it('locates required-field errors and focuses the first invalid field', () => {

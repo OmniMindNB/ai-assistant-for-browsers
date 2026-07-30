@@ -4,14 +4,9 @@ import { useChat } from './store';
 // react-markdown + rehype-highlight 拉入较大的解析/高亮代码，单独分包，
 // 避免其阻塞侧边栏首次渲染（消息为空时完全不需要加载）。
 const Markdown = lazy(() => import('./Markdown'));
-import ProviderSettings from '@/components/ProviderSettings';
-import AppearanceSettings from '@/components/AppearanceSettings';
-import LanguageSettings from '@/components/LanguageSettings';
-import ShortcutSettings from '@/components/ShortcutSettings';
-import { useTheme, type ThemeMode } from '@/lib/theme';
-import { useTranslation, type LocaleMode, type Translate } from '@/lib/i18n';
+import { useTheme } from '@/lib/theme';
+import { useTranslation, type Translate } from '@/lib/i18n';
 import { providerModels, type ProviderConfig } from '@/lib/settings';
-import type { ConversationRecord } from '@/lib/db';
 import { discardedCount, isEditableMessage } from '@/lib/chat/messages';
 import { isNearBottom } from '@/lib/scroll';
 import {
@@ -22,29 +17,18 @@ import {
   type ShortcutConfig,
 } from '@/lib/shortcuts';
 import MessageEditor from './MessageEditor';
+import { HistoryDrawer } from './components/HistoryDrawer';
+import { WorkbenchHeader } from './components/WorkbenchHeader';
 import type { PendingConfirmation, ToolActivity, UIMessage } from './store';
 import {
-  IconArrowLeft,
   IconCheck,
   IconChevronDown,
   IconChevronRight,
-  IconClose,
-  IconGear,
-  IconMenu,
-  IconMonitor,
-  IconMoon,
   IconPencil,
-  IconPlus,
   IconSend,
   IconSparkles,
   IconStop,
-  IconSun,
-  IconTrash,
 } from './icons';
-
-const SIDEBAR_BREAKPOINT = 768; // md；窄屏侧边栏改为抽屉覆盖
-
-type View = 'chat' | 'settings';
 
 export default function App() {
   const {
@@ -80,23 +64,17 @@ export default function App() {
   } = useChat();
 
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
-  const { t, locale: localeMode, setLocale } = useTranslation();
-  const [view, setView] = useState<View>('chat');
-  const [sidebarOpen, setSidebarOpen] = useState<boolean>(() =>
-    typeof window !== 'undefined' ? window.innerWidth >= SIDEBAR_BREAKPOINT : false,
-  );
-  const [narrow, setNarrow] = useState<boolean>(() =>
-    typeof window !== 'undefined' ? window.innerWidth < SIDEBAR_BREAKPOINT : false,
-  );
+  const { t } = useTranslation();
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const historyTriggerRef = useRef<HTMLButtonElement>(null);
   // 是否仍处于“跟随最新内容”状态；用户向上滚动后置 false，直到手动回到底部或发起新一轮。
   const atBottomRef = useRef(true);
   const busyRef = useRef(busy);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
 
-  const selectedProvider =
-    providers.find((p) => p.id === selectedProviderId) ?? providers[0] ?? null;
   const resolvedShortcuts = shortcuts.map((config) => ({
     config,
     resolved: resolveShortcut(config, t),
@@ -123,12 +101,6 @@ export default function App() {
   }, [refreshShortcuts]);
 
   useEffect(() => {
-    const onResize = () => setNarrow(window.innerWidth < SIDEBAR_BREAKPOINT);
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
-
-  useEffect(() => {
     busyRef.current = busy;
   }, [busy]);
 
@@ -142,7 +114,7 @@ export default function App() {
     };
     el.addEventListener('scroll', onScroll, { passive: true });
     return () => el.removeEventListener('scroll', onScroll);
-  }, [view]);
+  }, []);
 
   // 切换会话 / 新建会话 / 删除当前会话时，关闭尚未提交的编辑框，并回到“跟随最新内容”状态。
   useEffect(() => {
@@ -194,73 +166,69 @@ export default function App() {
     }
   }
 
-  function toggleSidebar() {
-    setSidebarOpen((prev) => {
+  function toggleHistory() {
+    setHistoryOpen((prev) => {
       const next = !prev;
       if (next) refreshConversations();
       return next;
     });
   }
 
-  function openSettings() {
-    setView('settings');
-    refreshProvider();
-    if (narrow) setSidebarOpen(false);
+  async function openSettings() {
+    try {
+      await browser.runtime.openOptionsPage();
+      setSettingsError(null);
+    } catch {
+      setSettingsError(t('settings.openOptionsFailed'));
+    }
+  }
+
+  function toggleTheme() {
+    const next = themeMode === 'auto' ? 'light' : themeMode === 'light' ? 'dark' : 'auto';
+    setThemeMode(next);
   }
 
   function newChat() {
     clear();
-    setView('chat');
-    if (narrow) setSidebarOpen(false);
+    setHistoryOpen(false);
   }
 
   function pickConversation(id: string) {
     openConversation(id);
-    setView('chat');
-    if (narrow) setSidebarOpen(false);
+    setHistoryOpen(false);
   }
 
   return (
     <div className="flex h-screen overflow-hidden bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
-      {sidebarOpen && narrow && (
-        <div
-          className="fixed inset-0 z-30 bg-black/40 md:hidden"
-          onClick={() => setSidebarOpen(false)}
-          aria-hidden="true"
-        />
-      )}
-
-      <Sidebar
-        open={sidebarOpen}
+      <HistoryDrawer
+        open={historyOpen}
         conversations={conversations}
-        provider={selectedProvider}
-        themeMode={themeMode}
-        onSetTheme={setThemeMode}
-        onClose={() => setSidebarOpen(false)}
+        activeConversationId={conversationId}
+        onClose={() => setHistoryOpen(false)}
         onNewChat={newChat}
         onPick={pickConversation}
         onRemove={removeConversation}
-        onOpenSettings={openSettings}
+        returnFocusRef={historyTriggerRef}
       />
 
-      {view === 'settings' ? (
-        <SettingsView
-          themeMode={themeMode}
-          onSetTheme={setThemeMode}
-          localeMode={localeMode}
-          onSetLocale={setLocale}
-          onBack={() => setView('chat')}
-          onChange={refreshProvider}
-        />
-      ) : (
-        <div className="relative flex min-w-0 flex-1 flex-col">
-          <TopBar
-            provider={selectedProvider}
-            selectedModel={selectedModel}
-            sidebarOpen={sidebarOpen}
-            onToggleSidebar={toggleSidebar}
+      <div className="relative flex min-w-0 flex-1 flex-col">
+          <WorkbenchHeader
+            historyOpen={historyOpen}
+            onToggleHistory={toggleHistory}
             onNewChat={newChat}
+            onOpenSettings={openSettings}
+            onToggleTheme={toggleTheme}
+            historyTriggerRef={historyTriggerRef}
           />
+
+          {settingsError && (
+            <div
+              role="alert"
+              className="border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300"
+            >
+              {settingsError}
+            </div>
+          )}
 
           {providers.length === 0 && <ProviderBanner onOpenSettings={openSettings} />}
 
@@ -336,217 +304,8 @@ export default function App() {
             onRunShortcut={executeShortcut}
             onSelectProviderModel={selectProviderAndModel}
           />
-        </div>
-      )}
+      </div>
     </div>
-  );
-}
-
-/* ---------------- 侧边栏 ---------------- */
-
-function Sidebar({
-  open,
-  conversations,
-  provider,
-  themeMode,
-  onSetTheme,
-  onClose,
-  onNewChat,
-  onPick,
-  onRemove,
-  onOpenSettings,
-}: {
-  open: boolean;
-  conversations: ConversationRecord[];
-  provider: ProviderConfig | null;
-  themeMode: ThemeMode;
-  onSetTheme: (m: ThemeMode) => void;
-  onClose: () => void;
-  onNewChat: () => void;
-  onPick: (id: string) => void;
-  onRemove: (id: string) => void;
-  onOpenSettings: () => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <aside
-      aria-label={t('sidebar.ariaLabel')}
-      className={[
-        'z-40 flex h-full flex-col overflow-hidden bg-white text-neutral-700 dark:bg-neutral-900 dark:text-neutral-300',
-        'transition-[width,transform] duration-200 ease-out motion-reduce:transition-none',
-        'fixed inset-y-0 left-0 md:static',
-        open ? 'translate-x-0 md:w-72' : '-translate-x-full md:w-0',
-      ].join(' ')}
-    >
-      <div className="flex h-full w-72 shrink-0 flex-col border-r border-neutral-200 dark:border-neutral-800">
-        <div className="flex items-center gap-2 px-4 py-3">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-neutral-900 text-xs font-bold text-white dark:bg-neutral-800">
-            Al
-          </div>
-          <span className="text-sm font-semibold text-neutral-900 dark:text-white">Aluminum</span>
-          <button
-            onClick={onClose}
-            aria-label={t('common.collapseSidebar')}
-            className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded-md text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white md:hidden"
-          >
-            <IconClose className="h-5 w-5" />
-          </button>
-        </div>
-
-        <div className="px-3 pb-2">
-          <button
-            onClick={onNewChat}
-            className="flex w-full items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-800 transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100 dark:hover:bg-neutral-700"
-          >
-            <IconPlus className="h-4 w-4" /> {t('common.newChat')}
-          </button>
-        </div>
-
-        <nav aria-label={t('sidebar.historyLabel')} className="flex-1 overflow-y-auto px-2 py-2">
-          <div className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
-            {t('sidebar.historyLabel')}
-          </div>
-          {conversations.length === 0 ? (
-            <p className="px-2 py-4 text-xs text-neutral-400 dark:text-neutral-600">{t('sidebar.noHistory')}</p>
-          ) : (
-            <ul className="space-y-0.5">
-              {conversations.map((c) => (
-                <ConversationItem key={c.id} c={c} onPick={onPick} onRemove={onRemove} />
-              ))}
-            </ul>
-          )}
-        </nav>
-
-        <div className="border-t border-neutral-200 p-3 dark:border-neutral-800">
-          <div className="mb-2 flex items-center gap-2 px-1 text-xs text-neutral-500 dark:text-neutral-400">
-            <span
-              className={[
-                'h-2 w-2 shrink-0 rounded-full',
-                provider?.apiKey ? 'bg-emerald-500' : 'bg-neutral-400 dark:bg-neutral-600',
-              ].join(' ')}
-            />
-            <span className="truncate">{provider ? provider.name : t('sidebar.noProvider')}</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <ThemeToggle mode={themeMode} onSet={onSetTheme} />
-            <button
-              onClick={onOpenSettings}
-              className="flex flex-1 items-center gap-2 rounded-lg px-3 py-2 text-sm text-neutral-700 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
-            >
-              <IconGear className="h-4 w-4" /> {t('common.settings')}
-            </button>
-          </div>
-        </div>
-      </div>
-    </aside>
-  );
-}
-
-function ThemeToggle({ mode, onSet }: { mode: ThemeMode; onSet: (m: ThemeMode) => void }) {
-  const { t } = useTranslation();
-  const next: ThemeMode = mode === 'auto' ? 'light' : mode === 'light' ? 'dark' : 'auto';
-  const label =
-    mode === 'auto' ? t('common.followSystem') : mode === 'light' ? t('appearance.light') : t('appearance.dark');
-  return (
-    <button
-      onClick={() => onSet(next)}
-      aria-label={t('appearance.themeAriaLabel', { label })}
-      title={t('appearance.themeTitle', { label })}
-      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
-    >
-      {mode === 'auto' ? (
-        <IconMonitor className="h-5 w-5" />
-      ) : mode === 'light' ? (
-        <IconSun className="h-5 w-5" />
-      ) : (
-        <IconMoon className="h-5 w-5" />
-      )}
-    </button>
-  );
-}
-
-function ConversationItem({
-  c,
-  onPick,
-  onRemove,
-}: {
-  c: ConversationRecord;
-  onPick: (id: string) => void;
-  onRemove: (id: string) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <li>
-      <div className="group flex items-center gap-1 rounded-lg px-2 py-2 transition-colors hover:bg-neutral-100 dark:hover:bg-neutral-800">
-        <button onClick={() => onPick(c.id)} className="min-w-0 flex-1 text-left">
-          <div className="truncate text-sm text-neutral-800 dark:text-neutral-200">
-            {c.title || t('sidebar.untitledConversation')}
-          </div>
-          <div className="truncate text-xs text-neutral-400 dark:text-neutral-500">
-            {new Date(c.updatedAt).toLocaleString()}
-          </div>
-        </button>
-        <button
-          onClick={() => onRemove(c.id)}
-          aria-label={t('sidebar.deleteConversationAriaLabel', { title: c.title || '' })}
-          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-neutral-400 opacity-0 transition-opacity hover:bg-neutral-200 hover:text-red-600 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 group-hover:opacity-100 dark:text-neutral-500 dark:hover:bg-neutral-700 dark:hover:text-red-400"
-        >
-          <IconTrash className="h-4 w-4" />
-        </button>
-      </div>
-    </li>
-  );
-}
-
-/* ---------------- 顶栏 ---------------- */
-
-function TopBar({
-  provider,
-  selectedModel,
-  sidebarOpen,
-  onToggleSidebar,
-  onNewChat,
-}: {
-  provider: ProviderConfig | null;
-  selectedModel: string;
-  sidebarOpen: boolean;
-  onToggleSidebar: () => void;
-  onNewChat: () => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <header className="flex items-center gap-1 border-b border-neutral-200 bg-neutral-50/80 px-2 py-2 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/80">
-      <button
-        onClick={onToggleSidebar}
-        aria-label={sidebarOpen ? t('common.collapseSidebar') : t('common.expandSidebar')}
-        className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-neutral-600 transition-colors hover:bg-neutral-200/70 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
-      >
-        <IconMenu className="h-5 w-5" />
-      </button>
-      <div className="flex min-w-0 items-center gap-2 px-1">
-        <span className="truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-          Aluminum
-        </span>
-        {provider && (
-          <>
-            <span className="hidden text-neutral-300 sm:inline dark:text-neutral-700">·</span>
-            <span className="hidden truncate text-xs text-neutral-500 sm:inline dark:text-neutral-400">
-              {selectedModel || provider.model}
-            </span>
-          </>
-        )}
-      </div>
-      <div className="ml-auto flex items-center gap-1">
-        <button
-          onClick={onNewChat}
-          aria-label={t('common.newChat')}
-          title={t('common.newChat')}
-          className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-neutral-600 transition-colors hover:bg-neutral-200/70 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
-        >
-          <IconPlus className="h-5 w-5" />
-        </button>
-      </div>
-    </header>
   );
 }
 
@@ -562,53 +321,6 @@ function ProviderBanner({ onOpenSettings }: { onOpenSettings: () => void }) {
         {t('common.settings')}
       </button>
       <span>{t('banner.noProviderSuffix')}</span>
-    </div>
-  );
-}
-
-/* ---------------- 设置视图 ---------------- */
-
-function SettingsView({
-  themeMode,
-  onSetTheme,
-  localeMode,
-  onSetLocale,
-  onBack,
-  onChange,
-}: {
-  themeMode: ThemeMode;
-  onSetTheme: (m: ThemeMode) => void;
-  localeMode: LocaleMode;
-  onSetLocale: (m: LocaleMode) => void;
-  onBack: () => void;
-  onChange: () => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="flex min-w-0 flex-1 flex-col">
-      <header className="flex items-center gap-2 border-b border-neutral-200 bg-neutral-50/80 px-2 py-2 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/80">
-        <button
-          onClick={onBack}
-          aria-label={t('settings.backAriaLabel')}
-          className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-neutral-600 transition-colors hover:bg-neutral-200/70 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
-        >
-          <IconArrowLeft className="h-5 w-5" />
-        </button>
-        <span className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{t('common.settings')}</span>
-      </header>
-      <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-2xl p-4 text-neutral-900 dark:text-neutral-100">
-          <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
-            {t('settings.descriptionPrefix')}
-            <code className="mx-1 rounded bg-neutral-100 px-1 dark:bg-neutral-800">chrome.storage.local</code>
-            {t('settings.descriptionSuffix')}
-          </p>
-          <AppearanceSettings mode={themeMode} onSet={onSetTheme} />
-          <LanguageSettings mode={localeMode} onSet={onSetLocale} />
-          <ShortcutSettings />
-          <ProviderSettings onChange={onChange} />
-        </div>
-      </div>
     </div>
   );
 }
