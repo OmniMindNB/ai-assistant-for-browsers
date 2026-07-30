@@ -128,6 +128,37 @@ describe('chat store page context', () => {
     });
   });
 
+  it('preserves an existing chat error when workbench preferences load successfully', async () => {
+    useChat.setState({ error: 'The provider request failed.' });
+    (globalThis as typeof globalThis & { browser: any }).browser.storage.local.get = vi.fn().mockResolvedValue({
+      workbenchPreferences: { defaultMode: 'agent', attachPageByDefault: false },
+    });
+
+    await useChat.getState().refreshWorkbenchPreferences();
+
+    expect(useChat.getState()).toMatchObject({
+      error: 'The provider request failed.',
+      workbenchPreferences: { defaultMode: 'agent', attachPageByDefault: false },
+    });
+  });
+
+  it('preserves an existing chat error when workbench preference loading fails', async () => {
+    useChat.setState({
+      error: 'The agent request failed.',
+      workbenchPreferences: { defaultMode: 'agent', attachPageByDefault: false },
+    });
+    (globalThis as typeof globalThis & { browser: any }).browser.storage.local.get = vi.fn().mockResolvedValue({
+      workbenchPreferences: { defaultMode: 'invalid', attachPageByDefault: false },
+    });
+
+    await useChat.getState().refreshWorkbenchPreferences();
+
+    expect(useChat.getState()).toMatchObject({
+      error: 'The agent request failed.',
+      workbenchPreferences: { defaultMode: 'ask', attachPageByDefault: true },
+    });
+  });
+
   it('creates an agent without browser tools when a normal send requests it', async () => {
     mocks.sendMessage.mockImplementation((type: string) => {
       if (type === 'GET_ACTIVE_TAB') {

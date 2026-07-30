@@ -273,9 +273,12 @@ export const useChat = create<ChatState>((set, get) => ({
   refreshWorkbenchPreferences: async () => {
     try {
       const workbenchPreferences = await loadWorkbenchPreferences();
-      set({ workbenchPreferences, error: null });
+      set({ workbenchPreferences });
     } catch (error) {
-      set({ workbenchPreferences: DEFAULT_WORKBENCH_PREFERENCES, error: errMsg(error) });
+      set((state) => ({
+        workbenchPreferences: DEFAULT_WORKBENCH_PREFERENCES,
+        ...(state.error === null ? { error: errMsg(error) } : {}),
+      }));
     }
   },
 
