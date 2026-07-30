@@ -3,6 +3,7 @@ import type { Agent } from '@earendil-works/pi-agent-core';
 import type { AssistantMessage, Message as AgentLlmMessage } from '@earendil-works/pi-ai';
 import {
   sendMessage,
+  type ActiveTabInfo,
   type MessageResponse,
   type PageSelection,
   type RevertChangesResult,
@@ -38,6 +39,11 @@ import {
   resolveShortcut,
   type ShortcutConfig,
 } from '@/lib/shortcuts';
+import {
+  DEFAULT_WORKBENCH_PREFERENCES,
+  loadWorkbenchPreferences,
+  type WorkbenchPreferences,
+} from '@/lib/workbench/preferences';
 
 const MAX_AGENT_TOOL_TURNS = 50;
 
@@ -98,6 +104,12 @@ export interface PendingConfirmation {
   codePreview?: string;
 }
 
+export type PageContextState =
+  | { status: 'loading' }
+  | { status: 'available'; tabId: number; title: string; url: string }
+  | { status: 'restricted'; tabId: number; title: string; url: string }
+  | { status: 'error'; message: string };
+
 interface ChatState {
   messages: UIMessage[];
   toolActivities: ToolActivity[];
@@ -117,13 +129,17 @@ interface ChatState {
   conversations: ConversationRecord[];
   shortcuts: ShortcutConfig[];
   shortcutErrors: string[];
+  pageContext: PageContextState;
+  workbenchPreferences: WorkbenchPreferences;
   setInput: (v: string) => void;
   refreshProvider: () => Promise<void>;
   refreshShortcuts: () => Promise<void>;
+  refreshPageContext: () => Promise<void>;
+  refreshWorkbenchPreferences: () => Promise<void>;
   setSelectedProvider: (id: string) => void;
   setSelectedModel: (model: string) => void;
   selectProviderAndModel: (providerId: string, model: string) => void;
-  send: (text?: string) => Promise<void>;
+  send: (text?: string, options?: { withoutBrowserTools?: boolean }) => Promise<void>;
   /** 成功发起（截断+提交）返回 true；任一前置校验失败返回 false，调用方据此决定是否关闭编辑框。 */
   editMessage: (id: string, newContent: string) => Promise<boolean>;
   runShortcut: (shortcut: ShortcutConfig) => Promise<void>;
@@ -145,11 +161,7 @@ let currentTurnTabId: number | null = null;
 let panelTabId: number | null = null;
 
 async function resolveActiveTabId(): Promise<number> {
-  const res = (await sendMessage('GET_ACTIVE_TAB')) as MessageResponse<{
-    id?: number;
-    title?: string;
-    url?: string;
-  }>;
+  const res = (await sendMessage('GET_ACTIVE_TAB')) as MessageResponse<ActiveTabInfo>;
   if (!res.ok || typeof res.data?.id !== 'number') {
     throw new Error(res.error ?? t('store.noActiveTab'));
   }
@@ -194,6 +206,8 @@ export const useChat = create<ChatState>((set, get) => ({
   conversations: [],
   shortcuts: [],
   shortcutErrors: [],
+  pageContext: { status: 'loading' },
+  workbenchPreferences: DEFAULT_WORKBENCH_PREFERENCES,
 
   setInput: (v) => set({ input: v }),
 
@@ -224,6 +238,47 @@ export const useChat = create<ChatState>((set, get) => ({
     }
   },
 
+  refreshPageContext: async () => {
+    try {
+      const res = (await sendMessage('GET_ACTIVE_TAB')) as MessageResponse<ActiveTabInfo>;
+      if (!res.ok || typeof res.data?.id !== 'number') {
+        throw new Error(res.error ?? t('store.noActiveTab'));
+      }
+      if (!res.data.url) {
+        throw new Error(t('store.noActiveTab'));
+      }
+
+      const { id: tabId, url } = res.data;
+      let protocol = '';
+      let hostname = '';
+      try {
+        const parsed = new URL(url);
+        protocol = parsed.protocol;
+        hostname = parsed.hostname;
+      } catch {
+        // 无法解析的 URL 对浏览器工具同样不可用，按受限页显示原始地址。
+      }
+      const available = protocol === 'http:' || protocol === 'https:';
+      const title = res.data.title?.trim() || (available && hostname ? hostname : t('sidebar.untitledConversation'));
+      set({
+        pageContext: available
+          ? { status: 'available', tabId, title, url }
+          : { status: 'restricted', tabId, title, url },
+      });
+    } catch (error) {
+      set({ pageContext: { status: 'error', message: errMsg(error) } });
+    }
+  },
+
+  refreshWorkbenchPreferences: async () => {
+    try {
+      const workbenchPreferences = await loadWorkbenchPreferences();
+      set({ workbenchPreferences, error: null });
+    } catch (error) {
+      set({ workbenchPreferences: DEFAULT_WORKBENCH_PREFERENCES, error: errMsg(error) });
+    }
+  },
+
   setSelectedProvider: (id) => {
     const prov = get().providers.find((p) => p.id === id);
     if (!prov) return;
@@ -238,10 +293,12 @@ export const useChat = create<ChatState>((set, get) => ({
     set({ selectedProviderId: providerId, selectedModel: model });
   },
 
-  send: async (text) => {
+  send: async (text, options) => {
     const content = (text ?? get().input).trim();
     if (!content || get().busy) return;
-    await runAgent(set, get, makeMessage('user', content, 'input'), content);
+    await runAgent(set, get, makeMessage('user', content, 'input'), content, {
+      withoutBrowserTools: options?.withoutBrowserTools,
+    });
   },
 
   editMessage: async (id, newContent) => {

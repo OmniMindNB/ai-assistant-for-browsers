@@ -61,10 +61,11 @@ describe('side-panel custom shortcut wiring', () => {
     expect(storeSource).toContain("'none'");
   });
 
-  it('keeps ordinary user messages unchanged', () => {
+  it('allows ordinary user messages to opt out of browser tools', () => {
     expect(storeSource).toContain(
-      "await runAgent(set, get, makeMessage('user', content, 'input'), content);",
+      'send: async (text, options) =>',
     );
+    expect(storeSource).toContain('withoutBrowserTools: options?.withoutBrowserTools');
   });
 
   it('routes shortcut controls through the generic shortcut action', () => {

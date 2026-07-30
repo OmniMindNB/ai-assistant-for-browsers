@@ -49,6 +49,13 @@ export interface MessageResponse<T = unknown> {
   error?: string;
 }
 
+/** 当前激活标签页的基础信息。 */
+export interface ActiveTabInfo {
+  id: number;
+  title?: string;
+  url?: string;
+}
+
 /** EXTRACT_PAGE 返回的页面数据 */
 export interface PageContent {
   title: string;
