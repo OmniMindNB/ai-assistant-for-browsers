@@ -13,7 +13,7 @@ export type ResolvedShortcutCommand = {
   resolved: ResolvedShortcut;
 };
 
-export type ToolActivityStatus = 'running' | 'confirming' | 'done' | 'error' | 'blocked';
+export type ToolActivityStatus = 'running' | 'confirming' | 'done' | 'error' | 'blocked' | 'denied' | 'stopped';
 
 export interface ToolActivityLike {
   id: string;
@@ -28,6 +28,11 @@ export interface ToolActivitySummary {
   total: number;
   status: ToolActivityStatus;
   activeId: string | null;
+}
+
+/** The command label is intentionally compact, while name search remains human-readable. */
+export function normalizeShortcutCommand(name: string): string {
+  return `/${name.replace(/\s+/g, '')}`;
 }
 
 export function groupConversationsByDay(
@@ -61,7 +66,10 @@ export function filterShortcutCommands(
   const normalizedQuery = (trimmedQuery.startsWith('/') ? trimmedQuery.slice(1) : trimmedQuery)
     .trim()
     .toLowerCase();
-  return shortcuts.filter((shortcut) => shortcut.resolved.name.toLowerCase().includes(normalizedQuery));
+  return shortcuts.filter((shortcut) =>
+    normalizeShortcutCommand(shortcut.resolved.name).slice(1).toLowerCase() === normalizedQuery ||
+    shortcut.resolved.name.toLowerCase().includes(normalizedQuery),
+  );
 }
 
 const TOOL_STATUS_PRECEDENCE: ToolActivityStatus[] = [
@@ -69,6 +77,8 @@ const TOOL_STATUS_PRECEDENCE: ToolActivityStatus[] = [
   'running',
   'error',
   'blocked',
+  'denied',
+  'stopped',
   'done',
 ];
 

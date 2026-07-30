@@ -13,6 +13,7 @@ import {
   SHORTCUTS_STORAGE_KEY,
   type ShortcutConfig,
 } from '@/lib/shortcuts';
+import { STORAGE_KEY } from '@/lib/settings';
 import MessageEditor from './MessageEditor';
 import { HistoryDrawer } from './components/HistoryDrawer';
 import { ModeSwitch } from './components/ModeSwitch';
@@ -22,7 +23,7 @@ import { WorkbenchHeader } from './components/WorkbenchHeader';
 import { AgentActivityCard } from './components/AgentActivityCard';
 import { WorkbenchComposer } from './components/WorkbenchComposer';
 import type { PendingConfirmation, UIMessage } from './store';
-import type { WorkbenchMode } from '@/lib/workbench/preferences';
+import { WORKBENCH_PREFERENCES_KEY, type WorkbenchMode } from '@/lib/workbench/preferences';
 import type { ResolvedShortcutCommand } from '@/lib/workbench/presentation';
 import {
   IconChevronDown,
@@ -114,9 +115,10 @@ export default function App() {
       changes: Record<string, { oldValue?: unknown; newValue?: unknown }>,
       areaName: string,
     ) => {
-      if (areaName === 'local' && SHORTCUTS_STORAGE_KEY in changes) {
-        refreshShortcuts();
-      }
+      if (areaName !== 'local') return;
+      if (SHORTCUTS_STORAGE_KEY in changes) void refreshShortcuts();
+      if (STORAGE_KEY in changes) void refreshProvider();
+      if (WORKBENCH_PREFERENCES_KEY in changes) void refreshWorkbenchPreferences();
     };
     browser.storage.onChanged.addListener(listener);
     return () => browser.storage.onChanged.removeListener(listener);
@@ -211,9 +213,12 @@ export default function App() {
     setPageAttached(workbenchPreferences.attachPageByDefault);
   }
 
-  function pickConversation(id: string) {
-    openConversation(id);
-    setHistoryOpen(false);
+  async function pickConversation(id: string) {
+    if (await openConversation(id)) {
+      setMode(workbenchPreferences.defaultMode);
+      setPageAttached(workbenchPreferences.attachPageByDefault);
+      setHistoryOpen(false);
+    }
   }
 
   return (
@@ -332,6 +337,7 @@ export default function App() {
             providers={providers}
             selectedProviderId={selectedProviderId}
             selectedModel={selectedModel}
+            mode={mode}
             onInput={setInput}
             onSend={submitMessage}
             onStop={stop}

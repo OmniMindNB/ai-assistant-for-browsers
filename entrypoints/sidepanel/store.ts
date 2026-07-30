@@ -34,6 +34,7 @@ import { buildShortcutExecution } from '@/lib/chat/shortcut-prompts';
 import { summarizeToolCallForConfirmation } from '@/lib/agent/confirm-summary';
 import { getConversationIdForTab, setConversationIdForTab } from '@/lib/agent/tab-conversation';
 import { t } from '@/lib/i18n';
+import { isPageResourceUrlAllowed } from '@/lib/page-resource-fetch';
 import {
   loadShortcutConfigs,
   resolveShortcut,
@@ -94,7 +95,7 @@ export type UIMessage = ChatMessage;
 export interface ToolActivity {
   id: string;
   name: string;
-  status: 'running' | 'confirming' | 'done' | 'error' | 'blocked';
+  status: 'running' | 'confirming' | 'done' | 'error' | 'blocked' | 'denied' | 'stopped';
 }
 
 export interface PendingConfirmation {
@@ -145,7 +146,7 @@ interface ChatState {
   stop: () => void;
   clear: () => void;
   refreshConversations: () => Promise<void>;
-  openConversation: (id: string) => Promise<void>;
+  openConversation: (id: string) => Promise<boolean>;
   removeConversation: (id: string) => Promise<void>;
   respondToConfirmation: (approved: boolean) => void;
   revertTurnChanges: () => Promise<void>;
@@ -261,7 +262,7 @@ export const useChat = create<ChatState>((set, get) => ({
       } catch {
         // 无法解析的 URL 对浏览器工具同样不可用，按受限页显示原始地址。
       }
-      const available = protocol === 'http:' || protocol === 'https:';
+      const available = (protocol === 'http:' || protocol === 'https:') && isPageResourceUrlAllowed(url);
       const title = res.data.title?.trim() || (available && hostname ? hostname : t('workbench.untitledPage'));
       if (requestId !== pageContextRequestId) return;
       set({
@@ -372,13 +373,25 @@ export const useChat = create<ChatState>((set, get) => ({
   stop: () => {
     activeAgent?.abort();
     pendingConfirmResolve = null;
-    set({ pendingConfirmation: null });
+    set((state) => ({
+      pendingConfirmation: null,
+      toolActivities: state.toolActivities.map((activity) =>
+        activity.status === 'running' || activity.status === 'confirming'
+          ? { ...activity, status: 'stopped' }
+          : activity,
+      ),
+    }));
   },
 
   respondToConfirmation: (approved) => {
     pendingConfirmResolve?.(approved);
     pendingConfirmResolve = null;
-    set({ pendingConfirmation: null });
+    set((state) => ({
+      pendingConfirmation: null,
+      toolActivities: approved ? state.toolActivities : state.toolActivities.map((activity) =>
+        activity.status === 'confirming' ? { ...activity, status: 'denied' } : activity,
+      ),
+    }));
   },
 
   revertTurnChanges: async () => {
@@ -437,6 +450,7 @@ export const useChat = create<ChatState>((set, get) => ({
       turnHasChanges: false,
       pendingConfirmation: null,
     });
+    return true;
   },
 
   restoreTabConversation: async () => {
@@ -748,7 +762,12 @@ function upsertToolActivity(
   set((state) => {
     const existing = state.toolActivities.findIndex((item) => item.id === activity.id);
     const next = state.toolActivities.slice();
-    if (existing >= 0) next[existing] = activity;
+    if (existing >= 0) {
+      const previous = next[existing];
+      next[existing] = previous.status === 'denied' || previous.status === 'stopped'
+        ? previous
+        : activity;
+    }
     else next.push(activity);
     return { toolActivities: next.slice(-MAX_TOOL_ACTIVITY_ITEMS) };
   });

@@ -4,6 +4,7 @@ import { providerModels, type ProviderConfig } from '@/lib/settings';
 import type { ShortcutConfig, ResolvedShortcut } from '@/lib/shortcuts';
 import { filterShortcutCommands } from '@/lib/workbench/presentation';
 import type { PageContextState } from '../store';
+import type { WorkbenchMode } from '@/lib/workbench/preferences';
 import { IconCheck, IconChevronDown, IconSend, IconStop } from '../icons';
 
 export interface WorkbenchComposerProps {
@@ -14,6 +15,7 @@ export interface WorkbenchComposerProps {
   providers: ProviderConfig[];
   selectedProviderId: string | null;
   selectedModel: string;
+  mode?: WorkbenchMode;
   shortcuts: Array<{ config: ShortcutConfig; resolved: ResolvedShortcut }>;
   onInput(value: string): void;
   onSend(): void;
@@ -37,6 +39,7 @@ export function WorkbenchComposer({
   providers,
   selectedProviderId,
   selectedModel,
+  mode = 'ask',
   shortcuts,
   onInput,
   onSend,
@@ -204,7 +207,7 @@ export function WorkbenchComposer({
   }
 
   return (
-    <div ref={rootRef} onBlur={handleComposerBlur} className="border-t border-neutral-200 bg-neutral-50 px-3 py-3 dark:border-neutral-800 dark:bg-neutral-950">
+    <div ref={rootRef} onBlur={handleComposerBlur} className="relative border-t border-neutral-200 bg-neutral-50 px-3 py-3 dark:border-neutral-800 dark:bg-neutral-950">
       <div className="mx-auto max-w-3xl">
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <button
@@ -223,7 +226,7 @@ export function WorkbenchComposer({
           </button>
 
           {providers.length > 0 && (
-            <div className="relative">
+            <div>
               <button
                 ref={modelTriggerRef}
                 type="button"
@@ -240,7 +243,7 @@ export function WorkbenchComposer({
                 <IconChevronDown className="h-3.5 w-3.5 shrink-0 text-neutral-400 dark:text-neutral-500" />
               </button>
               {openPopover === 'models' && (
-                <div id="workbench-model-menu" role="menu" aria-label={t('chat.modelSelectionAriaLabel')} className="absolute bottom-full left-0 z-20 mb-2 max-h-72 w-64 overflow-auto rounded-xl border border-neutral-200 bg-white p-1 shadow-lg dark:border-neutral-800 dark:bg-neutral-900">
+                <div id="workbench-model-menu" role="menu" aria-label={t('chat.modelSelectionAriaLabel')} className="absolute bottom-full left-3 right-3 z-20 mb-2 max-h-72 w-auto max-w-[calc(100%-1.5rem)] overflow-auto rounded-xl border border-neutral-200 bg-white p-1 shadow-lg dark:border-neutral-800 dark:bg-neutral-900">
                   {providers.map((provider) => (
                     <div key={provider.id} className="py-1">
                       <div className="px-2 py-1 text-xs font-medium text-neutral-400 dark:text-neutral-500">{provider.name}</div>
@@ -286,7 +289,7 @@ export function WorkbenchComposer({
             aria-expanded={openPopover === 'commands'}
             aria-controls={openPopover === 'commands' ? 'workbench-slash-commands' : undefined}
             aria-activedescendant={openPopover === 'commands' && commands.length ? `workbench-command-${commands[highlightedCommand]?.config.id}` : undefined}
-            placeholder={t('chat.composerPlaceholder')}
+            placeholder={mode === 'agent' ? t('workbench.composerAgentPlaceholder') : t('workbench.composerAskPlaceholder')}
             className="max-h-40 min-h-[40px] flex-1 resize-none bg-transparent px-2 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none dark:text-neutral-100 dark:placeholder:text-neutral-600"
           />
           {busy ? (
@@ -310,8 +313,10 @@ export function WorkbenchComposer({
                   title={resolved.name}
                   aria-label={resolved.name}
                   onMouseEnter={() => setHighlightedCommand(index)}
+                  disabled={busy}
+                  aria-disabled={busy}
                   onClick={() => runCommand(index)}
-                  className={`block w-full truncate rounded-lg px-3 py-2 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${index === highlightedCommand ? 'bg-neutral-100 dark:bg-neutral-800' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}
+                  className={`block w-full truncate rounded-lg px-3 py-2 text-left text-sm disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${index === highlightedCommand ? 'bg-neutral-100 dark:bg-neutral-800' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}
                 >
                   {resolved.name}
                 </button>

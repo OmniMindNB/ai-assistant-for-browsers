@@ -45,7 +45,7 @@ function isDisallowedIpv6(host: string): boolean {
 
 function isDisallowedHost(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
-  return host === 'localhost' || host === '0.0.0.0' || isDisallowedIpv4(host) || isDisallowedIpv6(host);
+  return host === 'localhost' || host === '0.0.0.0' || host === 'chromewebstore.google.com' || host === 'chrome.google.com' || isDisallowedIpv4(host) || isDisallowedIpv6(host);
 }
 
 export function isPageResourceUrlAllowed(rawUrl: string): boolean {

@@ -100,6 +100,7 @@
 
 | 日期 | 内容 | 关联 |
 |------|------|------|
+| 2026-07-30 | 上下文工作台最终修复：侧边栏实时响应 Provider/偏好存储变更；快捷指令显示命令与过滤使用同一无空白规范化；Agent 时间线明确显示拒绝/停止终态且不被迟到错误覆盖；历史打开成功后重置模式和页面附加默认值；Provider 初始读取加入加载/错误/重试闸门；模型菜单按完整输入区宽度定位；Chrome Web Store 两个受保护 HTTP(S) 域名按受限页面处理；忙碌时快捷指令禁用并补齐问答/Agent 输入提示。验证：`pnpm test`（27 文件、321 测试）、`pnpm compile`、`pnpm build`（Chrome MV3）均通过。 | [设计](superpowers/specs/2026-07-30-sidepanel-context-workbench-redesign-design.md) |
 | 2026-07-30 | 上下文工作台收尾：侧边栏完成双语问答/Agent 空白状态、页面专用“未命名页面”回退、页面上下文失败/缺失/畸形 URL 与无效偏好回归；历史抽屉/更多菜单保持 Escape 关闭与焦点返回，所有原生交互控件有共用可见焦点，Agent 状态在浅深色下使用更高对比度；Options 的 Provider/快捷方式操作名称和翻译键集同步。验证：`pnpm test`（27 文件、306 测试）、`pnpm compile`、`pnpm build`（Chrome MV3）均通过。 | [设计](superpowers/specs/2026-07-30-sidepanel-context-workbench-redesign-design.md) |
 | 2026-07-29 | 自定义快捷方式：新增独立的本地快捷方式存储；两个内置项支持编辑、删除和恢复默认；明确“当前页面 / 已选文本 / 不使用网页上下文”三种强作用域边界；桌面设置页新增快捷方式导航，侧边栏设置复用紧凑版管理界面；输入区按存储顺序直显前三项，其余收进“更多”；移除空状态中央快捷卡片。代码层已通过 216/216 单测、TypeScript 类型检查和 Chrome MV3 生产构建；未打包扩展的真机交互验收待执行。 | [设计](superpowers/specs/2026-07-29-custom-shortcuts-design.md) |
 | 2026-07-28 | Chrome Web Store 1.1.0 最终审查：移除 AI 生成 JavaScript 执行、`browser_inject_script`、`userScripts` 权限及等待 UI；新增可测试的资源获取模块，拒绝 IPv6 本地/未指定/链路本地/唯一本地与 IPv4 映射内网地址，并对 Chrome 隐藏目标的不透明重定向安全失败；同步修正双语同意说明、隐私政策和 Store 材料 | 2026-07-27-chrome-web-store-1-1-relaunch |

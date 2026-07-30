@@ -58,6 +58,7 @@ const chatStore = {
   revertTurnChanges: vi.fn(),
   restoreTabConversation: vi.fn(),
 };
+let storageChangeListener: ((changes: Record<string, unknown>, areaName: string) => void) | undefined;
 
 vi.mock('../store', () => ({ useChat: () => chatStore }));
 
@@ -145,7 +146,7 @@ beforeEach(() => {
   window.matchMedia = vi.fn().mockReturnValue({ addEventListener: vi.fn(), removeEventListener: vi.fn(), matches: false });
   HTMLElement.prototype.scrollTo = vi.fn();
   (globalThis as any).browser.storage.onChanged = {
-    addListener: vi.fn(),
+    addListener: vi.fn((listener) => { storageChangeListener = listener; }),
     removeListener: vi.fn(),
   };
   Object.assign(chatStore, {
@@ -165,6 +166,7 @@ beforeEach(() => {
     workbenchPreferences: { defaultMode: 'ask' as const, attachPageByDefault: true },
   });
   chatStore.send.mockResolvedValue(true);
+  storageChangeListener = undefined;
 });
 
 afterEach(() => vi.restoreAllMocks());
@@ -368,6 +370,13 @@ describe('workbench composer', () => {
     await user.keyboard('{ArrowDown}{Enter}');
 
     expect(onSelectProviderModel).toHaveBeenCalledWith(configuredProvider.id, 'model-two');
+  });
+
+  it('anchors the model menu to the full composer width at narrow sidepanel sizes', async () => {
+    const user = userEvent.setup();
+    render(<ComposerHarness providers={[configuredProvider]} selectedProviderId={configuredProvider.id} selectedModel="model-one" />);
+    await user.click(screen.getByRole('button', { name: 'Select provider and model' }));
+    expect(screen.getByRole('menu', { name: 'Model selection' })).toHaveClass('left-3', 'right-3', 'w-auto', 'max-w-[calc(100%-1.5rem)]');
   });
 
   it('closes an open model menu when focus leaves the composer', async () => {
@@ -607,6 +616,15 @@ describe('agent activity timeline', () => {
 });
 
 describe('workbench context controls', () => {
+  it('refreshes providers and defaults when browser storage changes externally', () => {
+    render(<LocaleProvider><App /></LocaleProvider>);
+    storageChangeListener?.({
+      'aluminum:settings': { newValue: {} },
+      workbenchPreferences: { newValue: {} },
+    }, 'local');
+    expect(chatStore.refreshProvider).toHaveBeenCalled();
+    expect(chatStore.refreshWorkbenchPreferences).toHaveBeenCalled();
+  });
   it('shows the active page title and allows one-turn detachment', async () => {
     const user = userEvent.setup();
     const toggle = vi.fn();
@@ -712,6 +730,17 @@ describe('workbench context controls', () => {
       </LocaleProvider>,
     );
     expect(screen.getByText('Describe a browser task')).toBeVisible();
+  });
+
+  it.each([
+    ['denied', 'Action denied', 'You denied this action'],
+    ['stopped', 'Task stopped', 'Stopped'],
+  ] as const)('renders %s Agent activity as an explicit terminal state', async (status, summary, detail) => {
+    const user = userEvent.setup();
+    render(<LocaleProvider><AgentActivityCard activities={[{ id: status, name: 'browser_click', status }]} /></LocaleProvider>);
+    expect(screen.getByText(summary)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Show task details' }));
+    expect(screen.getAllByText(detail).length).toBeGreaterThan(0);
   });
 
   it('exposes pressed state for the active mode', () => {

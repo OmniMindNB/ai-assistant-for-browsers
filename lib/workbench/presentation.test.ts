@@ -4,6 +4,7 @@ import type { ShortcutConfig, ResolvedShortcut } from '../shortcuts';
 import {
   filterShortcutCommands,
   groupConversationsByDay,
+  normalizeShortcutCommand,
   summarizeToolActivities,
   type ResolvedShortcutCommand,
 } from './presentation';
@@ -63,6 +64,12 @@ describe('filterShortcutCommands', () => {
 
     expect(filterShortcutCommands(commands, '//reading')).toEqual([]);
   });
+
+  it('matches the displayed whitespace-free slash command exactly', () => {
+    const commands = [shortcut('summarize', 'Summarize page')];
+    expect(normalizeShortcutCommand('Summarize page')).toBe('/Summarizepage');
+    expect(filterShortcutCommands(commands, '/Summarizepage')).toEqual(commands);
+  });
 });
 
 describe('summarizeToolActivities', () => {
@@ -109,5 +116,9 @@ describe('summarizeToolActivities', () => {
 
     expect(summary.status).toBe('running');
     expect(summary.activeId).toBe('first');
+  });
+
+  it.each(['denied', 'stopped'] as const)('keeps %s as the terminal summary', (status) => {
+    expect(summarizeToolActivities([{ id: '1', name: 'write', status }])).toMatchObject({ status, activeId: '1' });
   });
 });

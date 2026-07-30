@@ -79,6 +79,10 @@ function summaryStatusLabel(status: ToolActivityStatus, t: Translate): string {
       return t('agentActivity.status.running');
     case 'confirming':
       return t('agentActivity.status.confirming');
+    case 'denied':
+      return t('agentActivity.status.denied');
+    case 'stopped':
+      return t('agentActivity.status.stopped');
     case 'blocked':
       return t('agentActivity.status.blocked');
     case 'error':
@@ -94,6 +98,10 @@ function activityDetailLabel(status: ToolActivityStatus, t: Translate): string {
       return t('agentActivity.detail.running');
     case 'confirming':
       return t('agentActivity.detail.confirming');
+    case 'denied':
+      return t('agentActivity.detail.denied');
+    case 'stopped':
+      return t('agentActivity.detail.stopped');
     case 'blocked':
       return t('agentActivity.detail.blocked');
     case 'error':
@@ -109,6 +117,10 @@ function detailStatusLabel(status: ToolActivityStatus, t: Translate): string {
       return t('status.running');
     case 'confirming':
       return t('status.confirming');
+    case 'denied':
+      return t('status.denied');
+    case 'stopped':
+      return t('status.stopped');
     case 'blocked':
       return t('status.blocked');
     case 'error':
@@ -125,6 +137,9 @@ function statusColor(status: ToolActivityStatus): string {
     case 'confirming':
     case 'blocked':
       return 'text-amber-700 dark:text-amber-300';
+    case 'denied':
+    case 'stopped':
+      return 'text-neutral-600 dark:text-neutral-300';
     case 'error':
       return 'text-red-700 dark:text-red-300';
     default:

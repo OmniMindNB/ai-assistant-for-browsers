@@ -48,6 +48,7 @@ function withExtras(p: ProviderConfig, extrasText: string): ProviderConfig {
 export default function ProviderSettings({ onChange }: { onChange?: () => void }) {
   const { t, resolved } = useTranslation();
   const [settings, setSettings] = useState<Settings>({ providers: [] });
+  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [draft, setDraft] = useState<ProviderConfig>(EMPTY_DRAFT);
   const [editorOpen, setEditorOpen] = useState(false);
   // 独立于 draft 的原始文本，避免每次按键都经过 withExtras 的去重/过滤——
@@ -63,9 +64,18 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
   const addButtonRef = useRef<HTMLButtonElement>(null);
   const restoreAddFocusRef = useRef(false);
 
-  useEffect(() => {
-    loadSettings().then(setSettings);
-  }, []);
+  async function refreshSettings() {
+    setLoadState('loading');
+    try {
+      const next = await loadSettings();
+      setSettings(next);
+      setLoadState('ready');
+    } catch {
+      setLoadState('error');
+    }
+  }
+
+  useEffect(() => { void refreshSettings(); }, []);
 
   useEffect(() => {
     if (editorOpen || !restoreAddFocusRef.current) return;
@@ -242,6 +252,14 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
   return (
     <>
       <section className="mb-6">
+        {loadState === 'loading' ? <p role="status" className="text-xs text-neutral-500">{t('provider.loading')}</p> : null}
+        {loadState === 'error' ? (
+          <div role="alert" className="rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+            {t('provider.loadFailed')}
+            <button type="button" onClick={() => void refreshSettings()} className="ml-2 underline">{t('common.retry')}</button>
+          </div>
+        ) : null}
+        {loadState === 'ready' && <>
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
             {t('provider.configuredHeading')}
@@ -328,6 +346,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
             })}
           </ul>
         )}
+        </>}
       </section>
 
       {editorOpen && <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">

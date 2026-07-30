@@ -99,6 +99,15 @@ describe('chat store page context', () => {
     expect(useChat.getState().pageContext.status).toBe('restricted');
   });
 
+  it.each([
+    'https://chromewebstore.google.com/detail/example',
+    'https://chrome.google.com/webstore/detail/example',
+  ])('marks protected Chrome Web Store pages as restricted: %s', async (url) => {
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 8, title: 'Web Store', url } });
+    await useChat.getState().refreshPageContext();
+    expect(useChat.getState().pageContext.status).toBe('restricted');
+  });
+
   it('enters loading while refreshing and ignores an older refresh result', async () => {
     let resolveFirst!: (value: unknown) => void;
     let resolveSecond!: (value: unknown) => void;

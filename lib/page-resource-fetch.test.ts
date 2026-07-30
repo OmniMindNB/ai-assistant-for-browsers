@@ -3,6 +3,13 @@ import { fetchPageResourceText, isPageResourceUrlAllowed } from './page-resource
 
 describe('isPageResourceUrlAllowed', () => {
   it.each([
+    'https://chromewebstore.google.com/detail/example',
+    'https://chrome.google.com/webstore/detail/example',
+  ])('rejects protected Chrome Web Store URLs: %s', (url) => {
+    expect(isPageResourceUrlAllowed(url)).toBe(false);
+  });
+
+  it.each([
     'file:///etc/passwd',
     'http://localhost/private',
     'http://127.0.0.1/private',

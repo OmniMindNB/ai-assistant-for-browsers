@@ -183,6 +183,18 @@ describe('grouped options settings', () => {
     expect(screen.queryByRole('form', { name: 'Provider editor' })).not.toBeInTheDocument();
   });
 
+  it('keeps provider actions gated while initial settings are loading and permits retry after a read error', async () => {
+    const loading = deferred<Record<string, unknown>>();
+    (globalThis as any).browser.storage.local.get.mockReturnValueOnce(loading.promise);
+    renderWithLocale(<ProviderSettings />);
+    expect(screen.getByRole('status')).toHaveTextContent('Loading');
+    expect(screen.queryByRole('button', { name: 'Add provider' })).not.toBeInTheDocument();
+    loading.reject(new Error('read rejected'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load');
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByRole('button', { name: 'Add provider' })).toBeVisible();
+  });
+
   it('opens the existing editor without losing Provider values', async () => {
     const user = userEvent.setup();
     renderWithLocale(<ProviderSettings />);
@@ -236,7 +248,7 @@ describe('grouped options settings', () => {
     const user = userEvent.setup();
     renderWithLocale(<ProviderSettings />);
 
-    const add = screen.getByRole('button', { name: 'Add provider' });
+    const add = await screen.findByRole('button', { name: 'Add provider' });
     await user.click(add);
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
@@ -250,7 +262,7 @@ describe('grouped options settings', () => {
     set.mockRejectedValueOnce(new Error('write rejected'));
     renderWithLocale(<ProviderSettings />);
 
-    await user.click(screen.getByRole('button', { name: 'Add provider' }));
+    await user.click(await screen.findByRole('button', { name: 'Add provider' }));
     await user.selectOptions(screen.getByLabelText('Quick preset'), 'OpenAI');
     await user.click(screen.getByRole('button', { name: 'Add' }));
 
@@ -290,7 +302,7 @@ describe('grouped options settings', () => {
     const set = (globalThis as any).browser.storage.local.set as ReturnType<typeof vi.fn>;
     renderWithLocale(<ProviderSettings />);
 
-    await user.click(screen.getByRole('button', { name: 'Add provider' }));
+    await user.click(await screen.findByRole('button', { name: 'Add provider' }));
     await user.selectOptions(screen.getByLabelText('Quick preset'), 'OpenAI');
     await user.click(screen.getByRole('button', { name: 'Add' }));
     expect(screen.getAllByRole('listitem')).toHaveLength(3);
