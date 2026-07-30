@@ -9,9 +9,9 @@ import {
 } from './presentation';
 
 const records: ConversationRecord[] = [
-  { id: 'today', title: 'Today', createdAt: 0, updatedAt: new Date('2026-07-30T09:00:00+08:00').getTime() },
-  { id: 'yesterday', title: 'Yesterday', createdAt: 0, updatedAt: new Date('2026-07-29T23:59:00+08:00').getTime() },
-  { id: 'earlier', title: 'Earlier', createdAt: 0, updatedAt: new Date('2026-07-28T23:59:00+08:00').getTime() },
+  { id: 'today', title: 'Today', createdAt: 0, updatedAt: new Date('2031-03-14T09:00:00+08:00').getTime() },
+  { id: 'yesterday', title: 'Yesterday', createdAt: 0, updatedAt: new Date('2031-03-13T23:59:00+08:00').getTime() },
+  { id: 'earlier', title: 'Earlier', createdAt: 0, updatedAt: new Date('2031-03-12T23:59:00+08:00').getTime() },
 ];
 
 function shortcut(id: string, name: string): ResolvedShortcutCommand {
@@ -35,7 +35,7 @@ const shortcuts = [
 
 describe('groupConversationsByDay', () => {
   it('groups conversations into today, yesterday, and earlier', () => {
-    const groups = groupConversationsByDay(records, new Date('2026-07-30T12:00:00+08:00'));
+    const groups = groupConversationsByDay(records, new Date('2031-03-14T12:00:00+08:00'));
 
     expect(groups.map((group) => group.key)).toEqual(['today', 'yesterday', 'earlier']);
     expect(groups.map((group) => group.records.map((record) => record.id))).toEqual([
@@ -56,6 +56,12 @@ describe('filterShortcutCommands', () => {
     const commands = [shortcut('reading', 'Reading Mode'), shortcut('summarize', 'Summary')];
 
     expect(filterShortcutCommands(commands, ' / reading ')).toEqual([commands[0]]);
+  });
+
+  it('keeps a second leading slash as part of the query', () => {
+    const commands = [shortcut('reading', 'Reading Mode')];
+
+    expect(filterShortcutCommands(commands, '//reading')).toEqual([]);
   });
 });
 
@@ -79,5 +85,29 @@ describe('summarizeToolActivities', () => {
     expect(summary.status).toBe('confirming');
     expect(summary.activeId).toBe('3');
     expect(summary.activities).toEqual(activities);
+  });
+
+  it.each([
+    ['running', 'error', 'running'],
+    ['error', 'blocked', 'error'],
+  ] as const)('ranks %s ahead of %s', (higher, lower, expected) => {
+    const summary = summarizeToolActivities([
+      { id: 'lower', name: 'lower', status: lower },
+      { id: 'higher', name: 'higher', status: higher },
+    ]);
+
+    expect(summary.status).toBe(expected);
+    expect(summary.activeId).toBe('higher');
+  });
+
+  it('uses the first original activity when multiple activities share the highest status', () => {
+    const summary = summarizeToolActivities([
+      { id: 'first', name: 'first', status: 'running' },
+      { id: 'second', name: 'second', status: 'running' },
+      { id: 'done', name: 'done', status: 'done' },
+    ]);
+
+    expect(summary.status).toBe('running');
+    expect(summary.activeId).toBe('first');
   });
 });
