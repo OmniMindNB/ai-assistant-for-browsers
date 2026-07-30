@@ -61,16 +61,20 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const confirmTimeoutRef = useRef<number | null>(null);
+  const loadRequestRef = useRef(0);
   const addButtonRef = useRef<HTMLButtonElement>(null);
   const restoreAddFocusRef = useRef(false);
 
   async function refreshSettings() {
+    const requestId = ++loadRequestRef.current;
     setLoadState('loading');
     try {
       const next = await loadSettings();
+      if (requestId !== loadRequestRef.current) return;
       setSettings(next);
       setLoadState('ready');
     } catch {
+      if (requestId !== loadRequestRef.current) return;
       setLoadState('error');
     }
   }
