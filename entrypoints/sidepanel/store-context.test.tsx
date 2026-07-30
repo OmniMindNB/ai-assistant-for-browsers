@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   createBrowserAgent: vi.fn(),
   getActiveProvider: vi.fn(),
   replaceConversationMessages: vi.fn(),
+  getConversationMessages: vi.fn(),
 }));
 
 vi.mock('@/lib/messaging', async (importOriginal) => ({
@@ -25,6 +26,7 @@ vi.mock('@/lib/agent/agent', () => ({
 vi.mock('@/lib/db', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/db')>()),
   replaceConversationMessages: mocks.replaceConversationMessages,
+  getConversationMessages: mocks.getConversationMessages,
 }));
 
 import { useChat } from './store';
@@ -59,6 +61,7 @@ describe('chat store page context', () => {
     mocks.createBrowserAgent.mockReset();
     mocks.getActiveProvider.mockReset().mockResolvedValue(provider);
     mocks.replaceConversationMessages.mockReset().mockResolvedValue(undefined);
+    mocks.getConversationMessages.mockReset().mockResolvedValue([]);
     mocks.createBrowserAgent.mockReturnValue(makeAgent());
     (globalThis as typeof globalThis & { browser: any }).browser.storage.local.get = vi.fn().mockResolvedValue({});
     useChat.setState({
@@ -204,6 +207,44 @@ describe('chat store page context', () => {
       defaultMode: 'agent',
       attachPageByDefault: false,
     });
+  });
+
+  it('keeps the newest provider and preference refresh when older reads resolve or reject late', async () => {
+    let resolveOld!: (value: Record<string, unknown>) => void;
+    let resolveNew!: (value: Record<string, unknown>) => void;
+    const old = new Promise<Record<string, unknown>>((resolve) => { resolveOld = resolve; });
+    const newest = new Promise<Record<string, unknown>>((resolve) => { resolveNew = resolve; });
+    (globalThis as any).browser.storage.local.get = vi.fn().mockReturnValueOnce(old).mockReturnValueOnce(newest)
+      .mockResolvedValue({ workbenchPreferences: { defaultMode: 'ask', attachPageByDefault: true } });
+    const first = useChat.getState().refreshProvider();
+    const second = useChat.getState().refreshProvider();
+    resolveNew({ 'aluminum:settings': { activeProviderId: 'new', providers: [{ ...provider, id: 'new', model: 'new-model' }] } });
+    await second;
+    resolveOld({ 'aluminum:settings': { activeProviderId: 'old', providers: [{ ...provider, id: 'old', model: 'old-model' }] } });
+    await first;
+    expect(useChat.getState().selectedProviderId).toBe('new');
+
+    const oldPrefs = Promise.reject(new Error('old failure'));
+    const newPrefs = Promise.resolve({ workbenchPreferences: { defaultMode: 'agent', attachPageByDefault: false } });
+    (globalThis as any).browser.storage.local.get = vi.fn().mockReturnValueOnce(oldPrefs).mockReturnValueOnce(newPrefs);
+    await Promise.all([useChat.getState().refreshWorkbenchPreferences(), useChat.getState().refreshWorkbenchPreferences()]);
+    expect(useChat.getState().workbenchPreferences).toEqual({ defaultMode: 'agent', attachPageByDefault: false });
+  });
+
+  it('keeps the latest conversation selection when an earlier read resolves late', async () => {
+    let resolveA!: (value: any[]) => void;
+    let resolveB!: (value: any[]) => void;
+    mocks.getConversationMessages
+      .mockReturnValueOnce(new Promise((resolve) => { resolveA = resolve; }))
+      .mockReturnValueOnce(new Promise((resolve) => { resolveB = resolve; }));
+    const first = useChat.getState().openConversation('A');
+    const second = useChat.getState().openConversation('B');
+    resolveB([{ role: 'user', content: 'B', createdAt: 1 }]);
+    await expect(second).resolves.toBe(true);
+    resolveA([{ role: 'user', content: 'A', createdAt: 1 }]);
+    await expect(first).resolves.toBe(false);
+    expect(useChat.getState().conversationId).toBe('B');
+    expect(useChat.getState().messages[0]?.content).toBe('B');
   });
 
   it('preserves an existing chat error when workbench preferences load successfully', async () => {

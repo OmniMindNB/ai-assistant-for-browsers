@@ -97,8 +97,10 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
       if (areaName !== 'local') return;
       const change = changes[STORAGE_KEY];
       if (!change) return;
+      ++loadRequestRef.current;
       const next = (change.newValue as Settings | undefined) ?? { providers: [] };
       setSettings(next);
+      setLoadState('ready');
       if (isEditing && !next.providers.some((p) => p.id === draft.id)) {
         setEditingRemoved(true);
       }

@@ -215,8 +215,9 @@ export default function App() {
 
   async function pickConversation(id: string) {
     if (await openConversation(id)) {
-      setMode(workbenchPreferences.defaultMode);
-      setPageAttached(workbenchPreferences.attachPageByDefault);
+      const currentPreferences = useChat.getState().workbenchPreferences;
+      setMode(currentPreferences.defaultMode);
+      setPageAttached(currentPreferences.attachPageByDefault);
       setHistoryOpen(false);
     }
   }

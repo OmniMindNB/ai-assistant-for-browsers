@@ -161,6 +161,9 @@ let currentTurnTabId: number | null = null;
 let panelTabId: number | null = null;
 /** 只允许最近一次页面上下文刷新更新 UI，避免慢响应覆盖用户主动重试。 */
 let pageContextRequestId = 0;
+let providerRequestId = 0;
+let workbenchPreferencesRequestId = 0;
+let conversationOpenRequestId = 0;
 
 async function resolveActiveTabId(): Promise<number> {
   const res = (await sendMessage('GET_ACTIVE_TAB')) as MessageResponse<ActiveTabInfo>;
@@ -214,8 +217,10 @@ export const useChat = create<ChatState>((set, get) => ({
   setInput: (v) => set({ input: v }),
 
   refreshProvider: async () => {
+    const requestId = ++providerRequestId;
     await ensureDevProvider();
     const settings = await loadSettings();
+    if (requestId !== providerRequestId) return;
     const all = settings.providers;
     const active = all.find((p) => p.id === settings.activeProviderId) ?? all[0] ?? null;
     set((s) => {
@@ -277,10 +282,13 @@ export const useChat = create<ChatState>((set, get) => ({
   },
 
   refreshWorkbenchPreferences: async () => {
+    const requestId = ++workbenchPreferencesRequestId;
     try {
       const workbenchPreferences = await loadWorkbenchPreferences();
+      if (requestId !== workbenchPreferencesRequestId) return;
       set({ workbenchPreferences });
     } catch (error) {
+      if (requestId !== workbenchPreferencesRequestId) return;
       set((state) => ({
         workbenchPreferences: DEFAULT_WORKBENCH_PREFERENCES,
         ...(state.error === null ? { error: errMsg(error) } : {}),
@@ -430,9 +438,12 @@ export const useChat = create<ChatState>((set, get) => ({
   },
 
   openConversation: async (id) => {
+    const requestId = ++conversationOpenRequestId;
     activeAgent?.abort();
     pendingConfirmResolve = null;
-    const records = await getConversationMessages(id);
+    const records = await getConversationMessages(id).catch(() => null);
+    if (records === null) return false;
+    if (requestId !== conversationOpenRequestId) return false;
     const messages: UIMessage[] = records
       .filter((r) => r.role !== 'system')
       .map((r) => ({

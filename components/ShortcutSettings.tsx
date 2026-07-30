@@ -6,6 +6,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useTranslation } from '@/lib/i18n';
+import { normalizeShortcutCommand } from '@/lib/workbench/presentation';
 import {
   SHORTCUTS_STORAGE_KEY,
   loadShortcutConfigs,
@@ -374,7 +375,7 @@ export default function ShortcutSettings() {
         <ul aria-label={t('shortcut.heading')} className="space-y-2">
           {items.map((item, index) => {
             const resolved = resolveShortcut(item, t);
-            const command = `/${resolved.name.replace(/\s+/g, '')}`;
+            const command = normalizeShortcutCommand(resolved.name);
             return (
               <li
                 key={item.id}
