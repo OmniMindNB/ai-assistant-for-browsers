@@ -100,6 +100,7 @@
 
 | 日期 | 内容 | 关联 |
 |------|------|------|
+| 2026-07-30 | 删除队列测试覆盖补全：验证单次失败删除恢复写入、重叠删除 generation、失败删除后队列恢复以及 B/C 会话隔离。验证：`pnpm test`（27 文件、346 测试）、`pnpm compile`、`pnpm build`（Chrome MV3）均通过。 | [设计](superpowers/specs/2026-07-30-sidepanel-context-workbench-redesign-design.md) |
 | 2026-07-30 | 删除 tombstone 并发回归：同一会话的第一删除成功、第二删除失败后，成功 tombstone 仍阻止迟到快照，队列继续可用。验证：`pnpm test`（27 文件、343 测试）、`pnpm compile`、`pnpm build`（Chrome MV3）均通过。 | [设计](superpowers/specs/2026-07-30-sidepanel-context-workbench-redesign-design.md) |
 | 2026-07-30 | 删除持久化队列补强：成功删除与进行中删除 generation 分离；成功 tombstone 不会被随后失败的并发删除清除。真实延迟写入回归验证同会话顺序为 save→delete，且成功删除后的迟到快照继续被拒绝。验证：`pnpm test`（27 文件、342 测试）、`pnpm compile`、`pnpm build`（Chrome MV3）均通过。 | [设计](superpowers/specs/2026-07-30-sidepanel-context-workbench-redesign-design.md) |
 | 2026-07-30 | 上下文工作台删除持久化加固：按会话串行化 Dexie 写入/删除；删除意图建立会话级 tombstone，删除前已排队的快照先完成而删除最后执行，删除开始后的快照永远跳过。成功删除保留 tombstone（会话 id 唯一），删除失败才清除，防止迟到运行重建已删除会话。验证：`pnpm test`（27 文件、341 测试）、`pnpm compile`、`pnpm build`（Chrome MV3）均通过。 | [设计](superpowers/specs/2026-07-30-sidepanel-context-workbench-redesign-design.md) |

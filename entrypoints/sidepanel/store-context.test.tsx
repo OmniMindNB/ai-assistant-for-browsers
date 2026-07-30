@@ -510,6 +510,54 @@ describe('chat store page context', () => {
     expect(mocks.deleteConversation).toHaveBeenCalledTimes(2);
   });
 
+  it('allows legitimate persistence after a lone failed delete clears its pending generation', async () => {
+    const id = 'failed-delete-recovery';
+    mocks.deleteConversation.mockRejectedValueOnce(new Error('delete failed'));
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    useChat.setState({ conversationId: 'A', messages: [] });
+    await useChat.getState().removeConversation(id);
+    useChat.setState({ conversationId: id, messages: [] });
+    await useChat.getState().send('persist after failed delete');
+    expect(mocks.replaceConversationMessages).toHaveBeenCalledWith(id, expect.anything(), expect.anything());
+  });
+
+  it('keeps newer pending deletion active when an older delete fails, then recovers after the newer failure', async () => {
+    let rejectFirst!: (error: Error) => void;
+    let rejectSecond!: (error: Error) => void;
+    const id = 'overlapping-failed-deletes';
+    mocks.deleteConversation
+      .mockImplementationOnce(() => new Promise<void>((_resolve, reject) => { rejectFirst = reject; }))
+      .mockImplementationOnce(() => new Promise<void>((_resolve, reject) => { rejectSecond = reject; }));
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    useChat.setState({ conversationId: 'A', messages: [] });
+    const first = useChat.getState().removeConversation(id);
+    const second = useChat.getState().removeConversation(id);
+    await vi.waitFor(() => expect(mocks.deleteConversation).toHaveBeenCalledOnce());
+    rejectFirst(new Error('first failed'));
+    await vi.waitFor(() => expect(mocks.deleteConversation).toHaveBeenCalledTimes(2));
+    useChat.setState({ conversationId: id, messages: [] });
+    await useChat.getState().send('blocked by second pending delete');
+    expect(mocks.replaceConversationMessages).not.toHaveBeenCalledWith(id, expect.anything(), expect.anything());
+    rejectSecond(new Error('second failed'));
+    await Promise.all([first, second]);
+    await useChat.getState().send('allowed after both failures');
+    expect(mocks.replaceConversationMessages).toHaveBeenCalledWith(id, expect.anything(), expect.anything());
+  });
+
+  it('does not block C persistence while B deletion is pending', async () => {
+    let resolveDelete!: () => void;
+    mocks.deleteConversation.mockImplementationOnce(() => new Promise<void>((resolve) => { resolveDelete = resolve; }));
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    useChat.setState({ conversationId: 'A', messages: [] });
+    const deleting = useChat.getState().removeConversation('isolated-B');
+    await vi.waitFor(() => expect(mocks.deleteConversation).toHaveBeenCalledOnce());
+    useChat.setState({ conversationId: 'isolated-C', messages: [] });
+    await useChat.getState().send('C remains writable');
+    expect(mocks.replaceConversationMessages).toHaveBeenCalledWith('isolated-C', expect.anything(), expect.anything());
+    resolveDelete();
+    await deleting;
+  });
+
   it('does not start a selection shortcut after its active-tab preflight loses the conversation', async () => {
     let resolveTab!: (value: unknown) => void;
     mocks.sendMessage.mockImplementationOnce(() => new Promise((resolve) => { resolveTab = resolve; }));
