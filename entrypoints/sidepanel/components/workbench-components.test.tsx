@@ -4,6 +4,9 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConversationRecord } from '@/lib/db';
 import { LocaleProvider } from '@/lib/i18n';
+import { en } from '@/lib/i18n/locales/en';
+import { zh } from '@/lib/i18n/locales/zh';
+import type { ProviderConfig } from '@/lib/settings';
 import type { ResolvedShortcutCommand } from '@/lib/workbench/presentation';
 import type { PageContextState, ToolActivity } from '../store';
 import App from '../App';
@@ -241,6 +244,15 @@ const composerProps: WorkbenchComposerProps = {
   onSelectProviderModel: vi.fn(),
 };
 
+const configuredProvider: ProviderConfig = {
+  id: 'provider-1',
+  name: 'Configured provider',
+  baseURL: 'https://example.com/v1',
+  apiKey: 'test-key',
+  model: 'model-one',
+  models: ['model-one', 'model-two'],
+};
+
 function ComposerHarness({ initialInput = '', ...props }: Partial<WorkbenchComposerProps> & { initialInput?: string }) {
   const [input, setInput] = useState(initialInput);
   return (
@@ -303,6 +315,142 @@ describe('workbench composer', () => {
 
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     expect(screen.getByRole('textbox')).toHaveValue('/阅读');
+  });
+
+  it('does not send a slash query when no command matches', async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn();
+    render(<ComposerHarness onSend={onSend} />);
+
+    const textbox = screen.getByRole('textbox');
+    await user.type(textbox, '/missing');
+    expect(textbox).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('status')).toHaveTextContent('No matching commands');
+    await user.keyboard('{Enter}');
+
+    expect(onSend).not.toHaveBeenCalled();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(textbox).toHaveValue('/missing');
+  });
+
+  it('does not invoke sending for an empty input', async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn();
+    render(<ComposerHarness initialInput="   " onSend={onSend} />);
+
+    await user.click(screen.getByRole('textbox'));
+    await user.keyboard('{Enter}');
+
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('connects the model trigger to its menu and supports keyboard selection', async () => {
+    const user = userEvent.setup();
+    const onSelectProviderModel = vi.fn();
+    render(
+      <ComposerHarness
+        providers={[configuredProvider]}
+        selectedProviderId={configuredProvider.id}
+        selectedModel="model-one"
+        onSelectProviderModel={onSelectProviderModel}
+      />,
+    );
+
+    const trigger = screen.getByRole('button', { name: 'Select provider and model' });
+    trigger.focus();
+    await user.keyboard('{ArrowDown}');
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(trigger).toHaveAttribute('aria-controls', 'workbench-model-menu');
+    expect(screen.getByRole('menu', { name: 'Model selection' })).toBeVisible();
+    await waitFor(() => expect(screen.getByRole('menuitem', { name: 'model-one' })).toHaveFocus());
+    await user.keyboard('{ArrowDown}{Enter}');
+
+    expect(onSelectProviderModel).toHaveBeenCalledWith(configuredProvider.id, 'model-two');
+  });
+
+  it('closes an open model menu when focus leaves the composer', async () => {
+    const user = userEvent.setup();
+    render(
+      <>
+        <ComposerHarness providers={[configuredProvider]} selectedProviderId={configuredProvider.id} selectedModel="model-one" />
+        <button type="button">Outside composer</button>
+      </>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Select provider and model' }));
+    expect(screen.getByRole('menu', { name: 'Model selection' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Outside composer' }));
+
+    expect(screen.queryByRole('menu', { name: 'Model selection' })).not.toBeInTheDocument();
+  });
+
+  it('closes the model menu with Escape and after Tab leaves the composer', async () => {
+    const user = userEvent.setup();
+    render(
+      <>
+        <ComposerHarness providers={[configuredProvider]} selectedProviderId={configuredProvider.id} selectedModel="model-one" />
+        <button type="button">Outside composer</button>
+      </>,
+    );
+
+    const trigger = screen.getByRole('button', { name: 'Select provider and model' });
+    await user.click(trigger);
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('menu', { name: 'Model selection' })).not.toBeInTheDocument();
+
+    trigger.focus();
+    await user.keyboard('{ArrowDown}');
+    await waitFor(() => expect(screen.getByRole('menuitem', { name: 'model-one' })).toHaveFocus());
+    await user.keyboard('{ArrowDown}');
+    await waitFor(() => expect(screen.getByRole('menuitem', { name: 'model-two' })).toHaveFocus());
+    await user.tab();
+    await user.tab();
+
+    expect(screen.getByRole('button', { name: 'Outside composer' })).toHaveFocus();
+    expect(screen.queryByRole('menu', { name: 'Model selection' })).not.toBeInTheDocument();
+  });
+
+  it('uses one popover for slash commands and model selection', async () => {
+    const user = userEvent.setup();
+    render(
+      <ComposerHarness providers={[configuredProvider]} selectedProviderId={configuredProvider.id} selectedModel="model-one" />,
+    );
+
+    await user.type(screen.getByRole('textbox'), '/阅读');
+    expect(screen.getByRole('menu', { name: 'Slash commands' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Select provider and model' }));
+
+    expect(screen.queryByRole('menu', { name: 'Slash commands' })).not.toBeInTheDocument();
+    expect(screen.getByRole('menu', { name: 'Model selection' })).toBeVisible();
+  });
+
+  it('shows localized, accurate page-context states', () => {
+    const { rerender } = render(<ComposerHarness pageContext={availableContext} pageAttached />);
+    const chip = screen.getByRole('button', { name: 'Page context: Example article' });
+    expect(chip).toHaveAttribute('aria-pressed', 'true');
+    expect(chip).toHaveAttribute('title', 'Example article');
+    expect(chip).toHaveTextContent('Attached');
+
+    rerender(<ComposerHarness pageContext={availableContext} pageAttached={false} />);
+    expect(screen.getByRole('button', { name: 'Page context: Example article' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByText('Not attached')).toBeVisible();
+
+    rerender(<ComposerHarness pageContext={{ status: 'loading' }} />);
+    expect(screen.getByRole('button', { name: 'Page context: Checking page context…' })).toBeDisabled();
+
+    rerender(<ComposerHarness pageContext={{ status: 'error', message: 'Offline' }} />);
+    expect(screen.getByRole('button', { name: 'Page context: Page context unavailable: Offline' })).toBeDisabled();
+
+    rerender(<ComposerHarness pageContext={{ status: 'restricted', tabId: 2, title: 'Extensions', url: 'chrome://extensions/' }} />);
+    expect(screen.getByRole('button', { name: 'Page context: This page cannot be read.' })).toBeDisabled();
+  });
+
+  it('keeps English and Chinese composer labels in sync', () => {
+    expect(Object.keys(en).sort()).toEqual(Object.keys(zh).sort());
+    expect(en['chat.noMatchingSlashCommands']).toBe('No matching commands');
+    expect(zh['chat.noMatchingSlashCommands']).toBe('没有匹配的快捷指令');
   });
 
   it('shows stop instead of send while busy', () => {
@@ -530,7 +678,7 @@ describe('workbench context controls', () => {
     await user.click(screen.getByRole('textbox', { name: 'Message input' }));
     await user.keyboard('{Enter}');
 
-    await waitFor(() => expect(chatStore.send).toHaveBeenCalledWith(undefined, { withoutBrowserTools: true }));
+    expect(chatStore.send).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Add page context' })).toBeVisible();
   });
 
@@ -542,6 +690,7 @@ describe('workbench context controls', () => {
       title: 'Extensions',
       url: 'chrome://extensions/',
     };
+    chatStore.input = 'Open settings';
     render(
       <LocaleProvider>
         <App />
@@ -550,7 +699,7 @@ describe('workbench context controls', () => {
 
     await user.click(screen.getByRole('button', { name: 'Agent' }));
     await user.click(screen.getByRole('button', { name: 'Continue without page context' }));
-    await user.type(screen.getByRole('textbox', { name: 'Message input' }), 'Open settings');
+    await user.click(screen.getByRole('textbox', { name: 'Message input' }));
     await user.keyboard('{Enter}');
 
     await waitFor(() => expect(chatStore.send).toHaveBeenCalledWith(undefined, { withoutBrowserTools: true }));

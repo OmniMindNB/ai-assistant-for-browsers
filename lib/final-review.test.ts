@@ -74,6 +74,12 @@ describe('side-panel custom shortcut wiring', () => {
     expect(appSource).not.toContain('summarizePage,');
     expect(appSource).not.toContain('explainSelection,');
   });
+
+  it('subscribes to external shortcut storage changes', () => {
+    expect(appSource).toContain('SHORTCUTS_STORAGE_KEY');
+    expect(appSource).toContain('browser.storage.onChanged.addListener');
+    expect(appSource).toContain('browser.storage.onChanged.removeListener');
+  });
 });
 
 describe('side-panel shortcut rendering', () => {
@@ -82,33 +88,34 @@ describe('side-panel shortcut rendering', () => {
     'utf8',
   );
 
-  it('filters slash commands and runs the highlighted shortcut', () => {
+  it('opens slash commands, prevents unmatched queries from sending, and runs a highlighted shortcut', () => {
     expect(source).toContain('filterShortcutCommands(shortcuts, input)');
-    expect(source).toContain('setHighlightedCommand');
+    expect(source).toContain("if (openPopover === 'commands')");
+    expect(source).toContain("aria-expanded={openPopover === 'commands'}");
+    expect(source).toContain('if (commands.length > 0) runCommand(highlightedCommand)');
     expect(source).toContain('onRunShortcut(command.config)');
+    expect(source).toContain("t('chat.noMatchingSlashCommands')");
+    expect(source).toContain("input.trim()");
   });
 
-  it('subscribes to external shortcut storage changes', () => {
-    const appSource = fs.readFileSync(
-      path.resolve(process.cwd(), 'entrypoints/sidepanel/App.tsx'),
-      'utf8',
-    );
-    expect(appSource).toContain('SHORTCUTS_STORAGE_KEY');
-    expect(appSource).toContain('browser.storage.onChanged.addListener');
-    expect(appSource).toContain('browser.storage.onChanged.removeListener');
+  it('renders page context status and configured provider models inside the composer', () => {
+    expect(source).toContain("pageContext.status === 'loading'");
+    expect(source).toContain("pageContext.status === 'error'");
+    expect(source).toContain("t('workbench.restrictedPage')");
+    expect(source).toContain('providerModels(provider)');
+    expect(source).toContain('disabled={!pageIsAvailable}');
   });
 
-  it('removes the two hard-coded empty-state cards', () => {
-    expect(source).not.toContain('chat.summarizeCardTitle');
-    expect(source).not.toContain('chat.explainCardTitle');
-  });
-
-  it('exposes the overflow menu to assistive technology and keyboard users', () => {
+  it('connects slash and model popups to their controls with keyboard focus behavior', () => {
     expect(source).toContain('aria-haspopup="menu"');
+    expect(source).toContain("aria-controls={openPopover === 'commands' ? 'workbench-slash-commands' : undefined}");
     expect(source).toContain("aria-expanded={openPopover === 'models'}");
-    expect(source).toContain('role="menu"');
-    expect(source).toContain("event.key === 'ArrowDown'");
-    expect(source).toContain("event.key === 'Escape'");
+    expect(source).toContain("aria-controls={openPopover === 'models' ? 'workbench-model-menu' : undefined}");
+    expect(source).toContain('id="workbench-model-menu"');
+    expect(source).toContain('handleModelTriggerKeyDown');
+    expect(source).toContain('handleModelItemKeyDown');
+    expect(source).toContain('handleComposerBlur');
+    expect(source).toContain('modelItemRefs.current[nextIndex]?.focus()');
   });
 
   it('truncates long shortcut names while preserving the full accessible name and title', () => {
