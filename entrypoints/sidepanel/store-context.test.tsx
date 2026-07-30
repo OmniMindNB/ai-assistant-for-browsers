@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
   getActiveProvider: vi.fn(),
   replaceConversationMessages: vi.fn(),
   getConversationMessages: vi.fn(),
+  deleteConversation: vi.fn(),
+  listConversations: vi.fn(),
 }));
 
 vi.mock('@/lib/messaging', async (importOriginal) => ({
@@ -27,6 +29,8 @@ vi.mock('@/lib/db', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/db')>()),
   replaceConversationMessages: mocks.replaceConversationMessages,
   getConversationMessages: mocks.getConversationMessages,
+  deleteConversation: mocks.deleteConversation,
+  listConversations: mocks.listConversations,
 }));
 
 import { useChat } from './store';
@@ -65,6 +69,8 @@ describe('chat store page context', () => {
     mocks.getActiveProvider.mockReset().mockResolvedValue(provider);
     mocks.replaceConversationMessages.mockReset().mockResolvedValue(undefined);
     mocks.getConversationMessages.mockReset().mockResolvedValue([]);
+    mocks.deleteConversation.mockReset().mockResolvedValue(undefined);
+    mocks.listConversations.mockReset().mockResolvedValue([]);
     mocks.createBrowserAgent.mockReturnValue(makeAgent());
     agentEventListener = undefined;
     (globalThis as typeof globalThis & { browser: any }).browser.storage.local.get = vi.fn().mockResolvedValue({});
@@ -251,6 +257,19 @@ describe('chat store page context', () => {
     expect(useChat.getState().messages[0]?.content).toBe('B');
   });
 
+  it.each(['clear', 'remove'] as const)('keeps %s authoritative when a pending conversation open resolves late', async (action) => {
+    let resolve!: (value: any[]) => void;
+    mocks.getConversationMessages.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
+    const open = useChat.getState().openConversation('old');
+    if (action === 'clear') useChat.getState().clear();
+    else await useChat.getState().removeConversation('old');
+    const expectedId = useChat.getState().conversationId;
+    resolve([{ role: 'user', content: 'stale', createdAt: 1 }]);
+    await expect(open).resolves.toBe(false);
+    expect(useChat.getState().conversationId).toBe(expectedId);
+    expect(useChat.getState().messages).toEqual([]);
+  });
+
   it('preserves an existing chat error when workbench preferences load successfully', async () => {
     useChat.setState({ error: 'The provider request failed.' });
     (globalThis as typeof globalThis & { browser: any }).browser.storage.local.get = vi.fn().mockResolvedValue({
@@ -337,13 +356,19 @@ describe('chat store page context', () => {
     await send;
   });
 
-  it('marks running and confirming activities stopped and preserves them against late errors', () => {
-    useChat.setState({ toolActivities: [
-      { id: 'running', name: 'browser_click', status: 'running' },
-      { id: 'confirming', name: 'browser_type', status: 'confirming' },
-    ] });
+  it('stops running and confirming agent activities and preserves them against late errors', async () => {
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    const send = useChat.getState().send('write');
+    await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalled());
+    agentEventListener?.({ type: 'tool_execution_start', toolCallId: 'running', toolName: 'browser_click' });
+    const confirm = mocks.createBrowserAgent.mock.calls[0][0].onConfirm as (id: string, name: string, args: unknown, reason: string) => Promise<boolean>;
+    void confirm('confirming', 'browser_type', {}, 'confirm');
     useChat.getState().stop();
     expect(useChat.getState().toolActivities.map((activity) => activity.status)).toEqual(['stopped', 'stopped']);
+    agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'running', toolName: 'browser_click', isError: true, result: 'late' });
+    agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'confirming', toolName: 'browser_type', isError: true, result: 'late' });
+    expect(useChat.getState().toolActivities.map((activity) => activity.status)).toEqual(['stopped', 'stopped']);
+    await send;
   });
 
   it('reports that a normal send did not start for empty input or a busy store', async () => {

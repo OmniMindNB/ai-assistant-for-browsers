@@ -421,6 +421,7 @@ export const useChat = create<ChatState>((set, get) => ({
   },
 
   clear: () => {
+    ++conversationOpenRequestId;
     activeAgent?.abort();
     pendingConfirmResolve = null;
     set({
@@ -478,6 +479,7 @@ export const useChat = create<ChatState>((set, get) => ({
   },
 
   removeConversation: async (id) => {
+    ++conversationOpenRequestId;
     await deleteConversation(id);
     await get().refreshConversations();
     if (get().conversationId === id) {
