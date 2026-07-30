@@ -177,7 +177,8 @@ let providerRequestId = 0;
 let workbenchPreferencesRequestId = 0;
 let conversationOpenRequestId = 0;
 const conversationMutationTails = new Map<string, Promise<void>>();
-const deletionTombstones = new Map<string, number>();
+const successfulDeletedConversationIds = new Set<string>();
+const pendingDeletionGenerations = new Map<string, number>();
 let conversationMutationGeneration = 0;
 
 function enqueueConversationMutation(id: string, mutation: () => Promise<void>): Promise<void> {
@@ -193,12 +194,14 @@ function enqueueConversationMutation(id: string, mutation: () => Promise<void>):
 
 function beginConversationDeletion(id: string): Promise<void> {
   const generation = ++conversationMutationGeneration;
-  deletionTombstones.set(id, generation);
+  pendingDeletionGenerations.set(id, generation);
   return enqueueConversationMutation(id, async () => {
     try {
       await deleteConversationRecord(id);
+      successfulDeletedConversationIds.add(id);
+      if (pendingDeletionGenerations.get(id) === generation) pendingDeletionGenerations.delete(id);
     } catch (error) {
-      if (deletionTombstones.get(id) === generation) deletionTombstones.delete(id);
+      if (pendingDeletionGenerations.get(id) === generation) pendingDeletionGenerations.delete(id);
       throw error;
     }
   });
@@ -973,7 +976,7 @@ async function persistConversationSnapshot(conversationId: string, messages: UIM
   // A snapshot created after deletion starts must never queue behind the delete
   // and recreate its conversation. Snapshots already queued remain ahead of
   // the delete in this conversation's lane, making delete authoritative.
-  if (deletionTombstones.has(conversationId)) return;
+  if (successfulDeletedConversationIds.has(conversationId) || pendingDeletionGenerations.has(conversationId)) return;
   try {
     await enqueueConversationMutation(conversationId, async () => {
       await replaceConversationMessages(

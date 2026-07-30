@@ -464,6 +464,31 @@ describe('chat store page context', () => {
     expect(useChat.getState().conversationId).not.toBe('B');
   });
 
+  it('serializes a real completed snapshot before the authoritative delete and blocks a later snapshot', async () => {
+    let resolveSave!: () => void;
+    const operations: string[] = [];
+    const id = 'ordered-delete';
+    mocks.replaceConversationMessages.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      operations.push('save');
+      resolveSave = () => { operations.push('save-complete'); resolve(); };
+    }));
+    mocks.deleteConversation.mockImplementationOnce(async () => { operations.push('delete'); });
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    useChat.setState({ conversationId: id, messages: [] });
+    const first = useChat.getState().send('persist before delete');
+    await vi.waitFor(() => expect(mocks.replaceConversationMessages).toHaveBeenCalledOnce());
+    const deleting = useChat.getState().removeConversation(id);
+    expect(mocks.deleteConversation).not.toHaveBeenCalled();
+    resolveSave();
+    await first;
+    await deleting;
+    expect(operations).toEqual(['save', 'save-complete', 'delete']);
+
+    useChat.setState({ conversationId: id, messages: [] });
+    await useChat.getState().send('late snapshot');
+    expect(mocks.replaceConversationMessages).toHaveBeenCalledOnce();
+  });
+
   it('does not start a selection shortcut after its active-tab preflight loses the conversation', async () => {
     let resolveTab!: (value: unknown) => void;
     mocks.sendMessage.mockImplementationOnce(() => new Promise((resolve) => { resolveTab = resolve; }));
