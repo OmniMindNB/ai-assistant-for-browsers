@@ -100,6 +100,7 @@
 
 | 日期 | 内容 | 关联 |
 |------|------|------|
+| 2026-07-30 | 删除失败跨会话隔离回归：B 删除失败后，C 的独立持久化仍可完成，队列不会形成全局阻塞。验证：`pnpm test`（27 文件、347 测试）、`pnpm compile` 均通过。 | [设计](superpowers/specs/2026-07-30-sidepanel-context-workbench-redesign-design.md) |
 | 2026-07-30 | 删除队列测试覆盖补全：验证单次失败删除恢复写入、重叠删除 generation、失败删除后队列恢复以及 B/C 会话隔离。验证：`pnpm test`（27 文件、346 测试）、`pnpm compile`、`pnpm build`（Chrome MV3）均通过。 | [设计](superpowers/specs/2026-07-30-sidepanel-context-workbench-redesign-design.md) |
 | 2026-07-30 | 删除 tombstone 并发回归：同一会话的第一删除成功、第二删除失败后，成功 tombstone 仍阻止迟到快照，队列继续可用。验证：`pnpm test`（27 文件、343 测试）、`pnpm compile`、`pnpm build`（Chrome MV3）均通过。 | [设计](superpowers/specs/2026-07-30-sidepanel-context-workbench-redesign-design.md) |
 | 2026-07-30 | 删除持久化队列补强：成功删除与进行中删除 generation 分离；成功 tombstone 不会被随后失败的并发删除清除。真实延迟写入回归验证同会话顺序为 save→delete，且成功删除后的迟到快照继续被拒绝。验证：`pnpm test`（27 文件、342 测试）、`pnpm compile`、`pnpm build`（Chrome MV3）均通过。 | [设计](superpowers/specs/2026-07-30-sidepanel-context-workbench-redesign-design.md) |

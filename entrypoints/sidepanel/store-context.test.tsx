@@ -558,6 +558,18 @@ describe('chat store page context', () => {
     await deleting;
   });
 
+  it('allows C persistence after B deletion fails without poisoning another conversation lane', async () => {
+    mocks.deleteConversation.mockRejectedValueOnce(new Error('B deletion failed'));
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    useChat.setState({ conversationId: 'A', messages: [] });
+    await useChat.getState().removeConversation('failed-B');
+    expect(useChat.getState().error).toBeNull();
+
+    useChat.setState({ conversationId: 'recovered-C', messages: [] });
+    await useChat.getState().send('C writes after B failure');
+    expect(mocks.replaceConversationMessages).toHaveBeenCalledWith('recovered-C', expect.anything(), expect.anything());
+  });
+
   it('does not start a selection shortcut after its active-tab preflight loses the conversation', async () => {
     let resolveTab!: (value: unknown) => void;
     mocks.sendMessage.mockImplementationOnce(() => new Promise((resolve) => { resolveTab = resolve; }));
