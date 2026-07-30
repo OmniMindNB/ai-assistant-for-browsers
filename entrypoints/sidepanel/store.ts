@@ -153,15 +153,20 @@ interface ChatState {
   restoreTabConversation: () => Promise<void>;
 }
 
-let activeAgent: Agent | null = null;
-let pendingConfirmResolve: ((approved: boolean) => void) | null = null;
-interface ActiveRun {
-  token: number;
+interface ConversationOrigin {
   conversationId: string;
+  conversationEpoch: number;
+}
+
+interface ActiveRun {
+  id: number;
+  origin: ConversationOrigin;
   agent: Agent | null;
+  resolveConfirmation: ((approved: boolean) => void) | null;
 }
 let activeRun: ActiveRun | null = null;
 let runEpoch = 0;
+let conversationEpoch = 0;
 /** 当前这一轮固定下来的目标 tabId；用于 revertTurnChanges 在轮次结束后仍能撤销正确的标签页。 */
 let currentTurnTabId: number | null = null;
 /** 侧边栏面板自己绑定的 tabId；挂载时解析一次并缓存，用于把 conversationId 变化写回对应 tab 的映射。 */
@@ -172,12 +177,20 @@ let providerRequestId = 0;
 let workbenchPreferencesRequestId = 0;
 let conversationOpenRequestId = 0;
 
-function isCurrentRun(run: ActiveRun, get: () => ChatState): boolean {
-  return activeRun?.token === run.token && get().conversationId === run.conversationId;
+function captureConversationOrigin(get: () => ChatState): ConversationOrigin {
+  return { conversationId: get().conversationId, conversationEpoch };
 }
 
-function finishUnstartedRun(run: ActiveRun): void {
-  if (activeRun === run) activeRun = null;
+function isCurrentOrigin(origin: ConversationOrigin, get: () => ChatState): boolean {
+  return conversationEpoch === origin.conversationEpoch && get().conversationId === origin.conversationId;
+}
+
+function isCurrentRun(run: ActiveRun, get: () => ChatState): boolean {
+  return activeRun?.id === run.id && isCurrentOrigin(run.origin, get);
+}
+
+function settleRun(run: ActiveRun): void {
+  if (activeRun?.id === run.id) activeRun = null;
 }
 
 function invalidateActiveRun(
@@ -187,25 +200,24 @@ function invalidateActiveRun(
 ): void {
   const run = activeRun;
   if (!run) return;
+  const messages = isCurrentOrigin(run.origin, get) ? get().messages : [];
   activeRun = null;
-  runEpoch += 1;
-  const messages = get().conversationId === run.conversationId ? get().messages : [];
-  const resolveConfirmation = pendingConfirmResolve;
-  pendingConfirmResolve = null;
-  resolveConfirmation?.(false);
+  run.resolveConfirmation?.(false);
+  run.resolveConfirmation = null;
   run.agent?.abort();
-  if (activeAgent === run.agent) activeAgent = null;
-  set((state) => ({
-    busy: false,
-    pendingConfirmation: null,
-    toolActivities: state.toolActivities.map((activity) =>
-      activity.status === 'running' || activity.status === 'confirming'
-        ? { ...activity, status: 'stopped' }
-        : activity,
-    ),
-  }));
+  if (isCurrentOrigin(run.origin, get)) {
+    set((state) => ({
+      busy: false,
+      pendingConfirmation: null,
+      toolActivities: state.toolActivities.map((activity) =>
+        activity.status === 'running' || activity.status === 'confirming'
+          ? { ...activity, status: 'stopped' }
+          : activity,
+      ),
+    }));
+  }
   if (persist && messages.length > 0) {
-    void persistConversationSnapshot(run.conversationId, messages);
+    void persistConversationSnapshot(run.origin.conversationId, messages);
   }
 }
 
@@ -377,6 +389,7 @@ export const useChat = create<ChatState>((set, get) => ({
 
   runShortcut: async (shortcut) => {
     if (get().busy) return;
+    const origin = captureConversationOrigin(get);
     const resolved = resolveShortcut({ ...shortcut }, t);
     let tabId: number | undefined;
     let selection: PageSelection | undefined;
@@ -385,16 +398,19 @@ export const useChat = create<ChatState>((set, get) => ({
       set({ busy: true, error: null });
       try {
         tabId = await resolveActiveTabId();
+        if (!isCurrentOrigin(origin, get)) return;
         const response = (await sendMessage(
           'GET_SELECTION',
           undefined,
           tabId,
         )) as MessageResponse<PageSelection>;
+        if (!isCurrentOrigin(origin, get)) return;
         if (!response.ok || !response.data) {
           throw new Error(response.error ?? t('store.getSelectionFailed'));
         }
         selection = response.data;
       } catch (error) {
+        if (!isCurrentOrigin(origin, get)) return;
         set({ busy: false, error: errMsg(error) });
         return;
       }
@@ -405,6 +421,7 @@ export const useChat = create<ChatState>((set, get) => ({
     try {
       execution = buildShortcutExecution(resolved, t, selection?.text);
     } catch (error) {
+      if (!isCurrentOrigin(origin, get)) return;
       set({ busy: false, error: errMsg(error) });
       return;
     }
@@ -418,15 +435,17 @@ export const useChat = create<ChatState>((set, get) => ({
         presetTabId: tabId,
         withoutBrowserTools: execution.browserTools === 'none',
         systemPromptSuffix: execution.systemPromptSuffix,
+        origin,
       },
     );
   },
 
   stop: () => {
-    const resolveConfirmation = pendingConfirmResolve;
-    pendingConfirmResolve = null;
-    resolveConfirmation?.(false);
-    activeAgent?.abort();
+    const run = activeRun;
+    if (!run || !isCurrentRun(run, get)) return;
+    run.resolveConfirmation?.(false);
+    run.resolveConfirmation = null;
+    run.agent?.abort();
     set((state) => ({
       pendingConfirmation: null,
       toolActivities: state.toolActivities.map((activity) =>
@@ -438,8 +457,10 @@ export const useChat = create<ChatState>((set, get) => ({
   },
 
   respondToConfirmation: (approved) => {
-    pendingConfirmResolve?.(approved);
-    pendingConfirmResolve = null;
+    const run = activeRun;
+    if (!run || !isCurrentRun(run, get)) return;
+    run.resolveConfirmation?.(approved);
+    run.resolveConfirmation = null;
     set((state) => ({
       pendingConfirmation: null,
       toolActivities: approved ? state.toolActivities : state.toolActivities.map((activity) =>
@@ -469,10 +490,12 @@ export const useChat = create<ChatState>((set, get) => ({
   clear: () => {
     ++conversationOpenRequestId;
     invalidateActiveRun(set, get);
+    conversationEpoch += 1;
     set({
       messages: [],
       toolActivities: [],
       error: null,
+      busy: false,
       conversationId: genConversationId(),
       turnHasChanges: false,
       pendingConfirmation: null,
@@ -486,9 +509,14 @@ export const useChat = create<ChatState>((set, get) => ({
   openConversation: async (id) => {
     const requestId = ++conversationOpenRequestId;
     invalidateActiveRun(set, get);
+    conversationEpoch += 1;
     const records = await getConversationMessages(id).catch(() => null);
     if (records === null) return false;
     if (requestId !== conversationOpenRequestId) return false;
+    // A run can start while IndexedDB is loading. Fence it immediately before
+    // installing B so its callbacks and finally cannot observe B's state.
+    invalidateActiveRun(set, get);
+    conversationEpoch += 1;
     const messages: UIMessage[] = records
       .filter((r) => r.role !== 'system')
       .map((r) => ({
@@ -503,6 +531,7 @@ export const useChat = create<ChatState>((set, get) => ({
       toolActivities: [],
       conversationId: id,
       error: null,
+      busy: false,
       turnHasChanges: false,
       pendingConfirmation: null,
     });
@@ -524,14 +553,23 @@ export const useChat = create<ChatState>((set, get) => ({
 
   removeConversation: async (id) => {
     ++conversationOpenRequestId;
-    if (get().conversationId === id) invalidateActiveRun(set, get, false);
+    const removingActive = get().conversationId === id;
+    if (removingActive) {
+      invalidateActiveRun(set, get, false);
+      conversationEpoch += 1;
+    }
     await deleteConversation(id);
     await get().refreshConversations();
-    if (get().conversationId === id) {
+    if (removingActive && get().conversationId === id) {
+      // A run can start while deletion/list refresh awaits. Do not let it
+      // persist the record that has just been deleted.
+      invalidateActiveRun(set, get, false);
+      conversationEpoch += 1;
       set({
         messages: [],
         toolActivities: [],
         conversationId: genConversationId(),
+        busy: false,
         turnHasChanges: false,
         pendingConfirmation: null,
       });
@@ -552,6 +590,7 @@ interface RunAgentOptions {
   truncateToId?: string;
   withoutBrowserTools?: boolean;
   systemPromptSuffix?: string;
+  origin?: ConversationOrigin;
 }
 
 async function runAgent(
@@ -562,10 +601,13 @@ async function runAgent(
   options: RunAgentOptions = {},
 ): Promise<boolean> {
   const initialState = get();
+  const origin = options.origin ?? captureConversationOrigin(get);
+  if (origin.conversationId !== initialState.conversationId || origin.conversationEpoch !== conversationEpoch) return false;
   const run: ActiveRun = {
-    token: ++runEpoch,
-    conversationId: initialState.conversationId,
+    id: ++runEpoch,
+    origin,
     agent: null,
+    resolveConfirmation: null,
   };
   activeRun = run;
   const all = initialState.providers;
@@ -576,12 +618,12 @@ async function runAgent(
   if (!isCurrentRun(run, get)) return false;
   if (!provider) {
     set({ error: t('store.noProviderConfigured') });
-    finishUnstartedRun(run);
+    settleRun(run);
     return false;
   }
   if (!provider.apiKey) {
     set({ error: t('store.missingApiKey') });
-    finishUnstartedRun(run);
+    settleRun(run);
     return false;
   }
 
@@ -595,7 +637,7 @@ async function runAgent(
     tabId = options.presetTabId ?? (await resolveActiveTabId());
   } catch (e) {
     if (isCurrentRun(run, get)) set({ error: errMsg(e) });
-    finishUnstartedRun(run);
+    settleRun(run);
     return false;
   }
   if (!isCurrentRun(run, get)) return false;
@@ -618,7 +660,7 @@ async function runAgent(
     const index = findMessageIndex(current, options.truncateToId);
     if (index < 0) {
       set({ error: t('store.messageNotFound') });
-      finishUnstartedRun(run);
+      settleRun(run);
       return false;
     }
     history = current.slice(0, index);
@@ -633,6 +675,7 @@ async function runAgent(
     turnHasChanges: false,
   });
   await sendMessage('RESET_TURN_SNAPSHOT', undefined, tabId).catch(() => undefined);
+  if (!isCurrentRun(run, get)) return false;
 
   const onConfirm = async (toolCallId: string, toolName: string, args: unknown, _reason: string): Promise<boolean> => {
     if (!isCurrentRun(run, get)) return false;
@@ -640,7 +683,7 @@ async function runAgent(
     upsertToolActivity(set, { id: toolCallId, name: toolName, status: 'confirming' });
     set({ pendingConfirmation: { toolName, summary, codePreview } });
     return new Promise<boolean>((resolve) => {
-      pendingConfirmResolve = resolve;
+      run.resolveConfirmation = resolve;
     });
   };
 
@@ -655,7 +698,6 @@ async function runAgent(
   });
   if (!isCurrentRun(run, get)) return false;
   run.agent = agent;
-  activeAgent = agent;
   let acc = '';
   const unsubscribe = agent.subscribe((event) => {
     if (!isCurrentRun(run, get)) return;
@@ -738,8 +780,8 @@ async function runAgent(
     if (isCurrentRun(run, get)) {
       const messages = get().messages;
       set({ busy: false });
-      if (activeAgent === agent) activeAgent = null;
-      await persistConversationSnapshot(run.conversationId, messages);
+      await persistConversationSnapshot(run.origin.conversationId, messages);
+      settleRun(run);
     }
   }
   // 走到这里说明历史已经截断并提交（正常完成 / 模型出错 / 用户中止都在 try/catch 内处理，

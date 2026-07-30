@@ -300,6 +300,108 @@ describe('chat store page context', () => {
     expect(mocks.replaceConversationMessages).not.toHaveBeenCalledWith('B', expect.anything(), expect.anything());
   });
 
+  it('aborts a run started while opening B waits for storage before B becomes current', async () => {
+    let resolveOpen!: (value: any[]) => void;
+    let resolvePrompt!: () => void;
+    const agent = makeAgent();
+    agent.prompt.mockImplementation(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    mocks.sendMessage.mockImplementation((type: string) => {
+      if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: [
+        'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE',
+        'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION',
+        'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE', 'RESET_TURN_SNAPSHOT', 'REVERT_CHANGES',
+      ] } });
+      return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    });
+    useChat.setState({ conversationId: 'A', messages: [] });
+    mocks.getConversationMessages.mockReturnValueOnce(new Promise((resolve) => { resolveOpen = resolve; }));
+
+    const opening = useChat.getState().openConversation('B');
+    const running = useChat.getState().send('Gap run for A');
+    await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalledOnce());
+    resolveOpen([{ role: 'user', content: 'Message for B', createdAt: 1 }]);
+    await expect(opening).resolves.toBe(true);
+    expect(agent.abort).toHaveBeenCalledOnce();
+    agentEventListener?.({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'late gap text' } });
+    resolvePrompt();
+    await running;
+
+    expect(useChat.getState()).toMatchObject({ conversationId: 'B', messages: [{ content: 'Message for B' }], busy: false });
+    expect(mocks.replaceConversationMessages).not.toHaveBeenCalledWith('B', expect.anything(), expect.anything());
+  });
+
+  it('does not resurrect A when deletion waits while a new A run starts', async () => {
+    let resolveDelete!: () => void;
+    let resolvePrompt!: () => void;
+    const agent = makeAgent();
+    agent.prompt.mockImplementation(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    mocks.deleteConversation.mockImplementationOnce(() => new Promise<void>((resolve) => { resolveDelete = resolve; }));
+    mocks.sendMessage.mockImplementation((type: string) => {
+      if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: [
+        'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE',
+        'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION',
+        'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE', 'RESET_TURN_SNAPSHOT', 'REVERT_CHANGES',
+      ] } });
+      return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    });
+    useChat.setState({ conversationId: 'A', messages: [] });
+
+    const removing = useChat.getState().removeConversation('A');
+    const running = useChat.getState().send('Gap run for deleted A');
+    await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalledOnce());
+    resolveDelete();
+    await removing;
+    expect(agent.abort).toHaveBeenCalledOnce();
+    resolvePrompt();
+    await running;
+
+    expect(useChat.getState().conversationId).not.toBe('A');
+    expect(useChat.getState().messages).toEqual([]);
+    expect(mocks.replaceConversationMessages).not.toHaveBeenCalledWith('A', expect.anything(), expect.anything());
+  });
+
+  it('clears completed-run registration so later navigation neither aborts nor persists it again', async () => {
+    const agent = makeAgent();
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    mocks.sendMessage.mockImplementation((type: string) => {
+      if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: [
+        'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE',
+        'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION',
+        'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE', 'RESET_TURN_SNAPSHOT', 'REVERT_CHANGES',
+      ] } });
+      return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    });
+    useChat.setState({ conversationId: 'A', messages: [] });
+
+    await useChat.getState().send('Completed A');
+    expect(mocks.replaceConversationMessages).toHaveBeenCalledTimes(1);
+    mocks.getConversationMessages.mockResolvedValueOnce([{ role: 'user', content: 'B', createdAt: 1 }]);
+    await useChat.getState().openConversation('B');
+    useChat.getState().clear();
+
+    expect(agent.abort).not.toHaveBeenCalled();
+    expect(mocks.replaceConversationMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not start a selection shortcut after its active-tab preflight loses the conversation', async () => {
+    let resolveTab!: (value: unknown) => void;
+    mocks.sendMessage.mockImplementationOnce(() => new Promise((resolve) => { resolveTab = resolve; }));
+    useChat.setState({ conversationId: 'A', messages: [] });
+
+    const shortcut = useChat.getState().runShortcut({
+      id: 'builtin:explain-selection', origin: 'builtin', scope: 'selection', customized: false,
+    });
+    useChat.getState().clear();
+    const replacementId = useChat.getState().conversationId;
+    resolveTab({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    await shortcut;
+
+    expect(mocks.createBrowserAgent).not.toHaveBeenCalled();
+    expect(useChat.getState()).toMatchObject({ conversationId: replacementId, messages: [], busy: false });
+  });
+
   it.each(['clear', 'delete'] as const)('keeps the replacement conversation untouched when an agent settles after %s', async (action) => {
     let resolvePrompt!: () => void;
     const agent = makeAgent();
@@ -416,7 +518,18 @@ describe('chat store page context', () => {
   });
 
   it('marks a rejected confirmation denied and preserves it against a late error event', async () => {
-    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    let resolvePrompt!: () => void;
+    const agent = makeAgent();
+    agent.prompt.mockImplementation(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    mocks.sendMessage.mockImplementation((type: string) => {
+      if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: [
+        'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE',
+        'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION',
+        'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE', 'RESET_TURN_SNAPSHOT', 'REVERT_CHANGES',
+      ] } });
+      return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    });
     const send = useChat.getState().send('write');
     await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalled());
     const confirm = mocks.createBrowserAgent.mock.calls[0][0].onConfirm as (id: string, name: string, args: unknown, reason: string) => Promise<boolean>;
@@ -427,6 +540,7 @@ describe('chat store page context', () => {
     expect(useChat.getState().toolActivities).toMatchObject([{ id: 'call-1', status: 'denied' }]);
     agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'call-1', toolName: 'browser_click', isError: true, result: 'late error' });
     expect(useChat.getState().toolActivities).toMatchObject([{ id: 'call-1', status: 'denied' }]);
+    resolvePrompt();
     await send;
   });
 
