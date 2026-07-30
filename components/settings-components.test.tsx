@@ -205,6 +205,25 @@ describe('grouped options settings', () => {
     expect(screen.getByLabelText('API Key')).toHaveAttribute('type', 'password');
   });
 
+  it('isolates API key reveal state when an existing editor opens a new Provider session', async () => {
+    const user = userEvent.setup();
+    renderWithLocale(<ProviderSettings />);
+
+    await user.click(await screen.findByRole('button', { name: 'Edit DeepSeek' }));
+    await user.click(screen.getByRole('button', { name: 'Show' }));
+    expect(screen.getByLabelText('API Key')).toHaveAttribute('type', 'text');
+
+    await user.click(screen.getByRole('button', { name: 'Add provider' }));
+    expect(screen.getByLabelText('API Key')).toHaveAttribute('type', 'password');
+    expect(screen.getByLabelText('API Key')).toHaveValue('');
+    expect(screen.getByRole('list', { name: 'Configured providers' })).not.toHaveTextContent('key-a');
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByRole('button', { name: 'Add provider' })).toHaveFocus();
+    await user.click(screen.getByRole('button', { name: 'Add provider' }));
+    expect(screen.getByLabelText('API Key')).toHaveAttribute('type', 'password');
+  });
+
   it('does not render an API key in the Provider landing cards', async () => {
     renderWithLocale(<ProviderSettings />);
 
@@ -245,6 +264,25 @@ describe('grouped options settings', () => {
     const persisted = set.mock.calls.at(-1)?.[0]['aluminum:settings'];
     expect(persisted.providers).toHaveLength(2);
     expect(persisted.activeProviderId).toBe('other');
+  });
+
+  it('keeps the persisted Provider card and edit draft after an edit save rejects', async () => {
+    const user = userEvent.setup();
+    const set = (globalThis as any).browser.storage.local.set as ReturnType<typeof vi.fn>;
+    renderWithLocale(<ProviderSettings />);
+
+    await user.click(await screen.findByRole('button', { name: 'Edit Other' }));
+    await user.clear(screen.getByLabelText('Name'));
+    await user.type(screen.getByLabelText('Name'), 'Unsaved Provider');
+    set.mockRejectedValueOnce(new Error('write rejected'));
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not save provider');
+    expect(screen.getByRole('list', { name: 'Configured providers' })).toHaveTextContent('Other');
+    expect(screen.getByRole('list', { name: 'Configured providers' })).not.toHaveTextContent(
+      'Unsaved Provider',
+    );
+    expect(screen.getByLabelText('Name')).toHaveValue('Unsaved Provider');
   });
 
   it('persists Provider add, edit, default selection, and deletion', async () => {
