@@ -489,6 +489,27 @@ describe('chat store page context', () => {
     expect(mocks.replaceConversationMessages).toHaveBeenCalledOnce();
   });
 
+  it('keeps a successful first delete tombstone when a newer same-id delete fails', async () => {
+    let resolveFirstDelete!: () => void;
+    const id = 'concurrent-delete';
+    mocks.deleteConversation
+      .mockImplementationOnce(() => new Promise<void>((resolve) => { resolveFirstDelete = resolve; }))
+      .mockRejectedValueOnce(new Error('second delete failed'));
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    useChat.setState({ conversationId: 'A', messages: [] });
+
+    const first = useChat.getState().removeConversation(id);
+    const second = useChat.getState().removeConversation(id);
+    await vi.waitFor(() => expect(mocks.deleteConversation).toHaveBeenCalledOnce());
+    resolveFirstDelete();
+    await Promise.all([first, second]);
+
+    useChat.setState({ conversationId: id, messages: [] });
+    await useChat.getState().send('late snapshot after delete failure');
+    expect(mocks.replaceConversationMessages).not.toHaveBeenCalledWith(id, expect.anything(), expect.anything());
+    expect(mocks.deleteConversation).toHaveBeenCalledTimes(2);
+  });
+
   it('does not start a selection shortcut after its active-tab preflight loses the conversation', async () => {
     let resolveTab!: (value: unknown) => void;
     mocks.sendMessage.mockImplementationOnce(() => new Promise((resolve) => { resolveTab = resolve; }));
