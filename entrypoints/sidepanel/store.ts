@@ -190,7 +190,10 @@ function isCurrentRun(run: ActiveRun, get: () => ChatState): boolean {
 }
 
 function settleRun(run: ActiveRun): void {
-  if (activeRun?.id === run.id) activeRun = null;
+  if (activeRun?.id !== run.id) return;
+  run.resolveConfirmation = null;
+  run.agent = null;
+  activeRun = null;
 }
 
 function invalidateActiveRun(
@@ -560,7 +563,7 @@ export const useChat = create<ChatState>((set, get) => ({
     }
     await deleteConversation(id);
     await get().refreshConversations();
-    if (removingActive && get().conversationId === id) {
+    if (get().conversationId === id) {
       // A run can start while deletion/list refresh awaits. Do not let it
       // persist the record that has just been deleted.
       invalidateActiveRun(set, get, false);
@@ -779,9 +782,11 @@ async function runAgent(
     unsubscribe();
     if (isCurrentRun(run, get)) {
       const messages = get().messages;
+      // The turn is terminal before persistence starts: navigation must not
+      // abort an already-complete agent or schedule a second snapshot write.
+      settleRun(run);
       set({ busy: false });
       await persistConversationSnapshot(run.origin.conversationId, messages);
-      settleRun(run);
     }
   }
   // 走到这里说明历史已经截断并提交（正常完成 / 模型出错 / 用户中止都在 try/catch 内处理，
