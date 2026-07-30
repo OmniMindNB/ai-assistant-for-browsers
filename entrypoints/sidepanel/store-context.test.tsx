@@ -136,6 +136,54 @@ describe('chat store page context', () => {
     });
   });
 
+  it('uses a page-specific untitled label for a restricted tab without a title', async () => {
+    mocks.sendMessage.mockResolvedValue({
+      ok: true,
+      data: { id: 10, url: 'chrome://extensions/' },
+    });
+
+    await useChat.getState().refreshPageContext();
+
+    expect(useChat.getState().pageContext).toEqual({
+      status: 'restricted',
+      tabId: 10,
+      title: 'Untitled page',
+      url: 'chrome://extensions/',
+    });
+  });
+
+  it('reports a failed active-tab lookup as page-context error state', async () => {
+    mocks.sendMessage.mockResolvedValue({ ok: false, error: 'No active tab' });
+
+    await useChat.getState().refreshPageContext();
+
+    expect(useChat.getState().pageContext).toEqual({ status: 'error', message: 'No active tab' });
+  });
+
+  it('reports a missing active-tab URL as page-context error state', async () => {
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 11, title: 'No URL' } });
+
+    await useChat.getState().refreshPageContext();
+
+    expect(useChat.getState().pageContext).toEqual({
+      status: 'error',
+      message: 'No active tab found. Make sure a webpage is open.',
+    });
+  });
+
+  it('treats a malformed active-tab URL as restricted rather than available', async () => {
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 12, title: 'Malformed', url: 'not a URL' } });
+
+    await useChat.getState().refreshPageContext();
+
+    expect(useChat.getState().pageContext).toEqual({
+      status: 'restricted',
+      tabId: 12,
+      title: 'Malformed',
+      url: 'not a URL',
+    });
+  });
+
   it('loads workbench preferences into store state', async () => {
     (globalThis as typeof globalThis & { browser: any }).browser.storage.local.get = vi.fn().mockResolvedValue({
       workbenchPreferences: { defaultMode: 'agent', attachPageByDefault: false },
@@ -176,6 +224,20 @@ describe('chat store page context', () => {
 
     expect(useChat.getState()).toMatchObject({
       error: 'The agent request failed.',
+      workbenchPreferences: { defaultMode: 'ask', attachPageByDefault: true },
+    });
+  });
+
+  it('restores safe defaults and publishes invalid preference errors when no chat error exists', async () => {
+    useChat.setState({ workbenchPreferences: { defaultMode: 'agent', attachPageByDefault: false } });
+    (globalThis as typeof globalThis & { browser: any }).browser.storage.local.get = vi.fn().mockResolvedValue({
+      workbenchPreferences: { defaultMode: 'invalid', attachPageByDefault: false },
+    });
+
+    await useChat.getState().refreshWorkbenchPreferences();
+
+    expect(useChat.getState()).toMatchObject({
+      error: 'Invalid workbench preferences',
       workbenchPreferences: { defaultMode: 'ask', attachPageByDefault: true },
     });
   });

@@ -2,6 +2,7 @@ import type { ShortcutConfig } from '@/lib/shortcuts';
 import type { ResolvedShortcutCommand } from '@/lib/workbench/presentation';
 import type { WorkbenchMode } from '@/lib/workbench/preferences';
 import { IconSparkles } from '../icons';
+import { useTranslation } from '@/lib/i18n';
 
 export interface WorkbenchEmptyStateProps {
   mode: WorkbenchMode;
@@ -15,6 +16,7 @@ function isUsableShortcut(command: ResolvedShortcutCommand): boolean {
 }
 
 export function WorkbenchEmptyState({ mode, shortcuts, busy, onRunShortcut }: WorkbenchEmptyStateProps) {
+  const { t } = useTranslation();
   const suggestions = shortcuts.filter(isUsableShortcut).slice(0, 4);
   const askMode = mode === 'ask';
 
@@ -24,10 +26,10 @@ export function WorkbenchEmptyState({ mode, shortcuts, busy, onRunShortcut }: Wo
         <IconSparkles className="h-6 w-6" />
       </div>
       <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
-        {askMode ? 'Ask about this page' : 'Describe a browser task'}
+        {askMode ? t('workbench.emptyAskTitle') : t('workbench.emptyAgentTitle')}
       </h2>
       <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-        {askMode ? 'Get help understanding the current page.' : 'I can help carry out browser tasks step by step.'}
+        {askMode ? t('workbench.emptyAskDescription') : t('workbench.emptyAgentDescription')}
       </p>
       {suggestions.length > 0 && (
         <div className="mt-5 flex flex-wrap justify-center gap-2">

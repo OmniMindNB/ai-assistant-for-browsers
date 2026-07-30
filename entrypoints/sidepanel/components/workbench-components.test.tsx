@@ -639,18 +639,26 @@ describe('workbench context controls', () => {
 
   it('changes empty suggestions between ask and agent modes', () => {
     const { rerender } = render(
-      <WorkbenchEmptyState mode="ask" shortcuts={emptyStateShortcuts} busy={false} onRunShortcut={vi.fn()} />,
+      <LocaleProvider>
+        <WorkbenchEmptyState mode="ask" shortcuts={emptyStateShortcuts} busy={false} onRunShortcut={vi.fn()} />
+      </LocaleProvider>,
     );
     expect(screen.getByText('Ask about this page')).toBeVisible();
 
     rerender(
-      <WorkbenchEmptyState mode="agent" shortcuts={emptyStateShortcuts} busy={false} onRunShortcut={vi.fn()} />,
+      <LocaleProvider>
+        <WorkbenchEmptyState mode="agent" shortcuts={emptyStateShortcuts} busy={false} onRunShortcut={vi.fn()} />
+      </LocaleProvider>,
     );
     expect(screen.getByText('Describe a browser task')).toBeVisible();
   });
 
   it('exposes pressed state for the active mode', () => {
-    render(<ModeSwitch mode="agent" onChange={vi.fn()} />);
+    render(
+      <LocaleProvider>
+        <ModeSwitch mode="agent" onChange={vi.fn()} />
+      </LocaleProvider>,
+    );
 
     expect(screen.getByRole('button', { name: 'Ask' })).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByRole('button', { name: 'Agent' })).toHaveAttribute('aria-pressed', 'true');
@@ -658,7 +666,9 @@ describe('workbench context controls', () => {
 
   it('limits empty-state shortcuts to four entries', () => {
     render(
-      <WorkbenchEmptyState mode="ask" shortcuts={emptyStateShortcuts} busy={false} onRunShortcut={vi.fn()} />,
+      <LocaleProvider>
+        <WorkbenchEmptyState mode="ask" shortcuts={emptyStateShortcuts} busy={false} onRunShortcut={vi.fn()} />
+      </LocaleProvider>,
     );
 
     expect(screen.getAllByRole('button', { name: /Shortcut/ })).toHaveLength(4);
@@ -775,6 +785,29 @@ describe('workbench history', () => {
     await user.click(screen.getByRole('button', { name: 'More options' }));
     await user.click(screen.getByRole('button', { name: 'Conversation history' }));
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
+  it('returns focus to the more-menu trigger after Escape closes the menu', async () => {
+    const user = userEvent.setup();
+    render(
+      <LocaleProvider>
+        <WorkbenchHeader
+          historyOpen={false}
+          onToggleHistory={vi.fn()}
+          onNewChat={vi.fn()}
+          onOpenSettings={vi.fn()}
+          onToggleTheme={vi.fn()}
+        />
+      </LocaleProvider>,
+    );
+
+    const trigger = screen.getByRole('button', { name: 'More options' });
+    await user.click(trigger);
+    await user.tab();
+    await user.keyboard('{Escape}');
+
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
   });
 
   it('keeps Tab and Shift+Tab focus inside the open drawer', async () => {

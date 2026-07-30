@@ -280,7 +280,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
                       checked={active}
                       disabled={saving}
                       onChange={() => void setActive(p.id)}
-                      aria-label={`${t('provider.setActiveTitle')}: ${p.name}`}
+                      aria-label={t('provider.setActiveAria', { name: p.name })}
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-medium text-neutral-900 dark:text-neutral-100">
@@ -301,7 +301,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
                         type="button"
                         disabled={saving}
                         onClick={() => loadDraft(p)}
-                        aria-label={`${t('common.edit')} ${p.name}`}
+                        aria-label={t('provider.editAria', { name: p.name })}
                         className="rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-700 transition-colors hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
                       >
                         {t('common.edit')}
@@ -312,7 +312,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
                         onClick={() =>
                           confirmingDeleteId === p.id ? confirmDelete(p.id) : requestDelete(p.id)
                         }
-                        aria-label={`${t('common.delete')} ${p.name}`}
+                        aria-label={t('provider.deleteAria', { name: p.name })}
                         className={
                           confirmingDeleteId === p.id
                             ? 'rounded border border-red-600 bg-red-600 px-2 py-1 text-xs text-white transition-colors hover:bg-red-700'

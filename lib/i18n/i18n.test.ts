@@ -21,6 +21,22 @@ const privacyKeys = [
   'privacy.saveFailed',
 ] as const;
 
+const contextWorkbenchKeys = [
+  'workbench.modeSwitch',
+  'workbench.modeAsk',
+  'workbench.modeAgent',
+  'workbench.emptyAskTitle',
+  'workbench.emptyAskDescription',
+  'workbench.emptyAgentTitle',
+  'workbench.emptyAgentDescription',
+  'workbench.untitledPage',
+  'provider.setActiveAria',
+  'provider.editAria',
+  'provider.deleteAria',
+  'shortcut.editAria',
+  'shortcut.deleteAria',
+] as const;
+
 describe('privacy consent translations', () => {
   it('provides every required string in English and Chinese', () => {
     for (const key of privacyKeys) {
@@ -29,6 +45,21 @@ describe('privacy consent translations', () => {
       expect(zh[key]).toEqual(expect.any(String));
       expect(zh[key]).not.toBe('');
     }
+  });
+});
+
+describe('context workbench translations', () => {
+  it('provides the required localized workbench and accessible-action copy', () => {
+    for (const key of contextWorkbenchKeys) {
+      expect(en[key]).toEqual(expect.any(String));
+      expect(en[key]).not.toBe('');
+      expect(zh[key]).toEqual(expect.any(String));
+      expect(zh[key]).not.toBe('');
+    }
+  });
+
+  it('keeps the English and Chinese dictionaries on the same key set', () => {
+    expect(Object.keys(en).sort()).toEqual(Object.keys(zh).sort());
   });
 });
 

@@ -100,6 +100,7 @@
 
 | 日期 | 内容 | 关联 |
 |------|------|------|
+| 2026-07-30 | 上下文工作台收尾：侧边栏完成双语问答/Agent 空白状态、页面专用“未命名页面”回退、页面上下文失败/缺失/畸形 URL 与无效偏好回归；历史抽屉/更多菜单保持 Escape 关闭与焦点返回，所有原生交互控件有共用可见焦点，Agent 状态在浅深色下使用更高对比度；Options 的 Provider/快捷方式操作名称和翻译键集同步。验证：`pnpm test`（27 文件、306 测试）、`pnpm compile`、`pnpm build`（Chrome MV3）均通过。 | [设计](superpowers/specs/2026-07-30-sidepanel-context-workbench-redesign-design.md) |
 | 2026-07-29 | 自定义快捷方式：新增独立的本地快捷方式存储；两个内置项支持编辑、删除和恢复默认；明确“当前页面 / 已选文本 / 不使用网页上下文”三种强作用域边界；桌面设置页新增快捷方式导航，侧边栏设置复用紧凑版管理界面；输入区按存储顺序直显前三项，其余收进“更多”；移除空状态中央快捷卡片。代码层已通过 216/216 单测、TypeScript 类型检查和 Chrome MV3 生产构建；未打包扩展的真机交互验收待执行。 | [设计](superpowers/specs/2026-07-29-custom-shortcuts-design.md) |
 | 2026-07-28 | Chrome Web Store 1.1.0 最终审查：移除 AI 生成 JavaScript 执行、`browser_inject_script`、`userScripts` 权限及等待 UI；新增可测试的资源获取模块，拒绝 IPv6 本地/未指定/链路本地/唯一本地与 IPv4 映射内网地址，并对 Chrome 隐藏目标的不透明重定向安全失败；同步修正双语同意说明、隐私政策和 Store 材料 | 2026-07-27-chrome-web-store-1-1-relaunch |
 | 2026-07-27 | 侧边栏 + 设置页新增「跟随浏览器 / 中文 / English」三态语言切换（默认跟随浏览器，偏好存 `chrome.storage.local`）：新增 `lib/i18n` 模块（zh/en 字典 + `useTranslation()` Context + 供 `store.ts` 用的非 hook `t()`，与 `lib/theme.ts` 的 auto/手动覆盖模式一致），全量迁移侧边栏/设置页/Provider 表单/错误提示与注入聊天气泡（Agent 系统提示词与发给模型的 prompt 变量维持中文不译）；Chrome Web Store 商店列表（扩展名称/描述）通过 `default_locale` + `_locales/{zh_CN,en}/messages.json` 独立本地化；新增 `README.en.md` 并与中文版互链。代码层已通过类型检查、154/154 单测、生产构建；中英文界面切换的真机视觉验收待用户执行确认 | [[2026-07-27-english-language-support-design]], 2026-07-27-english-language-support.md |

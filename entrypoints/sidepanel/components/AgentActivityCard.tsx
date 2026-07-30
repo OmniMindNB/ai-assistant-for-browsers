@@ -118,13 +118,13 @@ function detailStatusLabel(status: ToolActivityStatus, t: Translate): string {
 function statusColor(status: ToolActivityStatus): string {
   switch (status) {
     case 'running':
-      return 'text-blue-500';
+      return 'text-blue-700 dark:text-blue-300';
     case 'confirming':
     case 'blocked':
-      return 'text-amber-600 dark:text-amber-500';
+      return 'text-amber-700 dark:text-amber-300';
     case 'error':
-      return 'text-red-500';
+      return 'text-red-700 dark:text-red-300';
     default:
-      return 'text-emerald-600 dark:text-emerald-400';
+      return 'text-emerald-700 dark:text-emerald-300';
   }
 }

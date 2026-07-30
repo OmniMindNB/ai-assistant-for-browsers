@@ -22,6 +22,7 @@ export function WorkbenchHeader({
   const { t } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const moreTriggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -29,7 +30,10 @@ export function WorkbenchHeader({
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) setMenuOpen(false);
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setMenuOpen(false);
+      if (event.key === 'Escape') {
+        setMenuOpen(false);
+        moreTriggerRef.current?.focus();
+      }
     };
     document.addEventListener('mousedown', onPointerDown);
     document.addEventListener('keydown', onKeyDown);
@@ -81,6 +85,7 @@ export function WorkbenchHeader({
         </button>
         <div ref={menuRef} className="relative">
           <button
+            ref={moreTriggerRef}
             type="button"
             aria-label={t('workbench.more')}
             aria-expanded={menuOpen}

@@ -1,4 +1,5 @@
 import type { WorkbenchMode } from '@/lib/workbench/preferences';
+import { useTranslation } from '@/lib/i18n';
 
 export interface ModeSwitchProps {
   mode: WorkbenchMode;
@@ -6,11 +7,13 @@ export interface ModeSwitchProps {
 }
 
 export function ModeSwitch({ mode, onChange }: ModeSwitchProps) {
+  const { t } = useTranslation();
+
   return (
-    <div role="group" aria-label="Workbench mode" className="inline-flex rounded-lg border border-neutral-200 bg-white p-1 dark:border-neutral-700 dark:bg-neutral-900">
+    <div role="group" aria-label={t('workbench.modeSwitch')} className="inline-flex rounded-lg border border-neutral-200 bg-white p-1 dark:border-neutral-700 dark:bg-neutral-900">
       {(['ask', 'agent'] as const).map((candidate) => {
         const active = mode === candidate;
-        const label = candidate === 'ask' ? 'Ask' : 'Agent';
+        const label = candidate === 'ask' ? t('workbench.modeAsk') : t('workbench.modeAgent');
         return (
           <button
             key={candidate}

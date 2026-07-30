@@ -432,7 +432,7 @@ export default function ShortcutSettings() {
                       type="button"
                       disabled={saving || hasInvalidConfig}
                       onClick={() => beginEdit(item)}
-                      aria-label={`${t('common.edit')} ${resolved.name}`}
+                      aria-label={t('shortcut.editAria', { name: resolved.name })}
                       className="rounded px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-100 disabled:opacity-50 dark:text-neutral-300 dark:hover:bg-neutral-800"
                     >
                       {t('common.edit')}
@@ -441,7 +441,7 @@ export default function ShortcutSettings() {
                       type="button"
                       disabled={saving || hasInvalidConfig}
                       onClick={() => void remove(item.id)}
-                      aria-label={`${t('common.delete')} ${resolved.name}`}
+                      aria-label={t('shortcut.deleteAria', { name: resolved.name })}
                       className="rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/40"
                     >
                       {t('common.delete')}

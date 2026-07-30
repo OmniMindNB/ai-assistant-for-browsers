@@ -7,6 +7,11 @@
   .dark {
     color-scheme: dark;
   }
+
+  :where(a, button, input, select, textarea):focus-visible {
+    outline: 2px solid #4f46e5;
+    outline-offset: 2px;
+  }
 }
 
 /* Markdown 渲染排版（侧边栏 LLM 输出） */

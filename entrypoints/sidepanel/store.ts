@@ -262,7 +262,7 @@ export const useChat = create<ChatState>((set, get) => ({
         // 无法解析的 URL 对浏览器工具同样不可用，按受限页显示原始地址。
       }
       const available = protocol === 'http:' || protocol === 'https:';
-      const title = res.data.title?.trim() || (available && hostname ? hostname : t('sidebar.untitledConversation'));
+      const title = res.data.title?.trim() || (available && hostname ? hostname : t('workbench.untitledPage'));
       if (requestId !== pageContextRequestId) return;
       set({
         pageContext: available
