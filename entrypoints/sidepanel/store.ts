@@ -379,8 +379,10 @@ export const useChat = create<ChatState>((set, get) => ({
   },
 
   stop: () => {
-    activeAgent?.abort();
+    const resolveConfirmation = pendingConfirmResolve;
     pendingConfirmResolve = null;
+    resolveConfirmation?.(false);
+    activeAgent?.abort();
     set((state) => ({
       pendingConfirmation: null,
       toolActivities: state.toolActivities.map((activity) =>

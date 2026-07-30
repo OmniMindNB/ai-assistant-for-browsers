@@ -357,9 +357,16 @@ describe('chat store page context', () => {
   });
 
   it('stops running and confirming agent activities and preserves them against late errors', async () => {
-    let resolvePrompt!: () => void;
+    let rejectAbort!: (reason: Error) => void;
+    let releaseConfirmation!: () => void;
+    let confirmDecision!: Promise<boolean>;
+    const confirmationReady = new Promise<void>((resolve) => { releaseConfirmation = resolve; });
     const agent = makeAgent();
-    agent.prompt.mockReturnValue(new Promise<void>((resolve) => { resolvePrompt = resolve; }));
+    agent.abort.mockImplementation(() => rejectAbort(new Error('aborted')));
+    agent.prompt.mockImplementation(() => Promise.race([
+      confirmationReady.then(() => confirmDecision),
+      new Promise<never>((_resolve, reject) => { rejectAbort = reject; }),
+    ]));
     mocks.createBrowserAgent.mockReturnValue(agent);
     mocks.sendMessage.mockImplementation((type: string) => {
       if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: ['GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE', 'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION', 'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE', 'RESET_TURN_SNAPSHOT', 'REVERT_CHANGES'] } });
@@ -369,15 +376,17 @@ describe('chat store page context', () => {
     await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalled());
     agentEventListener?.({ type: 'tool_execution_start', toolCallId: 'running', toolName: 'browser_click' });
     const confirm = mocks.createBrowserAgent.mock.calls[0][0].onConfirm as (id: string, name: string, args: unknown, reason: string) => Promise<boolean>;
-    void confirm('confirming', 'browser_type', {}, 'confirm');
+    confirmDecision = confirm('confirming', 'browser_type', {}, 'confirm');
+    releaseConfirmation();
     useChat.getState().stop();
     expect(agent.abort).toHaveBeenCalledOnce();
+    await expect(confirmDecision).resolves.toBe(false);
     expect(useChat.getState().toolActivities.map((activity) => activity.status)).toEqual(['stopped', 'stopped']);
     agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'running', toolName: 'browser_click', isError: false, result: 'late' });
     agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'confirming', toolName: 'browser_type', isError: true, result: 'late' });
     expect(useChat.getState().toolActivities.map((activity) => activity.status)).toEqual(['stopped', 'stopped']);
-    resolvePrompt();
     await send;
+    expect(useChat.getState().pendingConfirmation).toBeNull();
   });
 
   it('reports that a normal send did not start for empty input or a busy store', async () => {
