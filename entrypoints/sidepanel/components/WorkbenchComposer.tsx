@@ -56,7 +56,10 @@ export function WorkbenchComposer({
   const [openPopover, setOpenPopover] = useState<Popover>(null);
   const [highlightedCommand, setHighlightedCommand] = useState(0);
   const [composing, setComposing] = useState(false);
-  const commands = startsSlashCommand(input) ? filterShortcutCommands(shortcuts, input) : [];
+  const slashCommands = filterShortcutCommands(shortcuts, input);
+  const commands = startsSlashCommand(input) || openPopover === 'commands'
+    ? startsSlashCommand(input) ? slashCommands : filterShortcutCommands(shortcuts, '/')
+    : [];
   const canSend = input.trim().length > 0 && !busy;
   const pageIsAvailable = pageContext.status === 'available';
   const selectedProvider = providers.find((provider) => provider.id === selectedProviderId);
@@ -111,7 +114,15 @@ export function WorkbenchComposer({
     if (!command || busy) return;
     onRunShortcut(command.config);
     setOpenPopover(null);
-    onInput('');
+    if (startsSlashCommand(input)) onInput('');
+    textareaRef.current?.focus();
+  }
+
+  function openSlashCommands() {
+    if (busy) return;
+    setOpenPopover('commands');
+    setHighlightedCommand(0);
+    if (!input.trim()) onInput('/');
     textareaRef.current?.focus();
   }
 
@@ -210,6 +221,19 @@ export function WorkbenchComposer({
     <div ref={rootRef} onBlur={handleComposerBlur} className="relative border-t border-neutral-200 bg-neutral-50 px-3 py-3 dark:border-neutral-800 dark:bg-neutral-950">
       <div className="mx-auto max-w-3xl">
         <div className="mb-2 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={openSlashCommands}
+            aria-label={t('chat.openSlashCommands')}
+            title={t('chat.openSlashCommands')}
+            aria-haspopup="menu"
+            aria-expanded={openPopover === 'commands'}
+            aria-controls={openPopover === 'commands' ? 'workbench-slash-commands' : undefined}
+            className="inline-flex items-center rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
+          >
+            /
+          </button>
           <button
             type="button"
             disabled={!pageIsAvailable}

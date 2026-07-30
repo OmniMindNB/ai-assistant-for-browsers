@@ -34,7 +34,7 @@ import { buildShortcutExecution } from '@/lib/chat/shortcut-prompts';
 import { summarizeToolCallForConfirmation } from '@/lib/agent/confirm-summary';
 import { getConversationIdForTab, setConversationIdForTab } from '@/lib/agent/tab-conversation';
 import { t } from '@/lib/i18n';
-import { isPageResourceUrlAllowed } from '@/lib/page-resource-fetch';
+import { isCurrentTabReadable } from '@/lib/current-tab-readability';
 import {
   loadShortcutConfigs,
   resolveShortcut,
@@ -155,6 +155,13 @@ interface ChatState {
 
 let activeAgent: Agent | null = null;
 let pendingConfirmResolve: ((approved: boolean) => void) | null = null;
+interface ActiveRun {
+  token: number;
+  conversationId: string;
+  agent: Agent | null;
+}
+let activeRun: ActiveRun | null = null;
+let runEpoch = 0;
 /** 当前这一轮固定下来的目标 tabId；用于 revertTurnChanges 在轮次结束后仍能撤销正确的标签页。 */
 let currentTurnTabId: number | null = null;
 /** 侧边栏面板自己绑定的 tabId；挂载时解析一次并缓存，用于把 conversationId 变化写回对应 tab 的映射。 */
@@ -164,6 +171,43 @@ let pageContextRequestId = 0;
 let providerRequestId = 0;
 let workbenchPreferencesRequestId = 0;
 let conversationOpenRequestId = 0;
+
+function isCurrentRun(run: ActiveRun, get: () => ChatState): boolean {
+  return activeRun === run && get().conversationId === run.conversationId;
+}
+
+function finishUnstartedRun(run: ActiveRun): void {
+  if (activeRun === run) activeRun = null;
+}
+
+function invalidateActiveRun(
+  set: (partial: Partial<ChatState> | ((s: ChatState) => Partial<ChatState>)) => void,
+  get: () => ChatState,
+  persist = true,
+): void {
+  const run = activeRun;
+  if (!run) return;
+  activeRun = null;
+  runEpoch += 1;
+  const messages = get().conversationId === run.conversationId ? get().messages : [];
+  const resolveConfirmation = pendingConfirmResolve;
+  pendingConfirmResolve = null;
+  resolveConfirmation?.(false);
+  run.agent?.abort();
+  if (activeAgent === run.agent) activeAgent = null;
+  set((state) => ({
+    busy: false,
+    pendingConfirmation: null,
+    toolActivities: state.toolActivities.map((activity) =>
+      activity.status === 'running' || activity.status === 'confirming'
+        ? { ...activity, status: 'stopped' }
+        : activity,
+    ),
+  }));
+  if (persist && messages.length > 0) {
+    void persistConversationSnapshot(run.conversationId, messages);
+  }
+}
 
 async function resolveActiveTabId(): Promise<number> {
   const res = (await sendMessage('GET_ACTIVE_TAB')) as MessageResponse<ActiveTabInfo>;
@@ -267,7 +311,7 @@ export const useChat = create<ChatState>((set, get) => ({
       } catch {
         // 无法解析的 URL 对浏览器工具同样不可用，按受限页显示原始地址。
       }
-      const available = (protocol === 'http:' || protocol === 'https:') && isPageResourceUrlAllowed(url);
+      const available = isCurrentTabReadable(url);
       const title = res.data.title?.trim() || (available && hostname ? hostname : t('workbench.untitledPage'));
       if (requestId !== pageContextRequestId) return;
       set({
@@ -424,8 +468,7 @@ export const useChat = create<ChatState>((set, get) => ({
 
   clear: () => {
     ++conversationOpenRequestId;
-    activeAgent?.abort();
-    pendingConfirmResolve = null;
+    invalidateActiveRun(set, get);
     set({
       messages: [],
       toolActivities: [],
@@ -442,8 +485,7 @@ export const useChat = create<ChatState>((set, get) => ({
 
   openConversation: async (id) => {
     const requestId = ++conversationOpenRequestId;
-    activeAgent?.abort();
-    pendingConfirmResolve = null;
+    invalidateActiveRun(set, get);
     const records = await getConversationMessages(id).catch(() => null);
     if (records === null) return false;
     if (requestId !== conversationOpenRequestId) return false;
@@ -482,6 +524,7 @@ export const useChat = create<ChatState>((set, get) => ({
 
   removeConversation: async (id) => {
     ++conversationOpenRequestId;
+    if (get().conversationId === id) invalidateActiveRun(set, get, false);
     await deleteConversation(id);
     await get().refreshConversations();
     if (get().conversationId === id) {
@@ -518,22 +561,32 @@ async function runAgent(
   agentUserContent: string,
   options: RunAgentOptions = {},
 ): Promise<boolean> {
-  const all = get().providers;
+  const initialState = get();
+  const run: ActiveRun = {
+    token: ++runEpoch,
+    conversationId: initialState.conversationId,
+    agent: null,
+  };
+  activeRun = run;
+  const all = initialState.providers;
   const provider =
-    all.find((p) => p.id === get().selectedProviderId) ??
+    all.find((p) => p.id === initialState.selectedProviderId) ??
     (await getActiveProvider()) ??
     null;
+  if (!isCurrentRun(run, get)) return false;
   if (!provider) {
     set({ error: t('store.noProviderConfigured') });
+    finishUnstartedRun(run);
     return false;
   }
   if (!provider.apiKey) {
     set({ error: t('store.missingApiKey') });
+    finishUnstartedRun(run);
     return false;
   }
 
   // 输入框选中的模型覆盖 Provider 默认模型
-  const desiredModel = get().selectedModel || provider.model;
+  const desiredModel = initialState.selectedModel || provider.model;
   const agentProvider: ProviderConfig =
     desiredModel && desiredModel !== provider.model ? { ...provider, model: desiredModel } : provider;
 
@@ -541,9 +594,11 @@ async function runAgent(
   try {
     tabId = options.presetTabId ?? (await resolveActiveTabId());
   } catch (e) {
-    set({ error: errMsg(e) });
+    if (isCurrentRun(run, get)) set({ error: errMsg(e) });
+    finishUnstartedRun(run);
     return false;
   }
+  if (!isCurrentRun(run, get)) return false;
   currentTurnTabId = tabId;
 
   // 截断必须放在 Provider 校验与 resolveActiveTabId 之后：那两处失败会 set({ error }) 直接 return，
@@ -563,6 +618,7 @@ async function runAgent(
     const index = findMessageIndex(current, options.truncateToId);
     if (index < 0) {
       set({ error: t('store.messageNotFound') });
+      finishUnstartedRun(run);
       return false;
     }
     history = current.slice(0, index);
@@ -579,6 +635,7 @@ async function runAgent(
   await sendMessage('RESET_TURN_SNAPSHOT', undefined, tabId).catch(() => undefined);
 
   const onConfirm = async (toolCallId: string, toolName: string, args: unknown, _reason: string): Promise<boolean> => {
+    if (!isCurrentRun(run, get)) return false;
     const { summary, codePreview } = summarizeToolCallForConfirmation(toolName, args);
     upsertToolActivity(set, { id: toolCallId, name: toolName, status: 'confirming' });
     set({ pendingConfirmation: { toolName, summary, codePreview } });
@@ -596,9 +653,12 @@ async function runAgent(
     maxToolTurns: MAX_AGENT_TOOL_TURNS,
     onConfirm,
   });
+  if (!isCurrentRun(run, get)) return false;
+  run.agent = agent;
   activeAgent = agent;
   let acc = '';
   const unsubscribe = agent.subscribe((event) => {
+    if (!isCurrentRun(run, get)) return;
     if (event.type === 'message_update' && event.assistantMessageEvent.type === 'text_delta') {
       acc += event.assistantMessageEvent.delta;
       replaceLastAssistant(set, acc);
@@ -639,6 +699,7 @@ async function runAgent(
 
   try {
     const missingTypes = await getMissingAgentMessageTypes();
+    if (!isCurrentRun(run, get)) return false;
     if (missingTypes.length > 0) {
       acc = t('store.staleBackgroundWarning', { missingTypes: missingTypes.join(', ') });
       replaceLastAssistant(set, acc);
@@ -648,6 +709,7 @@ async function runAgent(
     }
 
     await agent.prompt(agentUserContent);
+    if (!isCurrentRun(run, get)) return false;
     if (!acc.trim()) {
       // pi-agent-core 不会为流式错误抛异常：agent-loop 遇到 stopReason "error"/"aborted" 时
       // 直接 return，所以 agent.prompt() 正常 resolve。真正的错误信息只存在于最后一条
@@ -665,6 +727,7 @@ async function runAgent(
       replaceLastAssistant(set, acc);
     }
   } catch (e) {
+    if (!isCurrentRun(run, get)) return false;
     if (e instanceof DOMException && e.name === 'AbortError') {
       // 用户主动停止，保留已生成的部分内容
     } else {
@@ -672,9 +735,12 @@ async function runAgent(
     }
   } finally {
     unsubscribe();
-    set({ busy: false });
-    if (activeAgent === agent) activeAgent = null;
-    await persistConversation(get);
+    if (isCurrentRun(run, get)) {
+      const messages = get().messages;
+      set({ busy: false });
+      if (activeAgent === agent) activeAgent = null;
+      await persistConversationSnapshot(run.conversationId, messages);
+    }
   }
   // 走到这里说明历史已经截断并提交（正常完成 / 模型出错 / 用户中止都在 try/catch 内处理，
   // 不会抛出到这里），对调用方而言就是「成功发起」。
@@ -820,12 +886,11 @@ async function getMissingAgentMessageTypes(): Promise<string[]> {
 }
 
 /**
- * 每轮结束时用当前 UI 消息整体重写该会话。
- * 放在 runAgent 的 finally 里，覆盖成功 / 模型出错 / 用户中止 / 后台协议过旧提前 return 四条路径。
+ * 用运行开始时捕获的会话 id 和消息快照整体重写该会话。
+ * 绝不能在异步 Agent 回调的 finally 里读取全局 store：用户已切换会话时，
+ * 那会把旧轮次的数据错误写进新会话。
  */
-async function persistConversation(get: () => ChatState): Promise<void> {
-  const conversationId = get().conversationId;
-  const messages = get().messages;
+async function persistConversationSnapshot(conversationId: string, messages: UIMessage[]): Promise<void> {
   try {
     await replaceConversationMessages(
       conversationId,

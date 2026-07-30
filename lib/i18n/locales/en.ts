@@ -237,6 +237,7 @@ export const en: Record<keyof typeof zh, string> = {
   'chat.selectProviderModelAriaLabel': 'Select provider and model',
   'chat.modelSelectionAriaLabel': 'Model selection',
   'chat.slashCommandMenuAriaLabel': 'Slash commands',
+  'chat.openSlashCommands': 'Open slash commands',
   'chat.noMatchingSlashCommands': 'No matching commands',
   'chat.noModelSelected': 'Not selected',
   'store.noActiveTab': 'No active tab found. Make sure a webpage is open.',

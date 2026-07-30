@@ -101,6 +101,14 @@ describe('chat store page context', () => {
     });
   });
 
+  it.each(['http://localhost:3000/', 'http://192.168.1.20/dashboard'])('keeps readable current HTTP tabs available even when external fetching would reject them: %s', async (url) => {
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Local app', url } });
+
+    await useChat.getState().refreshPageContext();
+
+    expect(useChat.getState().pageContext).toMatchObject({ status: 'available', url });
+  });
+
   it('marks chrome pages as restricted', async () => {
     mocks.sendMessage.mockResolvedValue({
       ok: true,
@@ -255,6 +263,72 @@ describe('chat store page context', () => {
     await expect(first).resolves.toBe(false);
     expect(useChat.getState().conversationId).toBe('B');
     expect(useChat.getState().messages[0]?.content).toBe('B');
+  });
+
+  it('keeps a newly opened conversation and its record untouched when a previous agent settles late', async () => {
+    let resolvePrompt!: () => void;
+    const agent = makeAgent();
+    agent.prompt.mockImplementation(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    mocks.sendMessage.mockImplementation((type: string) => {
+      if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: [
+        'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML',
+        'GET_COMPUTED_STYLE', 'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT',
+        'TYPE_TEXT', 'SELECT_OPTION', 'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
+        'RESET_TURN_SNAPSHOT', 'REVERT_CHANGES',
+      ] } });
+      return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    });
+    useChat.setState({ conversationId: 'A', messages: [] });
+
+    const running = useChat.getState().send('Message for A');
+    await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalledOnce());
+
+    mocks.getConversationMessages.mockResolvedValueOnce([{ role: 'user', content: 'Message for B', createdAt: 1 }]);
+    await expect(useChat.getState().openConversation('B')).resolves.toBe(true);
+    agentEventListener?.({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'late A text' } });
+    agentEventListener?.({ type: 'tool_execution_start', toolCallId: 'late-tool', toolName: 'browser_click' });
+    resolvePrompt();
+    await running;
+
+    expect(useChat.getState()).toMatchObject({
+      conversationId: 'B',
+      messages: [{ role: 'user', content: 'Message for B' }],
+      toolActivities: [],
+      busy: false,
+    });
+    expect(mocks.replaceConversationMessages).not.toHaveBeenCalledWith('B', expect.anything(), expect.anything());
+  });
+
+  it.each(['clear', 'delete'] as const)('keeps the replacement conversation untouched when an agent settles after %s', async (action) => {
+    let resolvePrompt!: () => void;
+    const agent = makeAgent();
+    agent.prompt.mockImplementation(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    mocks.sendMessage.mockImplementation((type: string) => {
+      if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: [
+        'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML',
+        'GET_COMPUTED_STYLE', 'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT',
+        'TYPE_TEXT', 'SELECT_OPTION', 'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
+        'RESET_TURN_SNAPSHOT', 'REVERT_CHANGES',
+      ] } });
+      return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    });
+    useChat.setState({ conversationId: 'A', messages: [] });
+    const running = useChat.getState().send('Message for A');
+    await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalledOnce());
+
+    if (action === 'clear') useChat.getState().clear();
+    else await useChat.getState().removeConversation('A');
+    const replacementId = useChat.getState().conversationId;
+    agentEventListener?.({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'late A text' } });
+    agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'late-tool', toolName: 'browser_click', isError: false, result: 'late' });
+    resolvePrompt();
+    await running;
+
+    expect(useChat.getState()).toMatchObject({ conversationId: replacementId, messages: [], toolActivities: [], busy: false });
+    expect(mocks.replaceConversationMessages).not.toHaveBeenCalledWith(replacementId, expect.anything(), expect.anything());
+    if (action === 'delete') expect(mocks.replaceConversationMessages).not.toHaveBeenCalledWith('A', expect.anything(), expect.anything());
   });
 
   it.each(['clear', 'remove'] as const)('keeps %s authoritative when a pending conversation open resolves late', async (action) => {
