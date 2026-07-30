@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConversationRecord } from '@/lib/db';
 import { LocaleProvider } from '@/lib/i18n';
 import type { ResolvedShortcutCommand } from '@/lib/workbench/presentation';
@@ -33,7 +33,7 @@ const chatStore = {
     tabId: 1,
     title: 'Example article',
     url: 'https://example.com/article',
-  },
+  } as PageContextState,
   workbenchPreferences: { defaultMode: 'ask' as const, attachPageByDefault: true },
   setInput: vi.fn(),
   refreshProvider: vi.fn(),
@@ -135,6 +135,31 @@ function renderDrawerWithBackground() {
   );
 }
 
+beforeEach(() => {
+  vi.clearAllMocks();
+  window.matchMedia = vi.fn().mockReturnValue({ addEventListener: vi.fn(), removeEventListener: vi.fn(), matches: false });
+  HTMLElement.prototype.scrollTo = vi.fn();
+  (globalThis as any).browser.storage.onChanged = {
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+  };
+  Object.assign(chatStore, {
+    messages: [],
+    toolActivities: [],
+    input: '',
+    busy: false,
+    pendingConfirmation: null,
+    pageContext: {
+      status: 'available' as const,
+      tabId: 1,
+      title: 'Example article',
+      url: 'https://example.com/article',
+    },
+    workbenchPreferences: { defaultMode: 'ask' as const, attachPageByDefault: true },
+  });
+  chatStore.send.mockResolvedValue(true);
+});
+
 afterEach(() => vi.restoreAllMocks());
 
 const availableContext: PageContextState = {
@@ -167,7 +192,11 @@ describe('workbench context controls', () => {
   it('shows the active page title and allows one-turn detachment', async () => {
     const user = userEvent.setup();
     const toggle = vi.fn();
-    render(<PageContextBar context={availableContext} attached onToggleAttached={toggle} onRetry={vi.fn()} />);
+    render(
+      <LocaleProvider>
+        <PageContextBar context={availableContext} attached onToggleAttached={toggle} onRetry={vi.fn()} />
+      </LocaleProvider>,
+    );
 
     expect(screen.getByText('Example article')).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Remove page context' }));
@@ -178,16 +207,37 @@ describe('workbench context controls', () => {
     const user = userEvent.setup();
     const retry = vi.fn();
     render(
-      <PageContextBar
-        context={{ status: 'error', message: 'Unavailable' }}
-        attached
-        onToggleAttached={vi.fn()}
-        onRetry={retry}
-      />,
+      <LocaleProvider>
+        <PageContextBar
+          context={{ status: 'error', message: 'Unavailable' }}
+          attached
+          onToggleAttached={vi.fn()}
+          onRetry={retry}
+        />
+      </LocaleProvider>,
     );
 
     await user.click(screen.getByRole('button', { name: 'Retry page context' }));
     expect(retry).toHaveBeenCalledOnce();
+  });
+
+  it('offers a restricted tab an accessible no-page-context action', async () => {
+    const user = userEvent.setup();
+    const toggle = vi.fn();
+    render(
+      <LocaleProvider>
+        <PageContextBar
+          context={{ status: 'restricted', tabId: 3, title: 'Extensions', url: 'chrome://extensions/' }}
+          attached
+          onToggleAttached={toggle}
+          onRetry={vi.fn()}
+        />
+      </LocaleProvider>,
+    );
+
+    expect(screen.getByText('This page cannot be read.')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Continue without page context' }));
+    expect(toggle).toHaveBeenCalledOnce();
   });
 
   it('changes empty suggestions between ask and agent modes', () => {
@@ -216,6 +266,46 @@ describe('workbench context controls', () => {
 
     expect(screen.getAllByRole('button', { name: /Shortcut/ })).toHaveLength(4);
     expect(screen.queryByRole('button', { name: 'Shortcut 5' })).not.toBeInTheDocument();
+  });
+
+  it('does not consume one-turn detachment when an empty normal send does not start', async () => {
+    const user = userEvent.setup();
+    chatStore.send.mockResolvedValue(false);
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Remove page context' }));
+    await user.click(screen.getByRole('textbox', { name: 'Message input' }));
+    await user.keyboard('{Enter}');
+
+    await waitFor(() => expect(chatStore.send).toHaveBeenCalledWith(undefined, { withoutBrowserTools: true }));
+    expect(screen.getByRole('button', { name: 'Add page context' })).toBeVisible();
+  });
+
+  it('runs an Agent-mode restricted-page message without browser tools and then resets detachment', async () => {
+    const user = userEvent.setup();
+    chatStore.pageContext = {
+      status: 'restricted',
+      tabId: 4,
+      title: 'Extensions',
+      url: 'chrome://extensions/',
+    };
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Agent' }));
+    await user.click(screen.getByRole('button', { name: 'Continue without page context' }));
+    await user.type(screen.getByRole('textbox', { name: 'Message input' }), 'Open settings');
+    await user.keyboard('{Enter}');
+
+    await waitFor(() => expect(chatStore.send).toHaveBeenCalledWith(undefined, { withoutBrowserTools: true }));
+    expect(screen.getByRole('button', { name: 'Continue without page context' })).toBeEnabled();
   });
 });
 

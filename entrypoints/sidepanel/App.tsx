@@ -179,8 +179,8 @@ export default function App() {
 
   async function submitMessage() {
     resetToFollowing();
-    await send(undefined, pageAttached ? undefined : { withoutBrowserTools: true });
-    if (!pageAttached) setPageAttached(workbenchPreferences.attachPageByDefault);
+    const started = await send(undefined, pageAttached ? undefined : { withoutBrowserTools: true });
+    if (started && !pageAttached) setPageAttached(workbenchPreferences.attachPageByDefault);
   }
 
   function executeShortcut(shortcut: ShortcutConfig) {

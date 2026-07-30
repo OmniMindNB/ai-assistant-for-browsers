@@ -139,7 +139,7 @@ interface ChatState {
   setSelectedProvider: (id: string) => void;
   setSelectedModel: (model: string) => void;
   selectProviderAndModel: (providerId: string, model: string) => void;
-  send: (text?: string, options?: { withoutBrowserTools?: boolean }) => Promise<void>;
+  send: (text?: string, options?: { withoutBrowserTools?: boolean }) => Promise<boolean>;
   /** 成功发起（截断+提交）返回 true；任一前置校验失败返回 false，调用方据此决定是否关闭编辑框。 */
   editMessage: (id: string, newContent: string) => Promise<boolean>;
   runShortcut: (shortcut: ShortcutConfig) => Promise<void>;
@@ -159,6 +159,8 @@ let pendingConfirmResolve: ((approved: boolean) => void) | null = null;
 let currentTurnTabId: number | null = null;
 /** 侧边栏面板自己绑定的 tabId；挂载时解析一次并缓存，用于把 conversationId 变化写回对应 tab 的映射。 */
 let panelTabId: number | null = null;
+/** 只允许最近一次页面上下文刷新更新 UI，避免慢响应覆盖用户主动重试。 */
+let pageContextRequestId = 0;
 
 async function resolveActiveTabId(): Promise<number> {
   const res = (await sendMessage('GET_ACTIVE_TAB')) as MessageResponse<ActiveTabInfo>;
@@ -239,6 +241,8 @@ export const useChat = create<ChatState>((set, get) => ({
   },
 
   refreshPageContext: async () => {
+    const requestId = ++pageContextRequestId;
+    set({ pageContext: { status: 'loading' } });
     try {
       const res = (await sendMessage('GET_ACTIVE_TAB')) as MessageResponse<ActiveTabInfo>;
       if (!res.ok || typeof res.data?.id !== 'number') {
@@ -260,12 +264,14 @@ export const useChat = create<ChatState>((set, get) => ({
       }
       const available = protocol === 'http:' || protocol === 'https:';
       const title = res.data.title?.trim() || (available && hostname ? hostname : t('sidebar.untitledConversation'));
+      if (requestId !== pageContextRequestId) return;
       set({
         pageContext: available
           ? { status: 'available', tabId, title, url }
           : { status: 'restricted', tabId, title, url },
       });
     } catch (error) {
+      if (requestId !== pageContextRequestId) return;
       set({ pageContext: { status: 'error', message: errMsg(error) } });
     }
   },
@@ -298,8 +304,8 @@ export const useChat = create<ChatState>((set, get) => ({
 
   send: async (text, options) => {
     const content = (text ?? get().input).trim();
-    if (!content || get().busy) return;
-    await runAgent(set, get, makeMessage('user', content, 'input'), content, {
+    if (!content || get().busy) return false;
+    return runAgent(set, get, makeMessage('user', content, 'input'), content, {
       withoutBrowserTools: options?.withoutBrowserTools,
     });
   },

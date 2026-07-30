@@ -99,6 +99,27 @@ describe('chat store page context', () => {
     expect(useChat.getState().pageContext.status).toBe('restricted');
   });
 
+  it('enters loading while refreshing and ignores an older refresh result', async () => {
+    let resolveFirst!: (value: unknown) => void;
+    let resolveSecond!: (value: unknown) => void;
+    mocks.sendMessage
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve; }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveSecond = resolve; }));
+    useChat.setState({ pageContext: { status: 'error', message: 'Previous failure' } });
+
+    const first = useChat.getState().refreshPageContext();
+    expect(useChat.getState().pageContext).toEqual({ status: 'loading' });
+
+    const second = useChat.getState().refreshPageContext();
+    resolveSecond({ ok: true, data: { id: 2, title: 'Newest tab', url: 'https://new.example/' } });
+    await second;
+    expect(useChat.getState().pageContext).toMatchObject({ status: 'available', title: 'Newest tab' });
+
+    resolveFirst({ ok: true, data: { id: 1, title: 'Older tab', url: 'chrome://extensions/' } });
+    await first;
+    expect(useChat.getState().pageContext).toMatchObject({ status: 'available', title: 'Newest tab' });
+  });
+
   it('uses the hostname when an available tab has no title', async () => {
     mocks.sendMessage.mockResolvedValue({
       ok: true,
@@ -183,5 +204,14 @@ describe('chat store page context', () => {
     await useChat.getState().send('hello', { withoutBrowserTools: true });
 
     expect(mocks.createBrowserAgent).toHaveBeenCalledWith(expect.objectContaining({ tools: [] }));
+  });
+
+  it('reports that a normal send did not start for empty input or a busy store', async () => {
+    await expect(useChat.getState().send('   ', { withoutBrowserTools: true })).resolves.toBe(false);
+    expect(mocks.createBrowserAgent).not.toHaveBeenCalled();
+
+    useChat.setState({ input: 'Hello', busy: true });
+    await expect(useChat.getState().send(undefined, { withoutBrowserTools: true })).resolves.toBe(false);
+    expect(mocks.createBrowserAgent).not.toHaveBeenCalled();
   });
 });
