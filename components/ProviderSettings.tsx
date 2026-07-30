@@ -60,10 +60,18 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const confirmTimeoutRef = useRef<number | null>(null);
+  const addButtonRef = useRef<HTMLButtonElement>(null);
+  const restoreAddFocusRef = useRef(false);
 
   useEffect(() => {
     loadSettings().then(setSettings);
   }, []);
+
+  useEffect(() => {
+    if (editorOpen || !restoreAddFocusRef.current) return;
+    addButtonRef.current?.focus();
+    restoreAddFocusRef.current = false;
+  }, [editorOpen]);
 
   const isEditing = draft.id !== '';
 
@@ -107,7 +115,8 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
     setSaveError(null);
   }
 
-  function resetDraft() {
+  function resetDraft({ restoreAddFocus = false }: { restoreAddFocus?: boolean } = {}) {
+    restoreAddFocusRef.current = restoreAddFocus;
     setDraft(EMPTY_DRAFT);
     setExtrasText('');
     setSelectedPreset('');
@@ -122,8 +131,8 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
   }
 
   async function persist(next: Settings) {
-    setSettings(next);
     await saveSettings(next);
+    setSettings(next);
     onChange?.();
   }
 
@@ -179,11 +188,20 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
   }
 
   async function remove(id: string) {
+    if (saving) return;
     const providers = settings.providers.filter((p) => p.id !== id);
     const activeProviderId =
       settings.activeProviderId === id ? providers[0]?.id : settings.activeProviderId;
-    await persist({ providers, activeProviderId });
-    if (draft.id === id) resetDraft();
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await persist({ providers, activeProviderId });
+      if (draft.id === id) resetDraft();
+    } catch {
+      setSaveError(t('provider.saveFailed'));
+    } finally {
+      setSaving(false);
+    }
   }
 
   function requestDelete(id: string) {
@@ -207,7 +225,16 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
   }
 
   async function setActive(id: string) {
-    await persist({ ...settings, activeProviderId: id });
+    if (saving) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await persist({ ...settings, activeProviderId: id });
+    } catch {
+      setSaveError(t('provider.saveFailed'));
+    } finally {
+      setSaving(false);
+    }
   }
 
   const placeholders = draftPlaceholders(selectedPreset, resolved);
@@ -220,6 +247,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
             {t('provider.configuredHeading')}
           </h3>
           <button
+            ref={addButtonRef}
             type="button"
             onClick={beginAdd}
             className="rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-white"
@@ -227,6 +255,11 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
             {t('provider.addHeading')}
           </button>
         </div>
+        {saveError && (
+          <p role="alert" className="mb-3 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
+            {saveError}
+          </p>
+        )}
         {settings.providers.length === 0 ? (
           <p className="rounded-md border border-dashed border-neutral-300 p-4 text-xs text-neutral-400 dark:border-neutral-700 dark:text-neutral-500">
             {t('provider.emptyList')}
@@ -245,6 +278,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
                       type="radio"
                       name="active"
                       checked={active}
+                      disabled={saving}
                       onChange={() => void setActive(p.id)}
                       aria-label={`${t('provider.setActiveTitle')}: ${p.name}`}
                     />
@@ -265,6 +299,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
                     <div className="flex shrink-0 flex-wrap justify-end gap-1">
                       <button
                         type="button"
+                        disabled={saving}
                         onClick={() => loadDraft(p)}
                         aria-label={`${t('common.edit')} ${p.name}`}
                         className="rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-700 transition-colors hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
@@ -273,6 +308,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
                       </button>
                       <button
                         type="button"
+                        disabled={saving}
                         onClick={() =>
                           confirmingDeleteId === p.id ? confirmDelete(p.id) : requestDelete(p.id)
                         }
@@ -302,17 +338,15 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
         {editingRemoved && (
           <p className="mb-3 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-700 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
             {t('provider.removedElsewhere')}
-            <button type="button" onClick={resetDraft} className="ml-2 underline">
+            <button
+              type="button"
+              onClick={() => resetDraft({ restoreAddFocus: true })}
+              className="ml-2 underline"
+            >
               {t('provider.discardEdit')}
             </button>
           </p>
         )}
-        {saveError && (
-          <p role="alert" className="mb-3 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
-            {saveError}
-          </p>
-        )}
-
         <label className="mb-3 block text-xs text-neutral-500 dark:text-neutral-400">
           {t('provider.presetLabel')}
           <select
@@ -333,7 +367,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
         </label>
 
         <form
-          aria-label="Provider editor"
+          aria-label={t('provider.editorAriaLabel')}
           onSubmit={(e) => {
             e.preventDefault();
             void saveDraft();
@@ -380,6 +414,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
             onChange={setExtrasText}
           />
           <Field
+            key={`api-key:${draft.id || 'new'}`}
             label="API Key"
             type="password"
             toggleable
@@ -396,15 +431,13 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
             >
               {isEditing ? t('provider.saveChanges') : t('provider.addSubmit')}
             </button>
-            {isEditing && (
-              <button
-                type="button"
-                onClick={resetDraft}
-                className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
-              >
-                {t('common.cancel')}
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => resetDraft({ restoreAddFocus: true })}
+              className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+            >
+              {t('common.cancel')}
+            </button>
             {toast && <span role="status" className="text-xs text-green-600 dark:text-green-400">{toast}</span>}
           </div>
         </form>

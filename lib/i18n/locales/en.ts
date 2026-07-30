@@ -53,6 +53,7 @@ export const en: Record<keyof typeof zh, string> = {
   'chat.editMessageEditorAriaLabel': 'Edit message',
   'chat.editDiscardWarning': 'Submitting will discard the following {count} message(s)',
   'provider.configuredHeading': 'Configured providers',
+  'provider.editorAriaLabel': 'Provider editor',
   'provider.emptyList': 'No providers configured yet. Add one below.',
   'provider.setActiveTitle': 'Set as active provider',
   'provider.activeBadge': 'Active',

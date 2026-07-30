@@ -50,6 +50,7 @@ export const zh = {
   'chat.editMessageEditorAriaLabel': '编辑消息',
   'chat.editDiscardWarning': '提交后将丢弃后续 {count} 条消息',
   'provider.configuredHeading': '已配置的 Provider',
+  'provider.editorAriaLabel': 'Provider 编辑器',
   'provider.emptyList': '尚未配置任何 Provider，请在下方添加。',
   'provider.setActiveTitle': '设为当前 Provider',
   'provider.activeBadge': '当前',
