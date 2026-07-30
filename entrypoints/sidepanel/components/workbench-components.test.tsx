@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConversationRecord } from '@/lib/db';
@@ -13,6 +13,7 @@ import { ModeSwitch } from './ModeSwitch';
 import { PageContextBar } from './PageContextBar';
 import { WorkbenchEmptyState } from './WorkbenchEmptyState';
 import { WorkbenchHeader } from './WorkbenchHeader';
+import { WorkbenchComposer, type WorkbenchComposerProps } from './WorkbenchComposer';
 
 const chatStore = {
   messages: [],
@@ -203,6 +204,113 @@ const activities: ToolActivity[] = [
   { id: 'read', name: 'browser_read_page', status: 'done' },
   { id: 'style', name: 'browser_set_style', status: 'running' },
 ];
+
+const readingShortcut: ResolvedShortcutCommand = {
+  config: {
+    id: 'reading',
+    origin: 'builtin',
+    scope: 'page',
+    customized: false,
+    name: 'Reading',
+    prompt: 'Read the page',
+  },
+  resolved: {
+    id: 'reading',
+    origin: 'builtin',
+    scope: 'page',
+    customized: false,
+    name: '阅读页面',
+    prompt: 'Read the page',
+  },
+};
+
+const composerProps: WorkbenchComposerProps = {
+  input: '',
+  busy: false,
+  pageAttached: true,
+  pageContext: availableContext,
+  providers: [],
+  selectedProviderId: null,
+  selectedModel: '',
+  shortcuts: [readingShortcut],
+  onInput: vi.fn(),
+  onSend: vi.fn(),
+  onStop: vi.fn(),
+  onTogglePageAttached: vi.fn(),
+  onRunShortcut: vi.fn(),
+  onSelectProviderModel: vi.fn(),
+};
+
+function ComposerHarness({ initialInput = '', ...props }: Partial<WorkbenchComposerProps> & { initialInput?: string }) {
+  const [input, setInput] = useState(initialInput);
+  return (
+    <LocaleProvider>
+      <WorkbenchComposer
+        {...composerProps}
+        {...props}
+        input={input}
+        onInput={(value) => {
+          setInput(value);
+          props.onInput?.(value);
+        }}
+      />
+    </LocaleProvider>
+  );
+}
+
+describe('workbench composer', () => {
+  it('opens slash commands, filters, and runs the selected command', async () => {
+    const user = userEvent.setup();
+    const onRunShortcut = vi.fn();
+    render(<ComposerHarness onRunShortcut={onRunShortcut} />);
+
+    await user.type(screen.getByRole('textbox'), '/阅读');
+    expect(screen.getByRole('menu')).toBeVisible();
+    await user.keyboard('{ArrowDown}{Enter}');
+
+    expect(onRunShortcut).toHaveBeenCalledWith(readingShortcut.config);
+  });
+
+  it('sends on Enter and inserts a newline on Shift+Enter', async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn();
+    render(<ComposerHarness initialInput="hello" onSend={onSend} />);
+
+    await user.click(screen.getByRole('textbox'));
+    await user.keyboard('{Enter}');
+    expect(onSend).toHaveBeenCalledOnce();
+    await user.keyboard('{Shift>}{Enter}{/Shift}');
+
+    expect(onSend).toHaveBeenCalledOnce();
+    expect(screen.getByRole('textbox')).toHaveValue('hello\n');
+  });
+
+  it('does not send while composing with an IME', () => {
+    const onSend = vi.fn();
+    render(<ComposerHarness initialInput="你好" onSend={onSend} />);
+
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter', isComposing: true });
+
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('closes slash commands with Escape without clearing the input', async () => {
+    const user = userEvent.setup();
+    render(<ComposerHarness />);
+
+    await user.type(screen.getByRole('textbox'), '/阅读');
+    await user.keyboard('{Escape}');
+
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox')).toHaveValue('/阅读');
+  });
+
+  it('shows stop instead of send while busy', () => {
+    render(<ComposerHarness busy />);
+
+    expect(screen.getByRole('button', { name: 'Stop generating' })).toBeVisible();
+  });
+});
 
 describe('agent activity timeline', () => {
   it.each([

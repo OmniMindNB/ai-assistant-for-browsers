@@ -78,21 +78,24 @@ describe('side-panel custom shortcut wiring', () => {
 
 describe('side-panel shortcut rendering', () => {
   const source = fs.readFileSync(
-    path.resolve(process.cwd(), 'entrypoints/sidepanel/App.tsx'),
+    path.resolve(process.cwd(), 'entrypoints/sidepanel/components/WorkbenchComposer.tsx'),
     'utf8',
   );
 
-  it('shows three direct shortcuts and puts the rest in a More menu', () => {
-    expect(source).toContain('splitShortcutList(shortcuts, 3)');
-    expect(source).toContain('overflow.length');
-    expect(source).toContain("t('chat.moreShortcuts'");
-    expect(source).toContain('onRunShortcut');
+  it('filters slash commands and runs the highlighted shortcut', () => {
+    expect(source).toContain('filterShortcutCommands(shortcuts, input)');
+    expect(source).toContain('setHighlightedCommand');
+    expect(source).toContain('onRunShortcut(command.config)');
   });
 
   it('subscribes to external shortcut storage changes', () => {
-    expect(source).toContain('SHORTCUTS_STORAGE_KEY');
-    expect(source).toContain('browser.storage.onChanged.addListener');
-    expect(source).toContain('browser.storage.onChanged.removeListener');
+    const appSource = fs.readFileSync(
+      path.resolve(process.cwd(), 'entrypoints/sidepanel/App.tsx'),
+      'utf8',
+    );
+    expect(appSource).toContain('SHORTCUTS_STORAGE_KEY');
+    expect(appSource).toContain('browser.storage.onChanged.addListener');
+    expect(appSource).toContain('browser.storage.onChanged.removeListener');
   });
 
   it('removes the two hard-coded empty-state cards', () => {
@@ -102,16 +105,14 @@ describe('side-panel shortcut rendering', () => {
 
   it('exposes the overflow menu to assistive technology and keyboard users', () => {
     expect(source).toContain('aria-haspopup="menu"');
-    expect(source).toContain('aria-expanded={open}');
-    expect(source).toContain("aria-label={t('chat.moreShortcutsAriaLabel'");
+    expect(source).toContain("aria-expanded={openPopover === 'models'}");
+    expect(source).toContain('role="menu"');
+    expect(source).toContain("event.key === 'ArrowDown'");
     expect(source).toContain("event.key === 'Escape'");
   });
 
   it('truncates long shortcut names while preserving the full accessible name and title', () => {
-    expect(source).toContain('max-w-[10rem]');
-    expect(source).toContain('title={label}');
-    expect(source).toContain('aria-label={label}');
-    expect(source).toContain('<span className="min-w-0 truncate">{label}</span>');
+    expect(source).toContain('className={`block w-full truncate');
     expect(source).toContain('title={resolved.name}');
     expect(source).toContain('aria-label={resolved.name}');
   });
