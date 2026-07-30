@@ -173,7 +173,7 @@ let workbenchPreferencesRequestId = 0;
 let conversationOpenRequestId = 0;
 
 function isCurrentRun(run: ActiveRun, get: () => ChatState): boolean {
-  return activeRun === run && get().conversationId === run.conversationId;
+  return activeRun?.token === run.token && get().conversationId === run.conversationId;
 }
 
 function finishUnstartedRun(run: ActiveRun): void {
