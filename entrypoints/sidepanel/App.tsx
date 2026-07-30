@@ -18,8 +18,13 @@ import {
 } from '@/lib/shortcuts';
 import MessageEditor from './MessageEditor';
 import { HistoryDrawer } from './components/HistoryDrawer';
+import { ModeSwitch } from './components/ModeSwitch';
+import { PageContextBar } from './components/PageContextBar';
+import { WorkbenchEmptyState } from './components/WorkbenchEmptyState';
 import { WorkbenchHeader } from './components/WorkbenchHeader';
 import type { PendingConfirmation, ToolActivity, UIMessage } from './store';
+import type { WorkbenchMode } from '@/lib/workbench/preferences';
+import type { ResolvedShortcutCommand } from '@/lib/workbench/presentation';
 import {
   IconCheck,
   IconChevronDown,
@@ -46,10 +51,14 @@ export default function App() {
     conversationId,
     shortcuts,
     shortcutErrors,
+    pageContext,
+    workbenchPreferences,
     setInput,
     refreshProvider,
     refreshShortcuts,
     refreshConversations,
+    refreshPageContext,
+    refreshWorkbenchPreferences,
     selectProviderAndModel,
     send,
     editMessage,
@@ -68,6 +77,8 @@ export default function App() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [mode, setMode] = useState<WorkbenchMode>('ask');
+  const [pageAttached, setPageAttached] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const historyTriggerRef = useRef<HTMLButtonElement>(null);
   // 是否仍处于“跟随最新内容”状态；用户向上滚动后置 false，直到手动回到底部或发起新一轮。
@@ -75,7 +86,7 @@ export default function App() {
   const busyRef = useRef(busy);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
 
-  const resolvedShortcuts = shortcuts.map((config) => ({
+  const resolvedShortcuts: ResolvedShortcutCommand[] = shortcuts.map((config) => ({
     config,
     resolved: resolveShortcut(config, t),
   }));
@@ -84,8 +95,25 @@ export default function App() {
     refreshProvider();
     refreshShortcuts();
     refreshConversations();
+    refreshPageContext();
+    refreshWorkbenchPreferences();
     restoreTabConversation();
-  }, [refreshProvider, refreshShortcuts, refreshConversations, restoreTabConversation]);
+  }, [
+    refreshProvider,
+    refreshShortcuts,
+    refreshConversations,
+    refreshPageContext,
+    refreshWorkbenchPreferences,
+    restoreTabConversation,
+  ]);
+
+  useEffect(() => {
+    const isNewEmptyConversation =
+      messages.length === 0 && input.trim().length === 0 && !busy && !pendingConfirmation && toolActivities.length === 0;
+    if (!isNewEmptyConversation) return;
+    setMode(workbenchPreferences.defaultMode);
+    setPageAttached(workbenchPreferences.attachPageByDefault);
+  }, [busy, input, messages.length, pendingConfirmation, toolActivities.length, workbenchPreferences]);
 
   useEffect(() => {
     const listener = (
@@ -149,9 +177,10 @@ export default function App() {
     setShowJumpToBottom(false);
   }
 
-  function submitMessage() {
+  async function submitMessage() {
     resetToFollowing();
-    send();
+    await send(undefined, pageAttached ? undefined : { withoutBrowserTools: true });
+    if (!pageAttached) setPageAttached(workbenchPreferences.attachPageByDefault);
   }
 
   function executeShortcut(shortcut: ShortcutConfig) {
@@ -191,6 +220,8 @@ export default function App() {
   function newChat() {
     clear();
     setHistoryOpen(false);
+    setMode(workbenchPreferences.defaultMode);
+    setPageAttached(workbenchPreferences.attachPageByDefault);
   }
 
   function pickConversation(id: string) {
@@ -232,11 +263,27 @@ export default function App() {
 
           {providers.length === 0 && <ProviderBanner onOpenSettings={openSettings} />}
 
+          <PageContextBar
+            context={pageContext}
+            attached={pageAttached}
+            onToggleAttached={() => setPageAttached((attached) => !attached)}
+            onRetry={refreshPageContext}
+          />
+
+          <div className="border-b border-neutral-200 px-4 py-2 dark:border-neutral-800">
+            <ModeSwitch mode={mode} onChange={setMode} />
+          </div>
+
           <div className="relative flex-1 overflow-hidden">
             <main ref={scrollRef} className="h-full overflow-y-auto">
               <div className="mx-auto flex min-h-full max-w-3xl flex-col gap-6 px-4 py-6">
                 {messages.length === 0 ? (
-                  <EmptyState />
+                  <WorkbenchEmptyState
+                    mode={mode}
+                    shortcuts={resolvedShortcuts}
+                    busy={busy}
+                    onRunShortcut={executeShortcut}
+                  />
                 ) : (
                   messages.map((m) => (
                     <Message
@@ -326,21 +373,6 @@ function ProviderBanner({ onOpenSettings }: { onOpenSettings: () => void }) {
 }
 
 /* ---------------- 消息区 ---------------- */
-
-function EmptyState() {
-  const { t } = useTranslation();
-  return (
-    <div className="m-auto flex w-full max-w-md flex-col items-center text-center">
-      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-neutral-900 text-white dark:bg-neutral-800">
-        <IconSparkles className="h-6 w-6" />
-      </div>
-      <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{t('chat.emptyTitle')}</h2>
-      <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-        {t('chat.emptySubtitle')}
-      </p>
-    </div>
-  );
-}
 
 function Message({
   message,

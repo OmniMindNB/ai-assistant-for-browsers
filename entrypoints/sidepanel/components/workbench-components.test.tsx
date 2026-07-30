@@ -4,8 +4,13 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ConversationRecord } from '@/lib/db';
 import { LocaleProvider } from '@/lib/i18n';
+import type { ResolvedShortcutCommand } from '@/lib/workbench/presentation';
+import type { PageContextState } from '../store';
 import App from '../App';
 import { HistoryDrawer } from './HistoryDrawer';
+import { ModeSwitch } from './ModeSwitch';
+import { PageContextBar } from './PageContextBar';
+import { WorkbenchEmptyState } from './WorkbenchEmptyState';
 import { WorkbenchHeader } from './WorkbenchHeader';
 
 const chatStore = {
@@ -23,10 +28,19 @@ const chatStore = {
   conversationId: 'active',
   shortcuts: [],
   shortcutErrors: [],
+  pageContext: {
+    status: 'available' as const,
+    tabId: 1,
+    title: 'Example article',
+    url: 'https://example.com/article',
+  },
+  workbenchPreferences: { defaultMode: 'ask' as const, attachPageByDefault: true },
   setInput: vi.fn(),
   refreshProvider: vi.fn(),
   refreshShortcuts: vi.fn(),
   refreshConversations: vi.fn(),
+  refreshPageContext: vi.fn(),
+  refreshWorkbenchPreferences: vi.fn(),
   selectProviderAndModel: vi.fn(),
   send: vi.fn(),
   editMessage: vi.fn(),
@@ -122,6 +136,88 @@ function renderDrawerWithBackground() {
 }
 
 afterEach(() => vi.restoreAllMocks());
+
+const availableContext: PageContextState = {
+  status: 'available',
+  tabId: 1,
+  title: 'Example article',
+  url: 'https://example.com/article',
+};
+
+const emptyStateShortcuts: ResolvedShortcutCommand[] = Array.from({ length: 5 }, (_, index) => ({
+  config: {
+    id: `shortcut-${index + 1}`,
+    origin: 'custom',
+    scope: 'none',
+    customized: true,
+    name: `Shortcut ${index + 1}`,
+    prompt: `Prompt ${index + 1}`,
+  },
+  resolved: {
+    id: `shortcut-${index + 1}`,
+    origin: 'custom',
+    scope: 'none',
+    customized: true,
+    name: `Shortcut ${index + 1}`,
+    prompt: `Prompt ${index + 1}`,
+  },
+}));
+
+describe('workbench context controls', () => {
+  it('shows the active page title and allows one-turn detachment', async () => {
+    const user = userEvent.setup();
+    const toggle = vi.fn();
+    render(<PageContextBar context={availableContext} attached onToggleAttached={toggle} onRetry={vi.fn()} />);
+
+    expect(screen.getByText('Example article')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Remove page context' }));
+    expect(toggle).toHaveBeenCalledOnce();
+  });
+
+  it('shows a retry action for context errors', async () => {
+    const user = userEvent.setup();
+    const retry = vi.fn();
+    render(
+      <PageContextBar
+        context={{ status: 'error', message: 'Unavailable' }}
+        attached
+        onToggleAttached={vi.fn()}
+        onRetry={retry}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Retry page context' }));
+    expect(retry).toHaveBeenCalledOnce();
+  });
+
+  it('changes empty suggestions between ask and agent modes', () => {
+    const { rerender } = render(
+      <WorkbenchEmptyState mode="ask" shortcuts={emptyStateShortcuts} busy={false} onRunShortcut={vi.fn()} />,
+    );
+    expect(screen.getByText('Ask about this page')).toBeVisible();
+
+    rerender(
+      <WorkbenchEmptyState mode="agent" shortcuts={emptyStateShortcuts} busy={false} onRunShortcut={vi.fn()} />,
+    );
+    expect(screen.getByText('Describe a browser task')).toBeVisible();
+  });
+
+  it('exposes pressed state for the active mode', () => {
+    render(<ModeSwitch mode="agent" onChange={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: 'Ask' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: 'Agent' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('limits empty-state shortcuts to four entries', () => {
+    render(
+      <WorkbenchEmptyState mode="ask" shortcuts={emptyStateShortcuts} busy={false} onRunShortcut={vi.fn()} />,
+    );
+
+    expect(screen.getAllByRole('button', { name: /Shortcut/ })).toHaveLength(4);
+    expect(screen.queryByRole('button', { name: 'Shortcut 5' })).not.toBeInTheDocument();
+  });
+});
 
 describe('workbench history', () => {
   it('opens and closes history with accessible state and returns focus to its trigger', async () => {
