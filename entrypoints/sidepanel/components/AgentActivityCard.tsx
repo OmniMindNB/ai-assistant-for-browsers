@@ -26,8 +26,6 @@ const TOOL_LABEL_KEYS = {
   browser_revert_changes: 'agentActivity.tool.revertChanges',
 } as const;
 
-const UNSAFE_DETAIL = /^\s*(?:[\[{\"]|true\b|false\b|null\b|-?\d)|=>|<\/?[a-z][^>]*>|\b(?:const|let|var|function|class)\b/i;
-
 export function AgentActivityCard({ activities }: { activities: ToolActivity[] }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
@@ -50,18 +48,17 @@ export function AgentActivityCard({ activities }: { activities: ToolActivity[] }
       </button>
       {expanded && (
         <ul className="space-y-1 border-t border-neutral-100 px-3 py-2 dark:border-neutral-800">
-          {summary.activities.map((activity) => {
-            const detail = safeActivityDetail(activity.detail);
-            return (
-              <li key={activity.id} className="flex items-start gap-2 text-xs">
-                <span className="min-w-0 flex-1 text-neutral-700 dark:text-neutral-300">
-                  <span className="font-medium">{toolLabel(activity.name, t)}</span>
-                  {detail && <span className="ml-1 break-words text-neutral-400 dark:text-neutral-500">{detail}</span>}
+          {summary.activities.map((activity) => (
+            <li key={activity.id} className="flex items-start gap-2 text-xs">
+              <span className="min-w-0 flex-1 text-neutral-700 dark:text-neutral-300">
+                <span className="font-medium">{toolLabel(activity.name, t)}</span>
+                <span className="ml-1 break-words text-neutral-400 dark:text-neutral-500">
+                  {activityDetailLabel(activity.status, t)}
                 </span>
-                <span className={`shrink-0 ${statusColor(activity.status)}`}>{detailStatusLabel(activity.status, t)}</span>
-              </li>
-            );
-          })}
+              </span>
+              <span className={`shrink-0 ${statusColor(activity.status)}`}>{detailStatusLabel(activity.status, t)}</span>
+            </li>
+          ))}
         </ul>
       )}
     </section>
@@ -71,11 +68,6 @@ export function AgentActivityCard({ activities }: { activities: ToolActivity[] }
 function toolLabel(name: string, t: Translate): string {
   const key = TOOL_LABEL_KEYS[name as keyof typeof TOOL_LABEL_KEYS];
   return key ? t(key) : t('agentActivity.tool.unknown');
-}
-
-function safeActivityDetail(detail?: string): string | null {
-  if (!detail || UNSAFE_DETAIL.test(detail)) return null;
-  return detail;
 }
 
 function summaryStatusLabel(status: ToolActivityStatus, t: Translate): string {
@@ -90,6 +82,21 @@ function summaryStatusLabel(status: ToolActivityStatus, t: Translate): string {
       return t('agentActivity.status.error');
     default:
       return t('agentActivity.status.done');
+  }
+}
+
+function activityDetailLabel(status: ToolActivityStatus, t: Translate): string {
+  switch (status) {
+    case 'running':
+      return t('agentActivity.detail.running');
+    case 'confirming':
+      return t('agentActivity.detail.confirming');
+    case 'blocked':
+      return t('agentActivity.detail.blocked');
+    case 'error':
+      return t('agentActivity.detail.error');
+    default:
+      return t('agentActivity.detail.done');
   }
 }
 

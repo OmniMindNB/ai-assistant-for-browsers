@@ -95,7 +95,6 @@ export interface ToolActivity {
   id: string;
   name: string;
   status: 'running' | 'confirming' | 'done' | 'error' | 'blocked';
-  detail?: string;
 }
 
 export interface PendingConfirmation {
@@ -552,7 +551,7 @@ async function runAgent(
 
   const onConfirm = async (toolCallId: string, toolName: string, args: unknown, _reason: string): Promise<boolean> => {
     const { summary, codePreview } = summarizeToolCallForConfirmation(toolName, args);
-    upsertToolActivity(set, { id: toolCallId, name: toolName, status: 'confirming', detail: summary });
+    upsertToolActivity(set, { id: toolCallId, name: toolName, status: 'confirming' });
     set({ pendingConfirmation: { toolName, summary, codePreview } });
     return new Promise<boolean>((resolve) => {
       pendingConfirmResolve = resolve;
@@ -581,7 +580,6 @@ async function runAgent(
         id: event.toolCallId,
         name: event.toolName,
         status: 'running',
-        detail: compactJson(event.args),
       });
     }
 
@@ -590,7 +588,6 @@ async function runAgent(
         id: event.toolCallId,
         name: event.toolName,
         status: 'running',
-        detail: compactJson(event.partialResult),
       });
     }
 
@@ -600,7 +597,6 @@ async function runAgent(
         id: event.toolCallId,
         name: event.toolName,
         status: blocked ? 'blocked' : event.isError ? 'error' : 'done',
-        detail: event.isError ? compactJson(event.result) : undefined,
       });
       if (!event.isError) {
         if (event.toolName === 'browser_revert_changes') {

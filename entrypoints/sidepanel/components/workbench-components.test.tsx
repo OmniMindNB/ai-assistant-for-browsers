@@ -149,7 +149,9 @@ beforeEach(() => {
     toolActivities: [],
     input: '',
     busy: false,
+    error: null,
     pendingConfirmation: null,
+    turnHasChanges: false,
     pageContext: {
       status: 'available' as const,
       tabId: 1,
@@ -230,22 +232,100 @@ describe('agent activity timeline', () => {
 
     await user.click(screen.getByRole('button', { name: 'Show task details' }));
     expect(screen.getAllByRole('listitem').map((item) => item.textContent)).toEqual([
-      'Read pageDone',
-      'Set styleRunning',
+      'Read pageCompletedDone',
+      'Set styleIn progressRunning',
     ]);
   });
 
   it('does not expose raw tool payloads in expanded details', async () => {
     const user = userEvent.setup();
     const rawPayload = '{"selector":"body","css":"body { color: red; }"}';
+    const unsafeActivity = { ...activity('running'), detail: rawPayload } as unknown as ToolActivity;
     render(
       <LocaleProvider>
-        <AgentActivityCard activities={[{ ...activity('running'), detail: rawPayload }]} />
+        <AgentActivityCard activities={[unsafeActivity]} />
       </LocaleProvider>,
     );
 
     await user.click(screen.getByRole('button', { name: 'Show task details' }));
     expect(screen.queryByText(rawPayload)).not.toBeInTheDocument();
+  });
+
+  it('does not expose value-bearing confirmation summaries or non-JSON tool results', async () => {
+    const user = userEvent.setup();
+    const sensitiveDetails = [
+      'AI wants to type "customer-secret".',
+      'AI wants to write storage value "session-secret".',
+      'AI wants to replace HTML with <script>steal()</script>.',
+      'Tool result: completed for private-result.',
+    ];
+    const unsafeActivities = sensitiveDetails.map((detail, index) => ({
+      id: `unsafe-${index}`,
+      name: 'browser_type',
+      status: 'confirming',
+      detail,
+    })) as unknown as ToolActivity[];
+    render(
+      <LocaleProvider>
+        <AgentActivityCard activities={unsafeActivities} />
+      </LocaleProvider>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Show task details' }));
+    for (const detail of sensitiveDetails) {
+      expect(screen.queryByText(detail)).not.toBeInTheDocument();
+    }
+  });
+
+  it('updates aria-expanded and its accessible action when details are toggled', async () => {
+    const user = userEvent.setup();
+    render(
+      <LocaleProvider>
+        <AgentActivityCard activities={activities} />
+      </LocaleProvider>,
+    );
+
+    const toggle = screen.getByRole('button', { name: 'Show task details' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await user.click(toggle);
+    expect(screen.getByRole('button', { name: 'Hide task details' })).toHaveAttribute('aria-expanded', 'true');
+    await user.click(screen.getByRole('button', { name: 'Hide task details' }));
+    expect(screen.getByRole('button', { name: 'Show task details' })).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('places the activity card before confirmation and undo cards without changing callbacks', async () => {
+    const user = userEvent.setup();
+    (chatStore as any).toolActivities = [activity('confirming')];
+    (chatStore as any).pendingConfirmation = {
+      toolName: 'browser_type',
+      summary: 'AI wants to type a value.',
+    };
+    const { rerender } = render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    const activityStatus = screen.getByText('Waiting for approval');
+    const confirmationTitle = screen.getByText(/Please confirm before modifying the page/);
+    expect(activityStatus.compareDocumentPosition(confirmationTitle) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    await user.click(screen.getByRole('button', { name: 'Approve this turn' }));
+    expect(chatStore.respondToConfirmation).toHaveBeenCalledWith(true);
+
+    (chatStore as any).pendingConfirmation = null;
+    chatStore.turnHasChanges = true;
+    rerender(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    const undoStatus = screen.getByText('● Page modified this turn');
+    expect(activityStatus.compareDocumentPosition(undoStatus) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    await user.click(screen.getByRole('button', { name: 'Undo this turn' }));
+    expect(chatStore.revertTurnChanges).toHaveBeenCalledOnce();
   });
 });
 
