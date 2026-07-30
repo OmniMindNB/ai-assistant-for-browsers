@@ -39,9 +39,12 @@ const provider = {
   model: 'test-model',
 };
 
+let agentEventListener: ((event: any) => void) | undefined;
+
 function makeAgent() {
   return {
-    subscribe: vi.fn(() => () => undefined),
+    subscribe: vi.fn((listener) => { agentEventListener = listener; return () => undefined; }),
+    abort: vi.fn(),
     prompt: vi.fn().mockResolvedValue(undefined),
     state: {
       messages: [
@@ -63,6 +66,7 @@ describe('chat store page context', () => {
     mocks.replaceConversationMessages.mockReset().mockResolvedValue(undefined);
     mocks.getConversationMessages.mockReset().mockResolvedValue([]);
     mocks.createBrowserAgent.mockReturnValue(makeAgent());
+    agentEventListener = undefined;
     (globalThis as typeof globalThis & { browser: any }).browser.storage.local.get = vi.fn().mockResolvedValue({});
     useChat.setState({
       messages: [],
@@ -316,6 +320,30 @@ describe('chat store page context', () => {
     await useChat.getState().send('hello', { withoutBrowserTools: true });
 
     expect(mocks.createBrowserAgent).toHaveBeenCalledWith(expect.objectContaining({ tools: [] }));
+  });
+
+  it('marks a rejected confirmation denied and preserves it against a late error event', async () => {
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    const send = useChat.getState().send('write');
+    await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalled());
+    const confirm = mocks.createBrowserAgent.mock.calls[0][0].onConfirm as (id: string, name: string, args: unknown, reason: string) => Promise<boolean>;
+    const decision = confirm('call-1', 'browser_click', {}, 'confirm');
+    expect(useChat.getState().toolActivities).toMatchObject([{ id: 'call-1', status: 'confirming' }]);
+    useChat.getState().respondToConfirmation(false);
+    await expect(decision).resolves.toBe(false);
+    expect(useChat.getState().toolActivities).toMatchObject([{ id: 'call-1', status: 'denied' }]);
+    agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'call-1', toolName: 'browser_click', isError: true, result: 'late error' });
+    expect(useChat.getState().toolActivities).toMatchObject([{ id: 'call-1', status: 'denied' }]);
+    await send;
+  });
+
+  it('marks running and confirming activities stopped and preserves them against late errors', () => {
+    useChat.setState({ toolActivities: [
+      { id: 'running', name: 'browser_click', status: 'running' },
+      { id: 'confirming', name: 'browser_type', status: 'confirming' },
+    ] });
+    useChat.getState().stop();
+    expect(useChat.getState().toolActivities.map((activity) => activity.status)).toEqual(['stopped', 'stopped']);
   });
 
   it('reports that a normal send did not start for empty input or a busy store', async () => {
