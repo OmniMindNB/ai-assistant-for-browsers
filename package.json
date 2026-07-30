@@ -30,9 +30,13 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.0",
+    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@wxt-dev/module-react": "^1.1.5",
+    "jsdom": "^30.0.1",
     "tailwindcss": "^4.3.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10",
