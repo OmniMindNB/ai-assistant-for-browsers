@@ -196,7 +196,8 @@ git commit -m "test: add sidepanel component harness"
   - `loadWorkbenchPreferences(): Promise<WorkbenchPreferences>`
   - `saveWorkbenchPreferences(value: WorkbenchPreferences): Promise<void>`
   - `groupConversationsByDay(records, now): ConversationGroup[]`
-  - `filterShortcutCommands(shortcuts, query): ResolvedShortcut[]`
+  - `type ResolvedShortcutCommand = { config: ShortcutConfig; resolved: ResolvedShortcut }`
+  - `filterShortcutCommands(shortcuts: ResolvedShortcutCommand[], query: string): ResolvedShortcutCommand[]`
   - `summarizeToolActivities(activities): ToolActivitySummary`
 - Consumes: `chrome.storage.local`, `ConversationRecord`, `ResolvedShortcut`, and the structural fields of `ToolActivity`.
 
