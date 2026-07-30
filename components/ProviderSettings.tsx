@@ -49,11 +49,13 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
   const { t, resolved } = useTranslation();
   const [settings, setSettings] = useState<Settings>({ providers: [] });
   const [draft, setDraft] = useState<ProviderConfig>(EMPTY_DRAFT);
+  const [editorOpen, setEditorOpen] = useState(false);
   // 独立于 draft 的原始文本，避免每次按键都经过 withExtras 的去重/过滤——
   // 那样会在用户粘贴的内容恰好等于「模型（默认）」时把输入静默清空（看起来像粘贴无效）。
   const [extrasText, setExtrasText] = useState('');
   const [selectedPreset, setSelectedPreset] = useState('');
   const [toast, setToast] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [editingRemoved, setEditingRemoved] = useState(false);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -101,6 +103,8 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
     setExtrasText(extrasOf(p));
     setSelectedPreset('');
     setEditingRemoved(false);
+    setEditorOpen(true);
+    setSaveError(null);
   }
 
   function resetDraft() {
@@ -108,6 +112,13 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
     setExtrasText('');
     setSelectedPreset('');
     setEditingRemoved(false);
+    setEditorOpen(false);
+    setSaveError(null);
+  }
+
+  function beginAdd() {
+    resetDraft();
+    setEditorOpen(true);
   }
 
   async function persist(next: Settings) {
@@ -132,6 +143,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
       return;
     }
     const trimmed = trimProviderDraft(draft);
+    setSaveError(null);
     if (!trimmed.name || !trimmed.baseURL || !trimmed.model) {
       flash(t('provider.flashFillRequired'));
       return;
@@ -159,6 +171,8 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
       await persist(next);
       resetDraft();
       flash(isDuplicateName ? t('provider.flashSavedDuplicate') : t('provider.flashSaved'));
+    } catch {
+      setSaveError(t('provider.saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -201,60 +215,78 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
   return (
     <>
       <section className="mb-6">
-        <h3 className="mb-2 text-sm font-medium text-neutral-700 dark:text-neutral-200">
-          {t('provider.configuredHeading')}
-        </h3>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+            {t('provider.configuredHeading')}
+          </h3>
+          <button
+            type="button"
+            onClick={beginAdd}
+            className="rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-white"
+          >
+            {t('provider.addHeading')}
+          </button>
+        </div>
         {settings.providers.length === 0 ? (
           <p className="rounded-md border border-dashed border-neutral-300 p-4 text-xs text-neutral-400 dark:border-neutral-700 dark:text-neutral-500">
             {t('provider.emptyList')}
           </p>
         ) : (
-          <ul className="space-y-2">
+          <ul aria-label={t('provider.configuredHeading')} className="space-y-2">
             {settings.providers.map((p) => {
               const active = p.id === settings.activeProviderId;
               return (
                 <li
                   key={p.id}
-                  className="flex items-center gap-3 rounded-md border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-900"
+                  className="rounded-md border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-900"
                 >
-                  <input
-                    type="radio"
-                    name="active"
-                    checked={active}
-                    onChange={() => setActive(p.id)}
-                    title={t('provider.setActiveTitle')}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                      {p.name}
-                      {active && (
-                        <span className="rounded bg-green-100 px-1.5 py-0.5 text-[10px] text-green-700 dark:bg-green-900/40 dark:text-green-300">
-                          {t('provider.activeBadge')}
-                        </span>
-                      )}
+                  <div className="flex min-w-0 items-start gap-3">
+                    <input
+                      type="radio"
+                      name="active"
+                      checked={active}
+                      onChange={() => void setActive(p.id)}
+                      aria-label={`${t('provider.setActiveTitle')}: ${p.name}`}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                        <span className="truncate" title={p.name}>{p.name}</span>
+                        {active && (
+                          <span className="rounded bg-green-100 px-1.5 py-0.5 text-[10px] text-green-700 dark:bg-green-900/40 dark:text-green-300">
+                            {t('provider.activeBadge')}
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs text-neutral-500 dark:text-neutral-400">
+                        <span>{p.apiKey ? t('provider.keyConfigured') : t('provider.keyMissing')}</span>
+                        <span>{t('provider.modelCount', { count: p.models?.length ?? 1 })}</span>
+                      </div>
                     </div>
-                    <div className="truncate text-xs text-neutral-400 dark:text-neutral-500">
-                      {p.model} · {p.baseURL} · Key {p.apiKey ? '••••' + p.apiKey.slice(-4) : t('provider.keyNotSet')}
+                    <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                      <button
+                        type="button"
+                        onClick={() => loadDraft(p)}
+                        aria-label={`${t('common.edit')} ${p.name}`}
+                        className="rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-700 transition-colors hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                      >
+                        {t('common.edit')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          confirmingDeleteId === p.id ? confirmDelete(p.id) : requestDelete(p.id)
+                        }
+                        aria-label={`${t('common.delete')} ${p.name}`}
+                        className={
+                          confirmingDeleteId === p.id
+                            ? 'rounded border border-red-600 bg-red-600 px-2 py-1 text-xs text-white transition-colors hover:bg-red-700'
+                            : 'rounded border border-red-200 px-2 py-1 text-xs text-red-600 transition-colors hover:bg-red-50 dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-950/40'
+                        }
+                      >
+                        {confirmingDeleteId === p.id ? t('provider.confirmDelete') : t('common.delete')}
+                      </button>
                     </div>
                   </div>
-                  <button
-                    onClick={() => loadDraft(p)}
-                    className="rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-700 transition-colors hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
-                  >
-                    {t('common.edit')}
-                  </button>
-                  <button
-                    onClick={() =>
-                      confirmingDeleteId === p.id ? confirmDelete(p.id) : requestDelete(p.id)
-                    }
-                    className={
-                      confirmingDeleteId === p.id
-                        ? 'rounded border border-red-600 bg-red-600 px-2 py-1 text-xs text-white transition-colors hover:bg-red-700'
-                        : 'rounded border border-red-200 px-2 py-1 text-xs text-red-600 transition-colors hover:bg-red-50 dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-950/40'
-                    }
-                  >
-                    {confirmingDeleteId === p.id ? t('provider.confirmDelete') : t('common.delete')}
-                  </button>
                 </li>
               );
             })}
@@ -262,7 +294,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
         )}
       </section>
 
-      <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
+      {editorOpen && <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
         <h3 className="mb-3 text-sm font-medium text-neutral-700 dark:text-neutral-200">
           {isEditing ? t('provider.editHeading') : t('provider.addHeading')}
         </h3>
@@ -273,6 +305,11 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
             <button type="button" onClick={resetDraft} className="ml-2 underline">
               {t('provider.discardEdit')}
             </button>
+          </p>
+        )}
+        {saveError && (
+          <p role="alert" className="mb-3 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
+            {saveError}
           </p>
         )}
 
@@ -296,6 +333,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
         </label>
 
         <form
+          aria-label="Provider editor"
           onSubmit={(e) => {
             e.preventDefault();
             void saveDraft();
@@ -367,10 +405,10 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
                 {t('common.cancel')}
               </button>
             )}
-            {toast && <span className="text-xs text-green-600 dark:text-green-400">{toast}</span>}
+            {toast && <span role="status" className="text-xs text-green-600 dark:text-green-400">{toast}</span>}
           </div>
         </form>
-      </section>
+      </section>}
     </>
   );
 }
@@ -402,6 +440,7 @@ function Field({
       <div className="relative mt-1">
         <input
           type={resolvedType}
+          aria-label={label}
           value={value}
           placeholder={placeholder}
           onChange={(e) => onChange(e.target.value)}

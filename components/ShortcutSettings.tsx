@@ -371,9 +371,10 @@ export default function ShortcutSettings() {
           {t('shortcut.empty')}
         </p>
       ) : (
-        <ul className="space-y-2">
+        <ul aria-label={t('shortcut.heading')} className="space-y-2">
           {items.map((item, index) => {
             const resolved = resolveShortcut(item, t);
+            const command = `/${resolved.name.replace(/\s+/g, '')}`;
             return (
               <li
                 key={item.id}
@@ -401,11 +402,9 @@ export default function ShortcutSettings() {
                     <p className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">
                       {resolved.name}
                     </p>
-                    <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
-                      {scopeLabel(resolved.scope)}
-                    </p>
-                    <p className="mt-1 line-clamp-2 text-xs text-neutral-500 dark:text-neutral-400">
-                      {resolved.prompt}
+                    <p className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs text-neutral-500 dark:text-neutral-400">
+                      <span className="font-medium text-neutral-700 dark:text-neutral-300">{command}</span>
+                      <span>{scopeLabel(resolved.scope)}</span>
                     </p>
                   </div>
                   <div className="flex flex-wrap justify-end gap-1">
@@ -413,7 +412,7 @@ export default function ShortcutSettings() {
                       type="button"
                       disabled={saving || hasInvalidConfig || index === 0}
                       onClick={() => void move(item.id, 'up')}
-                      aria-label={t('shortcut.moveUp')}
+                      aria-label={t('shortcut.moveUpAria', { name: resolved.name })}
                       title={t('shortcut.moveUp')}
                       className="rounded p-1.5 text-neutral-500 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-neutral-800"
                     >
@@ -423,7 +422,7 @@ export default function ShortcutSettings() {
                       type="button"
                       disabled={saving || hasInvalidConfig || index === items.length - 1}
                       onClick={() => void move(item.id, 'down')}
-                      aria-label={t('shortcut.moveDown')}
+                      aria-label={t('shortcut.moveDownAria', { name: resolved.name })}
                       title={t('shortcut.moveDown')}
                       className="rounded p-1.5 text-neutral-500 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-neutral-800"
                     >
@@ -433,6 +432,7 @@ export default function ShortcutSettings() {
                       type="button"
                       disabled={saving || hasInvalidConfig}
                       onClick={() => beginEdit(item)}
+                      aria-label={`${t('common.edit')} ${resolved.name}`}
                       className="rounded px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-100 disabled:opacity-50 dark:text-neutral-300 dark:hover:bg-neutral-800"
                     >
                       {t('common.edit')}
@@ -441,6 +441,7 @@ export default function ShortcutSettings() {
                       type="button"
                       disabled={saving || hasInvalidConfig}
                       onClick={() => void remove(item.id)}
+                      aria-label={`${t('common.delete')} ${resolved.name}`}
                       className="rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/40"
                     >
                       {t('common.delete')}
@@ -454,7 +455,14 @@ export default function ShortcutSettings() {
       )}
 
       {draft && (
-        <div className="mt-4 rounded-lg border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+        <form
+          aria-label={editingId ? t('shortcut.editHeading') : t('shortcut.addHeading')}
+          onSubmit={(event) => {
+            event.preventDefault();
+            void saveDraft();
+          }}
+          className="mt-4 rounded-lg border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900/60"
+        >
           <h3 className="mb-3 text-sm font-medium text-neutral-800 dark:text-neutral-100">
             {editingId ? t('shortcut.editHeading') : t('shortcut.addHeading')}
           </h3>
@@ -540,15 +548,14 @@ export default function ShortcutSettings() {
               {t('common.cancel')}
             </button>
             <button
-              type="button"
+              type="submit"
               disabled={saving || hasInvalidConfig}
-              onClick={() => void saveDraft()}
               className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {t('shortcut.save')}
             </button>
           </div>
-        </div>
+        </form>
       )}
     </section>
   );

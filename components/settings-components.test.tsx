@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocaleProvider } from '@/lib/i18n';
 import OptionsApp from '@/entrypoints/options/App';
 import GeneralSettings from './GeneralSettings';
+import ProviderSettings from './ProviderSettings';
+import ShortcutSettings from './ShortcutSettings';
 
 const preferencesMocks = vi.hoisted(() => ({
   load: vi.fn(),
@@ -41,6 +43,38 @@ describe('grouped options settings', () => {
     (globalThis as any).browser.storage.onChanged = {
       addListener: vi.fn(),
       removeListener: vi.fn(),
+    };
+    (globalThis as any).browser.storage.local = {
+      get: vi.fn(async (key: string) => ({
+        'aluminum:settings': {
+          activeProviderId: 'deepseek',
+          providers: [
+            {
+              id: 'deepseek',
+              name: 'DeepSeek',
+              baseURL: 'https://api.deepseek.com',
+              apiKey: 'secret-key',
+              model: 'deepseek-v4-pro',
+              models: ['deepseek-v4-pro', 'deepseek-v4-flash'],
+            },
+          ],
+        },
+        'aluminum:shortcuts': [
+          {
+            id: 'builtin:explain-selection',
+            origin: 'builtin',
+            scope: 'selection',
+            customized: false,
+          },
+          {
+            id: 'builtin:summarize-page',
+            origin: 'builtin',
+            scope: 'page',
+            customized: false,
+          },
+        ],
+      })),
+      set: vi.fn(async () => {}),
     };
     (globalThis as any).browser.runtime.getManifest = vi.fn(() => ({ version: '1.1.0' }));
     window.matchMedia = vi.fn().mockReturnValue({
@@ -122,5 +156,38 @@ describe('grouped options settings', () => {
     expect(screen.getByRole('radio', { name: 'Agent tasks' })).toBeEnabled();
     expect(screen.getByRole('checkbox', { name: 'Attach current page by default' })).toBeEnabled();
     expect(screen.getByRole('radio', { name: 'Agent tasks' })).toBeChecked();
+  });
+
+  it('shows providers as compact cards before opening an editor', async () => {
+    renderWithLocale(<ProviderSettings />);
+
+    expect(await screen.findByRole('list', { name: 'Configured providers' })).toBeVisible();
+    expect(screen.queryByRole('form', { name: 'Provider editor' })).not.toBeInTheDocument();
+  });
+
+  it('opens the existing editor without losing Provider values', async () => {
+    const user = userEvent.setup();
+    renderWithLocale(<ProviderSettings />);
+
+    await user.click(await screen.findByRole('button', { name: 'Edit DeepSeek' }));
+
+    expect(screen.getByRole('form', { name: 'Provider editor' })).toBeVisible();
+    expect(screen.getByLabelText('Name')).toHaveValue('DeepSeek');
+  });
+
+  it('shows slash labels and keeps keyboard reorder actions', async () => {
+    renderWithLocale(<ShortcutSettings />);
+
+    expect(await screen.findByText('/Summarizepage')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Move Summarize page up' })).toBeEnabled();
+  });
+
+  it('opens one shortcut editor at a time', async () => {
+    const user = userEvent.setup();
+    renderWithLocale(<ShortcutSettings />);
+
+    await user.click(await screen.findByRole('button', { name: 'Edit Summarize page' }));
+
+    expect(screen.getAllByRole('form')).toHaveLength(1);
   });
 });
