@@ -357,17 +357,26 @@ describe('chat store page context', () => {
   });
 
   it('stops running and confirming agent activities and preserves them against late errors', async () => {
-    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    let resolvePrompt!: () => void;
+    const agent = makeAgent();
+    agent.prompt.mockReturnValue(new Promise<void>((resolve) => { resolvePrompt = resolve; }));
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    mocks.sendMessage.mockImplementation((type: string) => {
+      if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: ['GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE', 'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION', 'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE', 'RESET_TURN_SNAPSHOT', 'REVERT_CHANGES'] } });
+      return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    });
     const send = useChat.getState().send('write');
     await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalled());
     agentEventListener?.({ type: 'tool_execution_start', toolCallId: 'running', toolName: 'browser_click' });
     const confirm = mocks.createBrowserAgent.mock.calls[0][0].onConfirm as (id: string, name: string, args: unknown, reason: string) => Promise<boolean>;
     void confirm('confirming', 'browser_type', {}, 'confirm');
     useChat.getState().stop();
+    expect(agent.abort).toHaveBeenCalledOnce();
     expect(useChat.getState().toolActivities.map((activity) => activity.status)).toEqual(['stopped', 'stopped']);
-    agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'running', toolName: 'browser_click', isError: true, result: 'late' });
+    agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'running', toolName: 'browser_click', isError: false, result: 'late' });
     agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'confirming', toolName: 'browser_type', isError: true, result: 'late' });
     expect(useChat.getState().toolActivities.map((activity) => activity.status)).toEqual(['stopped', 'stopped']);
+    resolvePrompt();
     await send;
   });
 
