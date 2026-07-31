@@ -5,6 +5,7 @@ import {
   filterShortcutCommands,
   groupConversationsByDay,
   normalizeShortcutCommand,
+  resolvePageAttached,
   summarizeToolActivities,
   type ResolvedShortcutCommand,
 } from './presentation';
@@ -120,5 +121,20 @@ describe('summarizeToolActivities', () => {
 
   it.each(['denied', 'stopped'] as const)('keeps %s as the terminal summary', (status) => {
     expect(summarizeToolActivities([{ id: '1', name: 'write', status }])).toMatchObject({ status, activeId: '1' });
+  });
+});
+
+describe('resolvePageAttached', () => {
+  it.each([
+    ['available', true, true],
+    ['available', false, false],
+    ['loading', true, true],
+    ['loading', false, false],
+    ['restricted', true, false],
+    ['restricted', false, false],
+    ['error', true, false],
+    ['error', false, false],
+  ] as const)('status=%s, attachPageByDefault=%s -> %s', (status, attachPageByDefault, expected) => {
+    expect(resolvePageAttached(status, attachPageByDefault)).toBe(expected);
   });
 });
