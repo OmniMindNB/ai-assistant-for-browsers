@@ -27,14 +27,13 @@ describe('workbench preferences', () => {
     installStorage();
 
     await expect(loadWorkbenchPreferences()).resolves.toEqual({
-      defaultMode: 'ask',
       attachPageByDefault: true,
     });
   });
 
   it('rejects invalid persisted values without rewriting storage', async () => {
     const { set } = installStorage({
-      workbenchPreferences: { defaultMode: 'unsafe', attachPageByDefault: 'yes' },
+      workbenchPreferences: { attachPageByDefault: 'yes' },
     });
 
     await expect(loadWorkbenchPreferences()).rejects.toThrow('Invalid workbench preferences');
@@ -42,15 +41,26 @@ describe('workbench preferences', () => {
   });
 
   it('returns a valid stored preference record unchanged', async () => {
-    const stored = { defaultMode: 'agent' as const, attachPageByDefault: false };
+    const stored = { attachPageByDefault: false };
     installStorage({ [WORKBENCH_PREFERENCES_KEY]: stored });
 
     await expect(loadWorkbenchPreferences()).resolves.toEqual(stored);
   });
 
+  it('ignores a leftover defaultMode field from a pre-upgrade stored record', async () => {
+    installStorage({
+      [WORKBENCH_PREFERENCES_KEY]: { defaultMode: 'agent', attachPageByDefault: false },
+    });
+
+    await expect(loadWorkbenchPreferences()).resolves.toEqual({
+      defaultMode: 'agent',
+      attachPageByDefault: false,
+    });
+  });
+
   it('persists a complete preference record under the dedicated key', async () => {
     const { set } = installStorage();
-    const preferences = { ...DEFAULT_WORKBENCH_PREFERENCES, defaultMode: 'agent' as const };
+    const preferences = { ...DEFAULT_WORKBENCH_PREFERENCES, attachPageByDefault: false };
 
     await saveWorkbenchPreferences(preferences);
 
