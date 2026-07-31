@@ -815,11 +815,16 @@ async function runAgent(
       const last = findLastAssistant(agent.state.messages);
       acc = extractLastAssistantText(agent.state.messages) || describeEmptyAgentRun(last);
       if (!extractLastAssistantText(agent.state.messages)) {
-        console.error('[Aluminum] Agent 未产生文本结果', {
-          stopReason: last?.stopReason,
-          errorMessage: last?.errorMessage,
-          lastAssistantContent: last?.content,
-        });
+        // 传对象给 console.error 在 chrome://extensions 错误面板里会被字符串化成
+        // "[object Object]"（该面板不支持对象展开），所以这里改成打印可读文本。
+        console.error(
+          '[Aluminum] Agent 未产生文本结果',
+          compactJson({
+            stopReason: last?.stopReason,
+            errorMessage: last?.errorMessage,
+            lastAssistantContent: last?.content,
+          }),
+        );
       }
       replaceLastAssistant(set, acc);
     }
