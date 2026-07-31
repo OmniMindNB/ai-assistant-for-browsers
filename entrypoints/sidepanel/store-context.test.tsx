@@ -729,6 +729,42 @@ describe('chat store page context', () => {
     await send;
   });
 
+  it('logs a failed tool call to the console without exposing the raw result on tool activity state', async () => {
+    let resolvePrompt!: () => void;
+    const agent = makeAgent();
+    agent.prompt.mockImplementation(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    mocks.sendMessage.mockImplementation((type: string) => {
+      if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: [
+        'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE',
+        'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION',
+        'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE', 'RESET_TURN_SNAPSHOT', 'REVERT_CHANGES',
+      ] } });
+      return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const send = useChat.getState().send('read the page');
+    await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalled());
+    agentEventListener?.({ type: 'tool_execution_start', toolCallId: 'call-1', toolName: 'browser_read_page' });
+    agentEventListener?.({
+      type: 'tool_execution_end',
+      toolCallId: 'call-1',
+      toolName: 'browser_read_page',
+      isError: true,
+      result: 'Could not establish connection. Receiving end does not exist.',
+    });
+    expect(useChat.getState().toolActivities).toMatchObject([{ id: 'call-1', status: 'error' }]);
+    expect(useChat.getState().toolActivities[0]).not.toHaveProperty('detail');
+    expect(consoleError).toHaveBeenCalledWith(
+      '[Aluminum] tool execution failed',
+      'browser_read_page',
+      'Could not establish connection. Receiving end does not exist.',
+    );
+    consoleError.mockRestore();
+    resolvePrompt();
+    await send;
+  });
+
   it('stops running and confirming agent activities and preserves them against late errors', async () => {
     let rejectAbort!: (reason: Error) => void;
     let releaseConfirmation!: () => void;

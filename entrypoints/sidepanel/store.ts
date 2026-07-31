@@ -762,6 +762,12 @@ async function runAgent(
 
     if (event.type === 'tool_execution_end') {
       const blocked = event.isError && isToolGuardBlockResult(event.result);
+      // 聊天界面里的活动卡片刻意不展示原始 tool result（可能带用户输入的敏感值，见下方
+      // "does not expose raw tool payloads" 一类用例），所以失败原因只打到控制台，方便
+      // 打开 DevTools 排查，不在 UI 上泄露。
+      if (event.isError && !blocked) {
+        console.error('[Aluminum] tool execution failed', event.toolName, event.result);
+      }
       upsertToolActivity(set, {
         id: event.toolCallId,
         name: event.toolName,
