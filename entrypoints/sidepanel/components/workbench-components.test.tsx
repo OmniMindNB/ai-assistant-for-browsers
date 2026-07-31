@@ -12,7 +12,6 @@ import type { PageContextState, ToolActivity } from '../store';
 import App from '../App';
 import { AgentActivityCard } from './AgentActivityCard';
 import { HistoryDrawer } from './HistoryDrawer';
-import { ModeSwitch } from './ModeSwitch';
 import { PageContextBar } from './PageContextBar';
 import { WorkbenchEmptyState } from './WorkbenchEmptyState';
 import { WorkbenchHeader } from './WorkbenchHeader';
@@ -39,7 +38,7 @@ const chatStore = {
     title: 'Example article',
     url: 'https://example.com/article',
   } as PageContextState,
-  workbenchPreferences: { defaultMode: 'ask' as const, attachPageByDefault: true },
+  workbenchPreferences: { attachPageByDefault: true },
   setInput: vi.fn(),
   refreshProvider: vi.fn(),
   refreshShortcuts: vi.fn(),
@@ -163,7 +162,7 @@ beforeEach(() => {
       title: 'Example article',
       url: 'https://example.com/article',
     },
-    workbenchPreferences: { defaultMode: 'ask' as const, attachPageByDefault: true },
+    workbenchPreferences: { attachPageByDefault: true },
   });
   chatStore.send.mockResolvedValue(true);
   storageChangeListener = undefined;
@@ -735,20 +734,17 @@ describe('workbench context controls', () => {
     expect(screen.getByRole('button', { name: 'Retry page context' })).toHaveClass('max-w-full', 'min-w-0', 'whitespace-normal');
   });
 
-  it('changes empty suggestions between ask and agent modes', () => {
-    const { rerender } = render(
+  it('shows a single unified empty-state message regardless of intent', () => {
+    render(
       <LocaleProvider>
-        <WorkbenchEmptyState mode="ask" shortcuts={emptyStateShortcuts} busy={false} onRunShortcut={vi.fn()} />
+        <WorkbenchEmptyState shortcuts={emptyStateShortcuts} busy={false} onRunShortcut={vi.fn()} />
       </LocaleProvider>,
     );
-    expect(screen.getByText('Ask about this page')).toBeVisible();
 
-    rerender(
-      <LocaleProvider>
-        <WorkbenchEmptyState mode="agent" shortcuts={emptyStateShortcuts} busy={false} onRunShortcut={vi.fn()} />
-      </LocaleProvider>,
-    );
-    expect(screen.getByText('Describe a browser task')).toBeVisible();
+    expect(screen.getByText('Ready when you are')).toBeVisible();
+    expect(
+      screen.getByText('Ask about the current page, or describe a browser task you want me to complete.'),
+    ).toBeVisible();
   });
 
   it.each([
@@ -762,21 +758,10 @@ describe('workbench context controls', () => {
     expect(screen.getAllByText(detail).length).toBeGreaterThan(0);
   });
 
-  it('exposes pressed state for the active mode', () => {
-    render(
-      <LocaleProvider>
-        <ModeSwitch mode="agent" onChange={vi.fn()} />
-      </LocaleProvider>,
-    );
-
-    expect(screen.getByRole('button', { name: 'Ask' })).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByRole('button', { name: 'Agent' })).toHaveAttribute('aria-pressed', 'true');
-  });
-
   it('limits empty-state shortcuts to four entries', () => {
     render(
       <LocaleProvider>
-        <WorkbenchEmptyState mode="ask" shortcuts={emptyStateShortcuts} busy={false} onRunShortcut={vi.fn()} />
+        <WorkbenchEmptyState shortcuts={emptyStateShortcuts} busy={false} onRunShortcut={vi.fn()} />
       </LocaleProvider>,
     );
 
@@ -801,7 +786,7 @@ describe('workbench context controls', () => {
     expect(screen.getByRole('button', { name: 'Add page context' })).toBeVisible();
   });
 
-  it('runs an Agent-mode restricted-page message without browser tools and then resets detachment', async () => {
+  it('runs a restricted-page message without browser tools and then resets detachment', async () => {
     const user = userEvent.setup();
     chatStore.pageContext = {
       status: 'restricted',
@@ -816,7 +801,6 @@ describe('workbench context controls', () => {
       </LocaleProvider>,
     );
 
-    await user.click(screen.getByRole('button', { name: 'Agent' }));
     await user.click(screen.getByRole('button', { name: 'Continue without page context' }));
     await user.click(screen.getByRole('textbox', { name: 'Message input' }));
     await user.keyboard('{Enter}');

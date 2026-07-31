@@ -16,14 +16,13 @@ import {
 import { STORAGE_KEY } from '@/lib/settings';
 import MessageEditor from './MessageEditor';
 import { HistoryDrawer } from './components/HistoryDrawer';
-import { ModeSwitch } from './components/ModeSwitch';
 import { PageContextBar } from './components/PageContextBar';
 import { WorkbenchEmptyState } from './components/WorkbenchEmptyState';
 import { WorkbenchHeader } from './components/WorkbenchHeader';
 import { AgentActivityCard } from './components/AgentActivityCard';
 import { WorkbenchComposer } from './components/WorkbenchComposer';
 import type { PendingConfirmation, UIMessage } from './store';
-import { WORKBENCH_PREFERENCES_KEY, type WorkbenchMode } from '@/lib/workbench/preferences';
+import { WORKBENCH_PREFERENCES_KEY } from '@/lib/workbench/preferences';
 import type { ResolvedShortcutCommand } from '@/lib/workbench/presentation';
 import {
   IconChevronDown,
@@ -72,7 +71,6 @@ export default function App() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [mode, setMode] = useState<WorkbenchMode>('ask');
   const [pageAttached, setPageAttached] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const historyTriggerRef = useRef<HTMLButtonElement>(null);
@@ -106,7 +104,6 @@ export default function App() {
     const isNewEmptyConversation =
       messages.length === 0 && input.trim().length === 0 && !busy && !pendingConfirmation && toolActivities.length === 0;
     if (!isNewEmptyConversation) return;
-    setMode(workbenchPreferences.defaultMode);
     setPageAttached(workbenchPreferences.attachPageByDefault);
   }, [busy, input, messages.length, pendingConfirmation, toolActivities.length, workbenchPreferences]);
 
@@ -209,14 +206,12 @@ export default function App() {
   function newChat() {
     clear();
     setHistoryOpen(false);
-    setMode(workbenchPreferences.defaultMode);
     setPageAttached(workbenchPreferences.attachPageByDefault);
   }
 
   async function pickConversation(id: string) {
     if (await openConversation(id)) {
       const currentPreferences = useChat.getState().workbenchPreferences;
-      setMode(currentPreferences.defaultMode);
       setPageAttached(currentPreferences.attachPageByDefault);
       setHistoryOpen(false);
     }
@@ -263,16 +258,11 @@ export default function App() {
             onRetry={refreshPageContext}
           />
 
-          <div className="border-b border-neutral-200 px-4 py-2 dark:border-neutral-800">
-            <ModeSwitch mode={mode} onChange={setMode} />
-          </div>
-
           <div className="relative flex-1 overflow-hidden">
             <main ref={scrollRef} className="h-full overflow-y-auto">
               <div className="mx-auto flex min-h-full max-w-3xl flex-col gap-6 px-4 py-6">
                 {messages.length === 0 ? (
                   <WorkbenchEmptyState
-                    mode={mode}
                     shortcuts={resolvedShortcuts}
                     busy={busy}
                     onRunShortcut={executeShortcut}
@@ -338,7 +328,6 @@ export default function App() {
             providers={providers}
             selectedProviderId={selectedProviderId}
             selectedModel={selectedModel}
-            mode={mode}
             onInput={setInput}
             onSend={submitMessage}
             onStop={stop}

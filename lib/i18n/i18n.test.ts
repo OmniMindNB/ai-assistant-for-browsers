@@ -22,13 +22,9 @@ const privacyKeys = [
 ] as const;
 
 const contextWorkbenchKeys = [
-  'workbench.modeSwitch',
-  'workbench.modeAsk',
-  'workbench.modeAgent',
-  'workbench.emptyAskTitle',
-  'workbench.emptyAskDescription',
-  'workbench.emptyAgentTitle',
-  'workbench.emptyAgentDescription',
+  'workbench.composerPlaceholder',
+  'workbench.emptyTitle',
+  'workbench.emptyDescription',
   'workbench.untitledPage',
   'agentActivity.cardLabel',
   'agentActivity.liveStatus',
