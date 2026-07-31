@@ -699,6 +699,41 @@ describe('chat store page context', () => {
     await useChat.getState().send('hello', { withoutBrowserTools: true });
 
     expect(mocks.createBrowserAgent).toHaveBeenCalledWith(expect.objectContaining({ tools: [] }));
+    // 该轮明确不读取当前页面，因此不能把页面标题/地址注入系统提示词。
+    const { systemPrompt } = mocks.createBrowserAgent.mock.calls[0][0];
+    expect(systemPrompt).not.toContain('https://example.com/');
+    expect(systemPrompt).not.toContain('id=7');
+  });
+
+  it('injects the pinned tab and current time into the system prompt on a normal send', async () => {
+    mocks.sendMessage.mockImplementation((type: string) => {
+      if (type === 'GET_ACTIVE_TAB') {
+        return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+      }
+      if (type === 'PING') {
+        return Promise.resolve({
+          ok: true,
+          data: {
+            supportedTypes: [
+              'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML',
+              'GET_COMPUTED_STYLE', 'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT',
+              'TYPE_TEXT', 'SELECT_OPTION', 'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
+              'RESET_TURN_SNAPSHOT', 'REVERT_CHANGES',
+            ],
+          },
+        });
+      }
+      return Promise.resolve({ ok: true, data: {} });
+    });
+
+    await useChat.getState().send('hello');
+
+    const { systemPrompt } = mocks.createBrowserAgent.mock.calls[0][0];
+    expect(systemPrompt).toContain('<runtime_context>');
+    expect(systemPrompt).toContain('id=7');
+    expect(systemPrompt).toContain('title: "Example"');
+    expect(systemPrompt).toContain('url: "https://example.com/"');
+    expect(systemPrompt).toMatch(/当前时间：\d{4}-\d{2}-\d{2} \d{2}:\d{2} 星期./);
   });
 
   it('marks a rejected confirmation denied and preserves it against a late error event', async () => {

@@ -62,6 +62,14 @@ export function t(key: TranslationKey, vars?: Record<string, string | number>): 
 
 export type Translate = typeof t;
 
+/**
+ * 当前解析后的语言。与 t() 读同一个模块级变量，因此在 React 组件外（如 Zustand store）
+ * 的可用性和新鲜度与 t() 完全一致——都依赖 LocaleProvider 挂载时调用过 applyLocale。
+ */
+export function getCurrentLocale(): ResolvedLocale {
+  return currentLocale;
+}
+
 interface LocaleContextValue {
   locale: LocaleMode;
   resolved: ResolvedLocale;

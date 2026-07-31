@@ -83,10 +83,18 @@
   color: #6b7280;
   margin: 0.5em 0;
 }
+/* 表格横向滚动容器（由 Markdown.tsx 的 components.table 包裹）。
+   宽表格在窄侧边栏里滚动而不是挤压或溢出：容器裁掉超出部分并提供滚动，
+   表格自身按 max-content 排版（列不被压到换行），min-width:100% 保证窄表格仍撑满。 */
+.md-body .md-table-wrap {
+  overflow-x: auto;
+  margin: 0.6em 0;
+}
 .md-body table {
   border-collapse: collapse;
-  margin: 0.6em 0;
   font-size: 0.9em;
+  width: max-content;
+  min-width: 100%;
 }
 .md-body th,
 .md-body td {

@@ -8,7 +8,11 @@ export interface PermissionDecision {
   reason?: string;
 }
 
-const READ_ONLY_TOOLS = new Set([
+/**
+ * 这几张表是工具分级的唯一来源：系统提示词（system-prompt.ts）列举写工具、
+ * 侧边栏判断本轮是否产生改动，都从这里推导，避免新增工具时多处漏改。
+ */
+export const READ_ONLY_TOOL_NAMES = new Set([
   'browser_read_page',
   'browser_get_active_tab',
   'browser_query_dom',
@@ -21,9 +25,9 @@ const READ_ONLY_TOOLS = new Set([
   'browser_screenshot',
 ]);
 
-const AUTO_ALLOW_TOOLS = new Set(['browser_revert_changes']);
+export const AUTO_ALLOW_TOOL_NAMES = new Set(['browser_revert_changes']);
 
-const CONFIRM_TOOLS = new Set([
+export const CONFIRM_TOOL_NAMES = new Set([
   'browser_set_style',
   'browser_modify_dom',
   'browser_click',
@@ -34,10 +38,10 @@ const CONFIRM_TOOLS = new Set([
   'browser_set_storage',
 ]);
 
-const DENY_TOOLS = new Set(['browser_eval_raw']);
+export const DENY_TOOL_NAMES = new Set(['browser_eval_raw']);
 
 export function decideToolPermission(toolName: string, args: unknown): PermissionDecision {
-  if (DENY_TOOLS.has(toolName)) {
+  if (DENY_TOOL_NAMES.has(toolName)) {
     return { level: 'deny', reason: `工具 ${toolName} 被全局禁止。` };
   }
 
@@ -54,9 +58,9 @@ export function decideToolPermission(toolName: string, args: unknown): Permissio
     }
   }
 
-  if (READ_ONLY_TOOLS.has(toolName)) return { level: 'always_allow' };
-  if (AUTO_ALLOW_TOOLS.has(toolName)) return { level: 'auto_allow' };
-  if (CONFIRM_TOOLS.has(toolName)) {
+  if (READ_ONLY_TOOL_NAMES.has(toolName)) return { level: 'always_allow' };
+  if (AUTO_ALLOW_TOOL_NAMES.has(toolName)) return { level: 'auto_allow' };
+  if (CONFIRM_TOOL_NAMES.has(toolName)) {
     return { level: 'confirm', reason: `工具 ${toolName} 会修改页面或浏览器状态，需要用户确认。` };
   }
 
