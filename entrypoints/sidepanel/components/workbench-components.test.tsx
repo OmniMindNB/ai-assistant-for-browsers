@@ -231,7 +231,6 @@ const readingShortcut: ResolvedShortcutCommand = {
 const composerProps: WorkbenchComposerProps = {
   input: '',
   busy: false,
-  pageAttached: true,
   pageContext: availableContext,
   providers: [],
   selectedProviderId: null,
@@ -240,7 +239,7 @@ const composerProps: WorkbenchComposerProps = {
   onInput: vi.fn(),
   onSend: vi.fn(),
   onStop: vi.fn(),
-  onTogglePageAttached: vi.fn(),
+  onRetryPageContext: vi.fn(),
   onRunShortcut: vi.fn(),
   onSelectProviderModel: vi.fn(),
 };
@@ -453,25 +452,23 @@ describe('workbench composer', () => {
     expect(screen.getByRole('menu', { name: 'Model selection' })).toBeVisible();
   });
 
-  it('shows localized, accurate page-context states', () => {
-    const { rerender } = render(<ComposerHarness pageContext={availableContext} pageAttached />);
-    const chip = screen.getByRole('button', { name: 'Page context: Example article' });
-    expect(chip).toHaveAttribute('aria-pressed', 'true');
-    expect(chip).toHaveAttribute('title', 'Example article');
-    expect(chip).toHaveTextContent('Attached');
-
-    rerender(<ComposerHarness pageContext={availableContext} pageAttached={false} />);
-    expect(screen.getByRole('button', { name: 'Page context: Example article' })).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByText('Not attached')).toBeVisible();
+  it('only shows a page-context notice for restricted or errored tabs', () => {
+    const { rerender } = render(<ComposerHarness pageContext={availableContext} />);
+    expect(screen.queryByText('This page cannot be read.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry page context' })).not.toBeInTheDocument();
 
     rerender(<ComposerHarness pageContext={{ status: 'loading' }} />);
-    expect(screen.getByRole('button', { name: 'Page context: Checking page context…' })).toBeDisabled();
-
-    rerender(<ComposerHarness pageContext={{ status: 'error', message: 'Offline' }} />);
-    expect(screen.getByRole('button', { name: 'Page context: Page context unavailable: Offline' })).toBeDisabled();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
 
     rerender(<ComposerHarness pageContext={{ status: 'restricted', tabId: 2, title: 'Extensions', url: 'chrome://extensions/' }} />);
-    expect(screen.getByRole('button', { name: 'Page context: This page cannot be read.' })).toBeDisabled();
+    expect(screen.getByText('This page cannot be read.')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Retry page context' })).not.toBeInTheDocument();
+
+    const onRetryPageContext = vi.fn();
+    rerender(<ComposerHarness pageContext={{ status: 'error', message: 'Offline' }} onRetryPageContext={onRetryPageContext} />);
+    expect(screen.getByText('Page context unavailable: Offline')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry page context' }));
+    expect(onRetryPageContext).toHaveBeenCalledOnce();
   });
 
   it('keeps English and Chinese composer labels in sync', () => {

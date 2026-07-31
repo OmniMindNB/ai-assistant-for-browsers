@@ -16,14 +16,13 @@ import {
 import { STORAGE_KEY } from '@/lib/settings';
 import MessageEditor from './MessageEditor';
 import { HistoryDrawer } from './components/HistoryDrawer';
-import { PageContextBar } from './components/PageContextBar';
 import { WorkbenchEmptyState } from './components/WorkbenchEmptyState';
 import { WorkbenchHeader } from './components/WorkbenchHeader';
 import { AgentActivityCard } from './components/AgentActivityCard';
 import { WorkbenchComposer } from './components/WorkbenchComposer';
 import type { PendingConfirmation, UIMessage } from './store';
 import { WORKBENCH_PREFERENCES_KEY } from '@/lib/workbench/preferences';
-import type { ResolvedShortcutCommand } from '@/lib/workbench/presentation';
+import { resolvePageAttached, type ResolvedShortcutCommand } from '@/lib/workbench/presentation';
 import {
   IconChevronDown,
   IconPencil,
@@ -71,7 +70,6 @@ export default function App() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [pageAttached, setPageAttached] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const historyTriggerRef = useRef<HTMLButtonElement>(null);
   // 是否仍处于“跟随最新内容”状态；用户向上滚动后置 false，直到手动回到底部或发起新一轮。
@@ -99,13 +97,6 @@ export default function App() {
     refreshWorkbenchPreferences,
     restoreTabConversation,
   ]);
-
-  useEffect(() => {
-    const isNewEmptyConversation =
-      messages.length === 0 && input.trim().length === 0 && !busy && !pendingConfirmation && toolActivities.length === 0;
-    if (!isNewEmptyConversation) return;
-    setPageAttached(workbenchPreferences.attachPageByDefault);
-  }, [busy, input, messages.length, pendingConfirmation, toolActivities.length, workbenchPreferences]);
 
   useEffect(() => {
     const listener = (
@@ -172,8 +163,8 @@ export default function App() {
 
   async function submitMessage() {
     resetToFollowing();
-    const started = await send(undefined, { withoutBrowserTools: !pageAttached });
-    if (started && !pageAttached) setPageAttached(workbenchPreferences.attachPageByDefault);
+    const attached = resolvePageAttached(pageContext.status, workbenchPreferences.attachPageByDefault);
+    await send(undefined, { withoutBrowserTools: !attached });
   }
 
   function executeShortcut(shortcut: ShortcutConfig) {
@@ -206,13 +197,10 @@ export default function App() {
   function newChat() {
     clear();
     setHistoryOpen(false);
-    setPageAttached(workbenchPreferences.attachPageByDefault);
   }
 
   async function pickConversation(id: string) {
     if (await openConversation(id)) {
-      const currentPreferences = useChat.getState().workbenchPreferences;
-      setPageAttached(currentPreferences.attachPageByDefault);
       setHistoryOpen(false);
     }
   }
@@ -250,13 +238,6 @@ export default function App() {
           )}
 
           {providers.length === 0 && <ProviderBanner onOpenSettings={openSettings} />}
-
-          <PageContextBar
-            context={pageContext}
-            attached={pageAttached}
-            onToggleAttached={() => setPageAttached((attached) => !attached)}
-            onRetry={refreshPageContext}
-          />
 
           <div className="relative flex-1 overflow-hidden">
             <main ref={scrollRef} className="h-full overflow-y-auto">
@@ -323,7 +304,6 @@ export default function App() {
           <WorkbenchComposer
             input={input}
             busy={busy}
-            pageAttached={pageAttached}
             pageContext={pageContext}
             providers={providers}
             selectedProviderId={selectedProviderId}
@@ -332,7 +312,7 @@ export default function App() {
             onSend={submitMessage}
             onStop={stop}
             shortcuts={resolvedShortcuts}
-            onTogglePageAttached={() => setPageAttached((attached) => !attached)}
+            onRetryPageContext={refreshPageContext}
             onRunShortcut={executeShortcut}
             onSelectProviderModel={selectProviderAndModel}
           />

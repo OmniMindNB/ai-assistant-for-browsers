@@ -9,7 +9,6 @@ import { IconCheck, IconChevronDown, IconSend, IconStop } from '../icons';
 export interface WorkbenchComposerProps {
   input: string;
   busy: boolean;
-  pageAttached: boolean;
   pageContext: PageContextState;
   providers: ProviderConfig[];
   selectedProviderId: string | null;
@@ -18,7 +17,7 @@ export interface WorkbenchComposerProps {
   onInput(value: string): void;
   onSend(): void;
   onStop(): void;
-  onTogglePageAttached(): void;
+  onRetryPageContext(): void;
   onRunShortcut(shortcut: ShortcutConfig): void;
   onSelectProviderModel(providerId: string, model: string): void;
 }
@@ -32,7 +31,6 @@ function startsSlashCommand(input: string): boolean {
 export function WorkbenchComposer({
   input,
   busy,
-  pageAttached,
   pageContext,
   providers,
   selectedProviderId,
@@ -41,7 +39,7 @@ export function WorkbenchComposer({
   onInput,
   onSend,
   onStop,
-  onTogglePageAttached,
+  onRetryPageContext,
   onRunShortcut,
   onSelectProviderModel,
 }: WorkbenchComposerProps) {
@@ -58,20 +56,17 @@ export function WorkbenchComposer({
     ? startsSlashCommand(input) ? slashCommands : filterShortcutCommands(shortcuts, '/')
     : [];
   const canSend = input.trim().length > 0 && !busy;
-  const pageIsAvailable = pageContext.status === 'available';
   const selectedProvider = providers.find((provider) => provider.id === selectedProviderId);
   const currentModel = selectedModel || selectedProvider?.model || '';
   const modelOptions = providers.flatMap((provider) =>
     providerModels(provider).map((model) => ({ provider, model })),
   );
-  const pageContextStatus =
-    pageContext.status === 'available'
-      ? pageContext.title
-      : pageContext.status === 'loading'
-        ? t('workbench.pageContextLoading')
-        : pageContext.status === 'error'
-          ? t('workbench.pageContextUnavailable', { message: pageContext.message })
-          : t('workbench.restrictedPage');
+  const pageContextNotice =
+    pageContext.status === 'restricted'
+      ? { message: t('workbench.restrictedPage'), retryable: false }
+      : pageContext.status === 'error'
+        ? { message: t('workbench.pageContextUnavailable', { message: pageContext.message }), retryable: true }
+        : null;
 
   useEffect(() => {
     const element = textareaRef.current;
@@ -217,6 +212,20 @@ export function WorkbenchComposer({
   return (
     <div ref={rootRef} onBlur={handleComposerBlur} className="relative border-t border-neutral-200 bg-neutral-50 px-3 py-3 dark:border-neutral-800 dark:bg-neutral-950">
       <div className="mx-auto max-w-3xl">
+        {pageContextNotice && (
+          <div role="status" aria-live="polite" className="mb-2 flex flex-wrap items-center gap-2 text-xs text-amber-800 dark:text-amber-300">
+            <span className="min-w-0 break-words">{pageContextNotice.message}</span>
+            {pageContextNotice.retryable && (
+              <button
+                type="button"
+                onClick={onRetryPageContext}
+                className="shrink-0 font-medium underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+              >
+                {t('workbench.retryPageContext')}
+              </button>
+            )}
+          </div>
+        )}
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <button
             type="button"
@@ -230,20 +239,6 @@ export function WorkbenchComposer({
             className="inline-flex items-center rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
           >
             /
-          </button>
-          <button
-            type="button"
-            disabled={!pageIsAvailable}
-            aria-pressed={pageIsAvailable ? pageAttached : undefined}
-            aria-label={`${t('workbench.pageContext')}: ${pageContextStatus}`}
-            title={pageContextStatus}
-            onClick={onTogglePageAttached}
-            className="inline-flex max-w-[16rem] items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
-          >
-            <span className="min-w-0 truncate">
-              {pageContextStatus}
-            </span>
-            {pageIsAvailable && <span className="shrink-0 text-neutral-400">{pageAttached ? t('workbench.pageContextAttached') : t('workbench.pageContextDetached')}</span>}
           </button>
 
           {providers.length > 0 && (
