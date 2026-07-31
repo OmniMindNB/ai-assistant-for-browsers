@@ -4,21 +4,12 @@ import { en } from './locales/en';
 import { zh } from './locales/zh';
 
 const privacyKeys = [
-  'privacy.loading',
-  'privacy.title',
-  'privacy.intro',
   'privacy.pageDataTitle',
   'privacy.pageDataBody',
   'privacy.localDataTitle',
   'privacy.localDataBody',
   'privacy.noBackendTitle',
   'privacy.noBackendBody',
-  'privacy.readPolicy',
-  'privacy.notNow',
-  'privacy.agree',
-  'privacy.saving',
-  'privacy.deferred',
-  'privacy.saveFailed',
 ] as const;
 
 const contextWorkbenchKeys = [

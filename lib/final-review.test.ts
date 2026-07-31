@@ -14,11 +14,11 @@ describe('Chrome Web Store release surface', () => {
   });
 });
 
-describe('privacy consent translations', () => {
+describe('privacy settings translations', () => {
   it('distinguishes local storage from provider transmission in English', () => {
     expect(en['privacy.localDataTitle']).toBe('Stored locally in your browser');
     expect(en['privacy.localDataBody']).toContain(
-      'Provider settings, API keys, consent state, and conversation history are stored locally in your browser.',
+      'Provider settings, API keys, and conversation history are stored locally in your browser.',
     );
     expect(en['privacy.pageDataBody']).toContain(
       'your API key, current prompt, recent conversation context, and relevant page-derived results are sent directly to your configured AI provider endpoint',
@@ -28,7 +28,7 @@ describe('privacy consent translations', () => {
 
   it('distinguishes local storage from provider transmission in Simplified Chinese', () => {
     expect(zh['privacy.localDataTitle']).toBe('保存在浏览器本地');
-    expect(zh['privacy.localDataBody']).toContain('Provider 设置、API Key、同意状态和对话历史保存在浏览器本地');
+    expect(zh['privacy.localDataBody']).toContain('Provider 设置、API Key 和对话历史保存在浏览器本地');
     expect(zh['privacy.pageDataBody']).toContain(
       'API Key、当前提示词、近期对话上下文和相关页面结果会直接发送到你配置的 AI Provider 端点',
     );
