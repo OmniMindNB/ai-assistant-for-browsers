@@ -12,7 +12,6 @@ import type { PageContextState, ToolActivity } from '../store';
 import App from '../App';
 import { AgentActivityCard } from './AgentActivityCard';
 import { HistoryDrawer } from './HistoryDrawer';
-import { PageContextBar } from './PageContextBar';
 import { WorkbenchEmptyState } from './WorkbenchEmptyState';
 import { WorkbenchHeader } from './WorkbenchHeader';
 import { WorkbenchComposer, type WorkbenchComposerProps } from './WorkbenchComposer';
@@ -640,95 +639,58 @@ describe('workbench context controls', () => {
     expect(chatStore.refreshProvider).toHaveBeenCalled();
     expect(chatStore.refreshWorkbenchPreferences).toHaveBeenCalled();
   });
-  it('shows the active page title and allows one-turn detachment', async () => {
+  it('sends with browser tools on an available page by default', async () => {
     const user = userEvent.setup();
-    const toggle = vi.fn();
+    chatStore.input = 'Summarize this';
     render(
       <LocaleProvider>
-        <PageContextBar context={availableContext} attached onToggleAttached={toggle} onRetry={vi.fn()} />
+        <App />
       </LocaleProvider>,
     );
 
-    expect(screen.getByText('Example article')).toBeVisible();
-    await user.click(screen.getByRole('button', { name: 'Remove page context' }));
-    expect(toggle).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole('textbox', { name: 'Message input' }));
+    await user.keyboard('{Enter}');
+
+    await waitFor(() => expect(chatStore.send).toHaveBeenCalledWith(undefined, { withoutBrowserTools: false }));
   });
 
-  it('shows a retry action for context errors', async () => {
+  it('sends without browser tools when attachPageByDefault is off', async () => {
     const user = userEvent.setup();
-    const retry = vi.fn();
+    chatStore.workbenchPreferences = { attachPageByDefault: false };
+    chatStore.input = 'Summarize this';
     render(
       <LocaleProvider>
-        <PageContextBar
-          context={{ status: 'error', message: 'Unavailable' }}
-          attached
-          onToggleAttached={vi.fn()}
-          onRetry={retry}
-        />
+        <App />
       </LocaleProvider>,
     );
 
-    await user.click(screen.getByRole('button', { name: 'Retry page context' }));
-    expect(retry).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole('textbox', { name: 'Message input' }));
+    await user.keyboard('{Enter}');
+
+    await waitFor(() => expect(chatStore.send).toHaveBeenCalledWith(undefined, { withoutBrowserTools: true }));
   });
 
-  it('offers a restricted tab an accessible no-page-context action', async () => {
+  it('automatically sends restricted-page messages without browser tools, with no click required', async () => {
     const user = userEvent.setup();
-    const toggle = vi.fn();
+    chatStore.pageContext = {
+      status: 'restricted',
+      tabId: 4,
+      title: 'Extensions',
+      url: 'chrome://extensions/',
+    };
+    chatStore.input = 'Open settings';
     render(
       <LocaleProvider>
-        <PageContextBar
-          context={{ status: 'restricted', tabId: 3, title: 'Extensions', url: 'chrome://extensions/' }}
-          attached
-          onToggleAttached={toggle}
-          onRetry={vi.fn()}
-        />
+        <App />
       </LocaleProvider>,
     );
 
     expect(screen.getByText('This page cannot be read.')).toBeVisible();
-    await user.click(screen.getByRole('button', { name: 'Continue without page context' }));
-    expect(toggle).toHaveBeenCalledOnce();
-  });
 
-  it('uses a wrapping narrow-screen structure for restricted page context', () => {
-    render(
-      <LocaleProvider>
-        <PageContextBar
-          context={{
-            status: 'restricted',
-            tabId: 3,
-            title: 'An unusually long restricted page title that must never force a horizontal overflow',
-            url: 'chrome://extensions/',
-          }}
-          attached
-          onToggleAttached={vi.fn()}
-          onRetry={vi.fn()}
-        />
-      </LocaleProvider>,
-    );
+    await user.click(screen.getByRole('textbox', { name: 'Message input' }));
+    await user.keyboard('{Enter}');
 
-    const action = screen.getByRole('button', { name: 'Continue without page context' });
-    expect(action).toHaveClass('max-w-full', 'min-w-0', 'whitespace-normal');
-    expect(action.parentElement).toHaveClass('flex-col', 'sm:flex-row');
-    expect(screen.getByLabelText(/unusually long restricted page title/i)).toHaveClass('break-words');
-  });
-
-  it('keeps loading and retryable context states shrinkable on narrow screens', () => {
-    const { rerender } = render(
-      <LocaleProvider>
-        <PageContextBar context={{ status: 'loading' }} attached onToggleAttached={vi.fn()} onRetry={vi.fn()} />
-      </LocaleProvider>,
-    );
-    expect(screen.getByRole('status')).toHaveClass('min-w-0', 'break-words');
-
-    rerender(
-      <LocaleProvider>
-        <PageContextBar context={{ status: 'error', message: 'A long context retrieval failure message' }} attached onToggleAttached={vi.fn()} onRetry={vi.fn()} />
-      </LocaleProvider>,
-    );
-    expect(screen.getByRole('alert')).toHaveClass('flex-col', 'sm:flex-row');
-    expect(screen.getByRole('button', { name: 'Retry page context' })).toHaveClass('max-w-full', 'min-w-0', 'whitespace-normal');
+    await waitFor(() => expect(chatStore.send).toHaveBeenCalledWith(undefined, { withoutBrowserTools: true }));
   });
 
   it('shows a single unified empty-state message regardless of intent', () => {
@@ -766,45 +728,6 @@ describe('workbench context controls', () => {
     expect(screen.queryByRole('button', { name: 'Shortcut 5' })).not.toBeInTheDocument();
   });
 
-  it('does not consume one-turn detachment when an empty normal send does not start', async () => {
-    const user = userEvent.setup();
-    chatStore.send.mockResolvedValue(false);
-    render(
-      <LocaleProvider>
-        <App />
-      </LocaleProvider>,
-    );
-
-    await user.click(screen.getByRole('button', { name: 'Remove page context' }));
-    await user.click(screen.getByRole('textbox', { name: 'Message input' }));
-    await user.keyboard('{Enter}');
-
-    expect(chatStore.send).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Add page context' })).toBeVisible();
-  });
-
-  it('runs a restricted-page message without browser tools and then resets detachment', async () => {
-    const user = userEvent.setup();
-    chatStore.pageContext = {
-      status: 'restricted',
-      tabId: 4,
-      title: 'Extensions',
-      url: 'chrome://extensions/',
-    };
-    chatStore.input = 'Open settings';
-    render(
-      <LocaleProvider>
-        <App />
-      </LocaleProvider>,
-    );
-
-    await user.click(screen.getByRole('button', { name: 'Continue without page context' }));
-    await user.click(screen.getByRole('textbox', { name: 'Message input' }));
-    await user.keyboard('{Enter}');
-
-    await waitFor(() => expect(chatStore.send).toHaveBeenCalledWith(undefined, { withoutBrowserTools: true }));
-    expect(screen.getByRole('button', { name: 'Continue without page context' })).toBeEnabled();
-  });
 });
 
 describe('workbench history', () => {
