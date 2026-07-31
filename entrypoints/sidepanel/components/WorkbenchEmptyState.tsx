@@ -1,5 +1,5 @@
 import type { ShortcutConfig } from '@/lib/shortcuts';
-import type { ResolvedShortcutCommand } from '@/lib/workbench/presentation';
+import { isUsableShortcutCommand, type ResolvedShortcutCommand } from '@/lib/workbench/presentation';
 import { IconSparkles } from '../icons';
 import { useTranslation } from '@/lib/i18n';
 
@@ -9,13 +9,9 @@ export interface WorkbenchEmptyStateProps {
   onRunShortcut(shortcut: ShortcutConfig): void;
 }
 
-function isUsableShortcut(command: ResolvedShortcutCommand): boolean {
-  return Boolean(command.config.id && command.resolved.id && command.resolved.name.trim() && command.resolved.prompt.trim());
-}
-
 export function WorkbenchEmptyState({ shortcuts, busy, onRunShortcut }: WorkbenchEmptyStateProps) {
   const { t } = useTranslation();
-  const suggestions = shortcuts.filter(isUsableShortcut).slice(0, 4);
+  const suggestions = shortcuts.filter(isUsableShortcutCommand).slice(0, 4);
 
   return (
     <div className="m-auto flex w-full max-w-md flex-col items-center text-center">

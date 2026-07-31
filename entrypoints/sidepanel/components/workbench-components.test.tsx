@@ -270,25 +270,6 @@ function ComposerHarness({ initialInput = '', ...props }: Partial<WorkbenchCompo
 }
 
 describe('workbench composer', () => {
-  it('opens and invokes slash commands from the clickable toolbar entry without replacing a draft', async () => {
-    const user = userEvent.setup();
-    const onRunShortcut = vi.fn();
-    render(<ComposerHarness initialInput="Keep this draft" onRunShortcut={onRunShortcut} />);
-
-    await user.click(screen.getByRole('button', { name: 'Open slash commands' }));
-    expect(screen.getByRole('textbox')).toHaveValue('Keep this draft');
-    expect(screen.getByRole('menu', { name: 'Slash commands' })).toBeVisible();
-    await user.click(screen.getByRole('menuitem', { name: '阅读页面' }));
-
-    expect(onRunShortcut).toHaveBeenCalledWith(readingShortcut.config);
-    expect(screen.getByRole('textbox')).toHaveValue('Keep this draft');
-  });
-
-  it('disables the clickable slash command entry while busy', () => {
-    render(<ComposerHarness busy />);
-    expect(screen.getByRole('button', { name: 'Open slash commands' })).toBeDisabled();
-  });
-
   it('opens slash commands, filters, and runs the selected command', async () => {
     const user = userEvent.setup();
     const onRunShortcut = vi.fn();
@@ -430,6 +411,7 @@ describe('workbench composer', () => {
     await waitFor(() => expect(screen.getByRole('menuitem', { name: 'model-one' })).toHaveFocus());
     await user.keyboard('{ArrowDown}');
     await waitFor(() => expect(screen.getByRole('menuitem', { name: 'model-two' })).toHaveFocus());
+    await user.tab();
     await user.tab();
     await user.tab();
 

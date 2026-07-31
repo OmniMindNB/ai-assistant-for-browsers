@@ -58,6 +58,10 @@ export function groupConversationsByDay(
     .map((key) => ({ key, records: grouped[key] }));
 }
 
+export function isUsableShortcutCommand(command: ResolvedShortcutCommand): boolean {
+  return Boolean(command.config.id && command.resolved.id && command.resolved.name.trim() && command.resolved.prompt.trim());
+}
+
 export function filterShortcutCommands(
   shortcuts: readonly ResolvedShortcutCommand[],
   query: string,

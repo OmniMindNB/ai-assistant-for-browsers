@@ -216,7 +216,6 @@ export const zh = {
   'chat.selectProviderModelAriaLabel': '选择 Provider 与模型',
   'chat.modelSelectionAriaLabel': '模型选择',
   'chat.slashCommandMenuAriaLabel': '快捷指令',
-  'chat.openSlashCommands': '打开快捷指令',
   'chat.noMatchingSlashCommands': '没有匹配的快捷指令',
   'chat.noModelSelected': '未选择',
   'store.noActiveTab': '未找到当前标签页，请确保有一个网页处于打开状态。',

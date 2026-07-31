@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FocusEvent, type KeyboardEvent } from
 import { useTranslation } from '@/lib/i18n';
 import { providerModels, type ProviderConfig } from '@/lib/settings';
 import type { ShortcutConfig, ResolvedShortcut } from '@/lib/shortcuts';
-import { filterShortcutCommands } from '@/lib/workbench/presentation';
+import { filterShortcutCommands, isUsableShortcutCommand } from '@/lib/workbench/presentation';
 import type { PageContextState } from '../store';
 import { IconCheck, IconChevronDown, IconSend, IconStop } from '../icons';
 
@@ -61,6 +61,7 @@ export function WorkbenchComposer({
   const modelOptions = providers.flatMap((provider) =>
     providerModels(provider).map((model) => ({ provider, model })),
   );
+  const quickShortcuts = shortcuts.filter(isUsableShortcutCommand).slice(0, 4);
   const pageContextNotice =
     pageContext.status === 'restricted'
       ? { message: t('workbench.restrictedPage'), retryable: false }
@@ -107,14 +108,6 @@ export function WorkbenchComposer({
     onRunShortcut(command.config);
     setOpenPopover(null);
     if (startsSlashCommand(input)) onInput('');
-    textareaRef.current?.focus();
-  }
-
-  function openSlashCommands() {
-    if (busy) return;
-    setOpenPopover('commands');
-    setHighlightedCommand(0);
-    if (!input.trim()) onInput('/');
     textareaRef.current?.focus();
   }
 
@@ -227,20 +220,6 @@ export function WorkbenchComposer({
           </div>
         )}
         <div className="mb-2 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={openSlashCommands}
-            aria-label={t('chat.openSlashCommands')}
-            title={t('chat.openSlashCommands')}
-            aria-haspopup="menu"
-            aria-expanded={openPopover === 'commands'}
-            aria-controls={openPopover === 'commands' ? 'workbench-slash-commands' : undefined}
-            className="inline-flex items-center rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
-          >
-            /
-          </button>
-
           {providers.length > 0 && (
             <div>
               <button
@@ -289,6 +268,20 @@ export function WorkbenchComposer({
               )}
             </div>
           )}
+
+          {quickShortcuts.map(({ config, resolved }) => (
+            <button
+              key={config.id}
+              type="button"
+              disabled={busy}
+              onClick={() => onRunShortcut(config)}
+              aria-label={resolved.name}
+              title={resolved.name}
+              className="inline-flex max-w-40 items-center rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
+            >
+              <span className="truncate">{resolved.name}</span>
+            </button>
+          ))}
         </div>
 
         <div className="relative flex items-end gap-2 rounded-2xl border border-neutral-300 bg-white p-2 shadow-sm transition-colors focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/30 dark:border-neutral-700 dark:bg-neutral-900">
