@@ -100,6 +100,7 @@
 
 | 日期 | 内容 | 关联 |
 |------|------|------|
+| 2026-07-31 | 简化聊天界面页面附加机制：删除 `PageContextBar` 组件、移除 `WorkbenchComposer` 的交互式 pill，只在受限/读取出错的页面显示不可点击的状态提示；`pageAttached` 从手动状态变为纯派生值（`resolvePageAttached`），受限/读取出错页面自动无需点击地不带浏览器工具，其余页面跟随全局设置 `attachPageByDefault`。验证：`pnpm compile` 通过，`pnpm test`（27 个测试文件、352 个测试）通过，`pnpm build`（Chrome MV3）成功构建。 | [设计](superpowers/specs/2026-07-31-simplify-page-attach-toggle-design.md) |
 | 2026-07-31 | 移除侧边栏「问答/Agent」模式切换：删除 `ModeSwitch` 组件、工作台偏好中的 `defaultMode` 字段与设置页模式单选组，以及相关 i18n 键，统一为单一输入区体验；`pageAttached`/`withoutBrowserTools` 行为不受影响。验证：`pnpm compile` 通过，`pnpm test`（27 个测试文件、348 个测试）通过，`pnpm build`（Chrome MV3）成功构建。 | [设计](superpowers/specs/2026-07-31-remove-ask-agent-mode-design.md) |
 | 2026-07-30 | 删除失败跨会话隔离回归：B 删除失败后，C 的独立持久化仍可完成，队列不会形成全局阻塞。验证：`pnpm test`（27 文件、347 测试）、`pnpm compile` 均通过。 | [设计](superpowers/specs/2026-07-30-sidepanel-context-workbench-redesign-design.md) |
 | 2026-07-30 | 删除队列测试覆盖补全：验证单次失败删除恢复写入、重叠删除 generation、失败删除后队列恢复以及 B/C 会话隔离。验证：`pnpm test`（27 文件、346 测试）、`pnpm compile`、`pnpm build`（Chrome MV3）均通过。 | [设计](superpowers/specs/2026-07-30-sidepanel-context-workbench-redesign-design.md) |

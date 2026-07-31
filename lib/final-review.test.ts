@@ -99,11 +99,11 @@ describe('side-panel shortcut rendering', () => {
   });
 
   it('renders page context status and configured provider models inside the composer', () => {
-    expect(source).toContain("pageContext.status === 'loading'");
+    expect(source).toContain("pageContext.status === 'restricted'");
     expect(source).toContain("pageContext.status === 'error'");
     expect(source).toContain("t('workbench.restrictedPage')");
     expect(source).toContain('providerModels(provider)');
-    expect(source).toContain('disabled={!pageIsAvailable}');
+    expect(source).toContain('onRetryPageContext');
   });
 
   it('connects slash and model popups to their controls with keyboard focus behavior', () => {
