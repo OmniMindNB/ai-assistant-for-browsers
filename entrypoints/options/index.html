@@ -3,6 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Chrome 的 options_ui 默认 open_in_tab=false，会把设置页"内嵌"进 chrome://extensions
+      的悬浮对话框里打开。该内嵌对话框是一个独立的顶层窗口，与本扩展按 tab 绑定的侧边栏
+      （见 background.ts 的 action.onClicked：sidePanel 只为当前 tabId enabled）互相抢占
+      窗口/标签页焦点——每次二者焦点切换，Chrome 都会重新评估侧边栏在"当前激活标签页"下
+      是否应该显示，于是观察到设置按钮点一下后新标签页/窗口不断反复开关，直到用户点别处
+      打断这个焦点拉锯为止。改为 open_in_tab=true，让设置页作为一个普通、稳定的标签页打开，
+      不再触发这条内嵌对话框路径，从根上避开这个焦点循环。
+    -->
+    <meta name="manifest.open_in_tab" content="true" />
     <title>Aluminum 设置</title>
   </head>
   <body>
