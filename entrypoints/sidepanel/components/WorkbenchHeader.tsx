@@ -58,7 +58,7 @@ export function WorkbenchHeader({
   }
 
   return (
-    <header className="flex items-center gap-1 border-b border-neutral-200 bg-neutral-50/80 px-2 py-2 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/80">
+    <header className="relative z-30 flex items-center gap-1 border-b border-neutral-200 bg-neutral-50/80 px-2 py-2 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/80">
       <button
         ref={historyTriggerRef}
         type="button"
