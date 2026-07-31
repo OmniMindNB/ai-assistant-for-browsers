@@ -4,7 +4,6 @@ import { providerModels, type ProviderConfig } from '@/lib/settings';
 import type { ShortcutConfig, ResolvedShortcut } from '@/lib/shortcuts';
 import { filterShortcutCommands } from '@/lib/workbench/presentation';
 import type { PageContextState } from '../store';
-import type { WorkbenchMode } from '@/lib/workbench/preferences';
 import { IconCheck, IconChevronDown, IconSend, IconStop } from '../icons';
 
 export interface WorkbenchComposerProps {
@@ -15,7 +14,6 @@ export interface WorkbenchComposerProps {
   providers: ProviderConfig[];
   selectedProviderId: string | null;
   selectedModel: string;
-  mode?: WorkbenchMode;
   shortcuts: Array<{ config: ShortcutConfig; resolved: ResolvedShortcut }>;
   onInput(value: string): void;
   onSend(): void;
@@ -39,7 +37,6 @@ export function WorkbenchComposer({
   providers,
   selectedProviderId,
   selectedModel,
-  mode = 'ask',
   shortcuts,
   onInput,
   onSend,
@@ -313,7 +310,7 @@ export function WorkbenchComposer({
             aria-expanded={openPopover === 'commands'}
             aria-controls={openPopover === 'commands' ? 'workbench-slash-commands' : undefined}
             aria-activedescendant={openPopover === 'commands' && commands.length ? `workbench-command-${commands[highlightedCommand]?.config.id}` : undefined}
-            placeholder={mode === 'agent' ? t('workbench.composerAgentPlaceholder') : t('workbench.composerAskPlaceholder')}
+            placeholder={t('workbench.composerPlaceholder')}
             className="max-h-40 min-h-[40px] flex-1 resize-none bg-transparent px-2 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none dark:text-neutral-100 dark:placeholder:text-neutral-600"
           />
           {busy ? (

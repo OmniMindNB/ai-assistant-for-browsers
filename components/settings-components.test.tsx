@@ -43,7 +43,7 @@ function deferred<T>() {
 describe('grouped options settings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    preferencesMocks.load.mockResolvedValue({ defaultMode: 'ask', attachPageByDefault: true });
+    preferencesMocks.load.mockResolvedValue({ attachPageByDefault: true });
     preferencesMocks.save.mockResolvedValue(undefined);
     storageData = {
       'aluminum:settings': {
@@ -116,19 +116,16 @@ describe('grouped options settings', () => {
   });
 
   it('keeps preference controls disabled until the initial preferences load', async () => {
-    const loading = deferred<{ defaultMode: 'ask' | 'agent'; attachPageByDefault: boolean }>();
+    const loading = deferred<{ attachPageByDefault: boolean }>();
     preferencesMocks.load.mockReturnValue(loading.promise);
     renderWithLocale(<GeneralSettings />);
 
-    expect(screen.getByRole('radio', { name: 'Ask questions' })).toBeDisabled();
-    expect(screen.getByRole('radio', { name: 'Agent tasks' })).toBeDisabled();
     expect(screen.getByRole('checkbox', { name: 'Attach current page by default' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
 
-    loading.resolve({ defaultMode: 'agent', attachPageByDefault: false });
+    loading.resolve({ attachPageByDefault: false });
 
-    await waitFor(() => expect(screen.getByRole('radio', { name: 'Agent tasks' })).toBeChecked());
-    expect(screen.getByRole('radio', { name: 'Agent tasks' })).toBeEnabled();
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Attach current page by default' })).toBeEnabled());
     expect(screen.getByRole('checkbox', { name: 'Attach current page by default' })).not.toBeChecked();
   });
 
@@ -138,22 +135,18 @@ describe('grouped options settings', () => {
     preferencesMocks.save.mockReturnValue(saving.promise);
     renderWithLocale(<GeneralSettings />);
 
-    await waitFor(() => expect(screen.getByRole('radio', { name: 'Ask questions' })).toBeEnabled());
-    await user.click(screen.getByRole('radio', { name: 'Agent tasks' }));
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Attach current page by default' })).toBeEnabled());
+    await user.click(screen.getByRole('checkbox', { name: 'Attach current page by default' }));
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
     expect(screen.getByRole('button', { name: 'Saving…' })).toBeDisabled();
-    expect(screen.getByRole('radio', { name: 'Ask questions' })).toBeDisabled();
-    expect(screen.getByRole('radio', { name: 'Agent tasks' })).toBeDisabled();
     expect(screen.getByRole('checkbox', { name: 'Attach current page by default' })).toBeDisabled();
-    await user.click(screen.getByRole('radio', { name: 'Ask questions' }));
-    expect(screen.getByRole('radio', { name: 'Agent tasks' })).toBeChecked();
 
     saving.resolve();
 
     expect(await screen.findByRole('status')).toHaveTextContent('Saved');
-    expect(screen.getByRole('radio', { name: 'Agent tasks' })).toBeEnabled();
-    expect(screen.getByRole('radio', { name: 'Agent tasks' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Attach current page by default' })).toBeEnabled();
+    expect(screen.getByRole('checkbox', { name: 'Attach current page by default' })).not.toBeChecked();
   });
 
   it('restores controls and preserves the draft after a save failure', async () => {
@@ -162,18 +155,17 @@ describe('grouped options settings', () => {
     preferencesMocks.save.mockReturnValue(saving.promise);
     renderWithLocale(<GeneralSettings />);
 
-    await waitFor(() => expect(screen.getByRole('radio', { name: 'Ask questions' })).toBeEnabled());
-    await user.click(screen.getByRole('radio', { name: 'Agent tasks' }));
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Attach current page by default' })).toBeEnabled());
+    await user.click(screen.getByRole('checkbox', { name: 'Attach current page by default' }));
     await user.click(screen.getByRole('button', { name: 'Save' }));
-    expect(screen.getByRole('radio', { name: 'Agent tasks' })).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: 'Attach current page by default' })).toBeDisabled();
 
     saving.reject(new Error('storage failed'));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('storage failed');
     expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
-    expect(screen.getByRole('radio', { name: 'Agent tasks' })).toBeEnabled();
     expect(screen.getByRole('checkbox', { name: 'Attach current page by default' })).toBeEnabled();
-    expect(screen.getByRole('radio', { name: 'Agent tasks' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Attach current page by default' })).not.toBeChecked();
   });
 
   it('shows providers as compact cards before opening an editor', async () => {
