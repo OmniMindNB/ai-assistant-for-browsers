@@ -34,7 +34,7 @@ export const zh = {
   'settings.groupAiTools': 'AI 与工具',
   'settings.groupSafety': '安全',
   'settings.description': '管理 Aluminum 的偏好、模型服务和本地数据设置。',
-  'settings.generalDescription': '选择新对话默认使用的工作方式。',
+  'settings.generalDescription': '设置新对话的默认行为。',
   'settings.attachPageByDefault': '默认附加当前网页',
   'settings.attachPageDescription': '新对话会默认把当前网页作为上下文。',
   'settings.save': '保存',

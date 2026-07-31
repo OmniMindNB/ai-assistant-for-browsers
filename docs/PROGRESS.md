@@ -100,6 +100,7 @@
 
 | 日期 | 内容 | 关联 |
 |------|------|------|
+| 2026-07-31 | 移除侧边栏「问答/Agent」模式切换：删除 `ModeSwitch` 组件、工作台偏好中的 `defaultMode` 字段与设置页模式单选组，以及相关 i18n 键，统一为单一输入区体验；`pageAttached`/`withoutBrowserTools` 行为不受影响。验证：`pnpm compile` 通过，`pnpm test`（27 个测试文件、348 个测试）通过，`pnpm build`（Chrome MV3）成功构建。 | [设计](superpowers/specs/2026-07-31-remove-ask-agent-mode-design.md) |
 | 2026-07-30 | 删除失败跨会话隔离回归：B 删除失败后，C 的独立持久化仍可完成，队列不会形成全局阻塞。验证：`pnpm test`（27 文件、347 测试）、`pnpm compile` 均通过。 | [设计](superpowers/specs/2026-07-30-sidepanel-context-workbench-redesign-design.md) |
 | 2026-07-30 | 删除队列测试覆盖补全：验证单次失败删除恢复写入、重叠删除 generation、失败删除后队列恢复以及 B/C 会话隔离。验证：`pnpm test`（27 文件、346 测试）、`pnpm compile`、`pnpm build`（Chrome MV3）均通过。 | [设计](superpowers/specs/2026-07-30-sidepanel-context-workbench-redesign-design.md) |
 | 2026-07-30 | 删除 tombstone 并发回归：同一会话的第一删除成功、第二删除失败后，成功 tombstone 仍阻止迟到快照，队列继续可用。验证：`pnpm test`（27 文件、343 测试）、`pnpm compile`、`pnpm build`（Chrome MV3）均通过。 | [设计](superpowers/specs/2026-07-30-sidepanel-context-workbench-redesign-design.md) |
