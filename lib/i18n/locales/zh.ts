@@ -179,7 +179,7 @@ export const zh = {
     '请解释选中的内容，必要时给出背景、定义或通俗说明。请使用中文回答。',
   'shortcut.builtinTranslateName': '翻译划词',
   'shortcut.builtinTranslatePrompt':
-    '将选中文本翻译成中文；如果原文本身已经是中文，则翻译成英文。请保持原意和语气，并简要标注习语或具有文化背景的表达。',
+    '将选中文本翻译成中文；如果原文本身已经是中文，则翻译成英文。请保持原意和语气。',
   'shortcut.heading': '快捷方式',
   'shortcut.description': '自定义快捷方式的名称、提示词、作用范围和显示顺序。',
   'shortcut.add': '添加快捷方式',
