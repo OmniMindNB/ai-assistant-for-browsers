@@ -1,7 +1,7 @@
 // 主题（外观）管理：默认跟随浏览器，可手动覆盖为浅色/深色。
 // 通过在 <html> 上切换 .dark 类实现（ref: assets/tailwind.css 的 @custom-variant dark）。
 // 主题偏好存于 chrome.storage.local，不同步到云端。
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export type ThemeMode = 'auto' | 'light' | 'dark';
 export type ResolvedTheme = 'light' | 'dark';
@@ -41,9 +41,14 @@ export function useTheme(): {
 } {
   const [mode, setModeState] = useState<ThemeMode>('auto');
   const [resolved, setResolved] = useState<ResolvedTheme>(() => resolvedTheme('auto'));
+  // loadTheme() 是异步的：如果用户在它 resolve 之前就手动切换了一次主题（比如刚打开侧边栏
+  // 就点了"切换主题"），迟到的加载结果不应该覆盖用户刚做出的选择——否则效果就是"点了跟没点一样，
+  // 得点第二下才生效"。用这个 ref 记录"用户是否已经手动设置过"，加载完成时据此判断要不要应用。
+  const userOverrideRef = useRef(false);
 
   useEffect(() => {
     loadTheme().then((m) => {
+      if (userOverrideRef.current) return;
       setModeState(m);
       setResolved(applyTheme(m));
     });
@@ -57,6 +62,7 @@ export function useTheme(): {
   }, [mode]);
 
   async function setMode(next: ThemeMode) {
+    userOverrideRef.current = true;
     setModeState(next);
     setResolved(applyTheme(next));
     await saveTheme(next);

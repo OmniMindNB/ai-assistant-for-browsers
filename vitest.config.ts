@@ -17,7 +17,7 @@ export default defineConfig({
         test: {
           name: 'ui',
           environment: 'jsdom',
-          include: ['entrypoints/**/*.test.tsx', 'components/**/*.test.tsx'],
+          include: ['entrypoints/**/*.test.tsx', 'components/**/*.test.tsx', 'lib/**/*.test.tsx'],
           setupFiles: ['lib/test-setup.ts', 'lib/test-setup-ui.ts'],
           alias: { '@': path.resolve(__dirname) },
         },
