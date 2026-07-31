@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Aluminum Store Asset Frame</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family:
+          Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          "PingFang SC", "Microsoft YaHei", sans-serif;
+        font-synthesis: none;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+      }
+
+      body {
+        color: #f8fbff;
+        background:
+          radial-gradient(circle at 83% 5%, rgb(63 146 255 / 28%), transparent 31%),
+          radial-gradient(circle at 10% 92%, rgb(25 201 170 / 17%), transparent 27%),
+          linear-gradient(145deg, #07132f 0%, #0a2552 54%, #0d3265 100%);
+      }
+
+      .shot {
+        position: relative;
+        width: 1280px;
+        height: 800px;
+        padding: 42px 64px 50px;
+      }
+
+      .shot::before {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        content: "";
+        background-image:
+          linear-gradient(rgb(255 255 255 / 3%) 1px, transparent 1px),
+          linear-gradient(90deg, rgb(255 255 255 / 3%) 1px, transparent 1px);
+        background-size: 40px 40px;
+        mask-image: linear-gradient(to bottom, black, transparent 75%);
+      }
+
+      .brand {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        height: 38px;
+        font-size: 20px;
+        font-weight: 720;
+        letter-spacing: -0.02em;
+      }
+
+      .brand img {
+        width: 36px;
+        height: 36px;
+        border-radius: 9px;
+        box-shadow: 0 8px 24px rgb(0 0 0 / 24%);
+      }
+
+      .version {
+        margin-left: 4px;
+        padding: 4px 9px;
+        color: #c8ddff;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        border: 1px solid rgb(177 211 255 / 26%);
+        border-radius: 999px;
+        background: rgb(255 255 255 / 8%);
+      }
+
+      .copy {
+        position: absolute;
+        z-index: 2;
+        top: 92px;
+        left: 64px;
+      }
+
+      h1 {
+        max-width: 930px;
+        margin: 0;
+        font-size: 44px;
+        line-height: 1.06;
+        letter-spacing: -0.045em;
+      }
+
+      .subtitle {
+        margin: 10px 0 0;
+        color: #cbdcf7;
+        font-size: 19px;
+        font-weight: 480;
+        letter-spacing: -0.012em;
+      }
+
+      .capture {
+        position: absolute;
+        z-index: 2;
+        top: 205px;
+        left: 64px;
+        width: 1152px;
+        height: 545px;
+        overflow: hidden;
+        border: 1px solid rgb(207 227 255 / 44%);
+        border-radius: 22px;
+        background: #eef6f1;
+        box-shadow:
+          0 26px 80px rgb(0 4 18 / 42%),
+          0 2px 0 rgb(255 255 255 / 30%) inset;
+      }
+
+      .capture::after {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        content: "";
+        border: 1px solid rgb(255 255 255 / 36%);
+        border-radius: inherit;
+      }
+
+      .capture img {
+        display: block;
+        width: 100%;
+        max-width: none;
+        transform: translateY(-69px);
+      }
+
+      .promo {
+        position: relative;
+        width: 440px;
+        height: 280px;
+        overflow: hidden;
+        background:
+          radial-gradient(circle at 80% 13%, rgb(77 157 255 / 35%), transparent 34%),
+          radial-gradient(circle at 6% 94%, rgb(28 214 176 / 20%), transparent 29%),
+          linear-gradient(145deg, #07142f 0%, #0b2c5e 66%, #104276 100%);
+      }
+
+      .promo::before {
+        position: absolute;
+        inset: 0;
+        content: "";
+        background-image:
+          linear-gradient(rgb(255 255 255 / 4%) 1px, transparent 1px),
+          linear-gradient(90deg, rgb(255 255 255 / 4%) 1px, transparent 1px);
+        background-size: 28px 28px;
+        mask-image: linear-gradient(135deg, black, transparent 78%);
+      }
+
+      .promo-brand {
+        position: absolute;
+        z-index: 3;
+        top: 30px;
+        left: 32px;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        font-size: 25px;
+        font-weight: 760;
+        letter-spacing: -0.03em;
+      }
+
+      .promo-brand img {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        box-shadow: 0 12px 30px rgb(0 0 0 / 34%);
+      }
+
+      .mini-window {
+        position: absolute;
+        right: -14px;
+        bottom: -26px;
+        width: 330px;
+        height: 205px;
+        overflow: hidden;
+        transform: rotate(-4deg);
+        border: 1px solid rgb(221 235 255 / 45%);
+        border-radius: 16px;
+        background: #f3f7fb;
+        box-shadow: 0 20px 55px rgb(0 2 16 / 45%);
+      }
+
+      .mini-toolbar {
+        display: flex;
+        gap: 5px;
+        align-items: center;
+        height: 28px;
+        padding: 0 12px;
+        border-bottom: 1px solid #dce6f1;
+        background: #eaf1f8;
+      }
+
+      .mini-toolbar span {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #91a6bc;
+      }
+
+      .mini-page {
+        position: absolute;
+        inset: 28px 124px 0 0;
+        padding: 20px 18px;
+        background:
+          linear-gradient(115deg, rgb(224 245 240 / 80%), transparent 42%),
+          #fffdf9;
+      }
+
+      .mini-page::before,
+      .mini-page::after {
+        display: block;
+        content: "";
+        border-radius: 999px;
+        background: #153253;
+      }
+
+      .mini-page::before {
+        width: 132px;
+        height: 13px;
+        margin-bottom: 13px;
+      }
+
+      .mini-page::after {
+        width: 105px;
+        height: 7px;
+        opacity: 0.22;
+        box-shadow: 0 17px 0 #153253, 0 34px 0 #153253;
+      }
+
+      .mini-panel {
+        position: absolute;
+        inset: 28px 0 0 auto;
+        width: 124px;
+        padding: 15px 13px;
+        border-left: 1px solid #dce6f1;
+        background: #ffffff;
+      }
+
+      .mini-panel::before {
+        display: block;
+        width: 67px;
+        height: 8px;
+        margin-bottom: 17px;
+        content: "";
+        border-radius: 999px;
+        background: #102b4d;
+      }
+
+      .bubble {
+        height: 44px;
+        margin-bottom: 10px;
+        border: 1px solid #d8e4f1;
+        border-radius: 9px;
+        background:
+          linear-gradient(#7990a9 0 0) 9px 10px / 77px 5px no-repeat,
+          linear-gradient(#aebdca 0 0) 9px 22px / 59px 5px no-repeat,
+          #f7fafd;
+      }
+
+      .bubble.accent {
+        height: 61px;
+        border-color: #a8c9f0;
+        background:
+          linear-gradient(#176bba 0 0) 9px 10px / 64px 5px no-repeat,
+          linear-gradient(#8ba5bc 0 0) 9px 22px / 78px 5px no-repeat,
+          linear-gradient(#8ba5bc 0 0) 9px 34px / 51px 5px no-repeat,
+          #eaf4ff;
+      }
+
+      .shield {
+        position: absolute;
+        z-index: 4;
+        right: 23px;
+        bottom: 24px;
+        display: grid;
+        width: 48px;
+        height: 48px;
+        place-items: center;
+        color: #06385c;
+        font-size: 27px;
+        font-weight: 900;
+        border: 3px solid rgb(255 255 255 / 88%);
+        border-radius: 15px;
+        background: #5ee0be;
+        box-shadow: 0 12px 30px rgb(0 14 38 / 34%);
+      }
+    </style>
+  </head>
+  <body>
+    <main id="asset"></main>
+    <script>
+      const params = new URLSearchParams(location.search);
+      const locale = params.get("locale") === "zh-CN" ? "zh-CN" : "en";
+      const scene = params.get("scene") || "summary";
+      const kind = params.get("kind") || "screenshot";
+
+      const copy = {
+        en: {
+          summary: [
+            "Understand any page",
+            "Summaries and answers grounded in the page",
+            "01-summary.png",
+          ],
+          evidence: [
+            "See the evidence",
+            "Inspect DOM, styles, scripts, and computed behavior",
+            "02-evidence.png",
+          ],
+          confirm: [
+            "You stay in control",
+            "Every page change asks for approval first",
+            "03-confirm.png",
+          ],
+          undo: [
+            "Undo the whole turn",
+            "Restore page changes with one click",
+            "04-undo.png",
+          ],
+        },
+        "zh-CN": {
+          summary: [
+            "快速理解任意网页",
+            "基于当前页面生成总结与回答",
+            "01-summary.png",
+          ],
+          evidence: [
+            "回答有据可查",
+            "检查 DOM、样式、脚本与实际行为",
+            "02-evidence.png",
+          ],
+          confirm: [
+            "修改前由你确认",
+            "页面写操作先展示内容，再等待批准",
+            "03-confirm.png",
+          ],
+          undo: [
+            "一键撤销整轮改动",
+            "随时恢复本轮对页面造成的变化",
+            "04-undo.png",
+          ],
+        },
+      };
+
+      const icon = "../docs/store-assets/icon-128.png";
+      const root = document.querySelector("#asset");
+
+      if (kind === "promo") {
+        document.documentElement.lang = "en";
+        root.innerHTML = `
+          <section class="promo" aria-label="Aluminum small promotional tile">
+            <div class="promo-brand">
+              <img src="${icon}" alt="" />
+              <span>Aluminum</span>
+            </div>
+            <div class="mini-window" aria-hidden="true">
+              <div class="mini-toolbar"><span></span><span></span><span></span></div>
+              <div class="mini-page"></div>
+              <div class="mini-panel">
+                <div class="bubble"></div>
+                <div class="bubble accent"></div>
+              </div>
+            </div>
+            <div class="shield" aria-hidden="true">✓</div>
+          </section>
+        `;
+      } else {
+        document.documentElement.lang = locale;
+        const [headline, subtitle, filename] = copy[locale][scene] || copy[locale].summary;
+        root.innerHTML = `
+          <section class="shot">
+            <div class="brand">
+              <img src="${icon}" alt="" />
+              <span>Aluminum</span>
+              <span class="version">V1.1</span>
+            </div>
+            <div class="copy">
+              <h1>${headline}</h1>
+              <p class="subtitle">${subtitle}</p>
+            </div>
+            <figure class="capture">
+              <img src="../docs/store-assets/source/${locale}/${filename}" alt="" />
+            </figure>
+          </section>
+        `;
+      }
+    </script>
+  </body>
+</html>
