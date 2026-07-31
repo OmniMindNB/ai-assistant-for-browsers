@@ -63,11 +63,9 @@ export function WorkbenchComposer({
   );
   const quickShortcuts = shortcuts.filter(isUsableShortcutCommand).slice(0, 4);
   const pageContextNotice =
-    pageContext.status === 'restricted'
-      ? { message: t('workbench.restrictedPage'), retryable: false }
-      : pageContext.status === 'error'
-        ? { message: t('workbench.pageContextUnavailable', { message: pageContext.message }), retryable: true }
-        : null;
+    pageContext.status === 'error'
+      ? { message: t('workbench.pageContextUnavailable', { message: pageContext.message }), retryable: true }
+      : null;
 
   useEffect(() => {
     const element = textareaRef.current;

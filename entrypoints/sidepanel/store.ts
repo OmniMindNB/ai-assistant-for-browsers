@@ -766,7 +766,18 @@ async function runAgent(
       // "does not expose raw tool payloads" 一类用例），所以失败原因只打到控制台，方便
       // 打开 DevTools 排查，不在 UI 上泄露。
       if (event.isError && !blocked) {
-        console.error('[Aluminum] tool execution failed', event.toolName, event.result);
+        // event.result 通常是 { content: [{type:'text', text}], details } 这样的对象——
+        // console.error 直接打对象在 chrome://extensions 的错误面板里会被字符串化成
+        // "[object Object]"（该面板不支持对象展开，只有普通 DevTools 控制台才行），
+        // 所以这里尽量把文本消息拆出来打，保证错误面板里也能看到实际原因。
+        const result = event.result as unknown;
+        const message =
+          typeof result === 'string'
+            ? result
+            : ((result as { content?: Array<{ type: string; text?: string }> } | undefined)?.content?.find(
+                (c) => c.type === 'text',
+              )?.text ?? result);
+        console.error('[Aluminum] tool execution failed', event.toolName, message);
       }
       upsertToolActivity(set, {
         id: event.toolCallId,

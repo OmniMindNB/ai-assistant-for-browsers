@@ -106,7 +106,6 @@ export const en: Record<keyof typeof zh, string> = {
   'workbench.untitledPage': 'Untitled page',
   'workbench.pageContextUnavailable': 'Page context unavailable: {message}',
   'workbench.retryPageContext': 'Retry page context',
-  'workbench.restrictedPage': 'This page cannot be read.',
   'banner.noProviderPrefix': 'No model provider detected. Go to',
   'banner.noProviderSuffix': 'to enter an API key.',
   'settings.backAriaLabel': 'Back to chat',

@@ -103,7 +103,6 @@ export const zh = {
   'workbench.untitledPage': '未命名页面',
   'workbench.pageContextUnavailable': '页面上下文不可用：{message}',
   'workbench.retryPageContext': '重试页面上下文',
-  'workbench.restrictedPage': '此页面无法读取。',
   'banner.noProviderPrefix': '未检测到模型 Provider，请前往',
   'banner.noProviderSuffix': '填写 API Key。',
   'settings.backAriaLabel': '返回对话',

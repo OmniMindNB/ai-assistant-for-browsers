@@ -433,7 +433,7 @@ describe('workbench composer', () => {
     expect(screen.getByRole('menu', { name: 'Model selection' })).toBeVisible();
   });
 
-  it('only shows a page-context notice for restricted or errored tabs', () => {
+  it('only shows a page-context notice for errored tabs, not restricted ones', () => {
     const { rerender } = render(<ComposerHarness pageContext={availableContext} />);
     expect(screen.queryByText('This page cannot be read.')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Retry page context' })).not.toBeInTheDocument();
@@ -442,10 +442,8 @@ describe('workbench composer', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
 
     rerender(<ComposerHarness pageContext={{ status: 'restricted', tabId: 2, title: 'Extensions', url: 'chrome://extensions/' }} />);
-    expect(screen.getByText('This page cannot be read.')).toBeVisible();
-    expect(screen.queryByRole('button', { name: 'Retry page context' })).not.toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveClass('flex-wrap', 'items-center', 'gap-2');
-    expect(screen.getByText('This page cannot be read.')).toHaveClass('min-w-0', 'break-words');
+    expect(screen.queryByText('This page cannot be read.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
 
     const onRetryPageContext = vi.fn();
     rerender(<ComposerHarness pageContext={{ status: 'error', message: 'Offline' }} onRetryPageContext={onRetryPageContext} />);
@@ -670,8 +668,6 @@ describe('workbench context controls', () => {
         <App />
       </LocaleProvider>,
     );
-
-    expect(screen.getByText('This page cannot be read.')).toBeVisible();
 
     await user.click(screen.getByRole('textbox', { name: 'Message input' }));
     await user.keyboard('{Enter}');
