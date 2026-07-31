@@ -462,10 +462,14 @@ describe('workbench composer', () => {
     rerender(<ComposerHarness pageContext={{ status: 'restricted', tabId: 2, title: 'Extensions', url: 'chrome://extensions/' }} />);
     expect(screen.getByText('This page cannot be read.')).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Retry page context' })).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveClass('flex-wrap', 'items-center', 'gap-2');
+    expect(screen.getByText('This page cannot be read.')).toHaveClass('min-w-0', 'break-words');
 
     const onRetryPageContext = vi.fn();
     rerender(<ComposerHarness pageContext={{ status: 'error', message: 'Offline' }} onRetryPageContext={onRetryPageContext} />);
     expect(screen.getByText('Page context unavailable: Offline')).toBeVisible();
+    expect(screen.getByRole('alert')).toHaveClass('flex-wrap', 'items-center', 'gap-2');
+    expect(screen.getByRole('button', { name: 'Retry page context' })).toHaveClass('shrink-0');
     fireEvent.click(screen.getByRole('button', { name: 'Retry page context' }));
     expect(onRetryPageContext).toHaveBeenCalledOnce();
   });
@@ -693,6 +697,24 @@ describe('workbench context controls', () => {
     await waitFor(() => expect(chatStore.send).toHaveBeenCalledWith(undefined, { withoutBrowserTools: true }));
   });
 
+  it('automatically sends error-status messages without browser tools, with no click required', async () => {
+    const user = userEvent.setup();
+    chatStore.pageContext = { status: 'error', message: 'Offline' };
+    chatStore.input = 'Open settings';
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    expect(screen.getByText('Page context unavailable: Offline')).toBeVisible();
+
+    await user.click(screen.getByRole('textbox', { name: 'Message input' }));
+    await user.keyboard('{Enter}');
+
+    await waitFor(() => expect(chatStore.send).toHaveBeenCalledWith(undefined, { withoutBrowserTools: true }));
+  });
+
   it('shows a single unified empty-state message regardless of intent', () => {
     render(
       <LocaleProvider>
@@ -727,7 +749,6 @@ describe('workbench context controls', () => {
     expect(screen.getAllByRole('button', { name: /Shortcut/ })).toHaveLength(4);
     expect(screen.queryByRole('button', { name: 'Shortcut 5' })).not.toBeInTheDocument();
   });
-
 });
 
 describe('workbench history', () => {
