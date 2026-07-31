@@ -5,6 +5,7 @@ import type { Translate, TranslationKey } from './i18n';
 import {
   BUILTIN_EXPLAIN_ID,
   BUILTIN_SUMMARIZE_ID,
+  BUILTIN_TRANSLATE_ID,
   SHORTCUTS_STORAGE_KEY,
   defaultShortcutConfigs,
   loadShortcutConfigs,
@@ -50,10 +51,11 @@ afterEach(() => {
 });
 
 describe('shortcut defaults and localization', () => {
-  it('creates the two stable defaults in canonical order', () => {
+  it('creates the three stable defaults in canonical order', () => {
     expect(defaultShortcutConfigs().map((item) => item.id)).toEqual([
       BUILTIN_SUMMARIZE_ID,
       BUILTIN_EXPLAIN_ID,
+      BUILTIN_TRANSLATE_ID,
     ]);
   });
 
@@ -61,6 +63,12 @@ describe('shortcut defaults and localization', () => {
     const summarize = defaultShortcutConfigs()[0];
     expect(resolveShortcut(summarize, translator(zh)).name).toBe('总结本页');
     expect(resolveShortcut(summarize, translator(en)).name).toBe('Summarize page');
+  });
+
+  it('resolves the translate built-in through the current locale', () => {
+    const translateShortcut = defaultShortcutConfigs()[2];
+    expect(resolveShortcut(translateShortcut, translator(zh)).name).toBe('翻译划词');
+    expect(resolveShortcut(translateShortcut, translator(en)).name).toBe('Translate selection');
   });
 
   it('keeps customized built-in text fixed across locales', () => {
@@ -199,6 +207,7 @@ describe('shortcut storage semantics', () => {
     await updateShortcutConfigs((items) => items.slice(1));
     expect((await loadShortcutConfigs()).shortcuts.map((item) => item.id)).toEqual([
       BUILTIN_EXPLAIN_ID,
+      BUILTIN_TRANSLATE_ID,
     ]);
   });
 
@@ -267,6 +276,7 @@ describe('shortcut list operations', () => {
       'custom-1',
       BUILTIN_EXPLAIN_ID,
       BUILTIN_SUMMARIZE_ID,
+      BUILTIN_TRANSLATE_ID,
     ]);
   });
 
@@ -277,8 +287,9 @@ describe('shortcut list operations', () => {
     ] satisfies ShortcutConfig[];
     expect(moveShortcut(items, 'custom-1', 'up').map((item) => item.id)).toEqual([
       BUILTIN_SUMMARIZE_ID,
-      'custom-1',
       BUILTIN_EXPLAIN_ID,
+      'custom-1',
+      BUILTIN_TRANSLATE_ID,
     ]);
   });
 

@@ -30,6 +30,7 @@ export interface ShortcutLoadResult {
 export const SHORTCUTS_STORAGE_KEY = 'aluminum:shortcuts';
 export const BUILTIN_SUMMARIZE_ID = 'builtin:summarize-page';
 export const BUILTIN_EXPLAIN_ID = 'builtin:explain-selection';
+export const BUILTIN_TRANSLATE_ID = 'builtin:translate-selection';
 
 const BUILTINS = [
   {
@@ -43,6 +44,12 @@ const BUILTINS = [
     scope: 'selection',
     nameKey: 'shortcut.builtinExplainName',
     promptKey: 'shortcut.builtinExplainPrompt',
+  },
+  {
+    id: BUILTIN_TRANSLATE_ID,
+    scope: 'selection',
+    nameKey: 'shortcut.builtinTranslateName',
+    promptKey: 'shortcut.builtinTranslatePrompt',
   },
 ] as const;
 

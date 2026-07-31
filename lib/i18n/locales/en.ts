@@ -181,6 +181,9 @@ export const en: Record<keyof typeof zh, string> = {
   'shortcut.builtinExplainName': 'Explain selection',
   'shortcut.builtinExplainPrompt':
     'Explain the selected text, adding background, definitions, or a plain-language explanation when useful. Respond in English.',
+  'shortcut.builtinTranslateName': 'Translate selection',
+  'shortcut.builtinTranslatePrompt':
+    'Translate the selected text into English; if it is already in English, translate it into Chinese instead. Keep the tone and meaning faithful, and briefly note any idioms or culturally specific references.',
   'shortcut.heading': 'Shortcuts',
   'shortcut.description': 'Customize shortcut names, prompts, scopes, and display order.',
   'shortcut.add': 'Add shortcut',
