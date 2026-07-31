@@ -38,6 +38,7 @@ import {
 } from '@/lib/messaging';
 import { fetchPageResourceText } from '@/lib/page-resource-fetch';
 import { resolveTargetTab } from '@/lib/agent/tab-target';
+import { sendToContentScript } from '@/lib/agent/content-script-messaging';
 import {
   beginSnapshotIfNeeded,
   clearSnapshot,
@@ -223,10 +224,10 @@ async function getActiveTab() {
 
 async function extractActivePage(tabId: number): Promise<PageContent> {
   const tab = await resolveTargetTab(tabId);
-  const response = (await browser.tabs.sendMessage(tab.id, {
+  const response = await sendToContentScript<PageContent>(tab.id, {
     id: `extract-${Date.now()}`,
     type: 'EXTRACT_PAGE',
-  } satisfies Message)) as MessageResponse<PageContent>;
+  } satisfies Message);
 
   if (!response?.ok || !response.data) {
     throw new Error(response?.error ?? '页面提取失败');
@@ -236,10 +237,10 @@ async function extractActivePage(tabId: number): Promise<PageContent> {
 
 async function getActiveSelection(tabId: number): Promise<PageSelection> {
   const tab = await resolveTargetTab(tabId);
-  const response = (await browser.tabs.sendMessage(tab.id, {
+  const response = await sendToContentScript<PageSelection>(tab.id, {
     id: `selection-${Date.now()}`,
     type: 'GET_SELECTION',
-  } satisfies Message)) as MessageResponse<PageSelection>;
+  } satisfies Message);
 
   if (!response?.ok || !response.data) {
     throw new Error(response?.error ?? '获取选区失败');
