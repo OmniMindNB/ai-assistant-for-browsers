@@ -10,6 +10,9 @@ export default defineConfig({
     build: {
       // pi-agent-core 传递依赖 pi-ai 的模型目录较大，属于死代码，不影响运行时开销，调高阈值消除构建噪音
       chunkSizeWarningLimit: 1000,
+      // 扩展页面的资源都随包本地打包，没有网络往返可省；modulepreload 反而会因为跨 world
+      // 资源分区触发 Chrome 的 "cross-world extension resource mismatch" 控制台警告，直接关闭
+      modulePreload: false,
       rollupOptions: {
         // pi-ai 的 env-api-keys.js 用 runtime 检测守卫的动态 import 兼容 Node/Bun CLI 场景，
         // 浏览器扩展里这段永远不会执行；显式声明 external 消除“externalized”构建提示
