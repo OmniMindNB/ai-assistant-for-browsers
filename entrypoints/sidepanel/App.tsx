@@ -4,7 +4,7 @@ import { useChat } from './store';
 // react-markdown + rehype-highlight 拉入较大的解析/高亮代码，单独分包，
 // 避免其阻塞侧边栏首次渲染（消息为空时完全不需要加载）。
 const Markdown = lazy(() => import('./Markdown'));
-import { useTheme } from '@/lib/theme';
+import { nextThemeMode, useTheme } from '@/lib/theme';
 import { useTranslation } from '@/lib/i18n';
 import { discardedCount, isEditableMessage } from '@/lib/chat/messages';
 import { isNearBottom } from '@/lib/scroll';
@@ -65,7 +65,7 @@ export default function App() {
     restoreTabConversation,
   } = useChat();
 
-  const { mode: themeMode, setMode: setThemeMode } = useTheme();
+  const { mode: themeMode, resolved: themeResolved, setMode: setThemeMode } = useTheme();
   const { t } = useTranslation();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
@@ -190,8 +190,7 @@ export default function App() {
   }
 
   function toggleTheme() {
-    const next = themeMode === 'auto' ? 'light' : themeMode === 'light' ? 'dark' : 'auto';
-    setThemeMode(next);
+    setThemeMode(nextThemeMode(themeMode, themeResolved));
   }
 
   function newChat() {
