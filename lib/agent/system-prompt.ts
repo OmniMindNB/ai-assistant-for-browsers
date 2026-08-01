@@ -1,12 +1,10 @@
 import type { ResolvedLocale } from '@/lib/i18n';
 import { CONFIRM_TOOL_NAMES } from './permissions';
 
-/**
- * 工具预算上限。放在这里而不是 agent.ts，是因为这个数字同时出现在两个地方：
- * 系统提示词里要告诉模型预算是多少，agent.ts 的 beforeToolCall 里要真正拦截。
- * 两处必须一致，所以以本常量为唯一来源。
- */
-export const DEFAULT_MAX_TOOL_TURNS = 50;
+export const DEFAULT_READ_TOOL_CALL_BUDGET = 12;
+export const DEFAULT_WRITE_TOOL_CALL_BUDGET = 24;
+/** @deprecated Migrated and removed in Task 3. */
+export const DEFAULT_MAX_TOOL_TURNS = DEFAULT_READ_TOOL_CALL_BUDGET;
 
 /**
  * 提示词里列举的写入/交互工具名，直接由权限表推导，避免新增工具时提示词漏改
@@ -78,7 +76,9 @@ export interface RuntimePageContext {
 export interface SystemPromptOptions {
   /** 界面语言，决定 <output_style> 里要求模型用哪种语言回答。默认中文。 */
   locale?: ResolvedLocale;
-  /** 工具预算上限，需与 Agent 实际执行的上限一致。默认 DEFAULT_MAX_TOOL_TURNS。 */
+  readToolCallBudget?: number;
+  writeToolCallBudget?: number;
+  /** @deprecated Migrated and removed in Task 3. */
   maxToolTurns?: number;
   /** 当前时间。传入才会注入 <runtime_context> 的时间行。 */
   now?: Date;
@@ -95,7 +95,11 @@ export interface SystemPromptOptions {
  * 能力、策略、输出风格各自独立成块，便于按场景增删单个分区而不影响其它部分。
  */
 export function buildSystemPrompt(options: SystemPromptOptions = {}): string {
-  const maxToolTurns = options.maxToolTurns ?? DEFAULT_MAX_TOOL_TURNS;
+  const readToolCallBudget = options.readToolCallBudget ?? options.maxToolTurns ?? DEFAULT_READ_TOOL_CALL_BUDGET;
+  const writeToolCallBudget = Math.max(
+    readToolCallBudget,
+    options.writeToolCallBudget ?? DEFAULT_WRITE_TOOL_CALL_BUDGET,
+  );
   const constraints = options.constraints?.trim();
 
   const sections = [
@@ -130,7 +134,7 @@ export function buildSystemPrompt(options: SystemPromptOptions = {}): string {
     section(
       'task_execution',
       [
-        `多步任务要一次做完，不要做到一半就把剩下的步骤交回给用户。工具预算最多 ${maxToolTurns} 次，这是上限而不是目标：够用就停，也不要为了省预算而跳过必要的核查。预算耗尽或工具被拒绝时，立即基于已有证据回答，并标出仍不确定的部分。`,
+        `多步任务要一次做完，不要做到一半就把剩下的步骤交回给用户。工具预算：读取和分析最多 ${readToolCallBudget} 次；用户批准写入或交互后，本轮总预算最多 ${writeToolCallBudget} 次。这些是上限而不是目标，够用就停。预算耗尽或工具被拒绝时，立即基于已有证据回答，并标出仍不确定的部分。`,
         '需要连续做多个写操作时，先用一两句话说明打算改哪几处再开始调用工具，让用户在第一次确认时就知道这一轮的整体范围。执行过程中保持简短，全部完成后再给一次完整说明。',
         '同一个工具用同样的参数连续失败两次，就换思路：换选择器、换工具，或先读一次 DOM 结构再试，不要第三次重复同样的调用。选择器匹配到 0 个元素时，先用 browser_query_dom 确认真实结构，不要连续盲猜。如果连续几次调用都没带来新信息，停下来向用户说明卡在哪里，而不是继续消耗预算。',
       ].join('\n'),

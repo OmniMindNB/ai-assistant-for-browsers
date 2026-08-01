@@ -1,6 +1,11 @@
 // lib/agent/system-prompt.test.ts
 import { describe, expect, it } from 'vitest';
-import { buildSystemPrompt, DEFAULT_MAX_TOOL_TURNS, SYSTEM_PROMPT } from './system-prompt';
+import {
+  buildSystemPrompt,
+  DEFAULT_READ_TOOL_CALL_BUDGET,
+  DEFAULT_WRITE_TOOL_CALL_BUDGET,
+  SYSTEM_PROMPT,
+} from './system-prompt';
 import {
   CONFIRM_TOOL_NAMES,
   DENY_TOOL_NAMES,
@@ -80,7 +85,7 @@ describe('buildSystemPrompt task execution', () => {
   });
 
   it('frames the tool budget as a ceiling rather than a target', () => {
-    expect(SYSTEM_PROMPT).toContain('这是上限而不是目标');
+    expect(SYSTEM_PROMPT).toContain('这些是上限而不是目标');
   });
 
   it('gives a concrete loop-breaking rule', () => {
@@ -234,12 +239,15 @@ describe('buildSystemPrompt runtime context', () => {
 });
 
 describe('buildSystemPrompt options', () => {
-  it('states the default tool budget', () => {
-    expect(SYSTEM_PROMPT).toContain(`最多 ${DEFAULT_MAX_TOOL_TURNS} 次`);
+  it('states the default read and approved-write tool budgets', () => {
+    expect(SYSTEM_PROMPT).toContain(`读取和分析最多 ${DEFAULT_READ_TOOL_CALL_BUDGET} 次`);
+    expect(SYSTEM_PROMPT).toContain(`批准写入或交互后，本轮总预算最多 ${DEFAULT_WRITE_TOOL_CALL_BUDGET} 次`);
   });
 
-  it('states a custom tool budget', () => {
-    expect(buildSystemPrompt({ maxToolTurns: 7 })).toContain('最多 7 次');
+  it('states custom read and approved-write tool budgets', () => {
+    const prompt = buildSystemPrompt({ readToolCallBudget: 3, writeToolCallBudget: 7 });
+    expect(prompt).toContain('读取和分析最多 3 次');
+    expect(prompt).toContain('批准写入或交互后，本轮总预算最多 7 次');
   });
 
   it('omits session_constraints when no constraint is given', () => {

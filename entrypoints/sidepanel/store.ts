@@ -29,7 +29,12 @@ import {
   type ChatMessage,
 } from '@/lib/chat/messages';
 import { createBrowserAgent } from '@/lib/agent/agent';
-import { buildSystemPrompt, DEFAULT_MAX_TOOL_TURNS } from '@/lib/agent/system-prompt';
+import {
+  buildSystemPrompt,
+  DEFAULT_MAX_TOOL_TURNS,
+  DEFAULT_READ_TOOL_CALL_BUDGET,
+  DEFAULT_WRITE_TOOL_CALL_BUDGET,
+} from '@/lib/agent/system-prompt';
 import { buildShortcutExecution } from '@/lib/chat/shortcut-prompts';
 import { summarizeToolCallForConfirmation } from '@/lib/agent/confirm-summary';
 import { getConversationIdForTab, setConversationIdForTab } from '@/lib/agent/tab-conversation';
@@ -679,7 +684,8 @@ async function runAgent(
     tabId,
     systemPrompt: buildSystemPrompt({
       locale: getCurrentLocale(),
-      maxToolTurns: DEFAULT_MAX_TOOL_TURNS,
+      readToolCallBudget: DEFAULT_READ_TOOL_CALL_BUDGET,
+      writeToolCallBudget: DEFAULT_WRITE_TOOL_CALL_BUDGET,
       now: new Date(),
       // 禁用浏览器工具的快捷方式不注入页面信息：那一轮明确要求不读取当前页面，
       // 注入标题/地址既与该约束矛盾，也是白送给模型的一段网页可控文本。
