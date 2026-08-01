@@ -1,6 +1,6 @@
 // entrypoints/sidepanel/Markdown.test.tsx
 import { describe, expect, it } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import Markdown from './Markdown';
 
 const TABLE = ['| a | b |', '| --- | --- |', '| 1 | 2 |'].join('\n');
@@ -29,5 +29,13 @@ describe('Markdown table rendering', () => {
     const { container } = render(<Markdown content={'```css\na { color: red; }\n```'} />);
     const code = container.querySelector('pre code');
     expect(code?.className).toContain('css');
+  });
+});
+
+describe('Markdown link rendering', () => {
+  it('opens reply links outside the extension side panel', () => {
+    render(<Markdown content={'[Chrome 文档](https://developer.chrome.com/docs/extensions/)'} />);
+
+    expect(screen.getByRole('link', { name: 'Chrome 文档' })).toHaveAttribute('target', '_blank');
   });
 });

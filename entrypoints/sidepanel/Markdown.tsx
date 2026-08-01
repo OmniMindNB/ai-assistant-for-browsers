@@ -47,6 +47,9 @@ export default function Markdown({ content }: { content: string }) {
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[[rehypeHighlight, { languages: HIGHLIGHT_LANGUAGES }]]}
         components={{
+          a: ({ node: _node, ...props }) => (
+            <a {...props} target="_blank" rel="noreferrer" />
+          ),
           table: ({ node: _node, ...props }) => (
             <div className="md-table-wrap">
               <table {...props} />
