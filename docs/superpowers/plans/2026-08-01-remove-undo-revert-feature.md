@@ -489,8 +489,10 @@ to:
  * 提示词里列举的写入/交互工具名，直接由权限表推导，避免新增工具时提示词漏改
  * （ref: permissions.ts 的 CONFIRM_TOOL_NAMES）。
  */
-const WRITE_TOOL_LIST = CONFIRM_TOOL_NAMES.join('、');
+const WRITE_TOOL_LIST = [...CONFIRM_TOOL_NAMES].join('、');
 ```
+
+(`CONFIRM_TOOL_NAMES` is a `Set<string>`, which has no `.join()` method — it must be spread into an array first, same as the original `[...CONFIRM_TOOL_NAMES, ...AUTO_ALLOW_TOOL_NAMES]` did.)
 
 - [ ] **Step 3: Remove `AUTO_ALLOW_TOOL_NAMES` usage from `lib/agent/system-prompt.test.ts`**
 
