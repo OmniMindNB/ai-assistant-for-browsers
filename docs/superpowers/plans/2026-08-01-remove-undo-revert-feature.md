@@ -795,10 +795,10 @@ async function resetTurnSnapshot(tabId: number): Promise<{ ok: true }> {
 
 ```
 
-In `setStorage`, change:
+By this point in the task, the `await ensureTurnSnapshot(tabId);` line at the top of `setStorage` has already been removed per the pattern above, so `setStorage` currently reads:
 ```ts
 async function setStorage(payload: SetStoragePayload, tabId: number): Promise<SetStorageResult> {
-  return executeInTab(tabId, payload, (input): SetStorageResult => {
+  const result = await executeInTab(tabId, payload, (input): SetStorageResult => {
     const store = input?.area === 'session' ? sessionStorage : localStorage;
     const key = input?.key ?? '';
     const previousValue = store.getItem(key);
@@ -811,7 +811,7 @@ async function setStorage(payload: SetStoragePayload, tabId: number): Promise<Se
   return result;
 }
 ```
-to:
+Change it to:
 ```ts
 async function setStorage(payload: SetStoragePayload, tabId: number): Promise<SetStorageResult> {
   return executeInTab(tabId, payload, (input): SetStorageResult => {
@@ -824,7 +824,7 @@ async function setStorage(payload: SetStoragePayload, tabId: number): Promise<Se
 }
 ```
 
-(This also removes the now-dead `const result = ...` / trailing `recordStorageEntryIfAbsent` shape from the version shown earlier in the design spec's file read — the function becomes a direct `return executeInTab(...)`, matching the pattern used by the other five write handlers like `setStyle`.)
+(This drops the `previousValue` lookup and the `recordStorageEntryIfAbsent` call entirely — both existed only to feed the snapshot — collapsing `setStorage` to a direct `return executeInTab(...)`, matching the pattern used by the other write handlers like `setStyle`.)
 
 - [ ] **Step 4: Search for any remaining references**
 
