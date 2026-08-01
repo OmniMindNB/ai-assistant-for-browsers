@@ -24,7 +24,6 @@ import {
   type PageSelection,
   type QueryDomPayload,
   type QueryDomResult,
-  type RevertChangesResult,
   type ScrollPagePayload,
   type ScrollPageResult,
   type SelectOptionPayload,
@@ -39,14 +38,6 @@ import {
 import { fetchPageResourceText } from '@/lib/page-resource-fetch';
 import { resolveTargetTab } from '@/lib/agent/tab-target';
 import { sendToContentScript } from '@/lib/agent/content-script-messaging';
-import {
-  beginSnapshotIfNeeded,
-  clearSnapshot,
-  getSnapshot,
-  hasSnapshot,
-  recordStorageEntryIfAbsent,
-  type CapturePageState,
-} from '@/lib/agent/turn-snapshot';
 import { clearConversationIdForTab } from '@/lib/agent/tab-conversation';
 
 const DEFAULT_TOOL_MAX_CHARS = 12000;
@@ -70,8 +61,6 @@ const SUPPORTED_MESSAGE_TYPES = [
   'SCROLL_PAGE',
   'NAVIGATE_TAB',
   'SET_STORAGE',
-  'RESET_TURN_SNAPSHOT',
-  'REVERT_CHANGES',
   'CHAT',
 ] as const;
 
@@ -126,10 +115,8 @@ export default defineBackground(() => {
     },
   );
 
-  // Tab 关闭后其"本轮"快照、以及"该 tab 上次展示的会话"记录都不再可能被用到，
-  // 及时清理避免占用 storage.session 的共享配额。
+  // Tab 关闭后"该 tab 上次展示的会话"记录不再可能被用到，及时清理避免占用 storage 配额。
   browser.tabs.onRemoved.addListener((tabId) => {
-    clearSnapshot(tabId).catch((err: unknown) => console.error('[Aluminum] clearSnapshot on tab close:', err));
     clearConversationIdForTab(tabId).catch((err: unknown) =>
       console.error('[Aluminum] clearConversationIdForTab on tab close:', err),
     );
@@ -196,12 +183,6 @@ async function handleMessage(message: Message): Promise<unknown> {
 
     case 'SCROLL_PAGE':
       return scrollPage(message.payload as ScrollPagePayload, requireTabId(message));
-
-    case 'RESET_TURN_SNAPSHOT':
-      return resetTurnSnapshot(requireTabId(message));
-
-    case 'REVERT_CHANGES':
-      return revertChanges(requireTabId(message));
 
     case 'NAVIGATE_TAB':
       return navigateTab(message.payload as NavigateTabPayload, requireTabId(message));
@@ -489,27 +470,7 @@ async function executeInTab<TInput, TResult>(
   return frame.result as TResult;
 }
 
-async function ensureTurnSnapshot(tabId: number): Promise<void> {
-  if (await hasSnapshot(tabId)) return;
-  const capture = await executeInTab(
-    tabId,
-    null,
-    (): CapturePageState => ({
-      url: location.href,
-      headHTML: document.head.innerHTML,
-      bodyHTML: document.body.innerHTML,
-      htmlAttrs: Array.from(document.documentElement.attributes).map((attr) => [attr.name, attr.value]),
-      bodyAttrs: Array.from(document.body.attributes).map((attr) => [attr.name, attr.value]),
-      scrollX: window.scrollX,
-      scrollY: window.scrollY,
-    }),
-  );
-  await beginSnapshotIfNeeded(tabId, capture);
-}
-
 async function setStyle(payload: SetStylePayload, tabId: number): Promise<SetStyleResult> {
-  await ensureTurnSnapshot(tabId);
-
   return executeInTab(tabId, payload, (input): SetStyleResult => {
     const selector = input?.selector || '';
     const styles = input?.styles || {};
@@ -524,8 +485,6 @@ async function setStyle(payload: SetStylePayload, tabId: number): Promise<SetSty
 }
 
 async function modifyDom(payload: ModifyDomPayload, tabId: number): Promise<ModifyDomResult> {
-  await ensureTurnSnapshot(tabId);
-
   return executeInTab(tabId, payload, (input): ModifyDomResult => {
     const selector = input?.selector || '';
     const nodes = Array.from(document.querySelectorAll<HTMLElement>(selector));
@@ -556,8 +515,6 @@ async function modifyDom(payload: ModifyDomPayload, tabId: number): Promise<Modi
 }
 
 async function clickElement(payload: ClickElementPayload, tabId: number): Promise<ClickElementResult> {
-  await ensureTurnSnapshot(tabId);
-
   return executeInTab(tabId, payload, (input): ClickElementResult => {
     const selector = input?.selector || '';
     const nodes = Array.from(document.querySelectorAll<HTMLElement>(selector));
@@ -569,8 +526,6 @@ async function clickElement(payload: ClickElementPayload, tabId: number): Promis
 }
 
 async function typeText(payload: TypeTextPayload, tabId: number): Promise<TypeTextResult> {
-  await ensureTurnSnapshot(tabId);
-
   return executeInTab(tabId, payload, (input): TypeTextResult => {
     const selector = input?.selector || '';
     const target = document.querySelector(selector) as HTMLInputElement | HTMLTextAreaElement | null;
@@ -589,8 +544,6 @@ async function typeText(payload: TypeTextPayload, tabId: number): Promise<TypeTe
 }
 
 async function selectOption(payload: SelectOptionPayload, tabId: number): Promise<SelectOptionResult> {
-  await ensureTurnSnapshot(tabId);
-
   return executeInTab(tabId, payload, (input): SelectOptionResult => {
     const selector = input?.selector || '';
     const target = document.querySelector<HTMLSelectElement>(selector);
@@ -602,8 +555,6 @@ async function selectOption(payload: SelectOptionPayload, tabId: number): Promis
 }
 
 async function scrollPage(payload: ScrollPagePayload, tabId: number): Promise<ScrollPageResult> {
-  await ensureTurnSnapshot(tabId);
-
   return executeInTab(tabId, payload, (input): ScrollPageResult => {
     const behavior = input?.behavior ?? 'auto';
     if (input?.selector) {
@@ -614,53 +565,6 @@ async function scrollPage(payload: ScrollPagePayload, tabId: number): Promise<Sc
     }
     return { selector: input?.selector, x: window.scrollX, y: window.scrollY };
   });
-}
-
-// 撤销"本轮"全部改动：若本轮发生过跳转，直接跳回原 URL（跳转前的 DOM 已不可复原，
-// 也没有意义）；否则依次恢复 storage、head.innerHTML、body.innerHTML、html/body 自身的属性
-// （style、class 等）、滚动位置。撤销后清空该 tab 的快照。
-async function revertChanges(tabId: number): Promise<RevertChangesResult> {
-  const tab = await resolveTargetTab(tabId);
-
-  const snapshot = await getSnapshot(tab.id);
-  if (!snapshot) return { reverted: false };
-
-  const currentUrl = await executeInTab(tab.id, null, (): string => location.href);
-  if (currentUrl !== snapshot.url) {
-    await browser.tabs.update(tab.id, { url: snapshot.url });
-    await clearSnapshot(tab.id);
-    return { reverted: true, navigatedBack: true };
-  }
-
-  await executeInTab(tab.id, snapshot, (snap): void => {
-    for (const entry of snap.storageEntries) {
-      const store = entry.area === 'session' ? sessionStorage : localStorage;
-      if (entry.previousValue === null) store.removeItem(entry.key);
-      else store.setItem(entry.key, entry.previousValue);
-    }
-    document.head.innerHTML = snap.headHTML;
-    document.body.innerHTML = snap.bodyHTML;
-    // body.innerHTML 只替换子节点，不会撤销直接打在 <html>/<body> 元素自身的改动
-    // （护眼模式等页面级视觉改造常见做法：给 documentElement/body 加 style/class），
-    // 所以要单独把这两个元素自身的属性也恢复到快照时的状态。
-    const restoreAttrs = (el: Element, attrs: [string, string][]): void => {
-      const keep = new Set(attrs.map(([name]) => name));
-      for (const name of Array.from(el.attributes).map((attr) => attr.name)) {
-        if (!keep.has(name)) el.removeAttribute(name);
-      }
-      for (const [name, value] of attrs) el.setAttribute(name, value);
-    };
-    restoreAttrs(document.documentElement, snap.htmlAttrs);
-    restoreAttrs(document.body, snap.bodyAttrs);
-    window.scrollTo(snap.scrollX, snap.scrollY);
-  });
-  await clearSnapshot(tab.id);
-  return { reverted: true, navigatedBack: false };
-}
-
-async function resetTurnSnapshot(tabId: number): Promise<{ ok: true }> {
-  await clearSnapshot(tabId);
-  return { ok: true };
 }
 
 // 拒绝非 http(s) 协议的跳转目标，防止 agent 被诱导跳转到 javascript:/file:/chrome: 等敏感 scheme。
@@ -678,7 +582,6 @@ async function navigateTab(payload: NavigateTabPayload, tabId: number): Promise<
   const url = payload?.url ?? '';
   if (!isNavigableUrl(url)) throw new Error('仅允许跳转到 http/https 地址。');
 
-  await ensureTurnSnapshot(tabId);
   const tab = await resolveTargetTab(tabId);
 
   await browser.tabs.update(tab.id, { url });
@@ -686,17 +589,11 @@ async function navigateTab(payload: NavigateTabPayload, tabId: number): Promise<
 }
 
 async function setStorage(payload: SetStoragePayload, tabId: number): Promise<SetStorageResult> {
-  await ensureTurnSnapshot(tabId);
-
-  const result = await executeInTab(tabId, payload, (input): SetStorageResult => {
+  return executeInTab(tabId, payload, (input): SetStorageResult => {
     const store = input?.area === 'session' ? sessionStorage : localStorage;
     const key = input?.key ?? '';
-    const previousValue = store.getItem(key);
     if (input?.value === null || input?.value === undefined) store.removeItem(key);
     else store.setItem(key, input.value);
-    return { area: input?.area ?? 'local', key, previousValue };
+    return { area: input?.area ?? 'local', key };
   });
-
-  await recordStorageEntryIfAbsent(tabId, { area: result.area, key: result.key, previousValue: result.previousValue });
-  return result;
 }

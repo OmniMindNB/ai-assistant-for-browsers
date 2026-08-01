@@ -21,8 +21,6 @@ export type MessageType =
   | 'SCROLL_PAGE'
   | 'NAVIGATE_TAB'
   | 'SET_STORAGE'
-  | 'RESET_TURN_SNAPSHOT'
-  | 'REVERT_CHANGES'
   | 'CHAT';
 
 export interface Message<T = unknown> {
@@ -185,11 +183,6 @@ export interface CaptureScreenshotResult {
   dataUrl: string;
 }
 
-export interface RevertChangesResult {
-  reverted: boolean;
-  navigatedBack?: boolean;
-}
-
 export interface SetStylePayload {
   selector: string;
   styles: Record<string, string>;
@@ -277,7 +270,6 @@ export interface SetStoragePayload {
 export interface SetStorageResult {
   area: 'local' | 'session';
   key: string;
-  previousValue: string | null;
 }
 
 /** 生成唯一消息 ID */
