@@ -123,7 +123,7 @@
 | 2026-07-24 | Spec-0002 全部验收标准通过：真机验证 `browser_inject_script` 的开关等待+自动重试/取消/孤儿轮询三条路径均正常；状态更新为已实现；同步修正 submission guide 中过时的"一次性报错"描述为等待重试流程 | Spec-0002, 2026-07-23-turn-tabid-pinning-and-userscripts-wait.md Task 9 |
 | 2026-07-21 | Chrome 应用商店合规修复：`browser_inject_script` 从 `new Function` 迁移到 `chrome.userScripts.execute`，消除 Remote Hosted Code 政策违规；新增 `userScripts` manifest 权限与 Chrome 138 版本下限 | Spec-0002 |
 | 2026-07-21 | 文档一致性清理：修正 Agent A/Spec-0001/ADR-0003 的过时状态标记、补全 docs/README 目录索引、technical-plan.md 三处加「已被取代」说明、归档已完成的实现计划；删除未被引用的死代码 `lib/llm.ts`（功能已由 `lib/agent/stream.ts` 承接） | 本次审计 |
-| 2026-07-21 | Agent Phase B 完成：10 个写入/交互工具、每轮一次确认闸门、整轮撤销、确认卡片/撤销条 UI、系统提示词补充写工具说明；真实 LLM 会话现场验证通过 | Spec-0001, 实现计划 |
+| 2026-07-21 | Agent Phase B 完成：10 个写入/交互工具、每轮一次确认闸门、整轮撤销（已于 2026-08-01 整体移除，见变更日志）、确认卡片/撤销条 UI、系统提示词补充写工具说明；真实 LLM 会话现场验证通过 | Spec-0001, 实现计划 |
 | 2026-06-20 | Agent A3 完成：sidepanel 发送流程切换为 Pi `Agent.prompt()`，删除关键词路由与正文-only prompt，新增工具调用状态 UI | agent-plan.md |
 | 2026-06-20 | 提升聚合巡检答案质量：`browser_inspect_page_implementation` 增加 `evidenceSummary`，抽取 scroll/sticky/IntersectionObserver/animation/Primer/GitHub landing-page 等脚本、样式、HTML、DOM 与 computed style 证据；聚合后允许最多 4 次、每类 1 次定向补查 | agent-plan.md |
 | 2026-06-20 | 增加聚合巡检后的运行时收敛约束：`browser_inspect_page_implementation` 成功后通过 `agent.steer()` 引导回答，并阻断重复读取 page_meta/read_page；scripts/styles/html/DOM/computed style 仅允许最多 4 次、每类 1 次定向补查 | agent-plan.md |

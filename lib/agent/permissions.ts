@@ -9,8 +9,8 @@ export interface PermissionDecision {
 }
 
 /**
- * 这几张表是工具分级的唯一来源：系统提示词（system-prompt.ts）列举写工具、
- * 侧边栏判断本轮是否产生改动，都从这里推导，避免新增工具时多处漏改。
+ * 这几张表是工具分级的唯一来源：系统提示词（system-prompt.ts）列举写工具即从这里推导，
+ * 避免新增工具时漏改。
  */
 export const READ_ONLY_TOOL_NAMES = new Set([
   'browser_read_page',

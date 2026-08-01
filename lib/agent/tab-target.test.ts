@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { fakeBrowser } from 'wxt/testing';
 import { resolveTargetTab } from './tab-target';
 
-// 和 turn-snapshot.test.ts 一样：vitest.config.ts 没接 WXT 的 unimport 插件，
+// vitest.config.ts 没接 WXT 的 unimport 插件，
 // 手动把 fakeBrowser 挂到全局 browser 标识符上。
 (globalThis as any).browser = fakeBrowser;
 
