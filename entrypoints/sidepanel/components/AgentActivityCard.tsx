@@ -23,7 +23,6 @@ const TOOL_LABEL_KEYS = {
   browser_scroll: 'agentActivity.tool.scroll',
   browser_navigate: 'agentActivity.tool.navigate',
   browser_set_storage: 'agentActivity.tool.setStorage',
-  browser_revert_changes: 'agentActivity.tool.revertChanges',
 } as const;
 
 export function AgentActivityCard({ activities }: { activities: ToolActivity[] }) {

@@ -23,7 +23,6 @@ const chatStore = {
   busy: false,
   error: null,
   pendingConfirmation: null,
-  turnHasChanges: false,
   providers: [],
   selectedProviderId: null,
   selectedModel: '',
@@ -53,7 +52,6 @@ const chatStore = {
   openConversation: vi.fn(),
   removeConversation: vi.fn(),
   respondToConfirmation: vi.fn(),
-  revertTurnChanges: vi.fn(),
   restoreTabConversation: vi.fn(),
 };
 let storageChangeListener: ((changes: Record<string, unknown>, areaName: string) => void) | undefined;
@@ -154,7 +152,6 @@ beforeEach(() => {
     busy: false,
     error: null,
     pendingConfirmation: null,
-    turnHasChanges: false,
     pageContext: {
       status: 'available' as const,
       tabId: 1,
@@ -577,14 +574,14 @@ describe('agent activity timeline', () => {
     expect(screen.getByRole('button', { name: 'Show task details' })).toHaveAttribute('aria-expanded', 'false');
   });
 
-  it('places the activity card before confirmation and undo cards without changing callbacks', async () => {
+  it('places the activity card before the confirmation card without changing callbacks', async () => {
     const user = userEvent.setup();
     (chatStore as any).toolActivities = [activity('confirming')];
     (chatStore as any).pendingConfirmation = {
       toolName: 'browser_type',
       summary: 'AI wants to type a value.',
     };
-    const { rerender } = render(
+    render(
       <LocaleProvider>
         <App />
       </LocaleProvider>,
@@ -596,20 +593,6 @@ describe('agent activity timeline', () => {
       .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     await user.click(screen.getByRole('button', { name: 'Approve this turn' }));
     expect(chatStore.respondToConfirmation).toHaveBeenCalledWith(true);
-
-    (chatStore as any).pendingConfirmation = null;
-    chatStore.turnHasChanges = true;
-    rerender(
-      <LocaleProvider>
-        <App />
-      </LocaleProvider>,
-    );
-
-    const undoStatus = screen.getByText('● Page modified this turn');
-    expect(activityStatus.compareDocumentPosition(undoStatus) & Node.DOCUMENT_POSITION_FOLLOWING)
-      .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    await user.click(screen.getByRole('button', { name: 'Undo this turn' }));
-    expect(chatStore.revertTurnChanges).toHaveBeenCalledOnce();
   });
 });
 

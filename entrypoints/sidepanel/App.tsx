@@ -36,7 +36,6 @@ export default function App() {
     busy,
     error,
     pendingConfirmation,
-    turnHasChanges,
     providers,
     selectedProviderId,
     selectedModel,
@@ -61,7 +60,6 @@ export default function App() {
     openConversation,
     removeConversation,
     respondToConfirmation,
-    revertTurnChanges,
     restoreTabConversation,
   } = useChat();
 
@@ -269,7 +267,6 @@ export default function App() {
                     onDeny={() => respondToConfirmation(false)}
                   />
                 )}
-                {!busy && !pendingConfirmation && turnHasChanges && <UndoBar onRevert={revertTurnChanges} />}
                 {error && (
                   <div
                     role="alert"
@@ -468,17 +465,3 @@ function ConfirmationCard({
   );
 }
 
-function UndoBar({ onRevert }: { onRevert: () => void }) {
-  const { t } = useTranslation();
-  return (
-    <div className="flex items-center justify-between rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs dark:border-neutral-800 dark:bg-neutral-900">
-      <span className="text-emerald-600 dark:text-emerald-400">{t('confirm.undoBarStatus')}</span>
-      <button
-        onClick={onRevert}
-        className="font-medium text-red-600 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-red-400"
-      >
-        {t('confirm.undoBarButton')}
-      </button>
-    </div>
-  );
-}

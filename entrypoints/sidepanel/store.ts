@@ -6,7 +6,6 @@ import {
   type ActiveTabInfo,
   type MessageResponse,
   type PageSelection,
-  type RevertChangesResult,
 } from '@/lib/messaging';
 import {
   ensureDevProvider,
@@ -31,7 +30,6 @@ import {
 } from '@/lib/chat/messages';
 import { createBrowserAgent } from '@/lib/agent/agent';
 import { buildSystemPrompt, DEFAULT_MAX_TOOL_TURNS } from '@/lib/agent/system-prompt';
-import { CONFIRM_TOOL_NAMES } from '@/lib/agent/permissions';
 import { buildShortcutExecution } from '@/lib/chat/shortcut-prompts';
 import { summarizeToolCallForConfirmation } from '@/lib/agent/confirm-summary';
 import { getConversationIdForTab, setConversationIdForTab } from '@/lib/agent/tab-conversation';
@@ -65,12 +63,7 @@ const REQUIRED_AGENT_MESSAGE_TYPES = [
   'SCROLL_PAGE',
   'NAVIGATE_TAB',
   'SET_STORAGE',
-  'RESET_TURN_SNAPSHOT',
-  'REVERT_CHANGES',
 ] as const;
-
-/** 会改动页面/浏览器状态的工具 = 需要确认的工具，直接复用权限表，避免两处漂移。 */
-const WRITE_TOOL_NAMES = CONFIRM_TOOL_NAMES;
 
 export type UIMessage = ChatMessage;
 
@@ -99,7 +92,6 @@ interface ChatState {
   busy: boolean;
   error: string | null;
   pendingConfirmation: PendingConfirmation | null;
-  turnHasChanges: boolean;
   provider: ProviderConfig | null;
   /** 全部已配置 Provider（输入框选择器枚举用） */
   providers: ProviderConfig[];
@@ -131,7 +123,6 @@ interface ChatState {
   openConversation: (id: string) => Promise<boolean>;
   removeConversation: (id: string) => Promise<void>;
   respondToConfirmation: (approved: boolean) => void;
-  revertTurnChanges: () => Promise<void>;
   restoreTabConversation: () => Promise<void>;
 }
 
@@ -149,8 +140,6 @@ interface ActiveRun {
 let activeRun: ActiveRun | null = null;
 let runEpoch = 0;
 let conversationEpoch = 0;
-/** 当前这一轮固定下来的目标 tabId；用于 revertTurnChanges 在轮次结束后仍能撤销正确的标签页。 */
-let currentTurnTabId: number | null = null;
 /** 侧边栏面板自己绑定的 tabId；挂载时解析一次并缓存，用于把 conversationId 变化写回对应 tab 的映射。 */
 let panelTabId: number | null = null;
 /** 只允许最近一次页面上下文刷新更新 UI，避免慢响应覆盖用户主动重试。 */
@@ -274,7 +263,6 @@ export const useChat = create<ChatState>((set, get) => ({
   busy: false,
   error: null,
   pendingConfirmation: null,
-  turnHasChanges: false,
   provider: null,
   providers: [],
   selectedProviderId: null,
@@ -485,24 +473,6 @@ export const useChat = create<ChatState>((set, get) => ({
     }));
   },
 
-  revertTurnChanges: async () => {
-    if (currentTurnTabId === null) {
-      set({ error: t('store.noRevertTabInfo') });
-      return;
-    }
-    try {
-      const res = (await sendMessage('REVERT_CHANGES', undefined, currentTurnTabId)) as MessageResponse<RevertChangesResult>;
-      if (!res.ok) throw new Error(res.error ?? t('store.revertFailed'));
-      if (!res.data?.reverted) {
-        set({ turnHasChanges: false, error: t('store.noChangesToRevert') });
-        return;
-      }
-      set({ turnHasChanges: false });
-    } catch (e) {
-      set({ error: errMsg(e) });
-    }
-  },
-
   clear: () => {
     ++conversationOpenRequestId;
     invalidateActiveRun(set, get);
@@ -513,7 +483,6 @@ export const useChat = create<ChatState>((set, get) => ({
       error: null,
       busy: false,
       conversationId: genConversationId(),
-      turnHasChanges: false,
       pendingConfirmation: null,
     });
   },
@@ -548,7 +517,6 @@ export const useChat = create<ChatState>((set, get) => ({
       conversationId: id,
       error: null,
       busy: false,
-      turnHasChanges: false,
       pendingConfirmation: null,
     });
     return true;
@@ -591,7 +559,6 @@ export const useChat = create<ChatState>((set, get) => ({
         toolActivities: [],
         conversationId: genConversationId(),
         busy: false,
-        turnHasChanges: false,
         pendingConfirmation: null,
       });
     }
@@ -664,7 +631,6 @@ async function runAgent(
   }
   if (!isCurrentRun(run, get)) return false;
   const tabId = tab.id;
-  currentTurnTabId = tabId;
 
   // 截断必须放在 Provider 校验与 resolveActiveTabId 之后：那两处失败会 set({ error }) 直接 return，
   // 若此时历史已被截断，用户的消息就被不可恢复地丢弃了，而这是用户完全没有预期的失败路径
@@ -695,9 +661,7 @@ async function runAgent(
     busy: true,
     error: null,
     pendingConfirmation: null,
-    turnHasChanges: false,
   });
-  await sendMessage('RESET_TURN_SNAPSHOT', undefined, tabId).catch(() => undefined);
   if (!isCurrentRun(run, get)) return false;
 
   const onConfirm = async (toolCallId: string, toolName: string, args: unknown, _reason: string): Promise<boolean> => {
@@ -777,13 +741,6 @@ async function runAgent(
         name: event.toolName,
         status: blocked ? 'blocked' : event.isError ? 'error' : 'done',
       });
-      if (!event.isError) {
-        if (event.toolName === 'browser_revert_changes') {
-          set({ turnHasChanges: false });
-        } else if (WRITE_TOOL_NAMES.has(event.toolName)) {
-          set({ turnHasChanges: true });
-        }
-      }
     }
   });
 
