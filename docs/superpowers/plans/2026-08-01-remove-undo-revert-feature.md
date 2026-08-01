@@ -417,10 +417,11 @@ git commit -m "refactor(sidepanel): remove undo bar and turn-change tracking"
 **Files:**
 - Modify: `lib/agent/tools.ts`
 - Modify: `lib/agent/system-prompt.ts`
+- Modify: `lib/agent/system-prompt.test.ts`
 
 **Interfaces:**
-- Consumes: nothing from Tasks 1-2.
-- Produces: `createBrowserTools()` no longer registers `browser_revert_changes`; the LLM is no longer told this tool exists. Task 4 removes the backend handler this tool used to call — safe to do in either order, but doing this first means Task 4 deletes purely-dead backend code.
+- Consumes: nothing from Tasks 1-2. Depends on Task 1 having already removed `AUTO_ALLOW_TOOL_NAMES` from `lib/agent/permissions.ts` — this task removes the last two consumers of that name (discovered during Task 1's review: a case-sensitive repo grep for `auto_allow` during planning missed these because the constant name is upper-case).
+- Produces: `createBrowserTools()` no longer registers `browser_revert_changes`; the LLM is no longer told this tool exists; `lib/agent/system-prompt.ts` and its test no longer reference `AUTO_ALLOW_TOOL_NAMES`. Task 4 removes the backend handler this tool used to call — safe to do in either order, but doing this first means Task 4 deletes purely-dead backend code.
 
 - [ ] **Step 1: Remove the tool from `lib/agent/tools.ts`**
 
@@ -463,7 +464,85 @@ function makeRevertChangesTool(tabId: number): BrowserAgentTool {
 
 ```
 
-- [ ] **Step 2: Reword the system prompt**
+- [ ] **Step 2: Remove `AUTO_ALLOW_TOOL_NAMES` usage from `lib/agent/system-prompt.ts`**
+
+Change the import:
+```ts
+import { AUTO_ALLOW_TOOL_NAMES, CONFIRM_TOOL_NAMES } from './permissions';
+```
+to:
+```ts
+import { CONFIRM_TOOL_NAMES } from './permissions';
+```
+
+Change the comment and constant:
+```ts
+/**
+ * 提示词里列举的写入/交互工具名，直接由权限表推导，避免新增工具时提示词漏改
+ * （ref: permissions.ts 的 CONFIRM_TOOL_NAMES / AUTO_ALLOW_TOOL_NAMES）。
+ */
+const WRITE_TOOL_LIST = [...CONFIRM_TOOL_NAMES, ...AUTO_ALLOW_TOOL_NAMES].join('、');
+```
+to:
+```ts
+/**
+ * 提示词里列举的写入/交互工具名，直接由权限表推导，避免新增工具时提示词漏改
+ * （ref: permissions.ts 的 CONFIRM_TOOL_NAMES）。
+ */
+const WRITE_TOOL_LIST = CONFIRM_TOOL_NAMES.join('、');
+```
+
+- [ ] **Step 3: Remove `AUTO_ALLOW_TOOL_NAMES` usage from `lib/agent/system-prompt.test.ts`**
+
+Change the import:
+```ts
+import {
+  AUTO_ALLOW_TOOL_NAMES,
+  CONFIRM_TOOL_NAMES,
+  DENY_TOOL_NAMES,
+  READ_ONLY_TOOL_NAMES,
+} from './permissions';
+
+const KNOWN_TOOL_NAMES = new Set([
+  ...READ_ONLY_TOOL_NAMES,
+  ...AUTO_ALLOW_TOOL_NAMES,
+  ...CONFIRM_TOOL_NAMES,
+]);
+```
+to:
+```ts
+import {
+  CONFIRM_TOOL_NAMES,
+  DENY_TOOL_NAMES,
+  READ_ONLY_TOOL_NAMES,
+} from './permissions';
+
+const KNOWN_TOOL_NAMES = new Set([
+  ...READ_ONLY_TOOL_NAMES,
+  ...CONFIRM_TOOL_NAMES,
+]);
+```
+
+Change the test:
+```ts
+describe('buildSystemPrompt tool listing', () => {
+  it('lists every confirm-level and auto-allow tool', () => {
+    for (const name of [...CONFIRM_TOOL_NAMES, ...AUTO_ALLOW_TOOL_NAMES]) {
+      expect(SYSTEM_PROMPT).toContain(name);
+    }
+  });
+```
+to:
+```ts
+describe('buildSystemPrompt tool listing', () => {
+  it('lists every confirm-level tool', () => {
+    for (const name of CONFIRM_TOOL_NAMES) {
+      expect(SYSTEM_PROMPT).toContain(name);
+    }
+  });
+```
+
+- [ ] **Step 4: Reword the write-tool guidance sentence**
 
 In `lib/agent/system-prompt.ts`, find the write-tool guidance sentence and remove the clause about `browser_revert_changes`:
 
@@ -479,25 +558,25 @@ to:
 
 (Note: "撤销更改" was also removed from the example list of user requests, since undo is no longer a thing the agent can do.)
 
-- [ ] **Step 3: Search for any test asserting the old prompt/tool text**
+- [ ] **Step 5: Search for any other test asserting the old prompt/tool text**
 
-Run: `/opt/homebrew/bin/rg -n "browser_revert_changes|撤销更改" lib/agent/*.test.ts lib/final-review.test.ts`
+Run: `/opt/homebrew/bin/rg -n "browser_revert_changes|撤销更改|AUTO_ALLOW_TOOL_NAMES" lib/agent/*.test.ts lib/final-review.test.ts`
 
-If any match appears, update or remove that assertion to match the new text from Step 2 (do not leave it asserting stale text).
+If any match appears beyond what Steps 2-4 already handled, update or remove that assertion to match the new text (do not leave it asserting stale text).
 
-- [ ] **Step 4: Run tests and typecheck**
+- [ ] **Step 6: Run tests and typecheck**
 
 Run: `pnpm test`
 Expected: PASS.
 
 Run: `pnpm compile`
-Expected: may still fail only in `entrypoints/background.ts` / `lib/messaging.ts` (Task 4 not done yet); confirm `lib/agent/tools.ts` and `lib/agent/system-prompt.ts` are clean.
+Expected: may still fail only in `entrypoints/background.ts` / `lib/messaging.ts` (Task 4 not done yet); confirm `lib/agent/tools.ts`, `lib/agent/system-prompt.ts`, and `lib/agent/system-prompt.test.ts` are clean.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add lib/agent/tools.ts lib/agent/system-prompt.ts
-git commit -m "refactor(agent): remove browser_revert_changes tool and its system-prompt mention"
+git add lib/agent/tools.ts lib/agent/system-prompt.ts lib/agent/system-prompt.test.ts
+git commit -m "refactor(agent): remove browser_revert_changes tool and AUTO_ALLOW_TOOL_NAMES from the system prompt"
 ```
 
 ---
