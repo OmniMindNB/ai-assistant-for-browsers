@@ -100,6 +100,7 @@
 
 | 日期 | 内容 | 关联 |
 |------|------|------|
+| 2026-08-01 | 删除撤销（Undo/Revert）功能：`browser_revert_changes` 工具、`turn-snapshot.ts` 快照模块、`REVERT_CHANGES`/`RESET_TURN_SNAPSHOT` 消息类型、`auto_allow` 权限档位、侧边栏撤销条 UI 及相关状态全部移除；同步更新 CLAUDE.md、README（中英）与隐私政策文字。起因：浏览器插件写操作本身轻量，且每轮首次写操作前已有用户确认闸门，撤销这层安全网的维护成本大于收益。验证：`pnpm compile` 通过，`pnpm test`（29 个测试文件、387 个测试）通过，`pnpm build`（Chrome MV3）成功构建。 | [设计](superpowers/specs/2026-08-01-remove-undo-revert-feature-design.md) |
 | 2026-07-31 | 简化聊天界面页面附加机制：删除 `PageContextBar` 组件、移除 `WorkbenchComposer` 的交互式 pill，只在受限/读取出错的页面显示不可点击的状态提示；`pageAttached` 从手动状态变为纯派生值（`resolvePageAttached`），受限/读取出错页面自动无需点击地不带浏览器工具，其余页面跟随全局设置 `attachPageByDefault`。验证：`pnpm compile` 通过，`pnpm test`（27 个测试文件、352 个测试）通过，`pnpm build`（Chrome MV3）成功构建。 | [设计](superpowers/specs/2026-07-31-simplify-page-attach-toggle-design.md) |
 | 2026-07-31 | 移除侧边栏「问答/Agent」模式切换：删除 `ModeSwitch` 组件、工作台偏好中的 `defaultMode` 字段与设置页模式单选组，以及相关 i18n 键，统一为单一输入区体验；`pageAttached`/`withoutBrowserTools` 行为不受影响。验证：`pnpm compile` 通过，`pnpm test`（27 个测试文件、348 个测试）通过，`pnpm build`（Chrome MV3）成功构建。 | [设计](superpowers/specs/2026-07-31-remove-ask-agent-mode-design.md) |
 | 2026-07-30 | 删除失败跨会话隔离回归：B 删除失败后，C 的独立持久化仍可完成，队列不会形成全局阻塞。验证：`pnpm test`（27 文件、347 测试）、`pnpm compile` 均通过。 | [设计](superpowers/specs/2026-07-30-sidepanel-context-workbench-redesign-design.md) |

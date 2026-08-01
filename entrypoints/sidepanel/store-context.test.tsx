@@ -274,7 +274,6 @@ describe('chat store page context', () => {
         'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML',
         'GET_COMPUTED_STYLE', 'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT',
         'TYPE_TEXT', 'SELECT_OPTION', 'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
-        'RESET_TURN_SNAPSHOT', 'REVERT_CHANGES',
       ] } });
       return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
     });
@@ -309,7 +308,7 @@ describe('chat store page context', () => {
       if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: [
         'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE',
         'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION',
-        'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE', 'RESET_TURN_SNAPSHOT', 'REVERT_CHANGES',
+        'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
       ] } });
       return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
     });
@@ -341,7 +340,7 @@ describe('chat store page context', () => {
       if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: [
         'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE',
         'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION',
-        'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE', 'RESET_TURN_SNAPSHOT', 'REVERT_CHANGES',
+        'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
       ] } });
       return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
     });
@@ -368,7 +367,7 @@ describe('chat store page context', () => {
       if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: [
         'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE',
         'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION',
-        'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE', 'RESET_TURN_SNAPSHOT', 'REVERT_CHANGES',
+        'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
       ] } });
       return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
     });
@@ -416,7 +415,7 @@ describe('chat store page context', () => {
       if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: [
         'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE',
         'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION',
-        'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE', 'RESET_TURN_SNAPSHOT', 'REVERT_CHANGES',
+        'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
       ] } });
       return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
     });
@@ -445,7 +444,7 @@ describe('chat store page context', () => {
     mocks.createBrowserAgent.mockReturnValue(agent);
     mocks.deleteConversation.mockImplementationOnce(() => new Promise<void>((resolve) => { resolveDelete = resolve; }));
     mocks.sendMessage.mockImplementation((type: string) => {
-      if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: ['GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE', 'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION', 'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE', 'RESET_TURN_SNAPSHOT', 'REVERT_CHANGES'] } });
+      if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: ['GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE', 'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION', 'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE'] } });
       return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
     });
     useChat.setState({ conversationId: 'A', messages: [] });
@@ -596,7 +595,6 @@ describe('chat store page context', () => {
         'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML',
         'GET_COMPUTED_STYLE', 'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT',
         'TYPE_TEXT', 'SELECT_OPTION', 'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
-        'RESET_TURN_SNAPSHOT', 'REVERT_CHANGES',
       ] } });
       return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
     });
@@ -688,7 +686,6 @@ describe('chat store page context', () => {
               'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML',
               'GET_COMPUTED_STYLE', 'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT',
               'TYPE_TEXT', 'SELECT_OPTION', 'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
-              'RESET_TURN_SNAPSHOT', 'REVERT_CHANGES',
             ],
           },
         });
@@ -718,7 +715,6 @@ describe('chat store page context', () => {
               'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML',
               'GET_COMPUTED_STYLE', 'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT',
               'TYPE_TEXT', 'SELECT_OPTION', 'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
-              'RESET_TURN_SNAPSHOT', 'REVERT_CHANGES',
             ],
           },
         });
@@ -745,7 +741,7 @@ describe('chat store page context', () => {
       if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: [
         'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE',
         'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION',
-        'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE', 'RESET_TURN_SNAPSHOT', 'REVERT_CHANGES',
+        'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
       ] } });
       return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
     });
@@ -772,7 +768,7 @@ describe('chat store page context', () => {
       if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: [
         'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE',
         'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION',
-        'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE', 'RESET_TURN_SNAPSHOT', 'REVERT_CHANGES',
+        'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
       ] } });
       return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
     });
@@ -812,7 +808,7 @@ describe('chat store page context', () => {
     ]));
     mocks.createBrowserAgent.mockReturnValue(agent);
     mocks.sendMessage.mockImplementation((type: string) => {
-      if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: ['GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE', 'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION', 'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE', 'RESET_TURN_SNAPSHOT', 'REVERT_CHANGES'] } });
+      if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: ['GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE', 'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION', 'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE'] } });
       return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
     });
     const send = useChat.getState().send('write');
