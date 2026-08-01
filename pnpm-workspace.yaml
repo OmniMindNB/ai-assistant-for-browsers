@@ -3,3 +3,5 @@ allowBuilds:
   esbuild: true
   protobufjs: true
   spawn-sync: true
+patchedDependencies:
+  '@earendil-works/pi-agent-core@0.79.3': patches/@earendil-works__pi-agent-core@0.79.3.patch

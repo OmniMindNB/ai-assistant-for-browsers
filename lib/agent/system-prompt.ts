@@ -3,8 +3,6 @@ import { CONFIRM_TOOL_NAMES } from './permissions';
 
 export const DEFAULT_READ_TOOL_CALL_BUDGET = 12;
 export const DEFAULT_WRITE_TOOL_CALL_BUDGET = 24;
-/** @deprecated Migrated and removed in Task 3. */
-export const DEFAULT_MAX_TOOL_TURNS = DEFAULT_READ_TOOL_CALL_BUDGET;
 
 /**
  * 提示词里列举的写入/交互工具名，直接由权限表推导，避免新增工具时提示词漏改
@@ -78,8 +76,6 @@ export interface SystemPromptOptions {
   locale?: ResolvedLocale;
   readToolCallBudget?: number;
   writeToolCallBudget?: number;
-  /** @deprecated Migrated and removed in Task 3. */
-  maxToolTurns?: number;
   /** 当前时间。传入才会注入 <runtime_context> 的时间行。 */
   now?: Date;
   /** 格式化时间用的 IANA 时区，默认取运行环境时区。 */
@@ -95,7 +91,7 @@ export interface SystemPromptOptions {
  * 能力、策略、输出风格各自独立成块，便于按场景增删单个分区而不影响其它部分。
  */
 export function buildSystemPrompt(options: SystemPromptOptions = {}): string {
-  const readToolCallBudget = options.readToolCallBudget ?? options.maxToolTurns ?? DEFAULT_READ_TOOL_CALL_BUDGET;
+  const readToolCallBudget = options.readToolCallBudget ?? DEFAULT_READ_TOOL_CALL_BUDGET;
   const writeToolCallBudget = Math.max(
     readToolCallBudget,
     options.writeToolCallBudget ?? DEFAULT_WRITE_TOOL_CALL_BUDGET,

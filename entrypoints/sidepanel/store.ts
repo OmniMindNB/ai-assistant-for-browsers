@@ -31,7 +31,6 @@ import {
 import { createBrowserAgent } from '@/lib/agent/agent';
 import {
   buildSystemPrompt,
-  DEFAULT_MAX_TOOL_TURNS,
   DEFAULT_READ_TOOL_CALL_BUDGET,
   DEFAULT_WRITE_TOOL_CALL_BUDGET,
 } from '@/lib/agent/system-prompt';
@@ -694,7 +693,8 @@ async function runAgent(
     }),
     tools: options.withoutBrowserTools ? [] : undefined,
     messages: toAgentMessages(history),
-    maxToolTurns: DEFAULT_MAX_TOOL_TURNS,
+    readToolCallBudget: DEFAULT_READ_TOOL_CALL_BUDGET,
+    writeToolCallBudget: DEFAULT_WRITE_TOOL_CALL_BUDGET,
     onConfirm,
   });
   if (!isCurrentRun(run, get)) return false;

@@ -3,10 +3,15 @@ import type { Api, Message, Model } from '@earendil-works/pi-ai';
 import { resolveProviderApi, type ProviderConfig } from '@/lib/settings';
 import { browserOpenAIStream } from './openai-stream';
 import { browserAnthropicStream } from './anthropic-stream';
-import { beforeToolCallPermissionGate } from './permissions';
+import { beforeToolCallPermissionGate, CONFIRM_TOOL_NAMES } from './permissions';
 import { createConfirmGateState, type ConfirmFn } from './confirm-gate';
 import { createBrowserTools, type BrowserAgentTool } from './tools';
-import { DEFAULT_MAX_TOOL_TURNS, SYSTEM_PROMPT } from './system-prompt';
+import { createAgentToolPolicy } from './tool-policy';
+import {
+  DEFAULT_READ_TOOL_CALL_BUDGET,
+  DEFAULT_WRITE_TOOL_CALL_BUDGET,
+  SYSTEM_PROMPT,
+} from './system-prompt';
 
 const MAX_CONTEXT_MESSAGES = 24;
 const MAX_TOOL_RESULT_CHARS = 30000;
@@ -28,21 +33,26 @@ export interface BrowserAgentOptions {
   systemPrompt?: string;
   tools?: BrowserAgentTool[];
   messages?: AgentMessage[];
-  maxToolTurns?: number;
+  readToolCallBudget?: number;
+  writeToolCallBudget?: number;
   onConfirm?: ConfirmFn;
 }
 
-export function createBrowserAgent(options: BrowserAgentOptions): Agent {
+export interface BrowserAgentRuntimeOptions extends BrowserAgentOptions {
+  steer: (message: AgentMessage) => void;
+}
+
+export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): AgentOptions {
   const tools = options.tools ?? createBrowserTools(options.tabId);
-  const maxToolTurns = options.maxToolTurns ?? DEFAULT_MAX_TOOL_TURNS;
-  let completedToolTurns = 0;
+  const readToolCallBudget = options.readToolCallBudget ?? DEFAULT_READ_TOOL_CALL_BUDGET;
+  const writeToolCallBudget = options.writeToolCallBudget ?? DEFAULT_WRITE_TOOL_CALL_BUDGET;
+  const policy = createAgentToolPolicy({ readToolCallBudget, writeToolCallBudget });
   let implementationDossierCollected = false;
   let postDossierFollowUps = 0;
   const toolCallCounts = new Map<string, number>();
   const confirmGateState = createConfirmGateState();
-  let agent: Agent;
 
-  const agentOptions: AgentOptions = {
+  return {
     initialState: {
       systemPrompt: options.systemPrompt ?? SYSTEM_PROMPT,
       model: createModel(options.provider),
@@ -55,12 +65,6 @@ export function createBrowserAgent(options: BrowserAgentOptions): Agent {
     toolExecution: 'sequential',
     beforeToolCall: async (context, signal) => {
       if (signal?.aborted) return { block: true, reason: '操作已停止。' };
-      if (completedToolTurns >= maxToolTurns) {
-        return {
-          block: true,
-          reason: `工具调用已达到上限（${maxToolTurns} 次）。不要再调用任何工具，请立即基于已有结果给出最终回答，并说明仍不确定的部分。`,
-        };
-      }
       if (implementationDossierCollected) {
         const toolName = context.toolCall.name;
         if (POST_DOSSIER_BLOCKED_TOOLS.has(toolName)) {
@@ -81,19 +85,31 @@ export function createBrowserAgent(options: BrowserAgentOptions): Agent {
           }
         }
       }
-      return beforeToolCallPermissionGate(context, {
+
+      const isConfirmTool = CONFIRM_TOOL_NAMES.has(context.toolCall.name);
+      const policyBlock = policy.preflight(context.toolCall.name, context.args, isConfirmTool);
+      if (policyBlock) return policyBlock;
+
+      const permissionBlock = await beforeToolCallPermissionGate(context, {
         gateState: confirmGateState,
         onConfirm: options.onConfirm,
         signal,
       });
+      if (permissionBlock) return permissionBlock;
+
+      if (isConfirmTool && confirmGateState.decision === 'approved') {
+        policy.approveWrite();
+        return policy.preflight(context.toolCall.name, context.args, isConfirmTool);
+      }
+      return undefined;
     },
     afterToolCall: async (context) => {
-      completedToolTurns += 1;
       const toolName = context.toolCall.name;
+      policy.recordExecution(toolName, context.args, context.isError);
       toolCallCounts.set(toolName, (toolCallCounts.get(toolName) ?? 0) + 1);
       if (toolName === IMPLEMENTATION_DOSSIER_TOOL && !context.isError) {
         implementationDossierCollected = true;
-        agent.steer({
+        options.steer({
           role: 'user',
           content:
             '页面实现巡检已经完成。请优先基于 evidenceSummary 和已有工具结果给出详细、证据驱动的回答；如果仍缺少具体引用证据，最多对 scripts/stylesheets/html/query_dom/computed_style 各补查一次，总补查不超过 4 次，然后必须回答。请点名引用脚本、样式、DOM class、computed style 中的关键线索。',
@@ -104,10 +120,27 @@ export function createBrowserAgent(options: BrowserAgentOptions): Agent {
       }
       return undefined;
     },
+    prepareNextTurnWithContext: async (context) => {
+      if (!policy.prepareFinalResponse()) return undefined;
+      options.steer({
+        role: 'user',
+        content: '工具调用预算已经用完。不要再调用任何工具，请立即基于已有结果给出最终回答，并明确说明仍不确定的部分。',
+        timestamp: Date.now(),
+      });
+      return { context: { ...context.context, tools: [] } };
+    },
+    shouldStopAfterTurn: async () => policy.shouldStopAfterTurn(),
     transformContext: async (messages) => compactAgentMessages(messages),
     convertToLlm: (messages) => messages.filter(isLlmMessage),
   };
+}
 
+export function createBrowserAgent(options: BrowserAgentOptions): Agent {
+  let agent: Agent;
+  const agentOptions = createBrowserAgentOptions({
+    ...options,
+    steer: (message) => agent.steer(message),
+  });
   agent = new Agent(agentOptions);
   return agent;
 }

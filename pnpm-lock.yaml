@@ -4,13 +4,16 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@earendil-works/pi-agent-core@0.79.3': 701614c107f9f390103520dd9ed4c475a82b4eb732943a2631859a3edbb933ba
+
 importers:
 
   .:
     dependencies:
       '@earendil-works/pi-agent-core':
         specifier: ^0.79.3
-        version: 0.79.3(ws@8.21.0)(zod@4.4.3)
+        version: 0.79.3(patch_hash=701614c107f9f390103520dd9ed4c475a82b4eb732943a2631859a3edbb933ba)(ws@8.21.0)(zod@4.4.3)
       '@earendil-works/pi-ai':
         specifier: ^0.79.3
         version: 0.79.3(ws@8.21.0)(zod@4.4.3)
@@ -3261,7 +3264,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@earendil-works/pi-agent-core@0.79.3(ws@8.21.0)(zod@4.4.3)':
+  '@earendil-works/pi-agent-core@0.79.3(patch_hash=701614c107f9f390103520dd9ed4c475a82b4eb732943a2631859a3edbb933ba)(ws@8.21.0)(zod@4.4.3)':
     dependencies:
       '@earendil-works/pi-ai': 0.79.3(ws@8.21.0)(zod@4.4.3)
       ignore: 7.0.5

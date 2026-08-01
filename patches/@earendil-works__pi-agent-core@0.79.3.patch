@@ -1,0 +1,70 @@
+diff --git a/dist/agent.d.ts b/dist/agent.d.ts
+index 7a15d77b4ff00357bad1c1f3c25cd0774c09b9ae..857fb30db546687e4f0ffad87856224002438d0b 100644
+--- a/dist/agent.d.ts
++++ b/dist/agent.d.ts
+@@ -1,5 +1,5 @@
+ import { type ImageContent, type Message, type SimpleStreamOptions, type ThinkingBudgets, type Transport } from "@earendil-works/pi-ai";
+-import type { AfterToolCallContext, AfterToolCallResult, AgentEvent, AgentLoopTurnUpdate, AgentMessage, AgentState, BeforeToolCallContext, BeforeToolCallResult, QueueMode, StreamFn, ToolExecutionMode } from "./types.ts";
++import type { AfterToolCallContext, AfterToolCallResult, AgentEvent, AgentLoopTurnUpdate, AgentMessage, AgentState, BeforeToolCallContext, BeforeToolCallResult, PrepareNextTurnContext, QueueMode, ShouldStopAfterTurnContext, StreamFn, ToolExecutionMode } from "./types.ts";
+ export type { QueueMode } from "./types.ts";
+ /** Options for constructing an {@link Agent}. */
+ export interface AgentOptions {
+@@ -13,6 +13,8 @@ export interface AgentOptions {
+     beforeToolCall?: (context: BeforeToolCallContext, signal?: AbortSignal) => Promise<BeforeToolCallResult | undefined>;
+     afterToolCall?: (context: AfterToolCallContext, signal?: AbortSignal) => Promise<AfterToolCallResult | undefined>;
+     prepareNextTurn?: (signal?: AbortSignal) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
++    prepareNextTurnWithContext?: (context: PrepareNextTurnContext, signal?: AbortSignal) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
++    shouldStopAfterTurn?: (context: ShouldStopAfterTurnContext, signal?: AbortSignal) => boolean | Promise<boolean>;
+     steeringMode?: QueueMode;
+     followUpMode?: QueueMode;
+     sessionId?: string;
+@@ -41,6 +43,8 @@ export declare class Agent {
+     beforeToolCall?: (context: BeforeToolCallContext, signal?: AbortSignal) => Promise<BeforeToolCallResult | undefined>;
+     afterToolCall?: (context: AfterToolCallContext, signal?: AbortSignal) => Promise<AfterToolCallResult | undefined>;
+     prepareNextTurn?: (signal?: AbortSignal) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
++    prepareNextTurnWithContext?: (context: PrepareNextTurnContext, signal?: AbortSignal) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
++    shouldStopAfterTurn?: (context: ShouldStopAfterTurnContext, signal?: AbortSignal) => boolean | Promise<boolean>;
+     private activeRun?;
+     /** Session identifier forwarded to providers for cache-aware backends. */
+     sessionId?: string;
+diff --git a/dist/agent.js b/dist/agent.js
+index 4b1fae06017f427de6926a885d508147664793b8..e4b8a3f51562e6493960ed353ad3161f4dc2acd8 100644
+--- a/dist/agent.js
++++ b/dist/agent.js
+@@ -97,6 +97,8 @@ export class Agent {
+     beforeToolCall;
+     afterToolCall;
+     prepareNextTurn;
++    prepareNextTurnWithContext;
++    shouldStopAfterTurn;
+     activeRun;
+     /** Session identifier forwarded to providers for cache-aware backends. */
+     sessionId;
+@@ -119,6 +121,8 @@ export class Agent {
+         this.beforeToolCall = options.beforeToolCall;
+         this.afterToolCall = options.afterToolCall;
+         this.prepareNextTurn = options.prepareNextTurn;
++        this.prepareNextTurnWithContext = options.prepareNextTurnWithContext;
++        this.shouldStopAfterTurn = options.shouldStopAfterTurn;
+         this.steeringQueue = new PendingMessageQueue(options.steeringMode ?? "one-at-a-time");
+         this.followUpQueue = new PendingMessageQueue(options.followUpMode ?? "one-at-a-time");
+         this.sessionId = options.sessionId;
+@@ -289,7 +293,17 @@ export class Agent {
+             toolExecution: this.toolExecution,
+             beforeToolCall: this.beforeToolCall,
+             afterToolCall: this.afterToolCall,
+-            prepareNextTurn: this.prepareNextTurn ? async () => await this.prepareNextTurn?.(this.signal) : undefined,
++            prepareNextTurn: this.prepareNextTurnWithContext || this.prepareNextTurn
++                ? async (context) => {
++                    if (this.prepareNextTurnWithContext) {
++                        return await this.prepareNextTurnWithContext(context, this.signal);
++                    }
++                    return await this.prepareNextTurn?.(this.signal);
++                }
++                : undefined,
++            shouldStopAfterTurn: this.shouldStopAfterTurn
++                ? async (context) => await this.shouldStopAfterTurn?.(context, this.signal)
++                : undefined,
+             convertToLlm: this.convertToLlm,
+             transformContext: this.transformContext,
+             getApiKey: this.getApiKey,
