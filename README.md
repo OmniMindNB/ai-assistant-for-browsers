@@ -2,12 +2,11 @@
 
 **中文** | [English](README.en.md)
 
-> 值得信赖的浏览器页面 Agent —— 修改页面前逐项征求你的确认、随时一键撤销，回答基于页面证据而非泛泛而谈；接入你自己选的、自己持有 Key 的模型，对话历史只留在本地、不上传云端。
+> 值得信赖的浏览器页面 Agent —— 修改页面前逐项征求你的确认，回答基于页面证据而非泛泛而谈；接入你自己选的、自己持有 Key 的模型，对话历史只留在本地、不上传云端。
 
 ## 核心功能
 
 - 🔒 **逐项确认才动手**：改样式/DOM、点击/输入/滚动/跳转、注入脚本等写入类操作，逐轮征求你的确认后才会执行——Deny-First 权限模型 + 注入脚本静态扫描（AST 危险 API 检测）+ SSRF 防护
-- ↩️ **一键撤销**：每轮写入前自动生成快照，改坏了随时撤销这一轮的全部改动
 - 🔍 **证据驱动的分析**：自动读取页面文本 / DOM / 脚本 / 样式 / 计算样式 / 截图，回答「这个效果怎么实现的」时点名引用具体代码证据，而不是给泛泛的描述
 - 🔑 **自带模型**：接入任意 OpenAI 兼容的 Provider / API Key / 模型，不绑定单一厂商
 - 🗂️ **本地优先**：对话历史只存在本地 IndexedDB，不同步到任何云端
@@ -55,16 +54,15 @@ pnpm test
 entrypoints/        # 扩展入口
   background.ts     # Service Worker：消息路由中心，唯一持有 tabs/scripting 权限
   content.ts        # Content Script：页面提取（Readability）/ 划词
-  sidepanel/        # 侧边栏 React 应用（对话 UI、确认卡片、撤销栏）
+  sidepanel/        # 侧边栏 React 应用（对话 UI、确认卡片）
   options/          # 设置 / Provider & API Key 管理
 lib/                # 共享库
   messaging.ts      # 三端统一消息协议
   agent/            # Agent 循环与工具调用
     agent.ts        # Agent 封装（model / tools / 生命周期钩子）
-    tools.ts        # browser_* 工具定义（只读 / 写入 / 撤销）
+    tools.ts        # browser_* 工具定义（只读 / 写入）
     permissions.ts  # Deny-First 权限分级（always_allow / confirm / deny）
     confirm-gate.ts # 每轮首次写入弹出确认，结果当轮复用
-    turn-snapshot.ts# 写入前快照，供 browser_revert_changes 撤销
     stream.ts       # SSE 流式响应解析
   db.ts             # IndexedDB（Dexie）
   settings.ts       # Provider 配置存储封装

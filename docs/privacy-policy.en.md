@@ -19,7 +19,7 @@ Provider settings, API keys, consent state, interface preferences, and conversat
 | Conversation content | Your prompts, quick-action prompts, recent conversation history, and AI responses; this content may include personal or confidential information that you choose to enter | Conversation messages are stored in browser-local IndexedDB | The current prompt and recent conversation context are sent directly to your configured AI provider |
 | Provider configuration and credentials | Provider name, Base URL, model, protocol, and API key | Stored in `chrome.storage.local` and not synced by Aluminum | The Base URL selects the destination. The model and request content are sent to that endpoint, and the API key is sent to that endpoint as an authentication header |
 | Consent and interface preferences | Consent version and acceptance time, language preference, and theme preference | Stored in `chrome.storage.local` | Not sent to the AI provider by Aluminum |
-| Session and undo state | The conversation associated with a tab and a temporary snapshot used to undo page changes, which can include page HTML, element attributes, page storage values changed during the turn, URL, and scroll position | Stored in `chrome.storage.session`, which is browser-session storage and is not synced by Aluminum | Not sent as session or undo records to the AI provider |
+| Session state | The conversation associated with a tab, keyed by tab ID | Stored in `chrome.storage.session`, which is browser-session storage and is not synced by Aluminum | Not sent as session records to the AI provider |
 
 For Chrome Web Store disclosure purposes, Aluminum treats `Website content` as collected/processed because relevant current-page content is transmitted off-device to the AI provider selected by the user for the core feature. Aluminum’s developer does not receive that content through an Aluminum backend.
 
@@ -39,7 +39,7 @@ Selecting `Not now` does not save consent and leaves the notice in place. Select
 
 - Provider settings, API keys, consent state, language, and theme are stored in `chrome.storage.local`.
 - Conversation messages are stored in browser-local IndexedDB.
-- Tab-to-conversation state and undo snapshots are stored temporarily in `chrome.storage.session`.
+- Tab-to-conversation state is stored temporarily in `chrome.storage.session`.
 - Page tool results and screenshot data URLs are not written to Aluminum’s persistent conversation database.
 
 You can delete individual conversations and remove provider configurations in Aluminum. Clearing the extension’s browser data or uninstalling Aluminum removes its local data. Deleting Aluminum’s local data does not delete copies already processed or retained by your AI provider; use that provider’s controls and policy for those copies.
@@ -62,8 +62,8 @@ Aluminum `1.1.0` uses this permission set:
 |---|---|
 | `activeTab` | Supports user-invoked access to the active page |
 | `tabs` | Identifies and validates the target tab, reads its title and URL, opens the extension settings page, and performs user-requested navigation |
-| `scripting` | Runs packaged read and structured-write functions in the target page and captures undo state |
-| `storage` | Stores local settings and consent plus temporary session and undo state |
+| `scripting` | Runs packaged read and structured-write functions in the target page |
+| `storage` | Stores local settings and consent plus temporary session state |
 | `sidePanel` | Hosts Aluminum’s primary interface |
 | Host access: `<all_urls>` | Lets the same current-page Agent work on user-selected HTTP and HTTPS sites and fetch page-referenced resources |
 
