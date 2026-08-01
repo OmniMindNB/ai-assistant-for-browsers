@@ -39,6 +39,7 @@ export function createAgentToolPolicy(options: AgentToolPolicyOptions): AgentToo
   const writeToolCallBudget = Math.max(options.readToolCallBudget, options.writeToolCallBudget);
   let completedToolCalls = 0;
   let writeApproved = false;
+  let boundaryConfirmReserved = false;
   let consecutiveFailure: { signature: string; count: number } | undefined;
   let phase: 'active' | 'final_response_prepared' | 'final_response_running' = 'active';
 
@@ -57,7 +58,11 @@ export function createAgentToolPolicy(options: AgentToolPolicyOptions): AgentToo
       if (consecutiveFailure?.signature === signature && consecutiveFailure.count >= 2) {
         return { block: true, reason: '相同工具调用连续失败两次，已停止重复尝试。' };
       }
-      if (completedToolCalls >= this.currentBudget && !(isConfirmTool && !writeApproved)) {
+      if (completedToolCalls >= this.currentBudget) {
+        if (isConfirmTool && !writeApproved && !boundaryConfirmReserved) {
+          boundaryConfirmReserved = true;
+          return undefined;
+        }
         return { block: true, reason: `工具调用次数已达到预算上限 ${this.currentBudget}。` };
       }
       return undefined;

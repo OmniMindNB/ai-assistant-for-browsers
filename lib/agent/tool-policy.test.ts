@@ -26,6 +26,16 @@ describe('AgentToolPolicy budgets', () => {
     expect(policy.currentBudget).toBe(2);
     expect(policy.preflight('browser_get_html', {}, false)?.block).toBe(true);
   });
+
+  it('allows only one unapproved confirm tool at the read boundary', () => {
+    const policy = createAgentToolPolicy({ readToolCallBudget: 2, writeToolCallBudget: 4 });
+    policy.recordExecution('browser_read_page', {}, false);
+    policy.recordExecution('browser_query_dom', {}, false);
+    expect(policy.preflight('browser_click', { selector: '#save' }, true)).toBeUndefined();
+    expect(policy.currentBudget).toBe(2);
+    expect(policy.preflight('browser_type', { selector: '#name', text: 'Ada' }, true)).toMatchObject({ block: true });
+    expect(policy.currentBudget).toBe(2);
+  });
 });
 
 describe('AgentToolPolicy repeated failures', () => {
