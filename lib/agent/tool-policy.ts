@@ -14,6 +14,7 @@ export interface AgentToolPolicy {
   readonly exhausted: boolean;
   preflight(toolName: string, args: unknown, isConfirmTool: boolean): ToolPreflightBlock | undefined;
   approveWrite(): void;
+  recordPreExecutionBlock(): void;
   recordExecution(toolName: string, args: unknown, isError: boolean): void;
   prepareFinalResponse(): boolean;
   shouldStopAfterTurn(): boolean;
@@ -41,6 +42,7 @@ export function createAgentToolPolicy(options: AgentToolPolicyOptions): AgentToo
   let writeApproved = false;
   let boundaryConfirmReserved = false;
   let consecutiveFailure: { signature: string; count: number } | undefined;
+  let consecutivePreExecutionBlocks = 0;
   let phase: 'active' | 'final_response_prepared' | 'final_response_running' = 'active';
 
   return {
@@ -70,10 +72,14 @@ export function createAgentToolPolicy(options: AgentToolPolicyOptions): AgentToo
     approveWrite() {
       writeApproved = true;
     },
+    recordPreExecutionBlock() {
+      consecutivePreExecutionBlocks += 1;
+    },
     recordExecution(toolName, args, isError) {
       completedToolCalls += 1;
       if (!isError) {
         consecutiveFailure = undefined;
+        consecutivePreExecutionBlocks = 0;
         return;
       }
 
@@ -85,7 +91,7 @@ export function createAgentToolPolicy(options: AgentToolPolicyOptions): AgentToo
       }
     },
     prepareFinalResponse() {
-      if (phase !== 'active' || !this.exhausted) return false;
+      if (phase !== 'active' || (!this.exhausted && consecutivePreExecutionBlocks < 2)) return false;
       phase = 'final_response_prepared';
       return true;
     },

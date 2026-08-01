@@ -86,12 +86,16 @@ describe('createBrowserAgentOptions tool policy hooks', () => {
     });
     await hooks.afterToolCall?.(afterContext('browser_read_page', {}, false));
     const next = await hooks.prepareNextTurnWithContext?.({
-      context: { tools: [{ name: 'still-present' }] },
+      context: { messages: [], tools: [{ name: 'still-present' }] },
     } as unknown as PrepareNextTurnContext);
     expect(next?.context?.tools).toEqual([]);
+    expect(next?.context?.messages.at(-1)).toMatchObject({
+      role: 'user',
+      content: expect.stringContaining('工具调用预算已经用完'),
+    });
     expect(await hooks.shouldStopAfterTurn?.({} as never)).toBe(false);
     expect(await hooks.shouldStopAfterTurn?.({} as never)).toBe(true);
-    expect(steer).toHaveBeenCalledOnce();
+    expect(steer).not.toHaveBeenCalled();
   });
 
   it('blocks a third identical failed execution before permission or execution', async () => {
@@ -111,6 +115,50 @@ describe('createBrowserAgentOptions tool policy hooks', () => {
       block: true,
       reason: expect.stringContaining('连续失败两次'),
     });
+  });
+
+  it('counts an initial and cached permission denial toward bounded block termination', async () => {
+    const hooks = createBrowserAgentOptions({
+      provider: baseProvider,
+      tabId: 1,
+      tools: [],
+      readToolCallBudget: 12,
+      writeToolCallBudget: 24,
+      steer: vi.fn(),
+      onConfirm: async () => false,
+    });
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_click', { selector: '#save' }))).toMatchObject({
+      block: true,
+    });
+    expect(
+      await hooks.prepareNextTurnWithContext?.({ context: { messages: [], tools: [] } } as unknown as PrepareNextTurnContext),
+    ).toBeUndefined();
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_type', { selector: '#name', text: 'Ada' }))).toMatchObject({
+      block: true,
+    });
+    expect(
+      await hooks.prepareNextTurnWithContext?.({ context: { messages: [], tools: [{}] } } as unknown as PrepareNextTurnContext),
+    ).toMatchObject({ context: { tools: [] } });
+  });
+
+  it('counts dossier guard blocks toward bounded block termination', async () => {
+    const hooks = createBrowserAgentOptions({
+      provider: baseProvider,
+      tabId: 1,
+      tools: [],
+      readToolCallBudget: 12,
+      writeToolCallBudget: 24,
+      steer: vi.fn(),
+    });
+    await hooks.afterToolCall?.(afterContext('browser_inspect_page_implementation', {}, false));
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_read_page', {}))).toMatchObject({ block: true });
+    expect(
+      await hooks.prepareNextTurnWithContext?.({ context: { messages: [], tools: [] } } as unknown as PrepareNextTurnContext),
+    ).toBeUndefined();
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_get_page_meta', {}))).toMatchObject({ block: true });
+    expect(
+      await hooks.prepareNextTurnWithContext?.({ context: { messages: [], tools: [{}] } } as unknown as PrepareNextTurnContext),
+    ).toMatchObject({ context: { tools: [] } });
   });
 });
 

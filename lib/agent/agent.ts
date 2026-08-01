@@ -1,4 +1,10 @@
-import { Agent, type AgentMessage, type AgentOptions, type StreamFn } from '@earendil-works/pi-agent-core';
+import {
+  Agent,
+  type AgentMessage,
+  type AgentOptions,
+  type BeforeToolCallResult,
+  type StreamFn,
+} from '@earendil-works/pi-agent-core';
 import type { Api, Message, Model } from '@earendil-works/pi-ai';
 import { resolveProviderApi, type ProviderConfig } from '@/lib/settings';
 import { browserOpenAIStream } from './openai-stream';
@@ -51,6 +57,10 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
   let postDossierFollowUps = 0;
   const toolCallCounts = new Map<string, number>();
   const confirmGateState = createConfirmGateState();
+  const recordPreExecutionBlock = (block: BeforeToolCallResult): BeforeToolCallResult => {
+    policy.recordPreExecutionBlock();
+    return block;
+  };
 
   return {
     initialState: {
@@ -64,42 +74,43 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
     getApiKey: () => options.provider.apiKey,
     toolExecution: 'sequential',
     beforeToolCall: async (context, signal) => {
-      if (signal?.aborted) return { block: true, reason: '操作已停止。' };
+      if (signal?.aborted) return recordPreExecutionBlock({ block: true, reason: '操作已停止。' });
       if (implementationDossierCollected) {
         const toolName = context.toolCall.name;
         if (POST_DOSSIER_BLOCKED_TOOLS.has(toolName)) {
-          return {
+          return recordPreExecutionBlock({
             block: true,
             reason:
               '页面实现巡检已经包含 meta、正文、HTML、脚本和样式表。不要重复读取这些宽泛资料；请立即基于 browser_inspect_page_implementation 的结果回答。',
-          };
+          });
         }
         if (POST_DOSSIER_ALLOWED_TOOLS.has(toolName)) {
           const priorCalls = toolCallCounts.get(toolName) ?? 0;
           if (postDossierFollowUps >= MAX_POST_DOSSIER_FOLLOW_UPS || priorCalls >= 1) {
-            return {
+            return recordPreExecutionBlock({
               block: true,
               reason:
                 '页面实现巡检后的定向补查额度已用完，或该工具已经补查过一次。请停止继续调用工具，基于已有证据给出最终回答。',
-            };
+            });
           }
         }
       }
 
       const isConfirmTool = CONFIRM_TOOL_NAMES.has(context.toolCall.name);
       const policyBlock = policy.preflight(context.toolCall.name, context.args, isConfirmTool);
-      if (policyBlock) return policyBlock;
+      if (policyBlock) return recordPreExecutionBlock(policyBlock);
 
       const permissionBlock = await beforeToolCallPermissionGate(context, {
         gateState: confirmGateState,
         onConfirm: options.onConfirm,
         signal,
       });
-      if (permissionBlock) return permissionBlock;
+      if (permissionBlock) return recordPreExecutionBlock(permissionBlock);
 
       if (isConfirmTool && confirmGateState.decision === 'approved') {
         policy.approveWrite();
-        return policy.preflight(context.toolCall.name, context.args, isConfirmTool);
+        const approvedPolicyBlock = policy.preflight(context.toolCall.name, context.args, isConfirmTool);
+        return approvedPolicyBlock ? recordPreExecutionBlock(approvedPolicyBlock) : undefined;
       }
       return undefined;
     },
@@ -121,13 +132,22 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
       return undefined;
     },
     prepareNextTurnWithContext: async (context) => {
+      const budgetExhausted = policy.exhausted;
       if (!policy.prepareFinalResponse()) return undefined;
-      options.steer({
+      const finalInstruction: AgentMessage = {
         role: 'user',
-        content: '工具调用预算已经用完。不要再调用任何工具，请立即基于已有结果给出最终回答，并明确说明仍不确定的部分。',
+        content: budgetExhausted
+          ? '工具调用预算已经用完。不要再调用任何工具，请立即基于已有结果给出最终回答，并明确说明仍不确定的部分。'
+          : '工具调用连续被阻止，工具调用阶段已经结束。不要再调用任何工具，请立即基于已有结果给出最终回答，并明确说明仍不确定的部分。',
         timestamp: Date.now(),
-      });
-      return { context: { ...context.context, tools: [] } };
+      };
+      return {
+        context: {
+          ...context.context,
+          messages: [...context.context.messages, finalInstruction],
+          tools: [],
+        },
+      };
     },
     shouldStopAfterTurn: async () => policy.shouldStopAfterTurn(),
     transformContext: async (messages) => compactAgentMessages(messages),

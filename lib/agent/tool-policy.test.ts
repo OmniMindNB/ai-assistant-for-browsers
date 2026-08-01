@@ -68,4 +68,26 @@ describe('AgentToolPolicy final response', () => {
     expect(policy.shouldStopAfterTurn()).toBe(false);
     expect(policy.shouldStopAfterTurn()).toBe(true);
   });
+
+  it('allows one blocked attempt to change strategy and prepares a final response after the next block', () => {
+    const policy = createAgentToolPolicy({ readToolCallBudget: 12, writeToolCallBudget: 24 });
+    policy.recordPreExecutionBlock();
+    expect(policy.prepareFinalResponse()).toBe(false);
+    policy.recordPreExecutionBlock();
+    expect(policy.prepareFinalResponse()).toBe(true);
+  });
+
+  it('resets the blocked-attempt streak only after a successful execution', () => {
+    const resetPolicy = createAgentToolPolicy({ readToolCallBudget: 12, writeToolCallBudget: 24 });
+    resetPolicy.recordPreExecutionBlock();
+    resetPolicy.recordExecution('browser_query_dom', { selector: '.ok' }, false);
+    resetPolicy.recordPreExecutionBlock();
+    expect(resetPolicy.prepareFinalResponse()).toBe(false);
+
+    const failedPolicy = createAgentToolPolicy({ readToolCallBudget: 12, writeToolCallBudget: 24 });
+    failedPolicy.recordPreExecutionBlock();
+    failedPolicy.recordExecution('browser_query_dom', { selector: '.missing' }, true);
+    failedPolicy.recordPreExecutionBlock();
+    expect(failedPolicy.prepareFinalResponse()).toBe(true);
+  });
 });
