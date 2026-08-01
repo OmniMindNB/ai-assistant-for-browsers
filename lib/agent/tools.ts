@@ -24,7 +24,6 @@ import {
   type PageMetaResult,
   type QueryDomPayload,
   type QueryDomResult,
-  type RevertChangesResult,
   type ScrollPagePayload,
   type ScrollPageResult,
   type SelectOptionPayload,
@@ -59,7 +58,6 @@ export function createBrowserTools(tabId: number): BrowserAgentTool[] {
     makeScrollTool(tabId),
     makeNavigateTool(tabId),
     makeSetStorageTool(tabId),
-    makeRevertChangesTool(tabId),
   ];
 }
 
@@ -538,28 +536,6 @@ function makeSetStorageTool(tabId: number): BrowserAgentTool {
     },
   };
 }
-
-function makeRevertChangesTool(tabId: number): BrowserAgentTool {
-  return {
-    name: 'browser_revert_changes',
-    label: 'Revert Changes',
-    description:
-      'Undo every page modification made during this turn (DOM edits, style changes, storage writes, navigation), restoring the page to its state before this turn started. Safe to call whenever the user asks to undo.',
-    parameters: Type.Object({}),
-    execute: async () => {
-      const response = (await sendMessage('REVERT_CHANGES', undefined, tabId)) as MessageResponse<RevertChangesResult>;
-      if (!response.ok || !response.data) throw new Error(response.error ?? '撤销失败');
-      if (!response.data.reverted) {
-        return textResult('本轮没有可撤销的改动。', response.data as unknown as Record<string, unknown>);
-      }
-      return textResult(
-        response.data.navigatedBack ? '已跳转回本轮开始前的页面。' : '已撤销本轮的全部改动。',
-        response.data as unknown as Record<string, unknown>,
-      );
-    },
-  };
-}
-
 
 function textResult(text: string, details: Record<string, unknown>) {
   return {

@@ -2,7 +2,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildSystemPrompt, DEFAULT_MAX_TOOL_TURNS, SYSTEM_PROMPT } from './system-prompt';
 import {
-  AUTO_ALLOW_TOOL_NAMES,
   CONFIRM_TOOL_NAMES,
   DENY_TOOL_NAMES,
   READ_ONLY_TOOL_NAMES,
@@ -10,7 +9,6 @@ import {
 
 const KNOWN_TOOL_NAMES = new Set([
   ...READ_ONLY_TOOL_NAMES,
-  ...AUTO_ALLOW_TOOL_NAMES,
   ...CONFIRM_TOOL_NAMES,
 ]);
 
@@ -36,8 +34,8 @@ describe('buildSystemPrompt structure', () => {
 });
 
 describe('buildSystemPrompt tool listing', () => {
-  it('lists every confirm-level and auto-allow tool', () => {
-    for (const name of [...CONFIRM_TOOL_NAMES, ...AUTO_ALLOW_TOOL_NAMES]) {
+  it('lists every confirm-level tool', () => {
+    for (const name of CONFIRM_TOOL_NAMES) {
       expect(SYSTEM_PROMPT).toContain(name);
     }
   });

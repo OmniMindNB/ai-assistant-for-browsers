@@ -1,5 +1,5 @@
 import type { ResolvedLocale } from '@/lib/i18n';
-import { AUTO_ALLOW_TOOL_NAMES, CONFIRM_TOOL_NAMES } from './permissions';
+import { CONFIRM_TOOL_NAMES } from './permissions';
 
 /**
  * 工具预算上限。放在这里而不是 agent.ts，是因为这个数字同时出现在两个地方：
@@ -10,9 +10,9 @@ export const DEFAULT_MAX_TOOL_TURNS = 50;
 
 /**
  * 提示词里列举的写入/交互工具名，直接由权限表推导，避免新增工具时提示词漏改
- * （ref: permissions.ts 的 CONFIRM_TOOL_NAMES / AUTO_ALLOW_TOOL_NAMES）。
+ * （ref: permissions.ts 的 CONFIRM_TOOL_NAMES）。
  */
-const WRITE_TOOL_LIST = [...CONFIRM_TOOL_NAMES, ...AUTO_ALLOW_TOOL_NAMES].join('、');
+const WRITE_TOOL_LIST = [...CONFIRM_TOOL_NAMES].join('、');
 
 /**
  * 回答语言指令，按界面语言选取。提示词正文本身保持中文撰写，只有这一段随 UI locale 切换——
@@ -120,7 +120,7 @@ export function buildSystemPrompt(options: SystemPromptOptions = {}): string {
     section('tools', `你拥有页面写入与交互工具：${WRITE_TOOL_LIST}。`),
     section(
       'page_actions',
-      '当用户要求修改或操作当前页面（例如去广告、切换阅读模式、改样式、移除元素、填写表单、点击、跳转、撤销更改等）时，请直接调用对应的写工具去完成，不需要先做完整的实现巡检；只有在必须先定位具体元素或选择器时，才用 browser_query_dom / browser_get_html 做少量确认。写工具首次调用会触发一次性用户确认——这些操作会逐一向用户展示并需要确认，且整轮改动可通过 browser_revert_changes 完整撤销，因此可以放心直接调用，用户批准后本轮内的同类调用会自动执行，不要因为担心权限而绕过工具去建议用户手动操作。',
+      '当用户要求修改或操作当前页面（例如去广告、切换阅读模式、改样式、移除元素、填写表单、点击、跳转等）时，请直接调用对应的写工具去完成，不需要先做完整的实现巡检；只有在必须先定位具体元素或选择器时，才用 browser_query_dom / browser_get_html 做少量确认。写工具首次调用会触发一次性用户确认——这些操作会逐一向用户展示并需要确认，因此可以放心直接调用，用户批准后本轮内的同类调用会自动执行，不要因为担心权限而绕过工具去建议用户手动操作。',
     ),
     section('tool_strategy', buildToolStrategy(options).join('\n')),
     section(
