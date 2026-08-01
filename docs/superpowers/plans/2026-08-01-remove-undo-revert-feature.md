@@ -13,7 +13,7 @@
 - Verify with `pnpm compile` (typecheck) and `pnpm test` (vitest run) after every task; run `pnpm build` at the end of the plan.
 - Do not touch anything under `docs/superpowers/specs/` or `docs/superpowers/plans/` other than this plan file and its design spec — numbered/dated docs are immutable historical record.
 - Do not touch Chrome Web Store submission docs (`docs/chrome-store-listing.en.md`, `docs/chrome-store-permission-justifications.md`, `docs/chrome-store-submission-guide.md`) or store screenshot assets (`screenshot-04-undo.png`, `demo/store-assets-frame.html`) — out of scope per the design spec.
-- Do not touch `persistConversationSnapshot` / `store-context.test.tsx` "snapshot" tests in `entrypoints/sidepanel/store.ts` — that's chat-message persistence, an unrelated naming coincidence, not the page-change snapshot being removed.
+- Do not touch `persistConversationSnapshot` / `store-context.test.tsx`'s "snapshot" *test names* (e.g. `'serializes a real completed snapshot before...'`) or the `store.ts` code they exercise — that's chat-message persistence, an unrelated naming coincidence, not the page-change snapshot being removed. This does NOT cover `store-context.test.tsx`'s separate, literal `'RESET_TURN_SNAPSHOT'`/`'REVERT_CHANGES'` string-literal entries inside mocked `PING` `supportedTypes` arrays (found during Task 4's review — planning's case-sensitive grep for `revert|Revert` missed the all-caps message-type literals) — those are stale mock data for the removed message types and Task 6 removes them.
 - Design spec: `docs/superpowers/specs/2026-08-01-remove-undo-revert-feature-design.md`.
 
 ---
@@ -1020,13 +1020,48 @@ git commit -m "docs: remove undo/revert feature mentions from README, CLAUDE.md,
 ### Task 6: Full-repo sweep and final verification
 
 **Files:**
-- None expected, unless the sweep in Step 1 turns up a stray reference — if so, fix it in its owning file (not a new file).
+- Modify: `entrypoints/sidepanel/store-context.test.tsx` (remove stale `RESET_TURN_SNAPSHOT`/`REVERT_CHANGES` mock literals — see Step 1)
+- Modify: `docs/PROGRESS.md`
+- Otherwise none expected, unless the sweep in Step 1 turns up an additional stray reference — if so, fix it in its owning file (not a new file).
 
 **Interfaces:**
 - Consumes: the fully-updated codebase from Tasks 1-5.
 - Produces: a verified, working extension build.
 
-- [ ] **Step 1: Sweep for leftover references**
+- [ ] **Step 1: Remove stale mock literals from `store-context.test.tsx`**
+
+This file mocks the background script's `PING` response, whose `supportedTypes` field used to include every message type from `entrypoints/background.ts`'s `SUPPORTED_MESSAGE_TYPES` — including `'RESET_TURN_SNAPSHOT'` and `'REVERT_CHANGES'`, which Task 4 removed from the real array. The mock arrays here are just string literals (not imports), so they didn't break compile or tests, but they're stale now that those two message types no longer exist.
+
+Using `replace_all` (both patterns occur multiple times, identically, across the file):
+
+Replace all occurrences of:
+```ts
+        'RESET_TURN_SNAPSHOT', 'REVERT_CHANGES',
+```
+with nothing (delete the line). This pattern occurs 10 times in this file, each as its own line inside a multi-line array literal (indentation may vary between 8 and 14 spaces depending on nesting — match each occurrence's actual indentation, or run the removal once per distinct indentation level if a single `replace_all` can't span both).
+
+Then replace all occurrences of:
+```ts
+, 'RESET_TURN_SNAPSHOT', 'REVERT_CHANGES']
+```
+with:
+```ts
+]
+```
+This pattern occurs 2 times, inside single-line `supportedTypes: [...]` array literals (e.g. `if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: [..., 'SET_STORAGE', 'RESET_TURN_SNAPSHOT', 'REVERT_CHANGES'] } });`).
+
+After both replacements, verify:
+```bash
+/opt/homebrew/bin/rg -n "RESET_TURN_SNAPSHOT|REVERT_CHANGES" entrypoints/sidepanel/store-context.test.tsx
+```
+Expected: no output.
+
+- [ ] **Step 2: Run the affected test file**
+
+Run: `pnpm vitest run entrypoints/sidepanel/store-context.test.tsx`
+Expected: PASS, same test count as before this edit (these mock arrays feed a superset check — `store.ts`'s `getMissingAgentMessageTypes()` — removing extra unused entries from the mocked `supportedTypes` cannot cause a previously-passing test to start failing, since `REQUIRED_AGENT_MESSAGE_TYPES` no longer requires either removed type in the first place, per Task 2).
+
+- [ ] **Step 3: Sweep for any other leftover references**
 
 Run:
 ```bash
@@ -1041,9 +1076,9 @@ Run:
   --glob '!.output/**'
 ```
 
-Expected matches: only `persistConversationSnapshot` and its call sites/comments in `entrypoints/sidepanel/store.ts`, and `store-context.test.tsx`'s "snapshot" test names — both are the unrelated chat-message-persistence feature (see Global Constraints) and must be left alone. If anything else shows up, remove/update it in its own file before proceeding — do not skip this.
+Expected matches: only `persistConversationSnapshot` and its call sites/comments in `entrypoints/sidepanel/store.ts`, and `store-context.test.tsx`'s "snapshot" *test names* (e.g. `'serializes a real completed snapshot before...'`) — both are the unrelated chat-message-persistence feature (see Global Constraints) and must be left alone. This grep pattern is case-sensitive and won't catch all-caps identifiers like `AUTO_ALLOW_TOOL_NAMES` or `REVERT_CHANGES` (those were already handled in Tasks 3-4 and Step 1 above) — if you want a belt-and-suspenders check for other all-caps stragglers, also run `/opt/homebrew/bin/rg -n "AUTO_ALLOW|REVERT_CHANGES|RESET_TURN_SNAPSHOT" --glob '!docs/superpowers/specs/**' --glob '!docs/superpowers/plans/**' --glob '!node_modules/**' --glob '!.output/**'` and confirm no output. If anything else shows up from either sweep, remove/update it in its own file before proceeding — do not skip this.
 
-- [ ] **Step 2: Full typecheck, test, and build**
+- [ ] **Step 4: Full typecheck, test, and build**
 
 Run: `pnpm compile`
 Expected: PASS, zero errors.
@@ -1054,7 +1089,7 @@ Expected: PASS, all files green.
 Run: `pnpm build`
 Expected: PASS, produces `.output/chrome-mv3` with no errors.
 
-- [ ] **Step 3: Manual verification in the browser**
+- [ ] **Step 5: Manual verification in the browser**
 
 1. Run `pnpm dev`.
 2. Load the unpacked extension from `.output/chrome-mv3` via `chrome://extensions` → Developer mode → Load unpacked (or reload it if already loaded).
@@ -1063,7 +1098,7 @@ Expected: PASS, produces `.output/chrome-mv3` with no errors.
 5. Confirm no undo bar / "Undo this turn" control appears after the change.
 6. Start a new conversation (clear/new chat) and confirm no errors appear in the extension's service-worker console (`chrome://extensions` → Aluminum → "service worker" → Inspect).
 
-- [ ] **Step 4: Update `docs/PROGRESS.md`**
+- [ ] **Step 6: Update `docs/PROGRESS.md`**
 
 Append a new row at the top of the changelog table (matching the existing table's format — date, description, doc link) describing this removal, e.g.:
 
@@ -1073,11 +1108,11 @@ Append a new row at the top of the changelog table (matching the existing table'
 
 (Adjust the exact test-file/test-count phrasing if you want to match the surrounding rows' style — check the most recent 1-2 rows in `docs/PROGRESS.md` for the current convention before writing this one, since other entries sometimes include a `pnpm test` file/test count that will have shifted after Tasks 1-4's deletions.)
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add docs/PROGRESS.md
-git commit -m "docs: log undo/revert removal in PROGRESS.md"
+git add entrypoints/sidepanel/store-context.test.tsx docs/PROGRESS.md
+git commit -m "docs: log undo/revert removal, drop stale mock literals in store-context.test.tsx"
 ```
 
 ## Self-Review Notes
