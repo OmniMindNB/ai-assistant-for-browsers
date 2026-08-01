@@ -1,7 +1,7 @@
 import type { BeforeToolCallContext, BeforeToolCallResult } from '@earendil-works/pi-agent-core';
 import { resolveConfirmGate, type ConfirmFn, type ConfirmGateState } from './confirm-gate';
 
-export type PermissionLevel = 'always_allow' | 'auto_allow' | 'confirm' | 'deny';
+export type PermissionLevel = 'always_allow' | 'confirm' | 'deny';
 
 export interface PermissionDecision {
   level: PermissionLevel;
@@ -24,8 +24,6 @@ export const READ_ONLY_TOOL_NAMES = new Set([
   'browser_get_page_meta',
   'browser_screenshot',
 ]);
-
-export const AUTO_ALLOW_TOOL_NAMES = new Set(['browser_revert_changes']);
 
 export const CONFIRM_TOOL_NAMES = new Set([
   'browser_set_style',
@@ -59,7 +57,6 @@ export function decideToolPermission(toolName: string, args: unknown): Permissio
   }
 
   if (READ_ONLY_TOOL_NAMES.has(toolName)) return { level: 'always_allow' };
-  if (AUTO_ALLOW_TOOL_NAMES.has(toolName)) return { level: 'auto_allow' };
   if (CONFIRM_TOOL_NAMES.has(toolName)) {
     return { level: 'confirm', reason: `工具 ${toolName} 会修改页面或浏览器状态，需要用户确认。` };
   }
@@ -78,7 +75,7 @@ export async function beforeToolCallPermissionGate(
   options: PermissionGateOptions,
 ): Promise<BeforeToolCallResult | undefined> {
   const decision = decideToolPermission(context.toolCall.name, context.args);
-  if (decision.level === 'always_allow' || decision.level === 'auto_allow') return undefined;
+  if (decision.level === 'always_allow') return undefined;
   if (decision.level === 'deny') {
     return { block: true, reason: decision.reason ?? '该操作已被安全策略阻止。' };
   }

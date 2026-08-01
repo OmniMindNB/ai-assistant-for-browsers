@@ -17,10 +17,6 @@ describe('decideToolPermission', () => {
     expect(decideToolPermission('browser_read_page', {})).toEqual({ level: 'always_allow' });
   });
 
-  it('auto-allows revert_changes', () => {
-    expect(decideToolPermission('browser_revert_changes', {})).toEqual({ level: 'auto_allow' });
-  });
-
   it('denies an unknown tool', () => {
     expect(decideToolPermission('browser_made_up', {}).level).toBe('deny');
   });
