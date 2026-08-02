@@ -259,7 +259,9 @@ export default function App() {
                     />
                   ))
                 )}
-                {currentActivity && <CurrentActivityLine activity={currentActivity} />}
+                {currentActivity && !pendingConfirmation && (
+                  <CurrentActivityLine activity={currentActivity} />
+                )}
                 {pendingConfirmation && (
                   <ConfirmationCard
                     confirmation={pendingConfirmation}

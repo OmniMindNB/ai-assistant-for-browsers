@@ -838,6 +838,7 @@ async function runAgent(
       // abort an already-complete agent or schedule a second snapshot write.
       settleRun(run);
       set({ busy: false });
+      setCurrentActivity(set, null);
       await persistConversationSnapshot(run.origin.conversationId, messages);
     }
   }

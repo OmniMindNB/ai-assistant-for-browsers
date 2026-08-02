@@ -758,8 +758,10 @@ describe('chat store page context', () => {
     const send = useChat.getState().send('write');
     await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalled());
     const confirm = mocks.createBrowserAgent.mock.calls[0][0].onConfirm as (id: string, name: string, args: unknown, reason: string) => Promise<boolean>;
+    agentEventListener?.({ type: 'tool_execution_start', toolCallId: 'call-1', toolName: 'browser_click', args: { selector: 'button.buy' } });
     const decision = confirm('call-1', 'browser_click', { selector: 'button.buy' }, 'confirm');
-    expect(useChat.getState().currentActivity).toBeNull();
+    expect(useChat.getState().currentActivity).toMatchObject({ id: 'call-1', status: 'running' });
+    expect(useChat.getState().currentActivity?.description).toContain('button.buy');
     useChat.getState().respondToConfirmation(false);
     await expect(decision).resolves.toBe(false);
     expect(useChat.getState().currentActivity).toMatchObject({ id: 'call-1', status: 'failed' });

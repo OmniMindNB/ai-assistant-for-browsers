@@ -472,7 +472,7 @@ describe('current activity line', () => {
     expect(status.className).toContain('text-red-700');
   });
 
-  it('places the current activity line before the confirmation card without changing callbacks', async () => {
+  it('hides the current activity line while a confirmation is pending, but keeps approval working', async () => {
     const user = userEvent.setup();
     (chatStore as any).currentActivity = { id: 'call-1', description: 'Clicking "button.buy"', status: 'running' };
     (chatStore as any).pendingConfirmation = {
@@ -486,10 +486,8 @@ describe('current activity line', () => {
       </LocaleProvider>,
     );
 
-    const activityLine = screen.getByText('Clicking "button.buy"');
-    const confirmationTitle = screen.getByText(/Please confirm before modifying the page/);
-    expect(activityLine.compareDocumentPosition(confirmationTitle) & Node.DOCUMENT_POSITION_FOLLOWING)
-      .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(screen.queryByText('Clicking "button.buy"')).toBeNull();
+    expect(screen.getByText(/Please confirm before modifying the page/)).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Approve this turn' }));
     expect(chatStore.respondToConfirmation).toHaveBeenCalledWith(true);
   });
