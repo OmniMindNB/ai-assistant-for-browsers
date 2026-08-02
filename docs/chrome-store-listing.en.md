@@ -41,7 +41,7 @@ Use Runi to:
 • Undo page changes made during the current modified turn with one click.
 • Connect your own OpenAI-compatible or Anthropic-compatible AI provider, including a custom endpoint.
 
-Runi is local-first: provider settings, API keys, consent state, and conversation history are stored in your browser. Runi has no developer-operated backend, analytics, or advertising SDK. When you use an AI feature, your API key, current prompt, recent conversation context, and relevant current-page tool results are transmitted directly from the extension to the AI provider endpoint you configured. That provider processes the request under its own terms and privacy policy.
+Runi is local-first: provider settings, API keys, interface preferences, and conversation history are stored in your browser. Runi has no developer-operated backend, analytics, or advertising SDK. When you initiate an Agent request, you direct Runi to transmit your API key, current prompt, recent conversation context, and relevant current-page tool results directly from the extension to the AI provider endpoint you configured as needed to fulfill that request. That provider processes the request under its own terms and privacy policy.
 
 Runi reads or changes a page only after you open the product and initiate an action. Page-changing tools require approval before they run.
 

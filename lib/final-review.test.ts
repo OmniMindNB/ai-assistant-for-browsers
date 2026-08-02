@@ -6,6 +6,8 @@ import { createBrowserTools } from './agent/tools';
 import { en } from './i18n/locales/en';
 import { zh } from './i18n/locales/zh';
 
+const readRepoFile = (file: string) => fs.readFileSync(path.resolve(process.cwd(), file), 'utf8');
+
 describe('Chrome Web Store release surface', () => {
   it('does not request userScripts or expose AI-generated script execution', () => {
     const manifest = storeConfig.manifest as { permissions?: string[] };
@@ -33,6 +35,57 @@ describe('privacy settings translations', () => {
       'API Key、当前提示词、近期对话上下文和相关页面结果会直接发送到你配置的 AI Provider 端点',
     );
     expect(zh['privacy.noBackendBody']).toContain('不运营开发者后端，也不收集分析数据');
+  });
+});
+
+describe('maintained privacy disclosure contract', () => {
+  const maintainedPrivacyFiles = [
+    'docs/privacy-policy.en.md',
+    'docs/privacy-policy.md',
+    'docs/chrome-store-listing.en.md',
+    'docs/chrome-store-listing.zh-CN.md',
+    'docs/chrome-store-permission-justifications.md',
+    'docs/superpowers/plans/2026-08-02-runi-brand-renaming.md',
+  ];
+  const unsupportedPersistedConsentClaims =
+    /consent state|consent version|acceptance time|first-use consent|current consent record|agree & continue|not now|fails closed|privacy-consent state|asks for current consent|同意状态|同意版本|接受时间|首次使用同意|有效同意记录|同意并继续|暂不继续|关闭方式失败|隐私同意状态/i;
+
+  it.each(maintainedPrivacyFiles)('%s makes no persisted or gated consent claim', (file) => {
+    expect(readRepoFile(file)).not.toMatch(unsupportedPersistedConsentClaims);
+  });
+
+  it('describes disclosure, user-directed provider transmission, and per-turn write approval in English', () => {
+    const policy = readRepoFile('docs/privacy-policy.en.md');
+    expect(policy).toContain('The Settings page provides privacy disclosures');
+    expect(policy).toContain('When you initiate an Agent request, you direct Runi to send');
+    expect(policy).toContain('Runi does not store a separate consent record.');
+    expect(policy).toContain('Before the first write action in a turn');
+    expect(policy).toContain('remembered only for the current turn');
+  });
+
+  it('describes disclosure, user-directed provider transmission, and per-turn write approval in Simplified Chinese', () => {
+    const policy = readRepoFile('docs/privacy-policy.md');
+    expect(policy).toContain('设置页会提供隐私说明');
+    expect(policy).toContain('当你发起 Agent 请求时，即表示你指示 Runi');
+    expect(policy).toContain('Runi 不会另行保存同意记录。');
+    expect(policy).toContain('每轮第一次写操作执行前');
+    expect(policy).toContain('仅在当前一轮内沿用');
+  });
+
+  it('keeps store and Task 6 copy aligned with the current request-driven behavior', () => {
+    expect(readRepoFile('docs/chrome-store-listing.en.md')).toContain(
+      'When you initiate an Agent request',
+    );
+    expect(readRepoFile('docs/chrome-store-listing.zh-CN.md')).toContain(
+      '当你发起 Agent 请求时',
+    );
+    expect(readRepoFile('docs/chrome-store-permission-justifications.md')).not.toMatch(
+      /consent|同意/i,
+    );
+
+    const task6 = readRepoFile('docs/superpowers/plans/2026-08-02-runi-brand-renaming.md');
+    expect(task6).toContain('Confirm the Settings privacy disclosure accurately explains');
+    expect(task6).toContain('does not store a separate consent record');
   });
 });
 

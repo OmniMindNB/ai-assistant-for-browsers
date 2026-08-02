@@ -559,7 +559,7 @@ Expected: build exits 0; manifest keeps the same permissions and uses localized 
 
 - [ ] **Step 5: Perform a manual fresh-upgrade check**
 
-With the current Aluminum extension installed, create a recognizable provider and conversation. Load the Runi build over the same extension ID. Confirm Runi starts with default settings and an empty history, asks for current consent as dictated by the new `runi:settings` record, and requires a new provider/API key. Confirm the old Aluminum keys/database were not modified or deleted by inspecting extension storage.
+With the current Aluminum extension installed, create a recognizable provider and conversation. Load the Runi build over the same extension ID. Confirm Runi starts with default settings and an empty history and requires a new provider/API key. Confirm the Settings privacy disclosure accurately explains which data stays local and which relevant request content may be sent to the configured provider; initiating an Agent request is the user's action directing that transmission, and Runi does not store a separate consent record. Confirm write tools ask before the first write action in a turn and remember that decision only for the current turn. Confirm the old Aluminum keys/database were not modified or deleted by inspecting extension storage.
 
 - [ ] **Step 6: Perform a manual brand and icon check**
 

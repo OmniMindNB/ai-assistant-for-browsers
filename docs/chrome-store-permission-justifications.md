@@ -70,13 +70,13 @@ Used to run functions packaged with Runi in the target tab for page reading, str
 **English**
 
 ```text
-Used to store provider settings and API keys, privacy-consent state, language and theme preferences in chrome.storage.local, and temporary tab, session, and undo state in chrome.storage.session. Runi does not sync this storage or upload it to a developer-operated backend. When the user makes an AI request, the selected provider API key is sent only to the configured provider endpoint as its authentication credential.
+Used to store provider settings and API keys plus language and theme preferences in chrome.storage.local, and temporary tab, session, and undo state in chrome.storage.session. Runi does not sync this storage or upload it to a developer-operated backend. When the user initiates an Agent request, the selected provider API key is sent only to the configured provider endpoint as its authentication credential.
 ```
 
 **简体中文**
 
 ```text
-用于在 chrome.storage.local 中保存 Provider 设置与 API Key、隐私同意状态、语言和主题偏好，并在 chrome.storage.session 中保存临时标签页、会话和撤销状态。Runi 不会同步这些存储内容，也不会上传到开发者运营的后端。用户发起 AI 请求时，所选 Provider 的 API Key 仅作为认证凭据发送到已配置的 Provider 端点。
+用于在 chrome.storage.local 中保存 Provider 设置与 API Key、语言和主题偏好，并在 chrome.storage.session 中保存临时标签页、会话和撤销状态。Runi 不会同步这些存储内容，也不会上传到开发者运营的后端。用户发起 Agent 请求时，所选 Provider 的 API Key 仅作为认证凭据发送到已配置的 Provider 端点。
 ```
 
 ## `sidePanel`

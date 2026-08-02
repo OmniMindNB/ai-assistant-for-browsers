@@ -24,7 +24,7 @@ const contextWorkbenchKeys = [
   'shortcut.deleteAria',
 ] as const;
 
-describe('privacy consent translations', () => {
+describe('privacy disclosure translations', () => {
   it('provides every required string in English and Chinese', () => {
     for (const key of privacyKeys) {
       expect(en[key]).toEqual(expect.any(String));

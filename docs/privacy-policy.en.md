@@ -8,7 +8,7 @@ This policy describes how the Runi browser extension processes data. “Runi” 
 
 Runi has no developer-operated backend, account service, analytics, or advertising SDK. This does **not** mean that no data leaves your device. When you initiate an AI request, Runi sends recent conversation content and relevant current-page tool results directly from the extension to the AI provider endpoint you configured. The provider, not Runi, receives and processes that request under its own terms and privacy policy.
 
-Provider settings, API keys, consent state, interface preferences, and conversation history are stored locally in your browser. Runi does not sell user data.
+Provider settings, API keys, interface preferences, and conversation history are stored locally in your browser. Runi does not sell user data.
 
 ## 2. Data we process
 
@@ -18,7 +18,7 @@ Provider settings, API keys, consent state, interface preferences, and conversat
 | Visible-tab screenshot | An image of the visible area of the active target tab, only when the screenshot tool is used | Held transiently as a data URL in tool details and not added to Runi’s persistent conversation database | In version `1.1.0`, the screenshot image bytes are not included in the AI-provider request; the provider receives only a text notice that a screenshot was captured and its data-URL length |
 | Conversation content | Your prompts, quick-action prompts, recent conversation history, and AI responses; this content may include personal or confidential information that you choose to enter | Conversation messages are stored in browser-local IndexedDB | The current prompt and recent conversation context are sent directly to your configured AI provider |
 | Provider configuration and credentials | Provider name, Base URL, model, protocol, and API key | Stored in `chrome.storage.local` and not synced by Runi | The Base URL selects the destination. The model and request content are sent to that endpoint, and the API key is sent to that endpoint as an authentication header |
-| Consent and interface preferences | Consent version and acceptance time, language preference, and theme preference | Stored in `chrome.storage.local` | Not sent to the AI provider by Runi |
+| Interface preferences | Language preference and theme preference | Stored in `chrome.storage.local` | Not sent to the AI provider by Runi |
 | Session state | The conversation associated with a tab, keyed by tab ID | Stored in `chrome.storage.session`, which is browser-session storage and is not synced by Runi | Not sent as session records to the AI provider |
 
 For Chrome Web Store disclosure purposes, Runi treats `Website content` as collected/processed because relevant current-page content is transmitted off-device to the AI provider selected by the user for the core feature. Runi’s developer does not receive that content through a Runi backend.
@@ -29,15 +29,15 @@ Runi processes data only to provide the user-requested core feature: understand 
 
 Runi does not use data for advertising, profiling, credit or eligibility decisions, unrelated product development, or sale to third parties. The configured AI provider may have its own processing, retention, or model-training terms, which you must review separately.
 
-## 4. First-use consent
+## 4. Privacy disclosure and user-directed requests
 
-The side panel and Options page show a privacy notice before the product UI is available. Until a current consent record exists, Runi does not initialize an Agent run, extract page content, capture a screenshot, or call an AI provider.
+The Settings page provides privacy disclosures explaining which data stays in your browser and which data may be sent to your configured AI provider. The same disclosures are maintained in this policy. Runi does not store a separate consent record.
 
-Selecting `Not now` does not save consent and leaves the notice in place. Selecting `Agree & continue` stores a versioned consent record in `chrome.storage.local`. If the consent read or write fails, Runi fails closed and keeps the product unavailable. A future material change to data use will require a new consent version.
+When you initiate an Agent request, you direct Runi to send your current prompt, recent conversation context, API key, and any relevant page-derived results to your configured AI provider as needed to fulfill that request. Read-only page tools may run after you initiate the request. Before the first write action in a turn, Runi asks for confirmation; the decision is remembered only for the current turn.
 
 ## 5. Local storage and deletion
 
-- Provider settings, API keys, consent state, language, and theme are stored in `chrome.storage.local`.
+- Provider settings, API keys, language, and theme are stored in `chrome.storage.local`.
 - Conversation messages are stored in browser-local IndexedDB.
 - Tab-to-conversation state is stored temporarily in `chrome.storage.session`.
 - Page tool results and screenshot data URLs are not written to Runi’s persistent conversation database.
@@ -63,7 +63,7 @@ Runi `1.1.0` uses this permission set:
 | `activeTab` | Supports user-invoked access to the active page |
 | `tabs` | Identifies and validates the target tab, reads its title and URL, opens the extension settings page, and performs user-requested navigation |
 | `scripting` | Runs packaged read and structured-write functions in the target page |
-| `storage` | Stores local settings and consent plus temporary session state |
+| `storage` | Stores provider settings, API keys, language and theme preferences, plus temporary session and undo state |
 | `sidePanel` | Hosts Runi’s primary interface |
 | Host access: `<all_urls>` | Lets the same current-page Agent work on user-selected HTTP and HTTPS sites and fetch page-referenced resources |
 
@@ -87,7 +87,7 @@ Runi does not sell user data, use it for advertising, use it to determine credit
 
 ## 11. Policy changes
 
-If this policy changes, we will update the effective date and record the change in the project repository. If a change materially affects what data Runi processes or where it is sent, Runi will increment the consent version and ask for consent again before the product UI becomes available.
+If this policy changes, we will update the effective date and record the change in the project repository. Review the updated policy before continuing to use Runi when a change materially affects what data Runi processes or where it is sent.
 
 ## 12. Contact
 
