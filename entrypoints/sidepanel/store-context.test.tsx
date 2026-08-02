@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   sendMessage: vi.fn(),
@@ -83,6 +83,16 @@ describe('chat store page context', () => {
       selectedProviderId: null,
       selectedModel: '',
     });
+  });
+
+  // clear() cancels the module-level failureClearTimer (a real setTimeout) and resets
+  // currentActivity. Without this, a real timer armed by one test (e.g. via
+  // respondToConfirmation(false), which schedules a failure auto-clear) can outlive that
+  // test and fire during a later, unrelated test — mutating the shared store singleton out
+  // from under it. Runs after every test, not just timer-related ones, since any test could
+  // leave a pending failure activity behind.
+  afterEach(() => {
+    useChat.getState().clear();
   });
 
   it('publishes an available http tab', async () => {
@@ -835,8 +845,27 @@ describe('chat store page context', () => {
       agentEventListener?.({ type: 'tool_execution_start', toolCallId: 'call-1', toolName: 'browser_click', args: { selector: 'a' } });
       agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'call-1', toolName: 'browser_click', isError: true, result: 'boom' });
       expect(useChat.getState().currentActivity).toMatchObject({ id: 'call-1', status: 'failed' });
+
+      // Start a second activity partway through call-1's failure-display window. This must
+      // cancel call-1's pending auto-clear timer (via clearFailureTimer() inside
+      // setCurrentActivity()) so that timer cannot later wipe out call-2's state.
+      await vi.advanceTimersByTimeAsync(1000);
+      agentEventListener?.({ type: 'tool_execution_start', toolCallId: 'call-2', toolName: 'browser_click', args: { selector: 'b' } });
+      expect(useChat.getState().currentActivity).toMatchObject({ id: 'call-2', status: 'running' });
+
+      // Advance past call-1's original 2500ms deadline (1000ms already elapsed + 1600ms here
+      // = 2600ms since call-1 failed). If call-1's timer had not been cancelled, this would
+      // incorrectly clear currentActivity to null even though call-2 is now current.
+      await vi.advanceTimersByTimeAsync(1600);
+      expect(useChat.getState().currentActivity).toMatchObject({ id: 'call-2', status: 'running' });
+
+      // call-2 itself fails and is auto-cleared after its own timeout, confirming auto-clear
+      // still works for the activity that is actually current.
+      agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'call-2', toolName: 'browser_click', isError: true, result: 'boom' });
+      expect(useChat.getState().currentActivity).toMatchObject({ id: 'call-2', status: 'failed' });
       await vi.advanceTimersByTimeAsync(3000);
       expect(useChat.getState().currentActivity).toBeNull();
+
       resolvePrompt();
       await send;
     } finally {
