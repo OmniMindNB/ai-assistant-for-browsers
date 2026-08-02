@@ -54,11 +54,20 @@ jobs:
           test -f _site/privacy-policy/zh-CN/index.html
           grep -F "Runi Privacy Policy" _site/privacy-policy/index.html
           grep -F "Runi 隐私政策" _site/privacy-policy/zh-CN/index.html
+          grep -F "Effective date: 2026-08-02" _site/privacy-policy/index.html
+          grep -F "生效日期：2026-08-02" _site/privacy-policy/zh-CN/index.html
+          grep -F 'href="/ai-assistant-for-browsers/privacy-policy/zh-CN/"' _site/privacy-policy/index.html
+          grep -F 'href="/ai-assistant-for-browsers/privacy-policy/"' _site/privacy-policy/zh-CN/index.html
+
+      - name: Stage policy-only Pages artifact
+        run: |
+          mkdir _pages
+          cp -R _site/privacy-policy _pages/privacy-policy
 
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
-          path: ./_site
+          path: ./_pages
 
   deploy:
     runs-on: ubuntu-latest
