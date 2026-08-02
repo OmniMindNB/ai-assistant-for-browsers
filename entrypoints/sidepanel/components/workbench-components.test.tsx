@@ -8,9 +8,10 @@ import { en } from '@/lib/i18n/locales/en';
 import { zh } from '@/lib/i18n/locales/zh';
 import type { ProviderConfig } from '@/lib/settings';
 import type { ResolvedShortcutCommand } from '@/lib/workbench/presentation';
-import type { PageContextState, ToolActivity } from '../store';
+import type { ActivityStep, PageContextState, ToolActivity } from '../store';
 import App from '../App';
 import { CurrentActivityLine } from './CurrentActivityLine';
+import { ActivityStepList } from './ActivityStepList';
 import { HistoryDrawer } from './HistoryDrawer';
 import { WorkbenchEmptyState } from './WorkbenchEmptyState';
 import { WorkbenchHeader } from './WorkbenchHeader';
@@ -490,6 +491,54 @@ describe('current activity line', () => {
     expect(screen.getByText(/Please confirm before modifying the page/)).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Approve this turn' }));
     expect(chatStore.respondToConfirmation).toHaveBeenCalledWith(true);
+  });
+});
+
+describe('activity step list', () => {
+  const steps: ActivityStep[] = [
+    { id: 'call-1', description: 'Clicked "button.buy"', status: 'done' },
+    { id: 'call-2', description: 'Failed to click "button.confirm"', status: 'failed' },
+    { id: 'call-3', description: 'Typing into "input.name"', status: 'running' },
+  ];
+
+  it('renders one row per step with a shared status container', () => {
+    render(
+      <LocaleProvider>
+        <ActivityStepList steps={steps} />
+      </LocaleProvider>,
+    );
+    expect(screen.getByRole('status')).toBeVisible();
+    expect(screen.getByText('Clicked "button.buy"')).toBeVisible();
+    expect(screen.getByText('Failed to click "button.confirm"')).toBeVisible();
+    expect(screen.getByText('Typing into "input.name"')).toBeVisible();
+  });
+
+  it('gives the failed row distinct (red) styling', () => {
+    render(
+      <LocaleProvider>
+        <ActivityStepList steps={steps} />
+      </LocaleProvider>,
+    );
+    const failedText = screen.getByText('Failed to click "button.confirm"');
+    expect(failedText.closest('div')?.className).toContain('text-red-700');
+  });
+
+  it('appends the slow suffix to a running step marked slow', () => {
+    render(
+      <LocaleProvider>
+        <ActivityStepList steps={[{ id: 'call-1', description: 'Reading page', status: 'running', slow: true }]} />
+      </LocaleProvider>,
+    );
+    expect(screen.getByText('Reading page… this is taking longer than usual')).toBeVisible();
+  });
+
+  it('does not append the slow suffix to a running step that is not slow', () => {
+    render(
+      <LocaleProvider>
+        <ActivityStepList steps={[{ id: 'call-1', description: 'Reading page', status: 'running' }]} />
+      </LocaleProvider>,
+    );
+    expect(screen.getByText('Reading page')).toBeVisible();
   });
 });
 

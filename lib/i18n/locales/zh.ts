@@ -164,6 +164,7 @@ export const zh = {
   'agentActivity.now.setStorage': '正在写入存储 "{target}"',
   'agentActivity.done.setStorage': '已写入存储 "{target}"',
   'agentActivity.failed.setStorage': '写入存储 "{target}" 失败',
+  'agentActivity.slowSuffix': '… 这比平时用时较长',
   'confirm.title': '🔒 修改页面前，先请你确认',
   'confirm.approve': '批准本轮操作',
   'confirm.deny': '拒绝',
