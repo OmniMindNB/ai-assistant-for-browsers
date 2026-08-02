@@ -17,8 +17,6 @@ const contextWorkbenchKeys = [
   'workbench.emptyTitle',
   'workbench.emptyDescription',
   'workbench.untitledPage',
-  'agentActivity.cardLabel',
-  'agentActivity.liveStatus',
   'provider.setActiveAria',
   'provider.editAria',
   'provider.deleteAria',

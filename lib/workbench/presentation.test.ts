@@ -6,7 +6,6 @@ import {
   groupConversationsByDay,
   normalizeShortcutCommand,
   resolvePageAttached,
-  summarizeToolActivities,
   type ResolvedShortcutCommand,
 } from './presentation';
 
@@ -70,57 +69,6 @@ describe('filterShortcutCommands', () => {
     const commands = [shortcut('summarize', 'Summarize page')];
     expect(normalizeShortcutCommand('Summarize page')).toBe('/Summarizepage');
     expect(filterShortcutCommands(commands, '/Summarizepage')).toEqual(commands);
-  });
-});
-
-describe('summarizeToolActivities', () => {
-  it('summarizes the active tool and completed count', () => {
-    expect(summarizeToolActivities([
-      { id: '1', name: 'browser_read_page', status: 'done' },
-      { id: '2', name: 'browser_set_style', status: 'running' },
-    ])).toMatchObject({ completed: 1, total: 2, status: 'running', activeId: '2' });
-  });
-
-  it('uses status precedence while preserving activity order', () => {
-    const activities = [
-      { id: '1', name: 'first', status: 'done' as const },
-      { id: '2', name: 'second', status: 'error' as const },
-      { id: '3', name: 'third', status: 'confirming' as const },
-    ];
-
-    const summary = summarizeToolActivities(activities);
-
-    expect(summary.status).toBe('confirming');
-    expect(summary.activeId).toBe('3');
-    expect(summary.activities).toEqual(activities);
-  });
-
-  it.each([
-    ['running', 'error', 'running'],
-    ['error', 'blocked', 'error'],
-  ] as const)('ranks %s ahead of %s', (higher, lower, expected) => {
-    const summary = summarizeToolActivities([
-      { id: 'lower', name: 'lower', status: lower },
-      { id: 'higher', name: 'higher', status: higher },
-    ]);
-
-    expect(summary.status).toBe(expected);
-    expect(summary.activeId).toBe('higher');
-  });
-
-  it('uses the first original activity when multiple activities share the highest status', () => {
-    const summary = summarizeToolActivities([
-      { id: 'first', name: 'first', status: 'running' },
-      { id: 'second', name: 'second', status: 'running' },
-      { id: 'done', name: 'done', status: 'done' },
-    ]);
-
-    expect(summary.status).toBe('running');
-    expect(summary.activeId).toBe('first');
-  });
-
-  it.each(['denied', 'stopped'] as const)('keeps %s as the terminal summary', (status) => {
-    expect(summarizeToolActivities([{ id: '1', name: 'write', status }])).toMatchObject({ status, activeId: '1' });
   });
 });
 

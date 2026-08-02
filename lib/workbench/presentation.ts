@@ -13,23 +13,6 @@ export type ResolvedShortcutCommand = {
   resolved: ResolvedShortcut;
 };
 
-export type ToolActivityStatus = 'running' | 'confirming' | 'done' | 'error' | 'blocked' | 'denied' | 'stopped';
-
-export interface ToolActivityLike {
-  id: string;
-  name: string;
-  status: ToolActivityStatus;
-  detail?: string;
-}
-
-export interface ToolActivitySummary {
-  activities: ToolActivityLike[];
-  completed: number;
-  total: number;
-  status: ToolActivityStatus;
-  activeId: string | null;
-}
-
 /** The command label is intentionally compact, while name search remains human-readable. */
 export function normalizeShortcutCommand(name: string): string {
   return `/${name.replace(/\s+/g, '')}`;
@@ -74,33 +57,6 @@ export function filterShortcutCommands(
     normalizeShortcutCommand(shortcut.resolved.name).slice(1).toLowerCase() === normalizedQuery ||
     shortcut.resolved.name.toLowerCase().includes(normalizedQuery),
   );
-}
-
-const TOOL_STATUS_PRECEDENCE: ToolActivityStatus[] = [
-  'confirming',
-  'running',
-  'error',
-  'blocked',
-  'denied',
-  'stopped',
-  'done',
-];
-
-export function summarizeToolActivities(
-  activities: readonly ToolActivityLike[],
-): ToolActivitySummary {
-  const status = TOOL_STATUS_PRECEDENCE.find((candidate) =>
-    activities.some((activity) => activity.status === candidate),
-  ) ?? 'done';
-  const activeId = activities.find((activity) => activity.status === status)?.id ?? null;
-
-  return {
-    activities: [...activities],
-    completed: activities.filter((activity) => activity.status === 'done').length,
-    total: activities.length,
-    status,
-    activeId,
-  };
 }
 
 export type PageAttachStatus = 'loading' | 'available' | 'restricted' | 'error';
