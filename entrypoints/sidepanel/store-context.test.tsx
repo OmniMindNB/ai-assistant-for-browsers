@@ -226,7 +226,7 @@ describe('chat store page context', () => {
 
   it('loads workbench preferences into store state', async () => {
     (globalThis as typeof globalThis & { browser: any }).browser.storage.local.get = vi.fn().mockResolvedValue({
-      workbenchPreferences: { attachPageByDefault: false },
+      'runi:workbench-preferences': { attachPageByDefault: false },
     });
 
     await useChat.getState().refreshWorkbenchPreferences();
@@ -242,7 +242,7 @@ describe('chat store page context', () => {
     const old = new Promise<Record<string, unknown>>((resolve) => { resolveOld = resolve; });
     const newest = new Promise<Record<string, unknown>>((resolve) => { resolveNew = resolve; });
     (globalThis as any).browser.storage.local.get = vi.fn().mockReturnValueOnce(old).mockReturnValueOnce(newest)
-      .mockResolvedValue({ workbenchPreferences: { attachPageByDefault: true } });
+      .mockResolvedValue({ 'runi:workbench-preferences': { attachPageByDefault: true } });
     const first = useChat.getState().refreshProvider();
     const second = useChat.getState().refreshProvider();
     resolveNew({ 'runi:settings': { activeProviderId: 'new', providers: [{ ...provider, id: 'new', model: 'new-model' }] } });
@@ -252,7 +252,7 @@ describe('chat store page context', () => {
     expect(useChat.getState().selectedProviderId).toBe('new');
 
     const oldPrefs = Promise.reject(new Error('old failure'));
-    const newPrefs = Promise.resolve({ workbenchPreferences: { attachPageByDefault: false } });
+    const newPrefs = Promise.resolve({ 'runi:workbench-preferences': { attachPageByDefault: false } });
     (globalThis as any).browser.storage.local.get = vi.fn().mockReturnValueOnce(oldPrefs).mockReturnValueOnce(newPrefs);
     await Promise.all([useChat.getState().refreshWorkbenchPreferences(), useChat.getState().refreshWorkbenchPreferences()]);
     expect(useChat.getState().workbenchPreferences).toEqual({ attachPageByDefault: false });
@@ -641,7 +641,7 @@ describe('chat store page context', () => {
   it('preserves an existing chat error when workbench preferences load successfully', async () => {
     useChat.setState({ error: 'The provider request failed.' });
     (globalThis as typeof globalThis & { browser: any }).browser.storage.local.get = vi.fn().mockResolvedValue({
-      workbenchPreferences: { attachPageByDefault: false },
+      'runi:workbench-preferences': { attachPageByDefault: false },
     });
 
     await useChat.getState().refreshWorkbenchPreferences();
@@ -658,7 +658,7 @@ describe('chat store page context', () => {
       workbenchPreferences: { attachPageByDefault: false },
     });
     (globalThis as typeof globalThis & { browser: any }).browser.storage.local.get = vi.fn().mockResolvedValue({
-      workbenchPreferences: { attachPageByDefault: 'not-a-boolean' },
+      'runi:workbench-preferences': { attachPageByDefault: 'not-a-boolean' },
     });
 
     await useChat.getState().refreshWorkbenchPreferences();
@@ -672,7 +672,7 @@ describe('chat store page context', () => {
   it('restores safe defaults and publishes invalid preference errors when no chat error exists', async () => {
     useChat.setState({ workbenchPreferences: { attachPageByDefault: false } });
     (globalThis as typeof globalThis & { browser: any }).browser.storage.local.get = vi.fn().mockResolvedValue({
-      workbenchPreferences: { attachPageByDefault: 'not-a-boolean' },
+      'runi:workbench-preferences': { attachPageByDefault: 'not-a-boolean' },
     });
 
     await useChat.getState().refreshWorkbenchPreferences();

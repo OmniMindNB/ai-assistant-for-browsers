@@ -33,7 +33,7 @@ describe('workbench preferences', () => {
 
   it('rejects invalid persisted values without rewriting storage', async () => {
     const { set } = installStorage({
-      workbenchPreferences: { attachPageByDefault: 'yes' },
+      'runi:workbench-preferences': { attachPageByDefault: 'yes' },
     });
 
     await expect(loadWorkbenchPreferences()).rejects.toThrow('Invalid workbench preferences');

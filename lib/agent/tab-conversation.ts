@@ -6,7 +6,7 @@
 // 能跨这次"文档重建"存活（同时不落盘，浏览器重启后自动清空）。
 
 function storageKey(tabId: number): string {
-  return `tabConversation:${tabId}`;
+  return `runi:tab-conversation:${tabId}`;
 }
 
 export async function getConversationIdForTab(tabId: number): Promise<string | undefined> {

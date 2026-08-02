@@ -568,7 +568,7 @@ describe('workbench context controls', () => {
     render(<LocaleProvider><App /></LocaleProvider>);
     storageChangeListener?.({
       'runi:settings': { newValue: {} },
-      workbenchPreferences: { newValue: {} },
+      'runi:workbench-preferences': { newValue: {} },
     }, 'local');
     expect(chatStore.refreshProvider).toHaveBeenCalled();
     expect(chatStore.refreshWorkbenchPreferences).toHaveBeenCalled();

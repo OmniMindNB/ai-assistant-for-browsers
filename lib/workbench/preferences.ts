@@ -1,4 +1,4 @@
-export const WORKBENCH_PREFERENCES_KEY = 'workbenchPreferences';
+export const WORKBENCH_PREFERENCES_KEY = 'runi:workbench-preferences';
 
 export interface WorkbenchPreferences {
   attachPageByDefault: boolean;
