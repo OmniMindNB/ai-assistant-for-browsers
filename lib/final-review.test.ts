@@ -50,6 +50,19 @@ describe('maintained privacy disclosure contract', () => {
   const unsupportedPersistedConsentClaims =
     /consent state|consent version|acceptance time|first-use consent|current consent record|agree & continue|not now|fails closed|privacy-consent state|asks for current consent|同意状态|同意版本|接受时间|首次使用同意|有效同意记录|同意并继续|暂不继续|关闭方式失败|隐私同意状态/i;
 
+  it('keeps both policy effective dates in parity at the current revision date', () => {
+    const englishDate = readRepoFile('docs/privacy-policy.en.md').match(
+      /^Effective date: (\d{4}-\d{2}-\d{2})$/m,
+    )?.[1];
+    const chineseDate = readRepoFile('docs/privacy-policy.md').match(
+      /^生效日期：(\d{4}-\d{2}-\d{2})$/m,
+    )?.[1];
+
+    expect(englishDate).toBe('2026-08-02');
+    expect(chineseDate).toBe('2026-08-02');
+    expect(englishDate).toBe(chineseDate);
+  });
+
   it.each(maintainedPrivacyFiles)('%s makes no persisted or gated consent claim', (file) => {
     expect(readRepoFile(file)).not.toMatch(unsupportedPersistedConsentClaims);
   });

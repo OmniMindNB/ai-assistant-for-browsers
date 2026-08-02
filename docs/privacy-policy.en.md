@@ -1,6 +1,6 @@
 # Runi Privacy Policy
 
-Effective date: 2026-07-27
+Effective date: 2026-08-02
 
 This policy describes how the Runi browser extension processes data. “Runi” means the extension and its developer.
 
