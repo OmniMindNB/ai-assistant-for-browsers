@@ -38,12 +38,11 @@ Use Runi to:
 • Summarize the current page and ask page-grounded questions.
 • Inspect page evidence such as readable text, HTML, DOM structure, scripts, stylesheets, and computed styles for technical analysis.
 • Request page transformations and browser-page actions. Before write actions run, Runi shows the planned operation and asks for your approval; that decision applies to the current turn.
-• Undo page changes made during the current modified turn with one click.
 • Connect your own OpenAI-compatible or Anthropic-compatible AI provider, including a custom endpoint.
 
 Runi is local-first: provider settings, API keys, interface preferences, and conversation history are stored in your browser. Runi has no developer-operated backend, analytics, or advertising SDK. When you initiate an Agent request, you direct Runi to transmit your API key, current prompt, recent conversation context, and relevant current-page tool results directly from the extension to the AI provider endpoint you configured as needed to fulfill that request. That provider processes the request under its own terms and privacy policy.
 
-Runi reads or changes a page only after you open the product and initiate an action. Page-changing tools require approval before they run.
+Runi reads or changes a page only after you open the product and initiate an action. Before the first write action in a turn, Runi asks for approval and reuses that decision only for that turn.
 
 Brand upgrade notice: Runi uses a new local data namespace and does not read Aluminum settings or conversations. After upgrading, configure your provider and API key again.
 ```
@@ -53,7 +52,7 @@ Brand upgrade notice: Runi uses a new local data namespace and does not read Alu
 1. `Understand any page — Summaries and answers grounded in the current page.`
 2. `See the evidence — Inspect DOM, styles, scripts, and computed behavior.`
 3. `You stay in control — Review the planned page action and approve it before write tools run.`
-4. `Undo the whole turn — Restore page changes from the current modified turn with one click.`
+4. `Your provider, your choice — Recent conversation context may be sent to your configured provider after you start a request.`
 
 ## Currently deployed privacy-policy URL
 

@@ -56,13 +56,13 @@ Used to identify and validate the user-selected target tab, read its title and U
 **English**
 
 ```text
-Used to run functions packaged with Runi in the target tab for page reading, structured page changes, and turn-level undo snapshots. Page-changing tools run only after the user starts a request and approves the write action. Runi does not execute AI-generated JavaScript.
+Used to run packaged page-reading and structured page-write functions in the target tab. Before the first page write in a turn, Runi shows the planned action and asks for approval; that decision is reused only for that turn. Runi does not execute AI-generated JavaScript.
 ```
 
 **简体中文**
 
 ```text
-用于在目标标签页中运行随 Runi 打包的函数，以读取页面、执行结构化页面修改并保存轮次级撤销快照。页面写入工具只会在用户发起请求并批准写操作后运行。Runi 不执行 AI 生成的 JavaScript。
+用于在目标标签页中运行随扩展打包的页面读取与结构化写入函数。每轮第一次页面写操作执行前，Runi 会展示计划内容并请求批准；该决定仅在该轮内复用。Runi 不执行 AI 生成的 JavaScript。
 ```
 
 ## `storage`
@@ -70,13 +70,13 @@ Used to run functions packaged with Runi in the target tab for page reading, str
 **English**
 
 ```text
-Used to store provider settings and API keys plus language and theme preferences in chrome.storage.local, and temporary tab, session, and undo state in chrome.storage.session. Runi does not sync this storage or upload it to a developer-operated backend. When the user initiates an Agent request, the selected provider API key is sent only to the configured provider endpoint as its authentication credential.
+Used to store provider settings, API keys, shortcuts, language, theme, and workbench preferences in chrome.storage.local, and temporary tab-to-conversation state in chrome.storage.session. Runi does not sync this storage or upload it to a developer-operated backend. When the user initiates an Agent request, the selected provider API key is sent only to the configured provider endpoint as its authentication credential.
 ```
 
 **简体中文**
 
 ```text
-用于在 chrome.storage.local 中保存 Provider 设置与 API Key、语言和主题偏好，并在 chrome.storage.session 中保存临时标签页、会话和撤销状态。Runi 不会同步这些存储内容，也不会上传到开发者运营的后端。用户发起 Agent 请求时，所选 Provider 的 API Key 仅作为认证凭据发送到已配置的 Provider 端点。
+用于在 chrome.storage.local 中保存 Provider 设置、API Key、快捷方式、语言、主题和工作台偏好，并在 chrome.storage.session 中保存临时的标签页与对话对应状态。Runi 不会同步这些存储内容，也不会上传到开发者运营的后端。用户发起 Agent 请求时，所选 Provider 的 API Key 仅作为认证凭据发送到已配置的 Provider 端点。
 ```
 
 ## `sidePanel`

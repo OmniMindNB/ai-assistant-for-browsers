@@ -24,8 +24,9 @@ export const en: Record<keyof typeof zh, string> = {
   'language.en': 'English',
   'settings.pageTitle': 'Runi Settings',
   'settings.descriptionPrefix':
-    'Configure an OpenAI-compatible model provider. The API key is stored only on this device in',
-  'settings.optionsDescriptionSuffix': ', and is never uploaded or synced (ref: technical-plan.md §6).',
+    'Configure an OpenAI-compatible model provider. The API key is stored on this device in',
+  'settings.optionsDescriptionSuffix':
+    ', is sent only to your configured provider when you initiate a request, and is not browser-synced (ref: technical-plan.md §6).',
   'settings.navAppearance': 'Appearance',
   'settings.navLanguage': 'Language',
   'settings.navShortcuts': 'Shortcuts',
@@ -110,7 +111,8 @@ export const en: Record<keyof typeof zh, string> = {
   'banner.noProviderSuffix': 'to enter an API key.',
   'settings.backAriaLabel': 'Back to chat',
   'settings.openOptionsFailed': 'Could not open Settings. Please try again.',
-  'settings.descriptionSuffix': ', never uploaded or synced.',
+  'settings.descriptionSuffix':
+    ', and is sent only to your configured provider when you initiate a request.',
   'chat.emptyTitle': 'Chat with Runi',
   'chat.emptySubtitle': 'I can read pages, explain content, or run your custom tasks.',
   'chat.moreShortcuts': 'More · {count}',

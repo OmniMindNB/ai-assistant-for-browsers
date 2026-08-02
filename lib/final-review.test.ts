@@ -36,6 +36,24 @@ describe('privacy settings translations', () => {
     );
     expect(zh['privacy.noBackendBody']).toContain('不运营开发者后端，也不收集分析数据');
   });
+
+  it('does not describe API keys as never uploaded in active settings copy', () => {
+    const englishSettingsCopy = [
+      en['settings.descriptionPrefix'],
+      en['settings.optionsDescriptionSuffix'],
+      en['settings.descriptionSuffix'],
+    ].join(' ');
+    const chineseSettingsCopy = [
+      zh['settings.descriptionPrefix'],
+      zh['settings.optionsDescriptionSuffix'],
+      zh['settings.descriptionSuffix'],
+    ].join(' ');
+
+    expect(englishSettingsCopy).not.toMatch(/never uploaded/i);
+    expect(englishSettingsCopy).toContain('sent only to your configured provider when you initiate a request');
+    expect(chineseSettingsCopy).not.toContain('不会上传');
+    expect(chineseSettingsCopy).toContain('仅在你发起请求时发送到配置的 Provider');
+  });
 });
 
 describe('maintained privacy disclosure contract', () => {
@@ -99,6 +117,102 @@ describe('maintained privacy disclosure contract', () => {
     const task6 = readRepoFile('docs/superpowers/plans/2026-08-02-runi-brand-renaming.md');
     expect(task6).toContain('Confirm the Settings privacy disclosure accurately explains');
     expect(task6).toContain('does not store a separate consent record');
+  });
+});
+
+describe('maintained release capability contract', () => {
+  const maintainedCapabilityFiles = [
+    'docs/privacy-policy.en.md',
+    'docs/privacy-policy.md',
+    'docs/chrome-store-listing.en.md',
+    'docs/chrome-store-listing.zh-CN.md',
+    'docs/chrome-store-permission-justifications.md',
+    'docs/chrome-store-submission-guide.md',
+    'docs/agent-plan.md',
+    'docs/technical-plan.md',
+    'demo/README.md',
+    'demo/outreach-message.md',
+    'demo/store-assets-frame.html',
+    'demo/trust-demo.html',
+  ];
+  const removedPageRestorationPattern = new RegExp(
+    [
+      ['un', 'do'].join(''),
+      ['re', 'vert'].join(''),
+      ['snap', 'shot'].join(''),
+      ['撤', '销'].join(''),
+      ['快', '照'].join(''),
+    ].join('|'),
+    'i',
+  );
+  const perChangeConfirmationPattern = new RegExp(
+    [
+      'before every page change',
+      'asks before every change',
+      'every page change asks',
+      ['逐', '项'].join(''),
+    ].join('|'),
+    'i',
+  );
+
+  it.each(maintainedCapabilityFiles)('%s makes no removed page-restoration claim', (file) => {
+    expect(readRepoFile(file)).not.toMatch(removedPageRestorationPattern);
+  });
+
+  it.each([
+    'README.en.md',
+    'README.md',
+    'demo/README.md',
+    'demo/outreach-message.md',
+    'demo/store-assets-frame.html',
+  ])('%s makes no per-change confirmation claim', (file) => {
+    expect(readRepoFile(file)).not.toMatch(perChangeConfirmationPattern);
+  });
+
+  it('aligns English maintained marketing with provider transmission and per-turn approval', () => {
+    for (const file of ['README.en.md', 'demo/README.md']) {
+      const source = readRepoFile(file);
+      expect(source).toContain('recent conversation context');
+      expect(source).toContain('configured provider');
+      expect(source).toContain('first write action in a turn');
+      expect(source).toContain('only for that turn');
+    }
+  });
+
+  it('aligns Chinese maintained marketing with provider transmission and per-turn approval', () => {
+    for (const file of ['README.md', 'demo/outreach-message.md']) {
+      const source = readRepoFile(file);
+      expect(source).toContain('近期对话上下文');
+      expect(source).toContain('配置的 AI Provider');
+      expect(source).toContain('每轮第一次写操作');
+      expect(source).toContain('仅在该轮内复用');
+    }
+  });
+
+  it('names the provider-transmission screenshot consistently across release surfaces', () => {
+    expect(readRepoFile('docs/chrome-store-submission-guide.md')).toContain(
+      'screenshot-04-provider.png',
+    );
+    expect(readRepoFile('demo/store-assets-frame.html')).toContain('04-provider.png');
+    expect(readRepoFile('docs/chrome-store-listing.en.md')).toContain(
+      'Your provider, your choice',
+    );
+    expect(readRepoFile('docs/chrome-store-listing.zh-CN.md')).toContain(
+      '由你选择 Provider',
+    );
+  });
+
+  it('describes only structured page writes and tab-to-conversation session state', () => {
+    const permissions = readRepoFile('docs/chrome-store-permission-justifications.md');
+    expect(permissions).toContain('packaged page-reading and structured page-write functions');
+    expect(permissions).toContain('temporary tab-to-conversation state in chrome.storage.session');
+    expect(permissions).toContain('随扩展打包的页面读取与结构化写入函数');
+    expect(permissions).toContain('临时的标签页与对话对应状态');
+
+    expect(readRepoFile('docs/privacy-policy.en.md')).toContain(
+      'temporary tab-to-conversation state',
+    );
+    expect(readRepoFile('docs/privacy-policy.md')).toContain('临时的标签页与对话对应状态');
   });
 });
 

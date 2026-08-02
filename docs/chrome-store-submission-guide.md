@@ -44,7 +44,7 @@ pnpm zip
    - `screenshot-01-summary.png`
    - `screenshot-02-evidence.png`
    - `screenshot-03-confirm.png`
-   - `screenshot-04-undo.png`
+   - `screenshot-04-provider.png`
 4. 按英文 listing 文档中的顺序填写四条截图说明。
 5. 隐私政策默认路由使用当前已部署的 `https://omnimindnb.github.io/aluminum-legal/`。
 6. 支持邮箱使用 `liudong.ucas@gmail.com`。
@@ -60,7 +60,7 @@ pnpm zip
    - `screenshot-01-summary.png`
    - `screenshot-02-evidence.png`
    - `screenshot-03-confirm.png`
-   - `screenshot-04-undo.png`
+   - `screenshot-04-provider.png`
 4. 按中文 listing 文档中的顺序填写四条截图说明。
 5. 中文隐私政策路由为当前已部署的 `https://omnimindnb.github.io/aluminum-legal/zh-CN/`。
 

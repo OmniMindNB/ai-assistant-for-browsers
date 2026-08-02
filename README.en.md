@@ -2,13 +2,13 @@
 
 **English** | [中文](README.md)
 
-> A trustworthy browser page agent — asks for your confirmation before every page change; answers are grounded in page evidence, not generic guesses. Bring your own model with your own API key; conversation history stays local and is never uploaded.
+> A trustworthy browser page agent — asks before the first write action in a turn and reuses that decision only for that turn; answers are grounded in page evidence, not generic guesses. Bring your own model and API key. Persistent conversation history stays local; after you initiate a request, the current prompt, recent conversation context, and relevant page-derived results may be sent directly to your configured provider.
 
 > Your page, your way.
 
 ## Core features
 
-- 🔒 **Confirm before acting**: style/DOM edits, click/type/scroll/navigate, script injection, and other write actions all ask for your confirmation turn by turn before running — a Deny-First permission model + static scanning of injected scripts (AST-based dangerous API detection) + SSRF protection
+- 🔒 **Confirm before acting**: before the first write action in a turn, Runi asks for confirmation and reuses the decision only for that turn — a Deny-First permission model + static scanning of injected scripts (AST-based dangerous API detection) + SSRF protection
 - 🔍 **Evidence-driven analysis**: automatically reads page text / DOM / scripts / stylesheets / computed styles / screenshots, and when answering "how is this implemented," cites specific code evidence instead of giving a generic description
 - 🔑 **Bring your own model**: connect any OpenAI-compatible provider / API key / model — not locked to a single vendor
 - 🗂️ **Local-first**: conversation history is stored only in local IndexedDB, never synced to any cloud

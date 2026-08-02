@@ -63,7 +63,7 @@ Runi `1.1.0` uses this permission set:
 | `activeTab` | Supports user-invoked access to the active page |
 | `tabs` | Identifies and validates the target tab, reads its title and URL, opens the extension settings page, and performs user-requested navigation |
 | `scripting` | Runs packaged read and structured-write functions in the target page |
-| `storage` | Stores provider settings, API keys, language and theme preferences, plus temporary session and undo state |
+| `storage` | Stores provider settings, API keys, shortcuts, language, theme, and workbench preferences, plus temporary tab-to-conversation state |
 | `sidePanel` | Hosts Runi’s primary interface |
 | Host access: `<all_urls>` | Lets the same current-page Agent work on user-selected HTTP and HTTPS sites and fetch page-referenced resources |
 

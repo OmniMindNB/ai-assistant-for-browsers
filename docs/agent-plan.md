@@ -133,12 +133,10 @@ async function* agentLoop(ctx: AgentContext): AsyncGenerator<AgentEvent> {
 
 | 工具 | 后端 | 闸门 |
 |------|------|------|
-| `inject_script` | 现有 `background.ts injectScript`（MAIN world + 快照撤销） | 复用 `lib/security.ts` AST 扫描 + 人工确认 |
-| `set_style` / `modify_dom` | `executeScript` | 写入确认（可自动放行幂等样式） |
+| `set_style` / `modify_dom` | 随扩展打包的 `executeScript` 函数 | 每轮第一次写操作前确认，决定仅在该轮内复用 |
 | `click` / `type` / `scroll` / `select_option` | `executeScript` 派发事件（Phase C 升级 CDP `Input.*`） | 写入确认 |
 | `set_storage` / `get_storage` | `executeScript` localStorage/Cookie | get 警告、set 确认 |
 | `navigate` | `chrome.tabs.update` | 确认 |
-| `revert_changes` | 现有 `undoScript` | 自动放行 |
 
 #### Phase C — CDP / 多标签 / 自动化（可选增强）
 
@@ -201,10 +199,8 @@ L0 Global Deny（硬编码，最高优先）
 L1 Always Allow（只读）
    - read_page / query_dom / get_html / get_scripts / get_stylesheets
      / get_computed_style / get_page_meta / screenshot
-L2 Auto Allow（可逆、低风险写）
-   - set_style / 幂等 modify_dom / revert_changes（可配置）
-L3 Explicit Confirm（高风险写）
-   - inject_script / click(提交类) / type / navigate / set_storage / set_cookie
+L2 Explicit Confirm（写入/交互）
+   - set_style / modify_dom / click / type / scroll / navigate / set_storage
 ```
 
 - **Deny 永远优先于 Allow**：即便模型坚持，L0 命中直接拒绝。
@@ -254,7 +250,7 @@ L3 Explicit Confirm（高风险写）
 | **A1** | Pi `Agent` 封装 + 权限闸门 | 多轮工具调用收敛，`beforeToolCall` 拦截生效，轮次熔断生效 |
 | **A2** | 只读检查工具集 | 问「**滚动效果怎么实现的**」→ 模型自动 `get_scripts`+`get_stylesheets` 后给出**基于真实代码**的分析 |
 | **A3** | 删除关键词路由，统一入口 | 「总结本页」「解释划词」「改背景色」「分析滚动」走同一 Agent |
-| **B** | 写入/交互工具 + 确认 UI | 「去掉悬浮广告」→ 模型查 DOM→生成脚本→闸门确认→注入→可撤销 |
+| **B** | 写入/交互工具 + 确认 UI | 「去掉悬浮广告」→ 模型查 DOM→调用结构化写工具→本轮首次写入前确认→执行 |
 | **C** | CDP / 网络 / 多标签 / 抓取 | 网络嗅探、真实输入事件、批量抓取导出 |
 
 旧 [PROGRESS.md](PROGRESS.md) 的 Phase 3（Skill）/Phase 4（抓取）/Phase 5（发布）顺延到 B/C 之后，Skill 自然演化为「固化的工具调用序列」。
@@ -288,7 +284,7 @@ user: 当前网页的滚动效果是怎么做的？
 | 多轮调用 token/时延飙升 | 单步预算 + 结果折叠 + 轮次熔断（§6） |
 | Prompt Injection（页面操纵模型去做写操作） | untrusted 标注 + 写操作强制权限闸门（§3.3、§5） |
 | 大 DOM/脚本爆上下文 | 工具返回截断 + 分页 + 缩小 selector 提示 |
-| MAIN world 注入风险 | 复用 AST 扫描 + 快照撤销；CDP 仅在 Phase C 引入 |
+| MAIN world 页面操作风险 | 仅开放随扩展打包的结构化写入函数 + 每轮首次写入确认；CDP 仅在 Phase C 引入 |
 | 自研 loop 与 Pi 偏离 | 概念对齐 Pi 三层 API，预留替换为 `pi-agent-core` 的接口边界 |
 
 ---

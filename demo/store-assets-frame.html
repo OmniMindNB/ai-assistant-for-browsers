@@ -131,11 +131,356 @@
         border-radius: inherit;
       }
 
-      .capture img {
-        display: block;
+      .mock-browser {
         width: 100%;
-        max-width: none;
-        transform: translateY(-69px);
+        height: 100%;
+        color: #1f2937;
+        background: #f7f8fb;
+      }
+
+      .mock-toolbar {
+        display: flex;
+        gap: 7px;
+        align-items: center;
+        height: 38px;
+        padding: 0 15px;
+        color: #718096;
+        font-size: 11px;
+        font-weight: 650;
+        border-bottom: 1px solid #dbe2ea;
+        background: #edf1f6;
+      }
+
+      .mock-toolbar i {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #94a3b8;
+      }
+
+      .mock-address {
+        min-width: 245px;
+        margin-left: 8px;
+        padding: 5px 12px;
+        border: 1px solid #d5dde7;
+        border-radius: 999px;
+        background: #fff;
+      }
+
+      .mock-content {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 390px;
+        height: calc(100% - 38px);
+      }
+
+      .mock-page {
+        position: relative;
+        overflow: hidden;
+        padding: 38px 46px;
+        border-right: 1px solid #dce3ec;
+        background:
+          radial-gradient(circle at 88% 7%, rgb(91 111 240 / 11%), transparent 31%),
+          linear-gradient(160deg, #fffdf9, #f4faf8);
+      }
+
+      .mock-kicker {
+        margin: 0 0 13px;
+        color: #0e766e;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.11em;
+        text-transform: uppercase;
+      }
+
+      .mock-page h2 {
+        max-width: 540px;
+        margin: 0;
+        color: #172b35;
+        font-size: 35px;
+        line-height: 1.06;
+        letter-spacing: -0.045em;
+      }
+
+      .mock-page-lede {
+        max-width: 560px;
+        margin: 15px 0 0;
+        color: #607075;
+        font-size: 14px;
+        line-height: 1.65;
+      }
+
+      .mock-cards {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        margin-top: 30px;
+      }
+
+      .mock-card {
+        min-height: 108px;
+        padding: 17px;
+        border: 1px solid #dfe7e4;
+        border-radius: 16px;
+        background: rgb(255 255 255 / 82%);
+        box-shadow: 0 12px 28px rgb(32 75 71 / 6%);
+      }
+
+      .mock-card strong {
+        display: block;
+        margin-bottom: 9px;
+        color: #1f3d42;
+        font-size: 13px;
+      }
+
+      .mock-card span {
+        color: #718184;
+        font-size: 11px;
+        line-height: 1.48;
+      }
+
+      .mock-progress {
+        margin-top: 20px;
+        padding: 18px;
+        color: #e6fffa;
+        border-radius: 16px;
+        background: #17383d;
+      }
+
+      .mock-progress-row {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 12px;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .mock-progress-track {
+        height: 8px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: rgb(255 255 255 / 14%);
+      }
+
+      .mock-progress-track::after {
+        display: block;
+        width: 72%;
+        height: 100%;
+        content: "";
+        border-radius: inherit;
+        background: linear-gradient(90deg, #22d3ee, #8b5cf6);
+      }
+
+      .mock-settings-card {
+        margin-top: 24px;
+        padding: 20px;
+        border: 1px solid #dfe5ec;
+        border-radius: 17px;
+        background: rgb(255 255 255 / 90%);
+      }
+
+      .mock-setting-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 16px;
+        font-size: 13px;
+        font-weight: 760;
+      }
+
+      .mock-badge {
+        padding: 4px 8px;
+        color: #4f46e5;
+        font-size: 10px;
+        border-radius: 999px;
+        background: #eef2ff;
+      }
+
+      .mock-field {
+        display: grid;
+        grid-template-columns: 120px 1fr;
+        gap: 13px;
+        align-items: center;
+        margin-top: 10px;
+        color: #64748b;
+        font-size: 11px;
+      }
+
+      .mock-field span:last-child {
+        padding: 8px 10px;
+        color: #475569;
+        border: 1px solid #dce3eb;
+        border-radius: 9px;
+        background: #f8fafc;
+      }
+
+      .mock-panel {
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        background: #fff;
+      }
+
+      .mock-panel-header {
+        display: flex;
+        gap: 9px;
+        align-items: center;
+        height: 50px;
+        padding: 0 16px;
+        color: #111827;
+        font-size: 13px;
+        font-weight: 760;
+        border-bottom: 1px solid #e5e7eb;
+      }
+
+      .mock-panel-header img {
+        width: 29px;
+        height: 29px;
+        border-radius: 8px;
+      }
+
+      .mock-panel-header small {
+        margin-left: auto;
+        color: #94a3b8;
+        font-size: 10px;
+        font-weight: 650;
+      }
+
+      .mock-thread {
+        display: flex;
+        min-height: 0;
+        flex: 1;
+        flex-direction: column;
+        gap: 12px;
+        padding: 17px;
+      }
+
+      .mock-bubble {
+        max-width: 90%;
+        padding: 10px 12px;
+        font-size: 11px;
+        line-height: 1.55;
+        border-radius: 13px;
+      }
+
+      .mock-bubble.user {
+        align-self: flex-end;
+        color: #fff;
+        border-bottom-right-radius: 4px;
+        background: #4f46e5;
+      }
+
+      .mock-bubble.assistant {
+        color: #334155;
+        border: 1px solid #e2e8f0;
+        border-bottom-left-radius: 4px;
+        background: #f8fafc;
+      }
+
+      .mock-bubble strong {
+        display: block;
+        margin-bottom: 5px;
+        color: #172554;
+      }
+
+      .mock-bubble ul {
+        margin: 5px 0 0;
+        padding-left: 15px;
+      }
+
+      .mock-activity {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .mock-activity span {
+        padding: 5px 8px;
+        color: #475569;
+        font-size: 10px;
+        border: 1px solid #dbe4ed;
+        border-radius: 999px;
+        background: #f8fafc;
+      }
+
+      .mock-code {
+        margin-top: 7px;
+        padding: 9px;
+        color: #c7d2fe;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 9px;
+        line-height: 1.55;
+        white-space: pre-wrap;
+        border-radius: 9px;
+        background: #172033;
+      }
+
+      .mock-confirm-card {
+        padding: 13px;
+        color: #78350f;
+        font-size: 10px;
+        line-height: 1.5;
+        border: 1px solid #fbbf24;
+        border-radius: 14px;
+        background: #fffbeb;
+      }
+
+      .mock-confirm-card strong {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 11px;
+      }
+
+      .mock-confirm-actions {
+        display: flex;
+        gap: 7px;
+        margin-top: 10px;
+      }
+
+      .mock-confirm-actions span {
+        padding: 6px 9px;
+        color: #fff;
+        font-weight: 700;
+        border-radius: 8px;
+        background: #059669;
+      }
+
+      .mock-confirm-actions span:last-child {
+        color: #475569;
+        border: 1px solid #cbd5e1;
+        background: #fff;
+      }
+
+      .mock-privacy-card {
+        padding: 12px;
+        color: #334155;
+        font-size: 10px;
+        line-height: 1.52;
+        border: 1px solid #dbe4f0;
+        border-radius: 13px;
+        background: #f8fafc;
+      }
+
+      .mock-privacy-card strong {
+        display: block;
+        margin-bottom: 5px;
+        color: #172554;
+        font-size: 11px;
+      }
+
+      .mock-privacy-card.provider {
+        border-color: #c4b5fd;
+        background: #f5f3ff;
+      }
+
+      .mock-composer {
+        margin: 0 14px 14px;
+        padding: 10px 12px;
+        color: #94a3b8;
+        font-size: 10px;
+        border: 1px solid #dbe2ea;
+        border-radius: 12px;
+        background: #fff;
+        box-shadow: 0 6px 18px rgb(15 23 42 / 6%);
       }
 
       .promo {
@@ -178,6 +523,19 @@
         height: 48px;
         border-radius: 12px;
         box-shadow: 0 12px 30px rgb(0 0 0 / 34%);
+      }
+
+      .promo-tagline {
+        position: absolute;
+        z-index: 3;
+        top: 91px;
+        left: 33px;
+        width: 170px;
+        color: #d8e8ff;
+        font-size: 16px;
+        font-weight: 650;
+        line-height: 1.25;
+        letter-spacing: -0.02em;
       }
 
       .mini-window {
@@ -322,13 +680,13 @@
           ],
           confirm: [
             "You stay in control",
-            "Every page change asks for approval first",
+            "The first write each turn asks for approval",
             "03-confirm.png",
           ],
-          undo: [
-            "Undo the whole turn",
-            "Restore page changes with one click",
-            "04-undo.png",
+          provider: [
+            "Your provider, your choice",
+            "Recent context is sent only after you start a request",
+            "04-provider.png",
           ],
         },
         "zh-CN": {
@@ -344,13 +702,13 @@
           ],
           confirm: [
             "修改前由你确认",
-            "页面写操作先展示内容，再等待批准",
+            "每轮第一次写操作先展示内容，再等待批准",
             "03-confirm.png",
           ],
-          undo: [
-            "一键撤销整轮改动",
-            "随时恢复本轮对页面造成的变化",
-            "04-undo.png",
+          provider: [
+            "由你选择 Provider",
+            "发起请求后，近期上下文才会发送",
+            "04-provider.png",
           ],
         },
       };
@@ -358,14 +716,204 @@
       const icon = "../docs/store-assets/icon-128.png";
       const root = document.querySelector("#asset");
 
+      const screenCopy = {
+        en: {
+          pageKicker: "CONTROLLED WORKSPACE",
+          pageTitle: "Focus on the work that matters",
+          pageLede:
+            "A calm project workspace with milestones, evidence, and next steps in one place.",
+          cards: [
+            ["Milestones", "Turn broad goals into small, visible outcomes."],
+            ["Evidence", "Keep decisions grounded in the current page."],
+            ["Momentum", "See what is finished and what comes next."],
+          ],
+          progress: ["Launch readiness", "72% complete"],
+          panelLabel: "Current page",
+          composer: "Ask about this page…",
+          summary: {
+            user: "Summarize this page",
+            title: "Here’s the page in brief",
+            bullets: [
+              "A focused workspace for planning and delivery.",
+              "Three principles: milestones, evidence, and momentum.",
+              "Launch readiness is currently at 72%.",
+            ],
+          },
+          evidence: {
+            user: "How is the progress animation implemented?",
+            activity: ["Read page", "Inspect DOM", "Check computed style"],
+            title: "The bar uses a pseudo-element",
+            body: "The visible fill is generated by ::after and its width controls progress.",
+            code: ".progress-track::after {\n  width: 72%;\n  background: linear-gradient(90deg, #22d3ee, #8b5cf6);\n}",
+          },
+          confirm: {
+            user: "Hide the announcement banner",
+            title: "🔒 Please confirm before modifying the page",
+            body: "Set .announcement to display: none.",
+            approve: "Approve this turn",
+            deny: "Deny",
+            hint: "Once approved, further write actions this turn run automatically without asking again.",
+          },
+          provider: {
+            settings: "Provider settings",
+            badge: "Stored locally",
+            fields: [
+              ["Base URL", "https://api.example.com/v1"],
+              ["Model", "runi-assistant"],
+              ["API key", "••••••••••••••••"],
+            ],
+            localTitle: "Stored locally in your browser",
+            localBody: "Provider settings, API keys, and conversation history stay in local extension storage.",
+            sendTitle: "Sent after you initiate a request",
+            sendBody: "Your prompt, recent conversation context, and relevant page results go only to your configured AI provider.",
+          },
+        },
+        "zh-CN": {
+          pageKicker: "可控工作区",
+          pageTitle: "专注于真正重要的工作",
+          pageLede: "在一个清晰的工作区里查看里程碑、依据和下一步。",
+          cards: [
+            ["里程碑", "把宽泛目标拆成小而清晰的成果。"],
+            ["依据", "让决策基于当前网页中的真实信息。"],
+            ["进展", "随时了解已完成内容与下一步。"],
+          ],
+          progress: ["发布准备度", "已完成 72%"],
+          panelLabel: "当前网页",
+          composer: "询问当前网页…",
+          summary: {
+            user: "总结这个网页",
+            title: "网页内容概览",
+            bullets: [
+              "这是一个用于规划与交付的专注工作区。",
+              "三个核心：里程碑、依据和进展。",
+              "当前发布准备度为 72%。",
+            ],
+          },
+          evidence: {
+            user: "进度动画是如何实现的？",
+            activity: ["读取网页", "检查 DOM", "检查计算样式"],
+            title: "进度条由伪元素生成",
+            body: "可见填充来自 ::after，其宽度用于控制进度。",
+            code: ".progress-track::after {\n  width: 72%;\n  background: linear-gradient(90deg, #22d3ee, #8b5cf6);\n}",
+          },
+          confirm: {
+            user: "隐藏公告横幅",
+            title: "🔒 修改网页前请确认",
+            body: "把 .announcement 设置为 display: none。",
+            approve: "批准本轮操作",
+            deny: "拒绝",
+            hint: "批准后，本轮内后续的写操作会自动执行，无需逐条确认。",
+          },
+          provider: {
+            settings: "Provider 设置",
+            badge: "保存在本地",
+            fields: [
+              ["基础地址", "https://api.example.com/v1"],
+              ["模型", "runi-assistant"],
+              ["API Key", "••••••••••••••••"],
+            ],
+            localTitle: "数据保存在浏览器本地",
+            localBody: "Provider 设置、API Key 和对话历史保存在扩展的本地存储中。",
+            sendTitle: "发起请求后才会发送",
+            sendBody: "当前提示词、近期对话上下文和相关页面结果仅发送到你配置的 AI Provider。",
+          },
+        },
+      };
+
+      const pageMarkup = (text, isProvider) => {
+        if (isProvider) {
+          return `
+            <p class="mock-kicker">${text.pageKicker}</p>
+            <h2>${text.pageTitle}</h2>
+            <p class="mock-page-lede">${text.pageLede}</p>
+            <div class="mock-settings-card">
+              <div class="mock-setting-title">
+                <span>${text.provider.settings}</span>
+                <span class="mock-badge">${text.provider.badge}</span>
+              </div>
+              ${text.provider.fields
+                .map(
+                  ([label, value]) => `
+                    <div class="mock-field"><span>${label}</span><span>${value}</span></div>
+                  `,
+                )
+                .join("")}
+            </div>
+          `;
+        }
+
+        return `
+          <p class="mock-kicker">${text.pageKicker}</p>
+          <h2>${text.pageTitle}</h2>
+          <p class="mock-page-lede">${text.pageLede}</p>
+          <div class="mock-cards">
+            ${text.cards
+              .map(([title, body]) => `<div class="mock-card"><strong>${title}</strong><span>${body}</span></div>`)
+              .join("")}
+          </div>
+          <div class="mock-progress">
+            <div class="mock-progress-row"><span>${text.progress[0]}</span><span>${text.progress[1]}</span></div>
+            <div class="mock-progress-track"></div>
+          </div>
+        `;
+      };
+
+      const threadMarkup = (text, selectedScene) => {
+        if (selectedScene === "evidence") {
+          return `
+            <div class="mock-bubble user">${text.evidence.user}</div>
+            <div class="mock-activity">${text.evidence.activity.map((item) => `<span>✓ ${item}</span>`).join("")}</div>
+            <div class="mock-bubble assistant">
+              <strong>${text.evidence.title}</strong>
+              ${text.evidence.body}
+              <div class="mock-code">${text.evidence.code}</div>
+            </div>
+          `;
+        }
+
+        if (selectedScene === "confirm") {
+          return `
+            <div class="mock-bubble user">${text.confirm.user}</div>
+            <div class="mock-confirm-card">
+              <strong>${text.confirm.title}</strong>
+              <div>${text.confirm.body}</div>
+              <div class="mock-confirm-actions"><span>${text.confirm.approve}</span><span>${text.confirm.deny}</span></div>
+              <div style="margin-top: 9px; color: #92400e">${text.confirm.hint}</div>
+            </div>
+          `;
+        }
+
+        if (selectedScene === "provider") {
+          return `
+            <div class="mock-privacy-card">
+              <strong>${text.provider.localTitle}</strong>
+              ${text.provider.localBody}
+            </div>
+            <div class="mock-privacy-card provider">
+              <strong>${text.provider.sendTitle}</strong>
+              ${text.provider.sendBody}
+            </div>
+          `;
+        }
+
+        return `
+          <div class="mock-bubble user">${text.summary.user}</div>
+          <div class="mock-bubble assistant">
+            <strong>${text.summary.title}</strong>
+            <ul>${text.summary.bullets.map((item) => `<li>${item}</li>`).join("")}</ul>
+          </div>
+        `;
+      };
+
       if (kind === "promo") {
-        document.documentElement.lang = "en";
+        document.documentElement.lang = locale;
         root.innerHTML = `
           <section class="promo" aria-label="Runi small promotional tile">
             <div class="promo-brand">
               <img src="${icon}" alt="" />
               <span>Runi</span>
             </div>
+            <div class="promo-tagline">${locale === "zh-CN" ? "网页，如你所愿。" : "Your page, your way."}</div>
             <div class="mini-window" aria-hidden="true">
               <div class="mini-toolbar"><span></span><span></span><span></span></div>
               <div class="mini-page"></div>
@@ -379,7 +927,8 @@
         `;
       } else {
         document.documentElement.lang = locale;
-        const [headline, subtitle, filename] = copy[locale][scene] || copy[locale].summary;
+        const [headline, subtitle] = copy[locale][scene] || copy[locale].summary;
+        const text = screenCopy[locale];
         root.innerHTML = `
           <section class="shot">
             <div class="brand">
@@ -392,7 +941,24 @@
               <p class="subtitle">${subtitle}</p>
             </div>
             <figure class="capture">
-              <img src="../docs/store-assets/source/${locale}/${filename}" alt="" />
+              <div class="mock-browser">
+                <div class="mock-toolbar">
+                  <i></i><i></i><i></i>
+                  <span class="mock-address">runi.local/workspace</span>
+                </div>
+                <div class="mock-content">
+                  <section class="mock-page">${pageMarkup(text, scene === "provider")}</section>
+                  <aside class="mock-panel">
+                    <header class="mock-panel-header">
+                      <img src="${icon}" alt="" />
+                      <span>Runi</span>
+                      <small>${text.panelLabel}</small>
+                    </header>
+                    <div class="mock-thread">${threadMarkup(text, scene)}</div>
+                    <div class="mock-composer">${text.composer}</div>
+                  </aside>
+                </div>
+              </div>
             </figure>
           </section>
         `;
