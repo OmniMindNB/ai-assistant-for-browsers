@@ -5,19 +5,21 @@ const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.ur
 
 const legacyBrandName = ['Alu', 'minum'].join('');
 const legacyBrandPattern = new RegExp(legacyBrandName, 'i');
-const legacyLegalRoot = `https://omnimindnb.github.io/${legacyBrandName.toLowerCase()}-legal/`;
+const repositoryPagesRoot =
+  'https://omnimindnb.github.io/ai-assistant-for-browsers/privacy-policy/';
+const retiredLegalRoot = `https://omnimindnb.github.io/${legacyBrandName.toLowerCase()}-legal/`;
 const englishUpgradeNotice =
   `Brand upgrade notice: Runi uses a new local data namespace and does not read ${legacyBrandName} settings or conversations. After upgrading, configure your provider and API key again.`;
 const chineseUpgradeNotice =
   `品牌升级说明：Runi 使用全新的本地数据空间，不会读取 ${legacyBrandName} 的本地设置或对话。升级后需要重新配置 Provider 和 API Key。`;
-const englishLegalUrl = legacyLegalRoot;
-const chineseLegalUrl = `${legacyLegalRoot}zh-CN/`;
+const englishLegalUrl = repositoryPagesRoot;
+const chineseLegalUrl = `${repositoryPagesRoot}zh-CN/`;
 
 const permittedLegacyReferencesByPath: Record<string, readonly string[]> = {
-  'docs/chrome-store-listing.en.md': [englishUpgradeNotice, englishLegalUrl],
-  'docs/chrome-store-listing.zh-CN.md': [chineseUpgradeNotice, chineseLegalUrl],
-  'docs/chrome-store-permission-justifications.md': [englishLegalUrl, chineseLegalUrl],
-  'docs/chrome-store-submission-guide.md': [chineseUpgradeNotice, englishLegalUrl, chineseLegalUrl],
+  'docs/chrome-store-listing.en.md': [englishUpgradeNotice],
+  'docs/chrome-store-listing.zh-CN.md': [chineseUpgradeNotice],
+  'docs/chrome-store-permission-justifications.md': [],
+  'docs/chrome-store-submission-guide.md': [chineseUpgradeNotice],
 };
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -142,12 +144,12 @@ describe('Runi active product identity', () => {
     );
   });
 
-  it.each([
-    `${legacyLegalRoot}unapproved/`,
-    `${legacyLegalRoot};unapproved`,
-  ])('does not permit the non-deployed legal URL %s on an approved surface', (url) => {
-    expect(withoutPermittedLegacyReferences('docs/chrome-store-listing.en.md', url)).toMatch(
-      legacyBrandPattern,
-    );
-  });
+  it.each(Object.keys(permittedLegacyReferencesByPath))(
+    '%s does not permit the retired legal repository URL',
+    (path) => {
+      expect(withoutPermittedLegacyReferences(path, retiredLegalRoot)).toMatch(
+        legacyBrandPattern,
+      );
+    },
+  );
 });

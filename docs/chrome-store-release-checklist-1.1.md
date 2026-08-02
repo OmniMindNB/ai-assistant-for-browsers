@@ -17,8 +17,8 @@ Release date: 2026-07-28
 - [x] English listing document: `/Users/dongliu/startup/ai-assistant-for-browsers/docs/chrome-store-listing.en.md`
 - [x] Simplified Chinese listing document: `/Users/dongliu/startup/ai-assistant-for-browsers/docs/chrome-store-listing.zh-CN.md`
 - [x] Permission and data-disclosure answers: `/Users/dongliu/startup/ai-assistant-for-browsers/docs/chrome-store-permission-justifications.md`
-- [x] English privacy policy: `https://omnimindnb.github.io/aluminum-legal/` returned HTTP `200`.
-- [x] Simplified Chinese privacy policy: `https://omnimindnb.github.io/aluminum-legal/zh-CN/` returned HTTP `200`.
+- [ ] PENDING — English privacy policy: verify `https://omnimindnb.github.io/ai-assistant-for-browsers/privacy-policy/` returns HTTP `200` after deployment.
+- [ ] PENDING — Simplified Chinese privacy policy: verify `https://omnimindnb.github.io/ai-assistant-for-browsers/privacy-policy/zh-CN/` returns HTTP `200` after deployment.
 - [ ] PENDING — Confirm the final Dashboard category choices against the live Chrome Web Store privacy-practices form before saving a draft.
 
 ## Store Images

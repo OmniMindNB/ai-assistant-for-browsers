@@ -46,7 +46,7 @@ pnpm zip
    - `screenshot-03-confirm.png`
    - `screenshot-04-provider.png`
 4. 按英文 listing 文档中的顺序填写四条截图说明。
-5. 隐私政策默认路由使用当前已部署的 `https://omnimindnb.github.io/aluminum-legal/`。
+5. 隐私政策默认路由使用当前已部署的 `https://omnimindnb.github.io/ai-assistant-for-browsers/privacy-policy/`。
 6. 支持邮箱使用 `liudong.ucas@gmail.com`。
 
 如果 `docs/store-assets/en/` 尚未生成或图片尺寸不正确，停止；先完成本发布计划的本地化素材任务。
@@ -62,7 +62,7 @@ pnpm zip
    - `screenshot-03-confirm.png`
    - `screenshot-04-provider.png`
 4. 按中文 listing 文档中的顺序填写四条截图说明。
-5. 中文隐私政策路由为当前已部署的 `https://omnimindnb.github.io/aluminum-legal/zh-CN/`。
+5. 中文隐私政策路由为当前已部署的 `https://omnimindnb.github.io/ai-assistant-for-browsers/privacy-policy/zh-CN/`。
 
 如果 `docs/store-assets/zh-CN/` 尚未生成、图片混有英文界面或尺寸不正确，停止；不要用英文素材代替中文本地化素材。
 
@@ -83,8 +83,8 @@ pnpm zip
 
 发布草稿前分别打开并核对：
 
-- 英文 `/`：`https://omnimindnb.github.io/aluminum-legal/`
-- 简体中文 `/zh-CN/`：`https://omnimindnb.github.io/aluminum-legal/zh-CN/`
+- English default: `https://omnimindnb.github.io/ai-assistant-for-browsers/privacy-policy/`
+- Simplified Chinese: `https://omnimindnb.github.io/ai-assistant-for-browsers/privacy-policy/zh-CN/`
 
 两条路由必须：
 

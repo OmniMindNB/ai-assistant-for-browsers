@@ -165,8 +165,8 @@ Confirm only statements that remain true in the live form:
 
 ## Currently deployed privacy-policy routes
 
-- English default: `https://omnimindnb.github.io/aluminum-legal/`
-- Simplified Chinese: `https://omnimindnb.github.io/aluminum-legal/zh-CN/`
+- English default: `https://omnimindnb.github.io/ai-assistant-for-browsers/privacy-policy/`
+- Simplified Chinese: `https://omnimindnb.github.io/ai-assistant-for-browsers/privacy-policy/zh-CN/`
 
 Use the rendered GitHub Pages URL, not a repository blob URL.
 

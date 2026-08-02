@@ -57,7 +57,7 @@ Brand upgrade notice: Runi uses a new local data namespace and does not read Alu
 ## Currently deployed privacy-policy URL
 
 ```text
-https://omnimindnb.github.io/aluminum-legal/
+https://omnimindnb.github.io/ai-assistant-for-browsers/privacy-policy/
 ```
 
 ## Support contact

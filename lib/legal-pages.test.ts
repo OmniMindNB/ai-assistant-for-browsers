@@ -48,3 +48,37 @@ describe('GitHub Pages privacy policies', () => {
     expect(frontMatter(path)).toMatchObject(expected);
   });
 });
+
+describe('maintained privacy-policy URLs', () => {
+  const englishUrl =
+    'https://omnimindnb.github.io/ai-assistant-for-browsers/privacy-policy/';
+  const chineseUrl = `${englishUrl}zh-CN/`;
+  const retiredUrl = 'https://omnimindnb.github.io/aluminum-legal/';
+  const maintainedFiles = [
+    'docs/chrome-store-listing.en.md',
+    'docs/chrome-store-listing.zh-CN.md',
+    'docs/chrome-store-permission-justifications.md',
+    'docs/chrome-store-submission-guide.md',
+    'docs/chrome-store-release-checklist-1.1.md',
+  ];
+
+  it.each(maintainedFiles)('%s does not reference the retired legal site', (path) => {
+    expect(read(path)).not.toContain(retiredUrl);
+  });
+
+  it('publishes the English route on the English listing', () => {
+    expect(read('docs/chrome-store-listing.en.md')).toContain(englishUrl);
+  });
+
+  it('publishes the Simplified Chinese route on the Chinese listing', () => {
+    expect(read('docs/chrome-store-listing.zh-CN.md')).toContain(chineseUrl);
+  });
+
+  it.each(['docs/chrome-store-permission-justifications.md', 'docs/chrome-store-submission-guide.md'])(
+    '%s contains both active routes',
+    (path) => {
+      expect(read(path)).toContain(englishUrl);
+      expect(read(path)).toContain(chineseUrl);
+    },
+  );
+});

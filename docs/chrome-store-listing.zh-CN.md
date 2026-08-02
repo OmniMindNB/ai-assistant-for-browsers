@@ -57,7 +57,7 @@ Runi 采用本地优先设计：Provider 设置、API Key、界面偏好和对�
 ## 当前已部署的隐私政策 URL
 
 ```text
-https://omnimindnb.github.io/aluminum-legal/zh-CN/
+https://omnimindnb.github.io/ai-assistant-for-browsers/privacy-policy/zh-CN/
 ```
 
 ## 支持邮箱
