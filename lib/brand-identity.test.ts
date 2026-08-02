@@ -73,6 +73,12 @@ describe('Runi active product identity', () => {
     expect(read(path)).not.toMatch(legacyBrandPattern);
   });
 
+  it('uses the Runi monogram for assistant messages', () => {
+    const sidePanel = read('entrypoints/sidepanel/App.tsx');
+    expect(sidePanel).not.toMatch(/>\s*Al\s*</);
+    expect(sidePanel).toMatch(/>\s*R\s*</);
+  });
+
   const maintainedDocs = [
     'README.md',
     'README.en.md',

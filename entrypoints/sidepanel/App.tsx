@@ -406,7 +406,7 @@ function Message({
   return (
     <div className="flex gap-3">
       <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-neutral-900 text-[11px] font-bold text-white dark:bg-neutral-800">
-        Al
+        R
       </div>
       <div className="min-w-0 flex-1 rounded-2xl rounded-tl-md bg-white px-4 py-3 shadow-sm ring-1 ring-neutral-200/70 dark:bg-neutral-900 dark:ring-neutral-800">
         {content ? (
@@ -478,4 +478,3 @@ function ConfirmationCard({
     </div>
   );
 }
-
