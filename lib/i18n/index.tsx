@@ -8,7 +8,7 @@ export type LocaleMode = 'auto' | 'zh' | 'en';
 export type ResolvedLocale = 'zh' | 'en';
 export type TranslationKey = keyof typeof zh;
 
-const LOCALE_KEY = 'aluminum:locale';
+export const LOCALE_KEY = 'runi:locale';
 const DICTS: Record<ResolvedLocale, Record<TranslationKey, string>> = { zh, en };
 
 export async function loadLocale(): Promise<LocaleMode> {

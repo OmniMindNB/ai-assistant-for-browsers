@@ -46,7 +46,7 @@ describe('grouped options settings', () => {
     preferencesMocks.load.mockResolvedValue({ attachPageByDefault: true });
     preferencesMocks.save.mockResolvedValue(undefined);
     storageData = {
-      'aluminum:settings': {
+      'runi:settings': {
         activeProviderId: 'deepseek',
         providers: [
           {
@@ -66,7 +66,7 @@ describe('grouped options settings', () => {
           },
         ],
       },
-      'aluminum:shortcuts': [
+      'runi:shortcuts': [
         {
           id: 'builtin:explain-selection',
           origin: 'builtin',
@@ -265,7 +265,7 @@ describe('grouped options settings', () => {
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     await user.click(screen.getByRole('radio', { name: 'Set as active provider: Other' }));
 
-    const persisted = set.mock.calls.at(-1)?.[0]['aluminum:settings'];
+    const persisted = set.mock.calls.at(-1)?.[0]['runi:settings'];
     expect(persisted.providers).toHaveLength(2);
     expect(persisted.activeProviderId).toBe('other');
   });
@@ -309,7 +309,7 @@ describe('grouped options settings', () => {
     await user.click(screen.getByRole('button', { name: 'Delete Renamed' }));
     await user.click(screen.getByRole('button', { name: 'Delete Renamed' }));
 
-    const persisted = set.mock.calls.at(-1)?.[0]['aluminum:settings'];
+    const persisted = set.mock.calls.at(-1)?.[0]['runi:settings'];
     expect(persisted.activeProviderId).toBe('deepseek');
     expect(persisted.providers.map((item: { name: string }) => item.name)).not.toContain('Renamed');
   });
@@ -338,7 +338,7 @@ describe('grouped options settings', () => {
     act(() => {
       providerStorageListener?.(
         {
-          'aluminum:settings': {
+          'runi:settings': {
             newValue: {
               activeProviderId: 'remote',
               providers: [
@@ -384,7 +384,7 @@ describe('grouped options settings', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Move Summarize page up' }));
 
-    const persisted = set.mock.calls.at(-1)?.[0]['aluminum:shortcuts'];
+    const persisted = set.mock.calls.at(-1)?.[0]['runi:shortcuts'];
     expect(persisted.map((item: { id: string }) => item.id)).toEqual([
       'builtin:summarize-page',
       'builtin:explain-selection',
@@ -402,7 +402,7 @@ describe('grouped options settings', () => {
     fireEvent.drop(explain, { dataTransfer });
 
     await waitFor(() => {
-      const persisted = set.mock.calls.at(-1)?.[0]['aluminum:shortcuts'];
+      const persisted = set.mock.calls.at(-1)?.[0]['runi:shortcuts'];
       expect(persisted.map((item: { id: string }) => item.id)).toEqual([
         'builtin:summarize-page',
         'builtin:explain-selection',
@@ -419,7 +419,7 @@ describe('grouped options settings', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Delete Summarize page' }));
 
-    const persisted = set.mock.calls.at(-1)?.[0]['aluminum:shortcuts'];
+    const persisted = set.mock.calls.at(-1)?.[0]['runi:shortcuts'];
     expect(persisted.map((item: { id: string }) => item.id)).toEqual([
       'builtin:explain-selection',
     ]);

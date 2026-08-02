@@ -27,7 +27,7 @@ export interface ShortcutLoadResult {
   errors: string[];
 }
 
-export const SHORTCUTS_STORAGE_KEY = 'aluminum:shortcuts';
+export const SHORTCUTS_STORAGE_KEY = 'runi:shortcuts';
 export const BUILTIN_SUMMARIZE_ID = 'builtin:summarize-page';
 export const BUILTIN_EXPLAIN_ID = 'builtin:explain-selection';
 export const BUILTIN_TRANSLATE_ID = 'builtin:translate-selection';

@@ -43,7 +43,7 @@ describe('useTheme', () => {
 
     // 现在初次加载才 resolve，返回的是切换前保存的旧值（dark）
     await act(async () => {
-      resolveLoad({ 'aluminum:theme': 'dark' });
+      resolveLoad({ 'runi:theme': 'dark' });
       await pendingLoad;
     });
 
@@ -53,7 +53,7 @@ describe('useTheme', () => {
 
   it('still applies the persisted preference when the load resolves before any manual change', async () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() });
-    vi.spyOn((globalThis as any).browser.storage.local, 'get').mockResolvedValue({ 'aluminum:theme': 'dark' });
+    vi.spyOn((globalThis as any).browser.storage.local, 'get').mockResolvedValue({ 'runi:theme': 'dark' });
 
     const { result } = renderHook(() => useTheme());
 

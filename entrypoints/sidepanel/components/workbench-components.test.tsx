@@ -567,7 +567,7 @@ describe('workbench context controls', () => {
   it('refreshes providers and defaults when browser storage changes externally', () => {
     render(<LocaleProvider><App /></LocaleProvider>);
     storageChangeListener?.({
-      'aluminum:settings': { newValue: {} },
+      'runi:settings': { newValue: {} },
       workbenchPreferences: { newValue: {} },
     }, 'local');
     expect(chatStore.refreshProvider).toHaveBeenCalled();

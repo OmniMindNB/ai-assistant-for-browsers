@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 export type ThemeMode = 'auto' | 'light' | 'dark';
 export type ResolvedTheme = 'light' | 'dark';
 
-const THEME_KEY = 'aluminum:theme';
+export const THEME_KEY = 'runi:theme';
 
 export async function loadTheme(): Promise<ThemeMode> {
   const res = await browser.storage.local.get(THEME_KEY);

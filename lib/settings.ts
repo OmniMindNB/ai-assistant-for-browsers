@@ -157,7 +157,7 @@ export function draftPlaceholders(
   };
 }
 
-export const STORAGE_KEY = 'aluminum:settings';
+export const STORAGE_KEY = 'runi:settings';
 
 const DEFAULT_SETTINGS: Settings = {
   providers: [],

@@ -245,9 +245,9 @@ describe('chat store page context', () => {
       .mockResolvedValue({ workbenchPreferences: { attachPageByDefault: true } });
     const first = useChat.getState().refreshProvider();
     const second = useChat.getState().refreshProvider();
-    resolveNew({ 'aluminum:settings': { activeProviderId: 'new', providers: [{ ...provider, id: 'new', model: 'new-model' }] } });
+    resolveNew({ 'runi:settings': { activeProviderId: 'new', providers: [{ ...provider, id: 'new', model: 'new-model' }] } });
     await second;
-    resolveOld({ 'aluminum:settings': { activeProviderId: 'old', providers: [{ ...provider, id: 'old', model: 'old-model' }] } });
+    resolveOld({ 'runi:settings': { activeProviderId: 'old', providers: [{ ...provider, id: 'old', model: 'old-model' }] } });
     await first;
     expect(useChat.getState().selectedProviderId).toBe('new');
 
