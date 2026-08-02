@@ -167,7 +167,6 @@ export const en: Record<keyof typeof zh, string> = {
   'agentActivity.now.setStorage': 'Writing storage key "{target}"',
   'agentActivity.done.setStorage': 'Wrote storage key "{target}"',
   'agentActivity.failed.setStorage': 'Failed to write storage key "{target}"',
-  'agentActivity.slowSuffix': '… this is taking longer than usual',
   'confirm.title': '🔒 Please confirm before modifying the page',
   'confirm.approve': 'Approve this turn',
   'confirm.deny': 'Deny',
