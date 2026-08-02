@@ -3,12 +3,15 @@ import { describe, expect, it } from 'vitest';
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
+const legacyBrandName = ['Alu', 'minum'].join('');
+const legacyBrandPattern = new RegExp(legacyBrandName, 'i');
+const legacyLegalRoot = `https://omnimindnb.github.io/${legacyBrandName.toLowerCase()}-legal/`;
 const englishUpgradeNotice =
-  'Brand upgrade notice: Runi uses a new local data namespace and does not read Aluminum settings or conversations. After upgrading, configure your provider and API key again.';
+  `Brand upgrade notice: Runi uses a new local data namespace and does not read ${legacyBrandName} settings or conversations. After upgrading, configure your provider and API key again.`;
 const chineseUpgradeNotice =
-  '品牌升级说明：Runi 使用全新的本地数据空间，不会读取 Aluminum 的本地设置或对话。升级后需要重新配置 Provider 和 API Key。';
-const englishLegalUrl = 'https://omnimindnb.github.io/aluminum-legal/';
-const chineseLegalUrl = 'https://omnimindnb.github.io/aluminum-legal/zh-CN/';
+  `品牌升级说明：Runi 使用全新的本地数据空间，不会读取 ${legacyBrandName} 的本地设置或对话。升级后需要重新配置 Provider 和 API Key。`;
+const englishLegalUrl = legacyLegalRoot;
+const chineseLegalUrl = `${legacyLegalRoot}zh-CN/`;
 
 const permittedLegacyReferencesByPath: Record<string, readonly string[]> = {
   'docs/chrome-store-listing.en.md': [englishUpgradeNotice, englishLegalUrl],
@@ -58,8 +61,8 @@ describe('Runi active product identity', () => {
     'lib/agent/system-prompt.ts',
     'entrypoints/background.ts',
     'entrypoints/sidepanel/store.ts',
-  ])('%s has no active Aluminum branding', (path) => {
-    expect(read(path)).not.toMatch(/Aluminum/);
+  ])('%s has no active legacy branding', (path) => {
+    expect(read(path)).not.toMatch(legacyBrandPattern);
   });
 
   const maintainedDocs = [
@@ -83,7 +86,7 @@ describe('Runi active product identity', () => {
 
   it.each(maintainedDocs)('%s uses Runi product wording', (path) => {
     const source = read(path);
-    expect(withoutPermittedLegacyReferences(path, source)).not.toMatch(/aluminum/i);
+    expect(withoutPermittedLegacyReferences(path, source)).not.toMatch(legacyBrandPattern);
   });
 
   it('keeps the exact fresh-data upgrade notices on the relaunch surfaces', () => {
@@ -93,18 +96,31 @@ describe('Runi active product identity', () => {
   });
 
   it.each([
-    ['lowercase legacy prose', 'aluminum settings remain available'],
-    ['an upgrade notice on an unapproved surface', englishUpgradeNotice],
-  ])('does not permit %s on an unapproved surface', (_description, legacyReference) => {
-    expect(withoutPermittedLegacyReferences('README.md', legacyReference)).toMatch(/aluminum/i);
+    ['docs/chrome-store-listing.en.md', englishLegalUrl],
+    ['docs/chrome-store-listing.zh-CN.md', chineseLegalUrl],
+    ['docs/chrome-store-permission-justifications.md', englishLegalUrl],
+    ['docs/chrome-store-permission-justifications.md', chineseLegalUrl],
+    ['docs/chrome-store-submission-guide.md', englishLegalUrl],
+    ['docs/chrome-store-submission-guide.md', chineseLegalUrl],
+  ])('%s keeps the exact deployed legal-policy URL', (path, legalUrl) => {
+    expect(read(path)).toContain(legalUrl);
   });
 
   it.each([
-    'https://omnimindnb.github.io/aluminum-legal/unapproved/',
-    'https://omnimindnb.github.io/aluminum-legal/;unapproved',
+    ['lowercase legacy prose', `${legacyBrandName.toLowerCase()} settings remain available`],
+    ['an upgrade notice on an unapproved surface', englishUpgradeNotice],
+  ])('does not permit %s on an unapproved surface', (_description, legacyReference) => {
+    expect(withoutPermittedLegacyReferences('README.md', legacyReference)).toMatch(
+      legacyBrandPattern,
+    );
+  });
+
+  it.each([
+    `${legacyLegalRoot}unapproved/`,
+    `${legacyLegalRoot};unapproved`,
   ])('does not permit the non-deployed legal URL %s on an approved surface', (url) => {
     expect(withoutPermittedLegacyReferences('docs/chrome-store-listing.en.md', url)).toMatch(
-      /aluminum/i,
+      legacyBrandPattern,
     );
   });
 });
