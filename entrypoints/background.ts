@@ -77,10 +77,10 @@ export default defineBackground(() => {
   browser.runtime.onInstalled.addListener(() => {
     browser.sidePanel
       ?.setPanelBehavior?.({ openPanelOnActionClick: false })
-      .catch((err: unknown) => console.error('[Aluminum] sidePanel setPanelBehavior:', err));
+      .catch((err: unknown) => console.error('[Runi] sidePanel setPanelBehavior:', err));
     browser.sidePanel
       ?.setOptions?.({ enabled: false })
-      .catch((err: unknown) => console.error('[Aluminum] sidePanel:', err));
+      .catch((err: unknown) => console.error('[Runi] sidePanel:', err));
   });
 
   // 点击工具栏图标时，只为当前这个 tab 启用并打开侧边栏——面板与这个 tab 强绑定。
@@ -93,10 +93,10 @@ export default defineBackground(() => {
     const tabId = tab.id;
     browser.sidePanel
       ?.setOptions?.({ tabId, path: 'sidepanel.html', enabled: true })
-      .catch((err: unknown) => console.error('[Aluminum] sidePanel setOptions:', err));
+      .catch((err: unknown) => console.error('[Runi] sidePanel setOptions:', err));
     browser.sidePanel
       ?.open?.({ tabId })
-      .catch((err: unknown) => console.error('[Aluminum] sidePanel open:', err));
+      .catch((err: unknown) => console.error('[Runi] sidePanel open:', err));
   });
 
   browser.runtime.onMessage.addListener(
@@ -118,7 +118,7 @@ export default defineBackground(() => {
   // Tab 关闭后"该 tab 上次展示的会话"记录不再可能被用到，及时清理避免占用 storage 配额。
   browser.tabs.onRemoved.addListener((tabId) => {
     clearConversationIdForTab(tabId).catch((err: unknown) =>
-      console.error('[Aluminum] clearConversationIdForTab on tab close:', err),
+      console.error('[Runi] clearConversationIdForTab on tab close:', err),
     );
   });
 });

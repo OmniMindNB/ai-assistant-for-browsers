@@ -784,7 +784,7 @@ async function runAgent(
             : ((result as { content?: Array<{ type: string; text?: string }> } | undefined)?.content?.find(
                 (c) => c.type === 'text',
               )?.text ?? result);
-        console.error('[Aluminum] tool execution failed', event.toolName, message);
+        console.error('[Runi] tool execution failed', event.toolName, message);
       }
       const info = run.pendingToolArgs.get(event.toolCallId);
       run.pendingToolArgs.delete(event.toolCallId);
@@ -823,7 +823,7 @@ async function runAgent(
         // 传对象给 console.error 在 chrome://extensions 错误面板里会被字符串化成
         // "[object Object]"（该面板不支持对象展开），所以这里改成打印可读文本。
         console.error(
-          '[Aluminum] Agent 未产生文本结果',
+          '[Runi] Agent 未产生文本结果',
           compactJson({
             stopReason: last?.stopReason,
             errorMessage: last?.errorMessage,
@@ -996,7 +996,7 @@ async function persistConversationSnapshot(conversationId: string, messages: UIM
       );
     });
   } catch (e) {
-    console.error('[Aluminum] 持久化会话失败', e);
+    console.error('[Runi] 持久化会话失败', e);
   }
 }
 

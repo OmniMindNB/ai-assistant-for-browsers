@@ -730,7 +730,7 @@ describe('workbench history', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'More options' }));
-    await user.click(screen.getByText('Aluminum'));
+    await user.click(screen.getByText('Runi'));
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'More options' }));

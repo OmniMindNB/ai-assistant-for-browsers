@@ -71,7 +71,7 @@ export function WorkbenchHeader({
         <IconMenu className="h-5 w-5" />
       </button>
       <div className="flex min-w-0 items-center gap-2 px-1">
-        <span className="truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">Aluminum</span>
+        <span className="truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">Runi</span>
       </div>
       <div className="ml-auto flex items-center gap-1">
         <button

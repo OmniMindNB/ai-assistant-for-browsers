@@ -800,7 +800,7 @@ describe('chat store page context', () => {
     expect(useChat.getState().activitySteps).toMatchObject([{ id: 'call-1', status: 'failed' }]);
     expect(useChat.getState().activitySteps[0]?.description).not.toContain('Could not establish connection');
     expect(consoleError).toHaveBeenCalledWith(
-      '[Aluminum] tool execution failed',
+      '[Runi] tool execution failed',
       'browser_read_page',
       'Could not establish connection. Receiving end does not exist.',
     );

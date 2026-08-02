@@ -101,7 +101,7 @@ export function buildSystemPrompt(options: SystemPromptOptions = {}): string {
   const sections = [
     section(
       'identity',
-      '你是 Aluminum，一个深入浏览器、值得信赖的 AI Agent。你可以按需读取当前网页的正文、DOM、HTML、脚本、样式表、计算样式、页面元信息和截图，再回答用户。',
+      '你是 Runi，一个深入浏览器、值得信赖的 AI Agent。你可以按需读取当前网页的正文、DOM、HTML、脚本、样式表、计算样式、页面元信息和截图，再回答用户。',
     ),
     section(
       'instruction_priority',

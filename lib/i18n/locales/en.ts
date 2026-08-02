@@ -22,7 +22,7 @@ export const en: Record<keyof typeof zh, string> = {
   'language.heading': 'Language',
   'language.zh': '中文',
   'language.en': 'English',
-  'settings.pageTitle': 'Aluminum Settings',
+  'settings.pageTitle': 'Runi Settings',
   'settings.descriptionPrefix':
     'Configure an OpenAI-compatible model provider. The API key is stored only on this device in',
   'settings.optionsDescriptionSuffix': ', and is never uploaded or synced (ref: technical-plan.md §6).',
@@ -36,7 +36,7 @@ export const en: Record<keyof typeof zh, string> = {
   'settings.groupPreferences': 'Preferences',
   'settings.groupAiTools': 'AI & tools',
   'settings.groupSafety': 'Safety',
-  'settings.description': 'Manage Aluminum preferences, model providers, and local data settings.',
+  'settings.description': 'Manage Runi preferences, model providers, and local data settings.',
   'settings.generalDescription': 'Choose how new conversations start.',
   'settings.attachPageByDefault': 'Attach current page by default',
   'settings.attachPageDescription': 'New conversations include the current page as context by default.',
@@ -45,8 +45,8 @@ export const en: Record<keyof typeof zh, string> = {
   'settings.saving': 'Saving…',
   'settings.saved': 'Saved',
   'settings.saveFailed': 'Could not save: {message}',
-  'settings.privacyDescription': 'Learn what Aluminum stores locally and when page data is sent to your configured AI provider.',
-  'settings.aboutDescription': 'Aluminum browser assistant',
+  'settings.privacyDescription': 'Learn what Runi stores locally and when page data is sent to your configured AI provider.',
+  'settings.aboutDescription': 'Runi browser assistant',
   'settings.version': 'Version {version}',
   'chat.editMessageEditorAriaLabel': 'Edit message',
   'chat.editDiscardWarning': 'Submitting will discard the following {count} message(s)',
@@ -111,7 +111,7 @@ export const en: Record<keyof typeof zh, string> = {
   'settings.backAriaLabel': 'Back to chat',
   'settings.openOptionsFailed': 'Could not open Settings. Please try again.',
   'settings.descriptionSuffix': ', never uploaded or synced.',
-  'chat.emptyTitle': 'Chat with Aluminum',
+  'chat.emptyTitle': 'Chat with Runi',
   'chat.emptySubtitle': 'I can read pages, explain content, or run your custom tasks.',
   'chat.moreShortcuts': 'More · {count}',
   'chat.moreShortcutsAriaLabel': '{count} more shortcuts',
@@ -243,7 +243,7 @@ export const en: Record<keyof typeof zh, string> = {
   'store.missingApiKey': 'The current provider has no API key set. Add one in Settings.',
   'store.messageNotFound': 'This message is no longer in the current conversation.',
   'store.staleBackgroundWarning':
-    'The extension\'s background service is still an old version and the browser agent tools haven\'t loaded, so I won\'t guess an answer.\n\nMissing message types: {missingTypes}\n\nClick "Reload" for Aluminum on the extensions management page, then refresh this page and reopen the side panel.',
+    'The extension\'s background service is still an old version and the browser agent tools haven\'t loaded, so I won\'t guess an answer.\n\nMissing message types: {missingTypes}\n\nClick "Reload" for Runi on the extensions management page, then refresh this page and reopen the side panel.',
   'store.modelCallFailed': 'Model call failed: {reason}\n\nPlease check the Base URL, API key, and model name in Settings.',
   'store.unknownError': 'Unknown error',
   'store.tokenLimitReached':
@@ -258,6 +258,6 @@ export const en: Record<keyof typeof zh, string> = {
   'privacy.localDataTitle': 'Stored locally in your browser',
   'privacy.localDataBody':
     'Provider settings, API keys, and conversation history are stored locally in your browser.',
-  'privacy.noBackendTitle': 'No Aluminum backend or analytics',
-  'privacy.noBackendBody': 'Aluminum has no developer-operated backend or analytics.',
+  'privacy.noBackendTitle': 'No Runi backend or analytics',
+  'privacy.noBackendBody': 'Runi has no developer-operated backend or analytics.',
 };
