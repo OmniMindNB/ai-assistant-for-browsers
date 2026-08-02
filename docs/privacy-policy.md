@@ -1,3 +1,13 @@
+---
+layout: privacy-policy
+title: Runi 隐私政策
+lang: zh-CN
+permalink: /privacy-policy/zh-CN/
+alternate_path: /privacy-policy/
+alternate_label: English
+current_language_label: 中文
+language_navigation_label: 语言
+---
 # Runi 隐私政策
 
 生效日期：2026-08-02

@@ -1,3 +1,13 @@
+---
+layout: privacy-policy
+title: Runi Privacy Policy
+lang: en
+permalink: /privacy-policy/
+alternate_path: /privacy-policy/zh-CN/
+alternate_label: 中文
+current_language_label: English
+language_navigation_label: Language
+---
 # Runi Privacy Policy
 
 Effective date: 2026-08-02

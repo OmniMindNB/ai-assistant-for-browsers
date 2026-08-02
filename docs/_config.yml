@@ -1,0 +1,9 @@
+title: Runi Legal
+markdown: kramdown
+encoding: utf-8
+strict_front_matter: true
+exclude:
+  - superpowers
+  - store-assets
+  - adr
+  - specs
