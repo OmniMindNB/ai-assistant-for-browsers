@@ -64,9 +64,17 @@ The implementation should update user-visible branding across:
 - demo content, screenshots, and accessibility text;
 - developer-facing log prefixes where they are visible during support or diagnostics.
 
-## Compatibility Boundaries
+## Fresh Data Namespace
 
-Existing internal persistence identifiers must not be renamed solely for branding. In particular, storage keys, IndexedDB database names, and other stable identifiers containing `aluminum` should remain unchanged unless a separately designed migration is implemented and tested. Keeping these identifiers prevents users from losing settings, provider credentials, shortcuts, or conversation history after upgrading.
+The rename intentionally starts with a new local data namespace. All persistence identifiers containing `aluminum` must be replaced with Runi identifiers, including:
+
+- `aluminum:settings` → `runi:settings`;
+- `aluminum:shortcuts` → `runi:shortcuts`;
+- `aluminum:theme` → `runi:theme`;
+- `aluminum:locale` → `runi:locale`;
+- IndexedDB database `aluminum` → `runi`.
+
+There is no migration or legacy fallback. The Runi release must not read, copy, import, or delete data from the old Aluminum namespace. After upgrading, users begin with default settings and an empty conversation history, and must configure their provider and API key again. The old Aluminum data may remain in browser storage but is inert and inaccessible to Runi.
 
 Package identifiers, repository names, and published URLs may remain unchanged initially when changing them would break links or release continuity. They can be migrated later under a separate compatibility plan.
 
@@ -76,9 +84,11 @@ Before release:
 
 1. Search the repository case-insensitively for `Aluminum` and classify every occurrence as user-visible branding, compatibility-sensitive identifier, historical record, or intentional legacy URL.
 2. Verify localized manifests and store listings display **Runi** consistently.
-3. Confirm an upgrade from the current release preserves settings, API keys, shortcuts, and conversation history.
-4. Render the icon at 16, 32, 48, and 128 px and confirm that it remains recognizable.
-5. Run the existing automated test suite and add focused tests for any compatibility migration introduced later.
+3. Confirm an upgrade from the current release ignores the Aluminum namespace and initializes default Runi settings with an empty Runi conversation database.
+4. Confirm Runi does not delete or modify the inert Aluminum data during startup or normal use.
+5. Verify settings, API keys, shortcuts, theme, locale, and new conversations persist normally in the Runi namespace after they are recreated.
+6. Render the icon at 16, 32, 48, and 128 px and confirm that it remains recognizable.
+7. Run the existing automated test suite and add focused tests for the new persistence identifiers and fresh-start behavior.
 
 ## Naming Risk
 
@@ -88,6 +98,6 @@ The initial web search found no exact browser-extension competitor named Runi, b
 
 - Changing product behavior or permissions
 - Introducing a mascot or character persona
-- Renaming persistence identifiers without a migration design
+- Migrating, importing, or deleting data from the Aluminum persistence namespace
 - Repository or legal-site URL migration
 - Formal trademark legal advice
