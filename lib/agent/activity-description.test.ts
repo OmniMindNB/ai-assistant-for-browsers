@@ -67,4 +67,31 @@ describe('describeToolActivity', () => {
     expect(() => describeToolActivity('browser_click', undefined, 'running')).not.toThrow();
     expect(() => describeToolActivity('browser_click', 'not an object', 'running')).not.toThrow();
   });
+
+  it('describes done click/type/select/setStyle/modifyDom/getHtml/getComputedStyle/queryDom by selector', () => {
+    expect(describeToolActivity('browser_click', { selector: 'button.buy' }, 'done')).toBe('Clicked "button.buy"');
+    expect(describeToolActivity('browser_type', { selector: 'input.name' }, 'done')).toBe('Typed into "input.name"');
+    expect(describeToolActivity('browser_select', { selector: 'select.country' }, 'done')).toBe('Selected an option in "select.country"');
+    expect(describeToolActivity('browser_set_style', { selector: '.ad' }, 'done')).toBe('Styled ".ad"');
+    expect(describeToolActivity('browser_modify_dom', { selector: '.ad' }, 'done')).toBe('Modified ".ad"');
+    expect(describeToolActivity('browser_get_html', { selector: 'main' }, 'done')).toBe('Read HTML for "main"');
+    expect(describeToolActivity('browser_get_computed_style', { selector: 'main' }, 'done')).toBe('Read computed style for "main"');
+    expect(describeToolActivity('browser_query_dom', { selector: 'main' }, 'done')).toBe('Queried "main"');
+  });
+
+  it('describes done navigate/set_storage/scroll/inspect_page_implementation', () => {
+    expect(describeToolActivity('browser_navigate', { url: 'https://example.com' }, 'done')).toBe('Navigated to "https://example.com"');
+    expect(describeToolActivity('browser_set_storage', { key: 'token' }, 'done')).toBe('Wrote storage key "token"');
+    expect(describeToolActivity('browser_scroll', { selector: '#footer' }, 'done')).toBe('Scrolled to "#footer"');
+    expect(describeToolActivity('browser_inspect_page_implementation', { focus: 'scroll' }, 'done')).toBe(
+      'Inspected page implementation (focus: "scroll")',
+    );
+  });
+
+  it('reuses the plain tool label for done no-arg tools (same as running, no tense change needed)', () => {
+    expect(describeToolActivity('browser_get_active_tab', {}, 'done')).toBe('Get active tab');
+    expect(describeToolActivity('browser_read_page', {}, 'done')).toBe('Read page');
+    expect(describeToolActivity('browser_scroll', {}, 'done')).toBe('Scroll');
+    expect(describeToolActivity('browser_something_new', {}, 'done')).toBe('Browser action');
+  });
 });
