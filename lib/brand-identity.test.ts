@@ -22,18 +22,26 @@ const permittedLegacyReferencesByPath: Record<string, readonly string[]> = {
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+const exactLegacyUrlPattern = (url: string, flags?: string) =>
+  new RegExp(
+    `${escapeRegExp(url)}(?![A-Za-z0-9._~:/?%#;@!$&'()*+,=\\[\\]-])`,
+    flags,
+  );
+
+const hasExactPermittedLegacyReference = (source: string, permittedReference: string) => {
+  if (!permittedReference.startsWith('https://')) {
+    return source.includes(permittedReference);
+  }
+
+  return exactLegacyUrlPattern(permittedReference).test(source);
+};
+
 const replacePermittedLegacyReference = (source: string, permittedReference: string) => {
   if (!permittedReference.startsWith('https://')) {
     return source.replaceAll(permittedReference, 'Runi');
   }
 
-  return source.replace(
-    new RegExp(
-      `${escapeRegExp(permittedReference)}(?![A-Za-z0-9._~:/?%#;@!$&'()*+,=\\[\\]-])`,
-      'g',
-    ),
-    'Runi',
-  );
+  return source.replace(exactLegacyUrlPattern(permittedReference, 'g'), 'Runi');
 };
 
 const withoutPermittedLegacyReferences = (path: string, source: string) =>
@@ -103,7 +111,20 @@ describe('Runi active product identity', () => {
     ['docs/chrome-store-submission-guide.md', englishLegalUrl],
     ['docs/chrome-store-submission-guide.md', chineseLegalUrl],
   ])('%s keeps the exact deployed legal-policy URL', (path, legalUrl) => {
-    expect(read(path)).toContain(legalUrl);
+    expect(hasExactPermittedLegacyReference(read(path), legalUrl)).toBe(true);
+  });
+
+  it('does not treat the localized legal URL as the standalone default URL', () => {
+    const sourceWithBothUrls = `${englishLegalUrl}\n${chineseLegalUrl}`;
+    const sourceWithOnlyLocalizedUrl = replacePermittedLegacyReference(
+      sourceWithBothUrls,
+      englishLegalUrl,
+    );
+
+    expect(sourceWithOnlyLocalizedUrl).toContain(chineseLegalUrl);
+    expect(hasExactPermittedLegacyReference(sourceWithOnlyLocalizedUrl, englishLegalUrl)).toBe(
+      false,
+    );
   });
 
   it.each([
