@@ -18,7 +18,7 @@ import MessageEditor from './MessageEditor';
 import { HistoryDrawer } from './components/HistoryDrawer';
 import { WorkbenchEmptyState } from './components/WorkbenchEmptyState';
 import { WorkbenchHeader } from './components/WorkbenchHeader';
-import { CurrentActivityLine } from './components/CurrentActivityLine';
+import { ActivityStepList } from './components/ActivityStepList';
 import { WorkbenchComposer } from './components/WorkbenchComposer';
 import type { PendingConfirmation, UIMessage } from './store';
 import { WORKBENCH_PREFERENCES_KEY } from '@/lib/workbench/preferences';
@@ -31,7 +31,7 @@ import {
 export default function App() {
   const {
     messages,
-    currentActivity,
+    activitySteps,
     input,
     busy,
     error,
@@ -146,7 +146,7 @@ export default function App() {
     if (atBottomRef.current) {
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
     }
-  }, [messages, currentActivity]);
+  }, [messages, activitySteps]);
 
   function resetToFollowing() {
     atBottomRef.current = true;
@@ -202,6 +202,8 @@ export default function App() {
     }
   }
 
+  const hasRunningActivityStep = activitySteps.some((step) => step.status === 'running');
+
   return (
     <div className="flex h-screen overflow-hidden bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
       <HistoryDrawer
@@ -246,11 +248,14 @@ export default function App() {
                     onRunShortcut={executeShortcut}
                   />
                 ) : (
-                  messages.map((m) => (
+                  messages.map((m, i) => (
                     <Message
                       key={m.id}
                       message={m}
                       busy={busy}
+                      showThinkingIndicator={
+                        i === messages.length - 1 && busy && !pendingConfirmation && !hasRunningActivityStep
+                      }
                       editing={editingId === m.id}
                       discardCount={editingId === m.id ? discardedCount(messages, m.id) : 0}
                       onBeginEdit={() => setEditingId(m.id)}
@@ -259,8 +264,8 @@ export default function App() {
                     />
                   ))
                 )}
-                {currentActivity && !pendingConfirmation && (
-                  <CurrentActivityLine activity={currentActivity} />
+                {activitySteps.length > 0 && !pendingConfirmation && (
+                  <ActivityStepList steps={activitySteps} />
                 )}
                 {pendingConfirmation && (
                   <ConfirmationCard
@@ -339,6 +344,7 @@ function ProviderBanner({ onOpenSettings }: { onOpenSettings: () => void }) {
 function Message({
   message,
   busy,
+  showThinkingIndicator,
   editing,
   discardCount,
   onBeginEdit,
@@ -347,6 +353,7 @@ function Message({
 }: {
   message: UIMessage;
   busy: boolean;
+  showThinkingIndicator: boolean;
   editing: boolean;
   discardCount: number;
   onBeginEdit: () => void;
@@ -409,6 +416,11 @@ function Message({
         ) : busy ? (
           <TypingDots />
         ) : null}
+        {content && showThinkingIndicator && (
+          <div className="mt-1">
+            <TypingDots />
+          </div>
+        )}
       </div>
     </div>
   );

@@ -8,9 +8,8 @@ import { en } from '@/lib/i18n/locales/en';
 import { zh } from '@/lib/i18n/locales/zh';
 import type { ProviderConfig } from '@/lib/settings';
 import type { ResolvedShortcutCommand } from '@/lib/workbench/presentation';
-import type { ActivityStep, PageContextState, ToolActivity } from '../store';
+import type { ActivityStep, PageContextState } from '../store';
 import App from '../App';
-import { CurrentActivityLine } from './CurrentActivityLine';
 import { ActivityStepList } from './ActivityStepList';
 import { HistoryDrawer } from './HistoryDrawer';
 import { WorkbenchEmptyState } from './WorkbenchEmptyState';
@@ -19,7 +18,7 @@ import { WorkbenchComposer, type WorkbenchComposerProps } from './WorkbenchCompo
 
 const chatStore = {
   messages: [],
-  currentActivity: null,
+  activitySteps: [],
   input: '',
   busy: false,
   error: null,
@@ -148,7 +147,7 @@ beforeEach(() => {
   };
   Object.assign(chatStore, {
     messages: [],
-    currentActivity: null,
+    activitySteps: [],
     input: '',
     busy: false,
     error: null,
@@ -452,48 +451,6 @@ describe('workbench composer', () => {
   });
 });
 
-describe('current activity line', () => {
-  it('renders the running activity description with a status role', () => {
-    render(
-      <LocaleProvider>
-        <CurrentActivityLine activity={{ id: 'call-1', description: 'Clicking "button.buy"', status: 'running' }} />
-      </LocaleProvider>,
-    );
-    expect(screen.getByRole('status')).toHaveTextContent('Clicking "button.buy"');
-  });
-
-  it('renders a failed activity with distinct (red) styling', () => {
-    render(
-      <LocaleProvider>
-        <CurrentActivityLine activity={{ id: 'call-1', description: 'Failed to click "button.buy"', status: 'failed' }} />
-      </LocaleProvider>,
-    );
-    const status = screen.getByRole('status');
-    expect(status).toHaveTextContent('Failed to click "button.buy"');
-    expect(status.className).toContain('text-red-700');
-  });
-
-  it('hides the current activity line while a confirmation is pending, but keeps approval working', async () => {
-    const user = userEvent.setup();
-    (chatStore as any).currentActivity = { id: 'call-1', description: 'Clicking "button.buy"', status: 'running' };
-    (chatStore as any).pendingConfirmation = {
-      toolCallId: 'call-1',
-      toolName: 'browser_type',
-      summary: 'AI wants to type a value.',
-    };
-    render(
-      <LocaleProvider>
-        <App />
-      </LocaleProvider>,
-    );
-
-    expect(screen.queryByText('Clicking "button.buy"')).toBeNull();
-    expect(screen.getByText(/Please confirm before modifying the page/)).toBeVisible();
-    await user.click(screen.getByRole('button', { name: 'Approve this turn' }));
-    expect(chatStore.respondToConfirmation).toHaveBeenCalledWith(true);
-  });
-});
-
 describe('activity step list', () => {
   const steps: ActivityStep[] = [
     { id: 'call-1', description: 'Clicked "button.buy"', status: 'done' },
@@ -539,6 +496,60 @@ describe('activity step list', () => {
       </LocaleProvider>,
     );
     expect(screen.getByText('Reading page')).toBeVisible();
+  });
+
+  it('hides the activity step list while a confirmation is pending, but keeps approval working', async () => {
+    const user = userEvent.setup();
+    (chatStore as any).activitySteps = [{ id: 'call-1', description: 'Clicking "button.buy"', status: 'running' }];
+    (chatStore as any).pendingConfirmation = {
+      toolCallId: 'call-1',
+      toolName: 'browser_type',
+      summary: 'AI wants to type a value.',
+    };
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    expect(screen.queryByText('Clicking "button.buy"')).toBeNull();
+    expect(screen.getByText(/Please confirm before modifying the page/)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Approve this turn' }));
+    expect(chatStore.respondToConfirmation).toHaveBeenCalledWith(true);
+  });
+
+  it('shows a trailing thinking indicator on the last message while busy with no running step', () => {
+    (chatStore as any).messages = [
+      { id: 'm1', role: 'user', content: 'Do something', createdAt: 1 },
+      { id: 'm2', role: 'assistant', content: 'Working on it', createdAt: 2 },
+    ];
+    (chatStore as any).busy = true;
+    (chatStore as any).activitySteps = [];
+    (chatStore as any).pendingConfirmation = null;
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    expect(screen.getByLabelText('Generating')).toBeVisible();
+  });
+
+  it('does not show the trailing thinking indicator while a tool step is running', () => {
+    (chatStore as any).messages = [
+      { id: 'm1', role: 'user', content: 'Do something', createdAt: 1 },
+      { id: 'm2', role: 'assistant', content: 'Working on it', createdAt: 2 },
+    ];
+    (chatStore as any).busy = true;
+    (chatStore as any).activitySteps = [{ id: 'call-1', description: 'Clicking "button.buy"', status: 'running' }];
+    (chatStore as any).pendingConfirmation = null;
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    expect(screen.queryByLabelText('Generating')).toBeNull();
   });
 });
 
