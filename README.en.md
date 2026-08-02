@@ -1,8 +1,10 @@
-# Aluminum
+# Runi
 
 **English** | [中文](README.md)
 
 > A trustworthy browser page agent — asks for your confirmation before every page change; answers are grounded in page evidence, not generic guesses. Bring your own model with your own API key; conversation history stays local and is never uploaded.
+
+> Your page, your way.
 
 ## Core features
 

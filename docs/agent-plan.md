@@ -1,8 +1,8 @@
-# Aluminum 浏览器 Agent 化改造计划（Agent Plan）
+# Runi 浏览器 Agent 化改造计划（Agent Plan）
 
 > 日期：2026-06-13
 > 关联：[research-report.md](research-report.md)、[ADR-0003](adr/0003-agent-loop-and-tool-calling.md)、[technical-plan.md](technical-plan.md)
-> 目标：把 Aluminum 从「带页面文本的对话入口」升级为「深入浏览器的 AI Agent」。
+> 目标：把 Runi 从「带页面文本的对话入口」升级为「深入浏览器的 AI Agent」。
 
 ---
 

@@ -1,11 +1,11 @@
-# Aluminum Chrome Web Store Listing — English
+# Runi Chrome Web Store Listing — English
 
 Paste-ready fields for the default English Chrome Web Store listing.
 
 ## Name
 
 ```text
-Aluminum
+Runi
 ```
 
 ## Short description
@@ -23,25 +23,29 @@ Productivity
 ## Single purpose
 
 ```text
-Aluminum is one controllable AI sidebar agent that helps the user understand and work with the current web page, including making user-requested page changes after approval.
+Runi is one controllable AI sidebar agent that helps the user understand and work with the current web page, including making user-requested page changes after approval.
 ```
 
 ## Detailed description
 
 ```text
-Aluminum is a controllable AI agent in your browser side panel. It helps you understand and work with the page you are currently viewing without switching context.
+Runi is a controllable AI agent in your browser side panel. It helps you understand and work with the page you are currently viewing without switching context.
 
-Use Aluminum to:
+Your page, your way.
+
+Use Runi to:
 
 • Summarize the current page and ask page-grounded questions.
 • Inspect page evidence such as readable text, HTML, DOM structure, scripts, stylesheets, and computed styles for technical analysis.
-• Request page transformations and browser-page actions. Before write actions run, Aluminum shows the planned operation and asks for your approval; that decision applies to the current turn.
+• Request page transformations and browser-page actions. Before write actions run, Runi shows the planned operation and asks for your approval; that decision applies to the current turn.
 • Undo page changes made during the current modified turn with one click.
 • Connect your own OpenAI-compatible or Anthropic-compatible AI provider, including a custom endpoint.
 
-Aluminum is local-first: provider settings, API keys, consent state, and conversation history are stored in your browser. Aluminum has no developer-operated backend, analytics, or advertising SDK. When you use an AI feature, your API key, current prompt, recent conversation context, and relevant current-page tool results are transmitted directly from the extension to the AI provider endpoint you configured. That provider processes the request under its own terms and privacy policy.
+Runi is local-first: provider settings, API keys, consent state, and conversation history are stored in your browser. Runi has no developer-operated backend, analytics, or advertising SDK. When you use an AI feature, your API key, current prompt, recent conversation context, and relevant current-page tool results are transmitted directly from the extension to the AI provider endpoint you configured. That provider processes the request under its own terms and privacy policy.
 
-Aluminum reads or changes a page only after you open the product and initiate an action. Page-changing tools require approval before they run.
+Runi reads or changes a page only after you open the product and initiate an action. Page-changing tools require approval before they run.
+
+Brand upgrade notice: Runi uses a new local data namespace and does not read Aluminum settings or conversations. After upgrading, configure your provider and API key again.
 ```
 
 ## Screenshot captions
@@ -51,7 +55,7 @@ Aluminum reads or changes a page only after you open the product and initiate an
 3. `You stay in control — Review the planned page action and approve it before write tools run.`
 4. `Undo the whole turn — Restore page changes from the current modified turn with one click.`
 
-## Privacy-policy URL
+## Currently deployed privacy-policy URL
 
 ```text
 https://omnimindnb.github.io/aluminum-legal/

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Aluminum — a Chromium browser extension (Manifest V3, built with WXT) that puts an AI agent in a side panel: it can read the current page, answer questions grounded in page content, and (with per-turn confirmation) modify the DOM, click/type/navigate, and inject scripts.
+Runi — a Chromium browser extension (Manifest V3, built with WXT) that puts an AI agent in a side panel: it can read the current page, answer questions grounded in page content, and (with per-turn confirmation) modify the DOM, click/type/navigate, and inject scripts.
 
 Code comments, docs, and commit messages are primarily in Chinese; this file is in English but references the same file/section names used in the codebase (e.g. `ref: technical-plan.md §4.2`).
 

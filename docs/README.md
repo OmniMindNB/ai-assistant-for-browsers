@@ -1,4 +1,4 @@
-# Aluminum 文档体系（Documentation-Driven Development）
+# Runi 文档体系（Documentation-Driven Development）
 
 本项目采用 **文档驱动开发（DDD, Documentation-Driven Development）**：任何功能或重大改动，先写/改文档，评审达成一致后再写代码；代码合并时同步更新文档。文档是"单一事实来源（Single Source of Truth）"。
 

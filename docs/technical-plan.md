@@ -1,4 +1,4 @@
-# Aluminum —— Chromium 浏览器 AI 助手插件 技术规划
+# Runi —— Chromium 浏览器 AI 助手插件 技术规划
 
 > 基于 [plan.md](plan.md) 的需求，给出可落地的技术架构、模块划分、技术选型与分阶段实施计划。
 
@@ -6,7 +6,7 @@
 
 ## 1. 产品概述
 
-Aluminum 是一个面向 Chromium 系浏览器（Chrome / Edge / Brave 等）的浏览器扩展，以**侧边栏 AI 对话框**为核心交互形态，借助大模型能力帮助用户理解、改造并自动化当前网页。
+Runi 是一个面向 Chromium 系浏览器（Chrome / Edge / Brave 等）的浏览器扩展，以**侧边栏 AI 对话框**为核心交互形态，借助大模型能力帮助用户理解、改造并自动化当前网页。
 
 ### 1.1 核心能力
 
@@ -302,7 +302,7 @@ interface ChatRequest {
 > ⚠️ 以下是早期设想，ADR-0002 定案后实际采用 WXT 的 `entrypoints/` 约定而非本节的 `src/` 布局。当前真实结构见根目录 [README.md](../README.md) 的「项目结构」一节（`entrypoints/{background,content,sidepanel,options}` + `lib/`，其中 `lib/agent/` 承载 Agent 循环与工具调用）。本节保留仅作历史参考。
 
 ```
-Aluminum/
+Runi/
 ├── manifest.config.ts          # MV3 manifest（wxt/crxjs 生成）
 ├── src/
 │   ├── background/             # Service Worker
