@@ -921,6 +921,35 @@ describe('chat store page context', () => {
     }
   });
 
+  it('preserves the slow flag when a tool_execution_update arrives for an already-slow step', async () => {
+    vi.useFakeTimers();
+    try {
+      let resolvePrompt!: () => void;
+      const agent = makeAgent();
+      agent.prompt.mockImplementation(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
+      mocks.createBrowserAgent.mockReturnValue(agent);
+      mocks.sendMessage.mockImplementation((type: string) => {
+        if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: ['GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE', 'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION', 'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE'] } });
+        return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+      });
+      const send = useChat.getState().send('write');
+      await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalled());
+
+      agentEventListener?.({ type: 'tool_execution_start', toolCallId: 'call-1', toolName: 'browser_click', args: { selector: 'a' } });
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(useChat.getState().activitySteps).toMatchObject([{ id: 'call-1', status: 'running', slow: true }]);
+
+      agentEventListener?.({ type: 'tool_execution_update', toolCallId: 'call-1', toolName: 'browser_click', args: { selector: 'a' } });
+      expect(useChat.getState().activitySteps).toMatchObject([{ id: 'call-1', status: 'running', slow: true }]);
+
+      agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'call-1', toolName: 'browser_click', isError: false, result: 'ok' });
+      resolvePrompt();
+      await send;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('reports that a normal send did not start for empty input or a busy store', async () => {
     await expect(useChat.getState().send('   ', { withoutBrowserTools: true })).resolves.toBe(false);
     expect(mocks.createBrowserAgent).not.toHaveBeenCalled();

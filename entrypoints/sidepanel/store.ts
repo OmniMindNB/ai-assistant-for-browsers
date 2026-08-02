@@ -753,13 +753,18 @@ async function runAgent(
 
     if (event.type === 'tool_execution_update' && !run.terminatedToolCallIds.has(event.toolCallId)) {
       run.pendingToolArgs.set(event.toolCallId, { toolName: event.toolName, args: event.args });
-      set((s) => ({
-        activitySteps: upsertActivityStep(s.activitySteps, {
-          id: event.toolCallId,
-          description: describeToolActivity(event.toolName, event.args, 'running'),
-          status: 'running',
-        }),
-      }));
+      set((s) => {
+        const existing = s.activitySteps.find((step) => step.id === event.toolCallId);
+        return {
+          activitySteps: upsertActivityStep(s.activitySteps, {
+            id: event.toolCallId,
+            description: describeToolActivity(event.toolName, event.args, 'running'),
+            status: 'running',
+            slow: existing?.slow,
+          }),
+        };
+      });
+      scheduleSlowActivityTimer(set, event.toolCallId);
     }
 
     if (event.type === 'tool_execution_end') {

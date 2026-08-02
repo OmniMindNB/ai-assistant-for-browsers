@@ -480,6 +480,16 @@ describe('activity step list', () => {
     expect(failedText.closest('div')?.className).toContain('text-red-700');
   });
 
+  it('gives the done row distinct (muted, checkmark) styling', () => {
+    render(
+      <LocaleProvider>
+        <ActivityStepList steps={steps} />
+      </LocaleProvider>,
+    );
+    const doneText = screen.getByText('Clicked "button.buy"');
+    expect(doneText.closest('div')?.className).toContain('text-neutral-400');
+  });
+
   it('appends the slow suffix to a running step marked slow', () => {
     render(
       <LocaleProvider>

@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { useTranslation } from '@/lib/i18n';
 import { IconCheck, IconClose } from '../icons';
 import type { ActivityStep } from '../store';
@@ -5,9 +6,16 @@ import type { ActivityStep } from '../store';
 export function ActivityStepList({ steps }: { steps: ActivityStep[] }) {
   const { t } = useTranslation();
   const slowSuffix = t('agentActivity.slowSuffix');
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [steps]);
 
   return (
     <div
+      ref={containerRef}
       role="status"
       aria-live="polite"
       className="flex max-h-32 flex-col gap-1 overflow-y-auto px-1 text-xs"
