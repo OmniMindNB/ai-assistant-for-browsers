@@ -36,6 +36,7 @@ import {
 } from '@/lib/agent/system-prompt';
 import { buildShortcutExecution } from '@/lib/chat/shortcut-prompts';
 import { summarizeToolCallForConfirmation } from '@/lib/agent/confirm-summary';
+import { describeToolActivity, type ActivityStatus } from '@/lib/agent/activity-description';
 import { getConversationIdForTab, setConversationIdForTab } from '@/lib/agent/tab-conversation';
 import { getCurrentLocale, t } from '@/lib/i18n';
 import { isCurrentTabReadable } from '@/lib/current-tab-readability';
@@ -50,7 +51,7 @@ import {
   type WorkbenchPreferences,
 } from '@/lib/workbench/preferences';
 
-const MAX_TOOL_ACTIVITY_ITEMS = 12;
+const FAILURE_DISPLAY_MS = 2500;
 const REQUIRED_AGENT_MESSAGE_TYPES = [
   'GET_PAGE_META',
   'GET_SCRIPTS',
@@ -73,11 +74,12 @@ export type UIMessage = ChatMessage;
 
 export interface ToolActivity {
   id: string;
-  name: string;
-  status: 'running' | 'confirming' | 'done' | 'error' | 'blocked' | 'denied' | 'stopped';
+  description: string;
+  status: ActivityStatus;
 }
 
 export interface PendingConfirmation {
+  toolCallId: string;
   toolName: string;
   summary: string;
   codePreview?: string;
@@ -91,7 +93,7 @@ export type PageContextState =
 
 interface ChatState {
   messages: UIMessage[];
-  toolActivities: ToolActivity[];
+  currentActivity: ToolActivity | null;
   input: string;
   busy: boolean;
   error: string | null;
@@ -140,6 +142,8 @@ interface ActiveRun {
   origin: ConversationOrigin;
   agent: Agent | null;
   resolveConfirmation: ((approved: boolean) => void) | null;
+  pendingToolArgs: Map<string, { toolName: string; args: unknown }>;
+  terminatedToolCallIds: Set<string>;
 }
 let activeRun: ActiveRun | null = null;
 let runEpoch = 0;
@@ -214,18 +218,34 @@ function invalidateActiveRun(
   run.resolveConfirmation = null;
   run.agent?.abort();
   if (isCurrentOrigin(run.origin, get)) {
-    set((state) => ({
-      busy: false,
-      pendingConfirmation: null,
-      toolActivities: state.toolActivities.map((activity) =>
-        activity.status === 'running' || activity.status === 'confirming'
-          ? { ...activity, status: 'stopped' }
-          : activity,
-      ),
-    }));
+    clearFailureTimer();
+    set({ busy: false, pendingConfirmation: null, currentActivity: null });
   }
   if (persist && messages.length > 0) {
     void persistConversationSnapshot(run.origin.conversationId, messages);
+  }
+}
+
+let failureClearTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearFailureTimer(): void {
+  if (failureClearTimer !== null) {
+    clearTimeout(failureClearTimer);
+    failureClearTimer = null;
+  }
+}
+
+function setCurrentActivity(
+  set: (partial: Partial<ChatState> | ((s: ChatState) => Partial<ChatState>)) => void,
+  activity: ToolActivity | null,
+): void {
+  clearFailureTimer();
+  set({ currentActivity: activity });
+  if (activity?.status === 'failed') {
+    failureClearTimer = setTimeout(() => {
+      failureClearTimer = null;
+      set({ currentActivity: null });
+    }, FAILURE_DISPLAY_MS);
   }
 }
 
@@ -262,7 +282,7 @@ function makeMessage(
 
 export const useChat = create<ChatState>((set, get) => ({
   messages: [],
-  toolActivities: [],
+  currentActivity: null,
   input: '',
   busy: false,
   error: null,
@@ -454,14 +474,12 @@ export const useChat = create<ChatState>((set, get) => ({
     run.resolveConfirmation?.(false);
     run.resolveConfirmation = null;
     run.agent?.abort();
-    set((state) => ({
-      pendingConfirmation: null,
-      toolActivities: state.toolActivities.map((activity) =>
-        activity.status === 'running' || activity.status === 'confirming'
-          ? { ...activity, status: 'stopped' }
-          : activity,
-      ),
-    }));
+    const active = get().currentActivity;
+    if (active) run.terminatedToolCallIds.add(active.id);
+    const pendingId = get().pendingConfirmation?.toolCallId;
+    if (pendingId) run.terminatedToolCallIds.add(pendingId);
+    set({ pendingConfirmation: null });
+    setCurrentActivity(set, null);
   },
 
   respondToConfirmation: (approved) => {
@@ -469,21 +487,27 @@ export const useChat = create<ChatState>((set, get) => ({
     if (!run || !isCurrentRun(run, get)) return;
     run.resolveConfirmation?.(approved);
     run.resolveConfirmation = null;
-    set((state) => ({
-      pendingConfirmation: null,
-      toolActivities: approved ? state.toolActivities : state.toolActivities.map((activity) =>
-        activity.status === 'confirming' ? { ...activity, status: 'denied' } : activity,
-      ),
-    }));
+    const pending = get().pendingConfirmation;
+    set({ pendingConfirmation: null });
+    if (!approved && pending) {
+      run.terminatedToolCallIds.add(pending.toolCallId);
+      const info = run.pendingToolArgs.get(pending.toolCallId);
+      setCurrentActivity(set, {
+        id: pending.toolCallId,
+        description: describeToolActivity(pending.toolName, info?.args, 'failed'),
+        status: 'failed',
+      });
+    }
   },
 
   clear: () => {
+    clearFailureTimer();
     ++conversationOpenRequestId;
     invalidateActiveRun(set, get);
     conversationEpoch += 1;
     set({
       messages: [],
-      toolActivities: [],
+      currentActivity: null,
       error: null,
       busy: false,
       conversationId: genConversationId(),
@@ -515,9 +539,10 @@ export const useChat = create<ChatState>((set, get) => ({
         createdAt: r.createdAt,
         kind: r.kind,
       }));
+    clearFailureTimer();
     set({
       messages,
-      toolActivities: [],
+      currentActivity: null,
       conversationId: id,
       error: null,
       busy: false,
@@ -558,9 +583,10 @@ export const useChat = create<ChatState>((set, get) => ({
       // persist the record that has just been deleted.
       invalidateActiveRun(set, get, false);
       conversationEpoch += 1;
+      clearFailureTimer();
       set({
         messages: [],
-        toolActivities: [],
+        currentActivity: null,
         conversationId: genConversationId(),
         busy: false,
         pendingConfirmation: null,
@@ -601,6 +627,8 @@ async function runAgent(
     origin,
     agent: null,
     resolveConfirmation: null,
+    pendingToolArgs: new Map(),
+    terminatedToolCallIds: new Set(),
   };
   activeRun = run;
   const all = initialState.providers;
@@ -658,9 +686,10 @@ async function runAgent(
     }
     history = current.slice(0, index);
   }
+  clearFailureTimer();
   set({
     messages: [...history, display, makeMessage('assistant', '')],
-    toolActivities: [],
+    currentActivity: null,
     input: '',
     busy: true,
     error: null,
@@ -671,8 +700,8 @@ async function runAgent(
   const onConfirm = async (toolCallId: string, toolName: string, args: unknown, _reason: string): Promise<boolean> => {
     if (!isCurrentRun(run, get)) return false;
     const { summary, codePreview } = summarizeToolCallForConfirmation(toolName, args);
-    upsertToolActivity(set, { id: toolCallId, name: toolName, status: 'confirming' });
-    set({ pendingConfirmation: { toolName, summary, codePreview } });
+    run.pendingToolArgs.set(toolCallId, { toolName, args });
+    set({ pendingConfirmation: { toolCallId, toolName, summary, codePreview } });
     return new Promise<boolean>((resolve) => {
       run.resolveConfirmation = resolve;
     });
@@ -707,25 +736,27 @@ async function runAgent(
       replaceLastAssistant(set, acc);
     }
 
-    if (event.type === 'tool_execution_start') {
-      upsertToolActivity(set, {
+    if (event.type === 'tool_execution_start' && !run.terminatedToolCallIds.has(event.toolCallId)) {
+      run.pendingToolArgs.set(event.toolCallId, { toolName: event.toolName, args: event.args });
+      setCurrentActivity(set, {
         id: event.toolCallId,
-        name: event.toolName,
+        description: describeToolActivity(event.toolName, event.args, 'running'),
         status: 'running',
       });
     }
 
-    if (event.type === 'tool_execution_update') {
-      upsertToolActivity(set, {
+    if (event.type === 'tool_execution_update' && !run.terminatedToolCallIds.has(event.toolCallId)) {
+      run.pendingToolArgs.set(event.toolCallId, { toolName: event.toolName, args: event.args });
+      setCurrentActivity(set, {
         id: event.toolCallId,
-        name: event.toolName,
+        description: describeToolActivity(event.toolName, event.args, 'running'),
         status: 'running',
       });
     }
 
     if (event.type === 'tool_execution_end') {
       const blocked = event.isError && isToolGuardBlockResult(event.result);
-      // 聊天界面里的活动卡片刻意不展示原始 tool result（可能带用户输入的敏感值，见下方
+      // 聊天界面里的活动提示刻意不展示原始 tool result（可能带用户输入的敏感值，见下方
       // "does not expose raw tool payloads" 一类用例），所以失败原因只打到控制台，方便
       // 打开 DevTools 排查，不在 UI 上泄露。
       if (event.isError && !blocked) {
@@ -742,11 +773,19 @@ async function runAgent(
               )?.text ?? result);
         console.error('[Aluminum] tool execution failed', event.toolName, message);
       }
-      upsertToolActivity(set, {
-        id: event.toolCallId,
-        name: event.toolName,
-        status: blocked ? 'blocked' : event.isError ? 'error' : 'done',
-      });
+      const info = run.pendingToolArgs.get(event.toolCallId);
+      run.pendingToolArgs.delete(event.toolCallId);
+      if (!run.terminatedToolCallIds.has(event.toolCallId)) {
+        if (blocked || event.isError) {
+          setCurrentActivity(set, {
+            id: event.toolCallId,
+            description: describeToolActivity(event.toolName, info?.args, 'failed'),
+            status: 'failed',
+          });
+        } else {
+          setCurrentActivity(set, null);
+        }
+      }
     }
   });
 
@@ -894,24 +933,6 @@ function describeEmptyAgentRun(last: LastAssistantInfo | undefined): string {
     return t('store.onlyToolCalls');
   }
   return t('store.noTextResult');
-}
-
-function upsertToolActivity(
-  set: (partial: Partial<ChatState> | ((s: ChatState) => Partial<ChatState>)) => void,
-  activity: ToolActivity,
-): void {
-  set((state) => {
-    const existing = state.toolActivities.findIndex((item) => item.id === activity.id);
-    const next = state.toolActivities.slice();
-    if (existing >= 0) {
-      const previous = next[existing];
-      next[existing] = previous.status === 'denied' || previous.status === 'stopped'
-        ? previous
-        : activity;
-    }
-    else next.push(activity);
-    return { toolActivities: next.slice(-MAX_TOOL_ACTIVITY_ITEMS) };
-  });
 }
 
 function compactJson(value: unknown): string {

@@ -18,7 +18,7 @@ import MessageEditor from './MessageEditor';
 import { HistoryDrawer } from './components/HistoryDrawer';
 import { WorkbenchEmptyState } from './components/WorkbenchEmptyState';
 import { WorkbenchHeader } from './components/WorkbenchHeader';
-import { AgentActivityCard } from './components/AgentActivityCard';
+import { CurrentActivityLine } from './components/CurrentActivityLine';
 import { WorkbenchComposer } from './components/WorkbenchComposer';
 import type { PendingConfirmation, UIMessage } from './store';
 import { WORKBENCH_PREFERENCES_KEY } from '@/lib/workbench/preferences';
@@ -31,7 +31,7 @@ import {
 export default function App() {
   const {
     messages,
-    toolActivities,
+    currentActivity,
     input,
     busy,
     error,
@@ -146,7 +146,7 @@ export default function App() {
     if (atBottomRef.current) {
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
     }
-  }, [messages, toolActivities]);
+  }, [messages, currentActivity]);
 
   function resetToFollowing() {
     atBottomRef.current = true;
@@ -259,7 +259,7 @@ export default function App() {
                     />
                   ))
                 )}
-                {toolActivities.length > 0 && <AgentActivityCard activities={toolActivities} />}
+                {currentActivity && <CurrentActivityLine activity={currentActivity} />}
                 {pendingConfirmation && (
                   <ConfirmationCard
                     confirmation={pendingConfirmation}

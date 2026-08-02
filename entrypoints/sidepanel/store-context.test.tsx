@@ -292,7 +292,7 @@ describe('chat store page context', () => {
     expect(useChat.getState()).toMatchObject({
       conversationId: 'B',
       messages: [{ role: 'user', content: 'Message for B' }],
-      toolActivities: [],
+      currentActivity: null,
       busy: false,
     });
     expect(mocks.replaceConversationMessages).not.toHaveBeenCalledWith('B', expect.anything(), expect.anything());
@@ -610,7 +610,7 @@ describe('chat store page context', () => {
     resolvePrompt();
     await running;
 
-    expect(useChat.getState()).toMatchObject({ conversationId: replacementId, messages: [], toolActivities: [], busy: false });
+    expect(useChat.getState()).toMatchObject({ conversationId: replacementId, messages: [], currentActivity: null, busy: false });
     expect(mocks.replaceConversationMessages).not.toHaveBeenCalledWith(replacementId, expect.anything(), expect.anything());
     if (action === 'delete') expect(mocks.replaceConversationMessages).not.toHaveBeenCalledWith('A', expect.anything(), expect.anything());
   });
@@ -732,7 +732,7 @@ describe('chat store page context', () => {
     expect(systemPrompt).toMatch(/当前时间：\d{4}-\d{2}-\d{2} \d{2}:\d{2} 星期./);
   });
 
-  it('marks a rejected confirmation denied and preserves it against a late error event', async () => {
+  it('marks a rejected confirmation as a failed activity and ignores a late error event for it', async () => {
     let resolvePrompt!: () => void;
     const agent = makeAgent();
     agent.prompt.mockImplementation(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
@@ -748,18 +748,20 @@ describe('chat store page context', () => {
     const send = useChat.getState().send('write');
     await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalled());
     const confirm = mocks.createBrowserAgent.mock.calls[0][0].onConfirm as (id: string, name: string, args: unknown, reason: string) => Promise<boolean>;
-    const decision = confirm('call-1', 'browser_click', {}, 'confirm');
-    expect(useChat.getState().toolActivities).toMatchObject([{ id: 'call-1', status: 'confirming' }]);
+    const decision = confirm('call-1', 'browser_click', { selector: 'button.buy' }, 'confirm');
+    expect(useChat.getState().currentActivity).toBeNull();
     useChat.getState().respondToConfirmation(false);
     await expect(decision).resolves.toBe(false);
-    expect(useChat.getState().toolActivities).toMatchObject([{ id: 'call-1', status: 'denied' }]);
+    expect(useChat.getState().currentActivity).toMatchObject({ id: 'call-1', status: 'failed' });
+    expect(useChat.getState().currentActivity?.description).toContain('button.buy');
     agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'call-1', toolName: 'browser_click', isError: true, result: 'late error' });
-    expect(useChat.getState().toolActivities).toMatchObject([{ id: 'call-1', status: 'denied' }]);
+    expect(useChat.getState().currentActivity).toMatchObject({ id: 'call-1', status: 'failed' });
+    expect(useChat.getState().currentActivity?.description).toContain('button.buy');
     resolvePrompt();
     await send;
   });
 
-  it('logs a failed tool call to the console without exposing the raw result on tool activity state', async () => {
+  it('logs a failed tool call to the console without exposing the raw result in the activity description', async () => {
     let resolvePrompt!: () => void;
     const agent = makeAgent();
     agent.prompt.mockImplementation(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
@@ -775,7 +777,7 @@ describe('chat store page context', () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const send = useChat.getState().send('read the page');
     await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalled());
-    agentEventListener?.({ type: 'tool_execution_start', toolCallId: 'call-1', toolName: 'browser_read_page' });
+    agentEventListener?.({ type: 'tool_execution_start', toolCallId: 'call-1', toolName: 'browser_read_page', args: {} });
     agentEventListener?.({
       type: 'tool_execution_end',
       toolCallId: 'call-1',
@@ -783,8 +785,8 @@ describe('chat store page context', () => {
       isError: true,
       result: 'Could not establish connection. Receiving end does not exist.',
     });
-    expect(useChat.getState().toolActivities).toMatchObject([{ id: 'call-1', status: 'error' }]);
-    expect(useChat.getState().toolActivities[0]).not.toHaveProperty('detail');
+    expect(useChat.getState().currentActivity).toMatchObject({ id: 'call-1', status: 'failed' });
+    expect(useChat.getState().currentActivity?.description).not.toContain('Could not establish connection');
     expect(consoleError).toHaveBeenCalledWith(
       '[Aluminum] tool execution failed',
       'browser_read_page',
@@ -795,17 +797,11 @@ describe('chat store page context', () => {
     await send;
   });
 
-  it('stops running and confirming agent activities and preserves them against late errors', async () => {
+  it('clears the current activity on stop and ignores late events for the stopped call', async () => {
     let rejectAbort!: (reason: Error) => void;
-    let releaseConfirmation!: () => void;
-    let confirmDecision!: Promise<boolean>;
-    const confirmationReady = new Promise<void>((resolve) => { releaseConfirmation = resolve; });
     const agent = makeAgent();
     agent.abort.mockImplementation(() => rejectAbort(new Error('aborted')));
-    agent.prompt.mockImplementation(() => Promise.race([
-      confirmationReady.then(() => confirmDecision),
-      new Promise<never>((_resolve, reject) => { rejectAbort = reject; }),
-    ]));
+    agent.prompt.mockImplementation(() => new Promise<never>((_resolve, reject) => { rejectAbort = reject; }));
     mocks.createBrowserAgent.mockReturnValue(agent);
     mocks.sendMessage.mockImplementation((type: string) => {
       if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: ['GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE', 'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION', 'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE'] } });
@@ -813,19 +809,39 @@ describe('chat store page context', () => {
     });
     const send = useChat.getState().send('write');
     await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalled());
-    agentEventListener?.({ type: 'tool_execution_start', toolCallId: 'running', toolName: 'browser_click' });
-    const confirm = mocks.createBrowserAgent.mock.calls[0][0].onConfirm as (id: string, name: string, args: unknown, reason: string) => Promise<boolean>;
-    confirmDecision = confirm('confirming', 'browser_type', {}, 'confirm');
-    releaseConfirmation();
+    agentEventListener?.({ type: 'tool_execution_start', toolCallId: 'running', toolName: 'browser_click', args: { selector: 'button' } });
+    expect(useChat.getState().currentActivity).toMatchObject({ id: 'running', status: 'running' });
     useChat.getState().stop();
     expect(agent.abort).toHaveBeenCalledOnce();
-    await expect(confirmDecision).resolves.toBe(false);
-    expect(useChat.getState().toolActivities.map((activity) => activity.status)).toEqual(['stopped', 'stopped']);
+    expect(useChat.getState().currentActivity).toBeNull();
     agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'running', toolName: 'browser_click', isError: false, result: 'late' });
-    agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'confirming', toolName: 'browser_type', isError: true, result: 'late' });
-    expect(useChat.getState().toolActivities.map((activity) => activity.status)).toEqual(['stopped', 'stopped']);
+    expect(useChat.getState().currentActivity).toBeNull();
     await send;
-    expect(useChat.getState().pendingConfirmation).toBeNull();
+  });
+
+  it('auto-clears a failed activity after the display timeout, and a later activity is unaffected', async () => {
+    vi.useFakeTimers();
+    try {
+      let resolvePrompt!: () => void;
+      const agent = makeAgent();
+      agent.prompt.mockImplementation(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
+      mocks.createBrowserAgent.mockReturnValue(agent);
+      mocks.sendMessage.mockImplementation((type: string) => {
+        if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: ['GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE', 'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION', 'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE'] } });
+        return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+      });
+      const send = useChat.getState().send('write');
+      await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalled());
+      agentEventListener?.({ type: 'tool_execution_start', toolCallId: 'call-1', toolName: 'browser_click', args: { selector: 'a' } });
+      agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'call-1', toolName: 'browser_click', isError: true, result: 'boom' });
+      expect(useChat.getState().currentActivity).toMatchObject({ id: 'call-1', status: 'failed' });
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(useChat.getState().currentActivity).toBeNull();
+      resolvePrompt();
+      await send;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('reports that a normal send did not start for empty input or a busy store', async () => {

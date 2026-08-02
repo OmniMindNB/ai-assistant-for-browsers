@@ -10,7 +10,7 @@ import type { ProviderConfig } from '@/lib/settings';
 import type { ResolvedShortcutCommand } from '@/lib/workbench/presentation';
 import type { PageContextState, ToolActivity } from '../store';
 import App from '../App';
-import { AgentActivityCard } from './AgentActivityCard';
+import { CurrentActivityLine } from './CurrentActivityLine';
 import { HistoryDrawer } from './HistoryDrawer';
 import { WorkbenchEmptyState } from './WorkbenchEmptyState';
 import { WorkbenchHeader } from './WorkbenchHeader';
@@ -18,7 +18,7 @@ import { WorkbenchComposer, type WorkbenchComposerProps } from './WorkbenchCompo
 
 const chatStore = {
   messages: [],
-  toolActivities: [],
+  currentActivity: null,
   input: '',
   busy: false,
   error: null,
@@ -147,7 +147,7 @@ beforeEach(() => {
   };
   Object.assign(chatStore, {
     messages: [],
-    toolActivities: [],
+    currentActivity: null,
     input: '',
     busy: false,
     error: null,
@@ -191,19 +191,6 @@ const emptyStateShortcuts: ResolvedShortcutCommand[] = Array.from({ length: 5 },
     prompt: `Prompt ${index + 1}`,
   },
 }));
-
-function activity(status: ToolActivity['status']): ToolActivity {
-  return {
-    id: `tool-${status}`,
-    name: 'browser_read_page',
-    status,
-  };
-}
-
-const activities: ToolActivity[] = [
-  { id: 'read', name: 'browser_read_page', status: 'done' },
-  { id: 'style', name: 'browser_set_style', status: 'running' },
-];
 
 const readingShortcut: ResolvedShortcutCommand = {
   config: {
@@ -464,120 +451,32 @@ describe('workbench composer', () => {
   });
 });
 
-describe('agent activity timeline', () => {
-  it.each([
-    ['running', 'Running browser task'],
-    ['confirming', 'Waiting for approval'],
-    ['blocked', 'Blocked'],
-    ['error', 'Task failed'],
-    ['done', 'Task complete'],
-  ] as const)('renders %s tool state with text', (status, label) => {
+describe('current activity line', () => {
+  it('renders the running activity description with a status role', () => {
     render(
       <LocaleProvider>
-        <AgentActivityCard activities={[activity(status)]} />
+        <CurrentActivityLine activity={{ id: 'call-1', description: 'Clicking "button.buy"', status: 'running' }} />
       </LocaleProvider>,
     );
-
-    expect(screen.getByText(label)).toBeVisible();
-    expect(screen.getByRole('button').textContent).toContain(status === 'done' ? '1 / 1' : '0 / 1');
+    expect(screen.getByRole('status')).toHaveTextContent('Clicking "button.buy"');
   });
 
-  it('announces only the localized summary status when activity state changes', () => {
-    const { rerender } = render(
-      <LocaleProvider>
-        <AgentActivityCard activities={[activity('running')]} />
-      </LocaleProvider>,
-    );
-
-    const status = screen.getByRole('status', { name: 'Agent activity' });
-    expect(status).toHaveAttribute('aria-live', 'polite');
-    expect(status).toHaveTextContent('Agent status: Running browser task');
-    expect(screen.getByRole('region', { name: 'Agent activity' })).toBeVisible();
-
-    rerender(
-      <LocaleProvider>
-        <AgentActivityCard activities={[activity('confirming')]} />
-      </LocaleProvider>,
-    );
-
-    expect(screen.getByRole('status', { name: 'Agent activity' })).toHaveTextContent('Agent status: Waiting for approval');
-  });
-
-  it('expands ordered tool details', async () => {
-    const user = userEvent.setup();
+  it('renders a failed activity with distinct (red) styling', () => {
     render(
       <LocaleProvider>
-        <AgentActivityCard activities={activities} />
+        <CurrentActivityLine activity={{ id: 'call-1', description: 'Failed to click "button.buy"', status: 'failed' }} />
       </LocaleProvider>,
     );
-
-    await user.click(screen.getByRole('button', { name: 'Show task details' }));
-    expect(screen.getAllByRole('listitem').map((item) => item.textContent)).toEqual([
-      'Read pageCompletedDone',
-      'Set styleIn progressRunning',
-    ]);
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent('Failed to click "button.buy"');
+    expect(status.className).toContain('text-red-700');
   });
 
-  it('does not expose raw tool payloads in expanded details', async () => {
+  it('places the current activity line before the confirmation card without changing callbacks', async () => {
     const user = userEvent.setup();
-    const rawPayload = '{"selector":"body","css":"body { color: red; }"}';
-    const unsafeActivity = { ...activity('running'), detail: rawPayload } as unknown as ToolActivity;
-    render(
-      <LocaleProvider>
-        <AgentActivityCard activities={[unsafeActivity]} />
-      </LocaleProvider>,
-    );
-
-    await user.click(screen.getByRole('button', { name: 'Show task details' }));
-    expect(screen.queryByText(rawPayload)).not.toBeInTheDocument();
-  });
-
-  it('does not expose value-bearing confirmation summaries or non-JSON tool results', async () => {
-    const user = userEvent.setup();
-    const sensitiveDetails = [
-      'AI wants to type "customer-secret".',
-      'AI wants to write storage value "session-secret".',
-      'AI wants to replace HTML with <script>steal()</script>.',
-      'Tool result: completed for private-result.',
-    ];
-    const unsafeActivities = sensitiveDetails.map((detail, index) => ({
-      id: `unsafe-${index}`,
-      name: 'browser_type',
-      status: 'confirming',
-      detail,
-    })) as unknown as ToolActivity[];
-    render(
-      <LocaleProvider>
-        <AgentActivityCard activities={unsafeActivities} />
-      </LocaleProvider>,
-    );
-
-    await user.click(screen.getByRole('button', { name: 'Show task details' }));
-    for (const detail of sensitiveDetails) {
-      expect(screen.queryByText(detail)).not.toBeInTheDocument();
-    }
-  });
-
-  it('updates aria-expanded and its accessible action when details are toggled', async () => {
-    const user = userEvent.setup();
-    render(
-      <LocaleProvider>
-        <AgentActivityCard activities={activities} />
-      </LocaleProvider>,
-    );
-
-    const toggle = screen.getByRole('button', { name: 'Show task details' });
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    await user.click(toggle);
-    expect(screen.getByRole('button', { name: 'Hide task details' })).toHaveAttribute('aria-expanded', 'true');
-    await user.click(screen.getByRole('button', { name: 'Hide task details' }));
-    expect(screen.getByRole('button', { name: 'Show task details' })).toHaveAttribute('aria-expanded', 'false');
-  });
-
-  it('places the activity card before the confirmation card without changing callbacks', async () => {
-    const user = userEvent.setup();
-    (chatStore as any).toolActivities = [activity('confirming')];
+    (chatStore as any).currentActivity = { id: 'call-1', description: 'Clicking "button.buy"', status: 'running' };
     (chatStore as any).pendingConfirmation = {
+      toolCallId: 'call-1',
       toolName: 'browser_type',
       summary: 'AI wants to type a value.',
     };
@@ -587,9 +486,9 @@ describe('agent activity timeline', () => {
       </LocaleProvider>,
     );
 
-    const activityStatus = screen.getByText('Waiting for approval');
+    const activityLine = screen.getByText('Clicking "button.buy"');
     const confirmationTitle = screen.getByText(/Please confirm before modifying the page/);
-    expect(activityStatus.compareDocumentPosition(confirmationTitle) & Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(activityLine.compareDocumentPosition(confirmationTitle) & Node.DOCUMENT_POSITION_FOLLOWING)
       .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     await user.click(screen.getByRole('button', { name: 'Approve this turn' }));
     expect(chatStore.respondToConfirmation).toHaveBeenCalledWith(true);
@@ -687,17 +586,6 @@ describe('workbench context controls', () => {
     expect(
       screen.getByText('Ask about the current page, or describe a browser task you want me to complete.'),
     ).toBeVisible();
-  });
-
-  it.each([
-    ['denied', 'Action denied', 'You denied this action'],
-    ['stopped', 'Task stopped', 'Stopped'],
-  ] as const)('renders %s Agent activity as an explicit terminal state', async (status, summary, detail) => {
-    const user = userEvent.setup();
-    render(<LocaleProvider><AgentActivityCard activities={[{ id: status, name: 'browser_click', status }]} /></LocaleProvider>);
-    expect(screen.getByText(summary)).toBeVisible();
-    await user.click(screen.getByRole('button', { name: 'Show task details' }));
-    expect(screen.getAllByText(detail).length).toBeGreaterThan(0);
   });
 
   it('limits empty-state shortcuts to four entries', () => {
