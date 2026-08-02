@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { db } from './db';
 import { LOCALE_KEY } from './i18n';
 import { STORAGE_KEY } from './settings';
 import { SHORTCUTS_STORAGE_KEY } from './shortcuts';
@@ -14,4 +15,8 @@ describe('Runi persistence namespace', () => {
       expect(key).not.toContain('aluminum');
     }
   });
+});
+
+it('opens a new Runi IndexedDB database', () => {
+  expect(db.name).toBe('runi');
 });

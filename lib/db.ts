@@ -24,12 +24,12 @@ export interface ConversationRecord {
   updatedAt: number;
 }
 
-class AluminumDB extends Dexie {
+class RuniDB extends Dexie {
   conversations!: Table<ConversationRecord, string>;
   messages!: Table<ChatMessageRecord, number>;
 
   constructor() {
-    super('aluminum');
+    super('runi');
     this.version(1).stores({
       conversations: 'id, updatedAt',
       messages: '++id, conversationId, createdAt',
@@ -37,7 +37,7 @@ class AluminumDB extends Dexie {
   }
 }
 
-export const db = new AluminumDB();
+export const db = new RuniDB();
 
 /** 按更新时间倒序列出会话 */
 export async function listConversations(): Promise<ConversationRecord[]> {
