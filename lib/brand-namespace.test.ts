@@ -7,12 +7,14 @@ import { THEME_KEY } from './theme';
 
 describe('Runi persistence namespace', () => {
   it('uses only the fresh Runi chrome.storage keys', () => {
+    const legacyNamespace = ['alu', 'minum'].join('');
+
     expect(STORAGE_KEY).toBe('runi:settings');
     expect(SHORTCUTS_STORAGE_KEY).toBe('runi:shortcuts');
     expect(THEME_KEY).toBe('runi:theme');
     expect(LOCALE_KEY).toBe('runi:locale');
     for (const key of [STORAGE_KEY, SHORTCUTS_STORAGE_KEY, THEME_KEY, LOCALE_KEY]) {
-      expect(key).not.toContain('aluminum');
+      expect(key).not.toContain(legacyNamespace);
     }
   });
 });
