@@ -85,12 +85,12 @@ describe('chat store page context', () => {
     });
   });
 
-  // clear() cancels the module-level failureClearTimer (a real setTimeout) and resets
-  // currentActivity. Without this, a real timer armed by one test (e.g. via
-  // respondToConfirmation(false), which schedules a failure auto-clear) can outlive that
+  // clear() cancels any module-level slow-activity timers (real setTimeouts) and resets
+  // activitySteps. Without this, a real timer armed by one test (e.g. via
+  // tool_execution_start, which schedules a 6s slow-escalation timer) can outlive that
   // test and fire during a later, unrelated test — mutating the shared store singleton out
   // from under it. Runs after every test, not just timer-related ones, since any test could
-  // leave a pending failure activity behind.
+  // leave a pending running step behind.
   afterEach(() => {
     useChat.getState().clear();
   });
@@ -302,7 +302,7 @@ describe('chat store page context', () => {
     expect(useChat.getState()).toMatchObject({
       conversationId: 'B',
       messages: [{ role: 'user', content: 'Message for B' }],
-      currentActivity: null,
+      activitySteps: [],
       busy: false,
     });
     expect(mocks.replaceConversationMessages).not.toHaveBeenCalledWith('B', expect.anything(), expect.anything());
@@ -620,7 +620,7 @@ describe('chat store page context', () => {
     resolvePrompt();
     await running;
 
-    expect(useChat.getState()).toMatchObject({ conversationId: replacementId, messages: [], currentActivity: null, busy: false });
+    expect(useChat.getState()).toMatchObject({ conversationId: replacementId, messages: [], activitySteps: [], busy: false });
     expect(mocks.replaceConversationMessages).not.toHaveBeenCalledWith(replacementId, expect.anything(), expect.anything());
     if (action === 'delete') expect(mocks.replaceConversationMessages).not.toHaveBeenCalledWith('A', expect.anything(), expect.anything());
   });
@@ -760,15 +760,15 @@ describe('chat store page context', () => {
     const confirm = mocks.createBrowserAgent.mock.calls[0][0].onConfirm as (id: string, name: string, args: unknown, reason: string) => Promise<boolean>;
     agentEventListener?.({ type: 'tool_execution_start', toolCallId: 'call-1', toolName: 'browser_click', args: { selector: 'button.buy' } });
     const decision = confirm('call-1', 'browser_click', { selector: 'button.buy' }, 'confirm');
-    expect(useChat.getState().currentActivity).toMatchObject({ id: 'call-1', status: 'running' });
-    expect(useChat.getState().currentActivity?.description).toContain('button.buy');
+    expect(useChat.getState().activitySteps).toMatchObject([{ id: 'call-1', status: 'running' }]);
+    expect(useChat.getState().activitySteps[0]?.description).toContain('button.buy');
     useChat.getState().respondToConfirmation(false);
     await expect(decision).resolves.toBe(false);
-    expect(useChat.getState().currentActivity).toMatchObject({ id: 'call-1', status: 'failed' });
-    expect(useChat.getState().currentActivity?.description).toContain('button.buy');
+    expect(useChat.getState().activitySteps).toMatchObject([{ id: 'call-1', status: 'failed' }]);
+    expect(useChat.getState().activitySteps[0]?.description).toContain('button.buy');
     agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'call-1', toolName: 'browser_click', isError: true, result: 'late error' });
-    expect(useChat.getState().currentActivity).toMatchObject({ id: 'call-1', status: 'failed' });
-    expect(useChat.getState().currentActivity?.description).toContain('button.buy');
+    expect(useChat.getState().activitySteps).toMatchObject([{ id: 'call-1', status: 'failed' }]);
+    expect(useChat.getState().activitySteps[0]?.description).toContain('button.buy');
     resolvePrompt();
     await send;
   });
@@ -797,8 +797,8 @@ describe('chat store page context', () => {
       isError: true,
       result: 'Could not establish connection. Receiving end does not exist.',
     });
-    expect(useChat.getState().currentActivity).toMatchObject({ id: 'call-1', status: 'failed' });
-    expect(useChat.getState().currentActivity?.description).not.toContain('Could not establish connection');
+    expect(useChat.getState().activitySteps).toMatchObject([{ id: 'call-1', status: 'failed' }]);
+    expect(useChat.getState().activitySteps[0]?.description).not.toContain('Could not establish connection');
     expect(consoleError).toHaveBeenCalledWith(
       '[Aluminum] tool execution failed',
       'browser_read_page',
@@ -809,7 +809,7 @@ describe('chat store page context', () => {
     await send;
   });
 
-  it('clears the current activity on stop and ignores late events for the stopped call', async () => {
+  it('clears activity steps on stop and ignores late events for the stopped call', async () => {
     let rejectAbort!: (reason: Error) => void;
     const agent = makeAgent();
     agent.abort.mockImplementation(() => rejectAbort(new Error('aborted')));
@@ -822,16 +822,49 @@ describe('chat store page context', () => {
     const send = useChat.getState().send('write');
     await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalled());
     agentEventListener?.({ type: 'tool_execution_start', toolCallId: 'running', toolName: 'browser_click', args: { selector: 'button' } });
-    expect(useChat.getState().currentActivity).toMatchObject({ id: 'running', status: 'running' });
+    expect(useChat.getState().activitySteps).toMatchObject([{ id: 'running', status: 'running' }]);
     useChat.getState().stop();
     expect(agent.abort).toHaveBeenCalledOnce();
-    expect(useChat.getState().currentActivity).toBeNull();
+    expect(useChat.getState().activitySteps).toEqual([]);
     agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'running', toolName: 'browser_click', isError: false, result: 'late' });
-    expect(useChat.getState().currentActivity).toBeNull();
+    expect(useChat.getState().activitySteps).toEqual([]);
     await send;
   });
 
-  it('auto-clears a failed activity after the display timeout, and a later activity is unaffected', async () => {
+  it('accumulates completed and failed steps in the activity log instead of overwriting them', async () => {
+    let resolvePrompt!: () => void;
+    const agent = makeAgent();
+    agent.prompt.mockImplementation(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    mocks.sendMessage.mockImplementation((type: string) => {
+      if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: ['GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE', 'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION', 'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE'] } });
+      return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    });
+    const send = useChat.getState().send('write');
+    await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalled());
+
+    agentEventListener?.({ type: 'tool_execution_start', toolCallId: 'call-1', toolName: 'browser_click', args: { selector: 'a' } });
+    agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'call-1', toolName: 'browser_click', isError: true, result: 'boom' });
+    expect(useChat.getState().activitySteps).toMatchObject([{ id: 'call-1', status: 'failed' }]);
+
+    agentEventListener?.({ type: 'tool_execution_start', toolCallId: 'call-2', toolName: 'browser_click', args: { selector: 'b' } });
+    expect(useChat.getState().activitySteps).toMatchObject([
+      { id: 'call-1', status: 'failed' },
+      { id: 'call-2', status: 'running' },
+    ]);
+
+    agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'call-2', toolName: 'browser_click', isError: false, result: 'ok' });
+    expect(useChat.getState().activitySteps).toMatchObject([
+      { id: 'call-1', status: 'failed' },
+      { id: 'call-2', status: 'done' },
+    ]);
+
+    resolvePrompt();
+    await send;
+    expect(useChat.getState().activitySteps).toEqual([]);
+  });
+
+  it('marks a running step slow after 6s and clears the timer once it ends', async () => {
     vi.useFakeTimers();
     try {
       let resolvePrompt!: () => void;
@@ -844,29 +877,42 @@ describe('chat store page context', () => {
       });
       const send = useChat.getState().send('write');
       await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalled());
+
       agentEventListener?.({ type: 'tool_execution_start', toolCallId: 'call-1', toolName: 'browser_click', args: { selector: 'a' } });
-      agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'call-1', toolName: 'browser_click', isError: true, result: 'boom' });
-      expect(useChat.getState().currentActivity).toMatchObject({ id: 'call-1', status: 'failed' });
+      expect(useChat.getState().activitySteps).toMatchObject([{ id: 'call-1', status: 'running' }]);
+      expect(useChat.getState().activitySteps[0]?.slow).toBeFalsy();
 
-      // Start a second activity partway through call-1's failure-display window. This must
-      // cancel call-1's pending auto-clear timer (via clearFailureTimer() inside
-      // setCurrentActivity()) so that timer cannot later wipe out call-2's state.
-      await vi.advanceTimersByTimeAsync(1000);
-      agentEventListener?.({ type: 'tool_execution_start', toolCallId: 'call-2', toolName: 'browser_click', args: { selector: 'b' } });
-      expect(useChat.getState().currentActivity).toMatchObject({ id: 'call-2', status: 'running' });
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(useChat.getState().activitySteps).toMatchObject([{ id: 'call-1', status: 'running', slow: true }]);
 
-      // Advance past call-1's original 2500ms deadline (1000ms already elapsed + 1600ms here
-      // = 2600ms since call-1 failed). If call-1's timer had not been cancelled, this would
-      // incorrectly clear currentActivity to null even though call-2 is now current.
-      await vi.advanceTimersByTimeAsync(1600);
-      expect(useChat.getState().currentActivity).toMatchObject({ id: 'call-2', status: 'running' });
+      agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'call-1', toolName: 'browser_click', isError: false, result: 'ok' });
+      expect(useChat.getState().activitySteps).toMatchObject([{ id: 'call-1', status: 'done', slow: false }]);
 
-      // call-2 itself fails and is auto-cleared after its own timeout, confirming auto-clear
-      // still works for the activity that is actually current.
-      agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'call-2', toolName: 'browser_click', isError: true, result: 'boom' });
-      expect(useChat.getState().currentActivity).toMatchObject({ id: 'call-2', status: 'failed' });
-      await vi.advanceTimersByTimeAsync(3000);
-      expect(useChat.getState().currentActivity).toBeNull();
+      resolvePrompt();
+      await send;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not mark a step slow if it finishes before the 6s threshold', async () => {
+    vi.useFakeTimers();
+    try {
+      let resolvePrompt!: () => void;
+      const agent = makeAgent();
+      agent.prompt.mockImplementation(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
+      mocks.createBrowserAgent.mockReturnValue(agent);
+      mocks.sendMessage.mockImplementation((type: string) => {
+        if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: ['GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE', 'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION', 'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE'] } });
+        return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+      });
+      const send = useChat.getState().send('write');
+      await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalled());
+
+      agentEventListener?.({ type: 'tool_execution_start', toolCallId: 'call-1', toolName: 'browser_click', args: { selector: 'a' } });
+      agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'call-1', toolName: 'browser_click', isError: false, result: 'ok' });
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(useChat.getState().activitySteps).toMatchObject([{ id: 'call-1', status: 'done', slow: false }]);
 
       resolvePrompt();
       await send;

@@ -36,7 +36,8 @@ import {
 } from '@/lib/agent/system-prompt';
 import { buildShortcutExecution } from '@/lib/chat/shortcut-prompts';
 import { summarizeToolCallForConfirmation } from '@/lib/agent/confirm-summary';
-import { describeToolActivity, type ActivityStatus } from '@/lib/agent/activity-description';
+import { describeToolActivity } from '@/lib/agent/activity-description';
+import { finishActivityStep, markActivityStepSlow, upsertActivityStep, type ActivityStep } from '@/lib/agent/activity-steps';
 import { getConversationIdForTab, setConversationIdForTab } from '@/lib/agent/tab-conversation';
 import { getCurrentLocale, t } from '@/lib/i18n';
 import { isCurrentTabReadable } from '@/lib/current-tab-readability';
@@ -51,7 +52,7 @@ import {
   type WorkbenchPreferences,
 } from '@/lib/workbench/preferences';
 
-const FAILURE_DISPLAY_MS = 2500;
+const SLOW_ACTIVITY_MS = 6000;
 const REQUIRED_AGENT_MESSAGE_TYPES = [
   'GET_PAGE_META',
   'GET_SCRIPTS',
@@ -72,11 +73,7 @@ const REQUIRED_AGENT_MESSAGE_TYPES = [
 
 export type UIMessage = ChatMessage;
 
-export interface ToolActivity {
-  id: string;
-  description: string;
-  status: ActivityStatus;
-}
+export type { ActivityStep } from '@/lib/agent/activity-steps';
 
 export interface PendingConfirmation {
   toolCallId: string;
@@ -93,7 +90,7 @@ export type PageContextState =
 
 interface ChatState {
   messages: UIMessage[];
-  currentActivity: ToolActivity | null;
+  activitySteps: ActivityStep[];
   input: string;
   busy: boolean;
   error: string | null;
@@ -218,35 +215,39 @@ function invalidateActiveRun(
   run.resolveConfirmation = null;
   run.agent?.abort();
   if (isCurrentOrigin(run.origin, get)) {
-    clearFailureTimer();
-    set({ busy: false, pendingConfirmation: null, currentActivity: null });
+    clearAllSlowActivityTimers();
+    set({ busy: false, pendingConfirmation: null, activitySteps: [] });
   }
   if (persist && messages.length > 0) {
     void persistConversationSnapshot(run.origin.conversationId, messages);
   }
 }
 
-let failureClearTimer: ReturnType<typeof setTimeout> | null = null;
+const slowActivityTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-function clearFailureTimer(): void {
-  if (failureClearTimer !== null) {
-    clearTimeout(failureClearTimer);
-    failureClearTimer = null;
+function clearSlowActivityTimer(id: string): void {
+  const timer = slowActivityTimers.get(id);
+  if (timer !== undefined) {
+    clearTimeout(timer);
+    slowActivityTimers.delete(id);
   }
 }
 
-function setCurrentActivity(
+function clearAllSlowActivityTimers(): void {
+  for (const timer of slowActivityTimers.values()) clearTimeout(timer);
+  slowActivityTimers.clear();
+}
+
+function scheduleSlowActivityTimer(
   set: (partial: Partial<ChatState> | ((s: ChatState) => Partial<ChatState>)) => void,
-  activity: ToolActivity | null,
+  id: string,
 ): void {
-  clearFailureTimer();
-  set({ currentActivity: activity });
-  if (activity?.status === 'failed') {
-    failureClearTimer = setTimeout(() => {
-      failureClearTimer = null;
-      set({ currentActivity: null });
-    }, FAILURE_DISPLAY_MS);
-  }
+  if (slowActivityTimers.has(id)) return;
+  const timer = setTimeout(() => {
+    slowActivityTimers.delete(id);
+    set((s) => ({ activitySteps: markActivityStepSlow(s.activitySteps, id) }));
+  }, SLOW_ACTIVITY_MS);
+  slowActivityTimers.set(id, timer);
 }
 
 /** 返回整个 ActiveTabInfo 而不只是 id：标题和地址会注入系统提示词的 <runtime_context>，省掉一次工具调用。 */
@@ -282,7 +283,7 @@ function makeMessage(
 
 export const useChat = create<ChatState>((set, get) => ({
   messages: [],
-  currentActivity: null,
+  activitySteps: [],
   input: '',
   busy: false,
   error: null,
@@ -474,12 +475,11 @@ export const useChat = create<ChatState>((set, get) => ({
     run.resolveConfirmation?.(false);
     run.resolveConfirmation = null;
     run.agent?.abort();
-    const active = get().currentActivity;
-    if (active) run.terminatedToolCallIds.add(active.id);
+    for (const step of get().activitySteps) run.terminatedToolCallIds.add(step.id);
     const pendingId = get().pendingConfirmation?.toolCallId;
     if (pendingId) run.terminatedToolCallIds.add(pendingId);
-    set({ pendingConfirmation: null });
-    setCurrentActivity(set, null);
+    clearAllSlowActivityTimers();
+    set({ pendingConfirmation: null, activitySteps: [] });
   },
 
   respondToConfirmation: (approved) => {
@@ -492,22 +492,25 @@ export const useChat = create<ChatState>((set, get) => ({
     if (!approved && pending) {
       run.terminatedToolCallIds.add(pending.toolCallId);
       const info = run.pendingToolArgs.get(pending.toolCallId);
-      setCurrentActivity(set, {
-        id: pending.toolCallId,
-        description: describeToolActivity(pending.toolName, info?.args, 'failed'),
-        status: 'failed',
-      });
+      const description = describeToolActivity(pending.toolName, info?.args, 'failed');
+      set((s) => ({
+        activitySteps: upsertActivityStep(s.activitySteps, {
+          id: pending.toolCallId,
+          description,
+          status: 'failed',
+        }),
+      }));
     }
   },
 
   clear: () => {
-    clearFailureTimer();
+    clearAllSlowActivityTimers();
     ++conversationOpenRequestId;
     invalidateActiveRun(set, get);
     conversationEpoch += 1;
     set({
       messages: [],
-      currentActivity: null,
+      activitySteps: [],
       error: null,
       busy: false,
       conversationId: genConversationId(),
@@ -539,10 +542,10 @@ export const useChat = create<ChatState>((set, get) => ({
         createdAt: r.createdAt,
         kind: r.kind,
       }));
-    clearFailureTimer();
+    clearAllSlowActivityTimers();
     set({
       messages,
-      currentActivity: null,
+      activitySteps: [],
       conversationId: id,
       error: null,
       busy: false,
@@ -583,10 +586,10 @@ export const useChat = create<ChatState>((set, get) => ({
       // persist the record that has just been deleted.
       invalidateActiveRun(set, get, false);
       conversationEpoch += 1;
-      clearFailureTimer();
+      clearAllSlowActivityTimers();
       set({
         messages: [],
-        currentActivity: null,
+        activitySteps: [],
         conversationId: genConversationId(),
         busy: false,
         pendingConfirmation: null,
@@ -686,10 +689,10 @@ async function runAgent(
     }
     history = current.slice(0, index);
   }
-  clearFailureTimer();
+  clearAllSlowActivityTimers();
   set({
     messages: [...history, display, makeMessage('assistant', '')],
-    currentActivity: null,
+    activitySteps: [],
     input: '',
     busy: true,
     error: null,
@@ -738,20 +741,25 @@ async function runAgent(
 
     if (event.type === 'tool_execution_start' && !run.terminatedToolCallIds.has(event.toolCallId)) {
       run.pendingToolArgs.set(event.toolCallId, { toolName: event.toolName, args: event.args });
-      setCurrentActivity(set, {
-        id: event.toolCallId,
-        description: describeToolActivity(event.toolName, event.args, 'running'),
-        status: 'running',
-      });
+      set((s) => ({
+        activitySteps: upsertActivityStep(s.activitySteps, {
+          id: event.toolCallId,
+          description: describeToolActivity(event.toolName, event.args, 'running'),
+          status: 'running',
+        }),
+      }));
+      scheduleSlowActivityTimer(set, event.toolCallId);
     }
 
     if (event.type === 'tool_execution_update' && !run.terminatedToolCallIds.has(event.toolCallId)) {
       run.pendingToolArgs.set(event.toolCallId, { toolName: event.toolName, args: event.args });
-      setCurrentActivity(set, {
-        id: event.toolCallId,
-        description: describeToolActivity(event.toolName, event.args, 'running'),
-        status: 'running',
-      });
+      set((s) => ({
+        activitySteps: upsertActivityStep(s.activitySteps, {
+          id: event.toolCallId,
+          description: describeToolActivity(event.toolName, event.args, 'running'),
+          status: 'running',
+        }),
+      }));
     }
 
     if (event.type === 'tool_execution_end') {
@@ -775,16 +783,13 @@ async function runAgent(
       }
       const info = run.pendingToolArgs.get(event.toolCallId);
       run.pendingToolArgs.delete(event.toolCallId);
+      clearSlowActivityTimer(event.toolCallId);
       if (!run.terminatedToolCallIds.has(event.toolCallId)) {
-        if (blocked || event.isError) {
-          setCurrentActivity(set, {
-            id: event.toolCallId,
-            description: describeToolActivity(event.toolName, info?.args, 'failed'),
-            status: 'failed',
-          });
-        } else {
-          setCurrentActivity(set, null);
-        }
+        const finalStatus = blocked || event.isError ? 'failed' : 'done';
+        const description = describeToolActivity(event.toolName, info?.args, finalStatus);
+        set((s) => ({
+          activitySteps: finishActivityStep(s.activitySteps, event.toolCallId, finalStatus, description),
+        }));
       }
     }
   });
@@ -837,8 +842,8 @@ async function runAgent(
       // The turn is terminal before persistence starts: navigation must not
       // abort an already-complete agent or schedule a second snapshot write.
       settleRun(run);
-      set({ busy: false });
-      setCurrentActivity(set, null);
+      clearAllSlowActivityTimers();
+      set({ busy: false, activitySteps: [] });
       await persistConversationSnapshot(run.origin.conversationId, messages);
     }
   }
