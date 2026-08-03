@@ -47,6 +47,16 @@ describe('GitHub Pages privacy policies', () => {
   ])('%s declares its stable Pages route and alternate language', (path, expected) => {
     expect(frontMatter(path)).toMatchObject(expected);
   });
+
+  it.each([
+    'docs/privacy-policy.en.md',
+    'docs/privacy-policy.md',
+    'docs/chrome-store-permission-justifications.md',
+  ])('%s references the current extension version', (path) => {
+    const { version } = JSON.parse(read('package.json')) as { version: string };
+
+    expect(read(path)).toContain(version);
+  });
 });
 
 describe('maintained privacy-policy URLs', () => {
