@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocaleProvider } from '@/lib/i18n';
@@ -129,6 +129,22 @@ describe('grouped options settings', () => {
     expect(screen.getByText('Page data is sent to your AI provider')).toBeVisible();
     expect(screen.queryByRole('list', { name: 'Configured providers' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Privacy & permissions' })).not.toBeInTheDocument();
+  });
+
+  it('lists nav items in the specified order', async () => {
+    renderWithLocale(<OptionsApp />);
+
+    const nav = screen.getByRole('navigation', { name: 'Settings' });
+    const labels = within(nav).getAllByRole('button').map((button) => button.textContent);
+
+    expect(labels).toEqual([
+      'Model providers',
+      'Appearance',
+      'Language',
+      'Shortcuts',
+      'Privacy & permissions',
+      'About · v1.1.0',
+    ]);
   });
 
   it('shows the About footer item with the current version and opens the About panel', async () => {

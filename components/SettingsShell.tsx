@@ -40,7 +40,7 @@ function GroupDivider() {
   return (
     <hr
       aria-hidden="true"
-      className="mx-1 w-px self-stretch border-0 bg-neutral-300 dark:bg-neutral-700 md:mx-0 md:my-3 md:h-px md:w-full md:self-auto"
+      className="mx-1 h-5 w-px shrink-0 self-center border-0 bg-neutral-300 dark:bg-neutral-700 md:mx-0 md:my-3 md:h-px md:w-full md:self-auto"
     />
   );
 }
