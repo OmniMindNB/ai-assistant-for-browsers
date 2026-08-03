@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocaleProvider } from '@/lib/i18n';
@@ -6,6 +6,10 @@ import OptionsApp from '@/entrypoints/options/App';
 import GeneralSettings from './GeneralSettings';
 import ProviderSettings from './ProviderSettings';
 import ShortcutSettings from './ShortcutSettings';
+import SettingsShell, {
+  type SettingsSectionDescriptor,
+  type SettingsSectionGroup,
+} from './SettingsShell';
 
 const preferencesMocks = vi.hoisted(() => ({
   load: vi.fn(),
@@ -102,17 +106,58 @@ describe('grouped options settings', () => {
     });
   });
 
-  it('navigates between grouped settings sections', async () => {
-    const user = userEvent.setup();
+  it('defaults to the Model providers section and highlights it in the nav', async () => {
     renderWithLocale(<OptionsApp />);
 
-    await user.click(screen.getByRole('button', { name: 'Model providers' }));
-
-    expect(screen.getByRole('heading', { name: 'Model providers' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Model providers' })).toHaveAttribute(
       'aria-current',
       'page',
     );
+    expect(await screen.findByRole('list', { name: 'Configured providers' })).toBeVisible();
+  });
+
+  it('navigates between grouped settings sections without re-rendering the nav label as a heading', async () => {
+    const user = userEvent.setup();
+    renderWithLocale(<OptionsApp />);
+
+    await user.click(screen.getByRole('button', { name: 'Privacy & permissions' }));
+
+    expect(screen.getByRole('button', { name: 'Privacy & permissions' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    expect(screen.getByText('Page data is sent to your AI provider')).toBeVisible();
+    expect(screen.queryByRole('list', { name: 'Configured providers' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Privacy & permissions' })).not.toBeInTheDocument();
+  });
+
+  it('lists nav items in the specified order', async () => {
+    renderWithLocale(<OptionsApp />);
+
+    const nav = screen.getByRole('navigation', { name: 'Settings' });
+    const labels = within(nav).getAllByRole('button').map((button) => button.textContent);
+
+    expect(labels).toEqual([
+      'Model providers',
+      'Appearance',
+      'Language',
+      'Shortcuts',
+      'Privacy & permissions',
+      'About · v1.1.0',
+    ]);
+  });
+
+  it('shows the About footer item with the current version and opens the About panel', async () => {
+    const user = userEvent.setup();
+    renderWithLocale(<OptionsApp />);
+
+    const aboutButton = screen.getByRole('button', { name: 'About · v1.1.0' });
+    expect(aboutButton).toBeVisible();
+
+    await user.click(aboutButton);
+
+    expect(aboutButton).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByText('Version 1.1.0')).toBeVisible();
   });
 
   it('keeps preference controls disabled until the initial preferences load', async () => {
@@ -435,5 +480,107 @@ describe('grouped options settings', () => {
 
     expect(set).not.toHaveBeenCalled();
     expect(screen.getByText('Summarize page')).toBeVisible();
+  });
+});
+
+describe('SettingsShell', () => {
+  function DummyIcon({ className }: { className?: string }) {
+    return <svg data-testid="dummy-icon" className={className} />;
+  }
+
+  const groupA: SettingsSectionGroup = {
+    label: 'Group A',
+    sections: [
+      { id: 'providers', label: 'Providers', icon: DummyIcon },
+      { id: 'appearance', label: 'Appearance', icon: DummyIcon },
+    ],
+  };
+  const groupB: SettingsSectionGroup = {
+    label: 'Group B',
+    sections: [{ id: 'privacy', label: 'Privacy', icon: DummyIcon }],
+  };
+  const footer: SettingsSectionDescriptor[] = [{ id: 'about', label: 'About', icon: DummyIcon }];
+
+  it('exposes group boundaries to assistive tech without visible group titles', () => {
+    render(
+      <SettingsShell
+        groups={[groupA, groupB]}
+        activeSection="providers"
+        onSelect={() => {}}
+        navigationLabel="Settings"
+      >
+        content
+      </SettingsShell>,
+    );
+
+    expect(screen.getByRole('group', { name: 'Group A' })).toBeVisible();
+    expect(screen.getByRole('group', { name: 'Group B' })).toBeVisible();
+    expect(screen.queryByText('Group A')).not.toBeInTheDocument();
+    expect(screen.queryByText('Group B')).not.toBeInTheDocument();
+  });
+
+  it('renders every nav button with an icon', () => {
+    render(
+      <SettingsShell
+        groups={[groupA]}
+        footerSections={footer}
+        activeSection="providers"
+        onSelect={() => {}}
+        navigationLabel="Settings"
+      >
+        content
+      </SettingsShell>,
+    );
+
+    expect(screen.getAllByTestId('dummy-icon')).toHaveLength(3);
+  });
+
+  it('renders a divider between groups and before the footer, none for a single group with no footer', () => {
+    const { container, rerender } = render(
+      <SettingsShell groups={[groupA]} activeSection="providers" onSelect={() => {}} navigationLabel="Settings">
+        content
+      </SettingsShell>,
+    );
+    expect(container.querySelectorAll('hr')).toHaveLength(0);
+
+    rerender(
+      <SettingsShell
+        groups={[groupA, groupB]}
+        footerSections={footer}
+        activeSection="providers"
+        onSelect={() => {}}
+        navigationLabel="Settings"
+      >
+        content
+      </SettingsShell>,
+    );
+    expect(container.querySelectorAll('hr')).toHaveLength(2);
+  });
+
+  it('reaches the footer section via arrow-key navigation', () => {
+    const handleSelect = vi.fn();
+    render(
+      <SettingsShell
+        groups={[groupA, groupB]}
+        footerSections={footer}
+        activeSection="privacy"
+        onSelect={handleSelect}
+        navigationLabel="Settings"
+      >
+        content
+      </SettingsShell>,
+    );
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Privacy' }), { key: 'ArrowDown' });
+    expect(handleSelect).toHaveBeenCalledWith('about');
+  });
+
+  it('omits the footer entirely when footerSections is not provided', () => {
+    render(
+      <SettingsShell groups={[groupA]} activeSection="providers" onSelect={() => {}} navigationLabel="Settings">
+        content
+      </SettingsShell>,
+    );
+    expect(screen.queryByRole('button', { name: 'About' })).not.toBeInTheDocument();
   });
 });

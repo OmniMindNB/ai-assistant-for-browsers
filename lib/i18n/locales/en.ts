@@ -33,7 +33,7 @@ export const en: Record<keyof typeof zh, string> = {
   'settings.navProviders': 'Model providers',
   'settings.navGeneral': 'General',
   'settings.navPrivacy': 'Privacy & permissions',
-  'settings.navAbout': 'About',
+  'settings.navAboutVersion': 'About · v{version}',
   'settings.groupPreferences': 'Preferences',
   'settings.groupAiTools': 'AI & tools',
   'settings.groupSafety': 'Safety',
