@@ -106,17 +106,42 @@ describe('grouped options settings', () => {
     });
   });
 
-  it('navigates between grouped settings sections', async () => {
-    const user = userEvent.setup();
+  it('defaults to the Model providers section and highlights it in the nav', async () => {
     renderWithLocale(<OptionsApp />);
 
-    await user.click(screen.getByRole('button', { name: 'Model providers' }));
-
-    expect(screen.getByRole('heading', { name: 'Model providers' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Model providers' })).toHaveAttribute(
       'aria-current',
       'page',
     );
+    expect(await screen.findByRole('list', { name: 'Configured providers' })).toBeVisible();
+  });
+
+  it('navigates between grouped settings sections without re-rendering the nav label as a heading', async () => {
+    const user = userEvent.setup();
+    renderWithLocale(<OptionsApp />);
+
+    await user.click(screen.getByRole('button', { name: 'Privacy & permissions' }));
+
+    expect(screen.getByRole('button', { name: 'Privacy & permissions' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    expect(screen.getByText('Page data is sent to your AI provider')).toBeVisible();
+    expect(screen.queryByRole('list', { name: 'Configured providers' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Privacy & permissions' })).not.toBeInTheDocument();
+  });
+
+  it('shows the About footer item with the current version and opens the About panel', async () => {
+    const user = userEvent.setup();
+    renderWithLocale(<OptionsApp />);
+
+    const aboutButton = screen.getByRole('button', { name: 'About · v1.1.0' });
+    expect(aboutButton).toBeVisible();
+
+    await user.click(aboutButton);
+
+    expect(aboutButton).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByText('Version 1.1.0')).toBeVisible();
   });
 
   it('keeps preference controls disabled until the initial preferences load', async () => {

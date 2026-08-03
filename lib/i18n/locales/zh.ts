@@ -30,6 +30,7 @@ export const zh = {
   'settings.navGeneral': '通用',
   'settings.navPrivacy': '权限与隐私',
   'settings.navAbout': '关于',
+  'settings.navAboutVersion': '关于 · v{version}',
   'settings.groupPreferences': '偏好',
   'settings.groupAiTools': 'AI 与工具',
   'settings.groupSafety': '安全',
