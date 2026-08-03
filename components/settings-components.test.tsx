@@ -3,7 +3,6 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocaleProvider } from '@/lib/i18n';
 import OptionsApp from '@/entrypoints/options/App';
-import GeneralSettings from './GeneralSettings';
 import ProviderSettings from './ProviderSettings';
 import ShortcutSettings from './ShortcutSettings';
 import SettingsShell, {
@@ -11,24 +10,10 @@ import SettingsShell, {
   type SettingsSectionGroup,
 } from './SettingsShell';
 
-const preferencesMocks = vi.hoisted(() => ({
-  load: vi.fn(),
-  save: vi.fn(),
-}));
-
 let storageData: Record<string, unknown>;
 let providerStorageListener:
   | ((changes: Record<string, { newValue?: unknown }>, areaName: string) => void)
   | undefined;
-
-vi.mock('@/lib/workbench/preferences', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/workbench/preferences')>();
-  return {
-    ...actual,
-    loadWorkbenchPreferences: preferencesMocks.load,
-    saveWorkbenchPreferences: preferencesMocks.save,
-  };
-});
 
 function renderWithLocale(node: React.ReactNode) {
   return render(<LocaleProvider>{node}</LocaleProvider>);
@@ -47,8 +32,6 @@ function deferred<T>() {
 describe('grouped options settings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    preferencesMocks.load.mockResolvedValue({ attachPageByDefault: true });
-    preferencesMocks.save.mockResolvedValue(undefined);
     storageData = {
       'runi:settings': {
         activeProviderId: 'deepseek',
@@ -160,59 +143,6 @@ describe('grouped options settings', () => {
     expect(screen.getByText('Version 1.1.0')).toBeVisible();
   });
 
-  it('keeps preference controls disabled until the initial preferences load', async () => {
-    const loading = deferred<{ attachPageByDefault: boolean }>();
-    preferencesMocks.load.mockReturnValue(loading.promise);
-    renderWithLocale(<GeneralSettings />);
-
-    expect(screen.getByRole('checkbox', { name: 'Attach current page by default' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
-
-    loading.resolve({ attachPageByDefault: false });
-
-    await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Attach current page by default' })).toBeEnabled());
-    expect(screen.getByRole('checkbox', { name: 'Attach current page by default' })).not.toBeChecked();
-  });
-
-  it('locks the preference draft while saving and reports success for the saved value', async () => {
-    const user = userEvent.setup();
-    const saving = deferred<void>();
-    preferencesMocks.save.mockReturnValue(saving.promise);
-    renderWithLocale(<GeneralSettings />);
-
-    await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Attach current page by default' })).toBeEnabled());
-    await user.click(screen.getByRole('checkbox', { name: 'Attach current page by default' }));
-    await user.click(screen.getByRole('button', { name: 'Save' }));
-
-    expect(screen.getByRole('button', { name: 'Saving…' })).toBeDisabled();
-    expect(screen.getByRole('checkbox', { name: 'Attach current page by default' })).toBeDisabled();
-
-    saving.resolve();
-
-    expect(await screen.findByRole('status')).toHaveTextContent('Saved');
-    expect(screen.getByRole('checkbox', { name: 'Attach current page by default' })).toBeEnabled();
-    expect(screen.getByRole('checkbox', { name: 'Attach current page by default' })).not.toBeChecked();
-  });
-
-  it('restores controls and preserves the draft after a save failure', async () => {
-    const user = userEvent.setup();
-    const saving = deferred<void>();
-    preferencesMocks.save.mockReturnValue(saving.promise);
-    renderWithLocale(<GeneralSettings />);
-
-    await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Attach current page by default' })).toBeEnabled());
-    await user.click(screen.getByRole('checkbox', { name: 'Attach current page by default' }));
-    await user.click(screen.getByRole('button', { name: 'Save' }));
-    expect(screen.getByRole('checkbox', { name: 'Attach current page by default' })).toBeDisabled();
-
-    saving.reject(new Error('storage failed'));
-
-    expect(await screen.findByRole('alert')).toHaveTextContent('storage failed');
-    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
-    expect(screen.getByRole('checkbox', { name: 'Attach current page by default' })).toBeEnabled();
-    expect(screen.getByRole('checkbox', { name: 'Attach current page by default' })).not.toBeChecked();
-  });
-
   it('shows providers as compact cards before opening an editor', async () => {
     renderWithLocale(<ProviderSettings />);
 
@@ -301,6 +231,7 @@ describe('grouped options settings', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Add provider' }));
     await user.selectOptions(screen.getByLabelText('Quick preset'), 'OpenAI');
+    await user.type(screen.getByLabelText('API Key'), 'sk-test');
     await user.click(screen.getByRole('button', { name: 'Add' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not save provider');
@@ -341,6 +272,7 @@ describe('grouped options settings', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Add provider' }));
     await user.selectOptions(screen.getByLabelText('Quick preset'), 'OpenAI');
+    await user.type(screen.getByLabelText('API Key'), 'sk-test');
     await user.click(screen.getByRole('button', { name: 'Add' }));
     expect(screen.getAllByRole('listitem')).toHaveLength(3);
 

@@ -169,7 +169,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
     }
     const trimmed = trimProviderDraft(draft);
     setSaveError(null);
-    if (!trimmed.name || !trimmed.baseURL || !trimmed.model) {
+    if (!trimmed.name || !trimmed.baseURL || !trimmed.model || !trimmed.apiKey) {
       flash(t('provider.flashFillRequired'));
       return;
     }
@@ -443,6 +443,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
             label="API Key"
             type="password"
             toggleable
+            required
             value={draft.apiKey}
             placeholder="sk-..."
             onChange={(v) => setDraft((d) => ({ ...d, apiKey: v }))}

@@ -61,7 +61,6 @@ export function filterShortcutCommands(
 
 export type PageAttachStatus = 'loading' | 'available' | 'restricted' | 'error';
 
-export function resolvePageAttached(status: PageAttachStatus, attachPageByDefault: boolean): boolean {
-  if (status === 'restricted' || status === 'error') return false;
-  return attachPageByDefault;
+export function resolvePageAttached(status: PageAttachStatus): boolean {
+  return status !== 'restricted' && status !== 'error';
 }

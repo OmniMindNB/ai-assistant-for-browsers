@@ -46,11 +46,6 @@ import {
   resolveShortcut,
   type ShortcutConfig,
 } from '@/lib/shortcuts';
-import {
-  DEFAULT_WORKBENCH_PREFERENCES,
-  loadWorkbenchPreferences,
-  type WorkbenchPreferences,
-} from '@/lib/workbench/preferences';
 
 const SLOW_ACTIVITY_MS = 6000;
 const REQUIRED_AGENT_MESSAGE_TYPES = [
@@ -107,12 +102,10 @@ interface ChatState {
   shortcuts: ShortcutConfig[];
   shortcutErrors: string[];
   pageContext: PageContextState;
-  workbenchPreferences: WorkbenchPreferences;
   setInput: (v: string) => void;
   refreshProvider: () => Promise<void>;
   refreshShortcuts: () => Promise<void>;
   refreshPageContext: () => Promise<void>;
-  refreshWorkbenchPreferences: () => Promise<void>;
   setSelectedProvider: (id: string) => void;
   setSelectedModel: (model: string) => void;
   selectProviderAndModel: (providerId: string, model: string) => void;
@@ -150,7 +143,6 @@ let panelTabId: number | null = null;
 /** 只允许最近一次页面上下文刷新更新 UI，避免慢响应覆盖用户主动重试。 */
 let pageContextRequestId = 0;
 let providerRequestId = 0;
-let workbenchPreferencesRequestId = 0;
 let conversationOpenRequestId = 0;
 const conversationMutationTails = new Map<string, Promise<void>>();
 const successfulDeletedConversationIds = new Set<string>();
@@ -297,7 +289,6 @@ export const useChat = create<ChatState>((set, get) => ({
   shortcuts: [],
   shortcutErrors: [],
   pageContext: { status: 'loading' },
-  workbenchPreferences: DEFAULT_WORKBENCH_PREFERENCES,
 
   setInput: (v) => set({ input: v }),
 
@@ -363,21 +354,6 @@ export const useChat = create<ChatState>((set, get) => ({
     } catch (error) {
       if (requestId !== pageContextRequestId) return;
       set({ pageContext: { status: 'error', message: errMsg(error) } });
-    }
-  },
-
-  refreshWorkbenchPreferences: async () => {
-    const requestId = ++workbenchPreferencesRequestId;
-    try {
-      const workbenchPreferences = await loadWorkbenchPreferences();
-      if (requestId !== workbenchPreferencesRequestId) return;
-      set({ workbenchPreferences });
-    } catch (error) {
-      if (requestId !== workbenchPreferencesRequestId) return;
-      set((state) => ({
-        workbenchPreferences: DEFAULT_WORKBENCH_PREFERENCES,
-        ...(state.error === null ? { error: errMsg(error) } : {}),
-      }));
     }
   },
 

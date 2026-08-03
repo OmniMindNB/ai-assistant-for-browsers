@@ -36,13 +36,11 @@ const chatStore = {
     title: 'Example article',
     url: 'https://example.com/article',
   } as PageContextState,
-  workbenchPreferences: { attachPageByDefault: true },
   setInput: vi.fn(),
   refreshProvider: vi.fn(),
   refreshShortcuts: vi.fn(),
   refreshConversations: vi.fn(),
   refreshPageContext: vi.fn(),
-  refreshWorkbenchPreferences: vi.fn(),
   selectProviderAndModel: vi.fn(),
   send: vi.fn(),
   editMessage: vi.fn(),
@@ -158,7 +156,6 @@ beforeEach(() => {
       title: 'Example article',
       url: 'https://example.com/article',
     },
-    workbenchPreferences: { attachPageByDefault: true },
   });
   chatStore.send.mockResolvedValue(true);
   storageChangeListener = undefined;
@@ -564,14 +561,12 @@ describe('activity step list', () => {
 });
 
 describe('workbench context controls', () => {
-  it('refreshes providers and defaults when browser storage changes externally', () => {
+  it('refreshes providers when browser storage changes externally', () => {
     render(<LocaleProvider><App /></LocaleProvider>);
     storageChangeListener?.({
       'runi:settings': { newValue: {} },
-      'runi:workbench-preferences': { newValue: {} },
     }, 'local');
     expect(chatStore.refreshProvider).toHaveBeenCalled();
-    expect(chatStore.refreshWorkbenchPreferences).toHaveBeenCalled();
   });
   it('sends with browser tools on an available page by default', async () => {
     const user = userEvent.setup();
@@ -586,22 +581,6 @@ describe('workbench context controls', () => {
     await user.keyboard('{Enter}');
 
     await waitFor(() => expect(chatStore.send).toHaveBeenCalledWith(undefined, { withoutBrowserTools: false }));
-  });
-
-  it('sends without browser tools when attachPageByDefault is off', async () => {
-    const user = userEvent.setup();
-    chatStore.workbenchPreferences = { attachPageByDefault: false };
-    chatStore.input = 'Summarize this';
-    render(
-      <LocaleProvider>
-        <App />
-      </LocaleProvider>,
-    );
-
-    await user.click(screen.getByRole('textbox', { name: 'Message input' }));
-    await user.keyboard('{Enter}');
-
-    await waitFor(() => expect(chatStore.send).toHaveBeenCalledWith(undefined, { withoutBrowserTools: true }));
   });
 
   it('automatically sends restricted-page messages without browser tools, with no click required', async () => {

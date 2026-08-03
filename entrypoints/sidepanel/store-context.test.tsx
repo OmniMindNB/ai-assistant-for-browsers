@@ -224,25 +224,13 @@ describe('chat store page context', () => {
     });
   });
 
-  it('loads workbench preferences into store state', async () => {
-    (globalThis as typeof globalThis & { browser: any }).browser.storage.local.get = vi.fn().mockResolvedValue({
-      'runi:workbench-preferences': { attachPageByDefault: false },
-    });
-
-    await useChat.getState().refreshWorkbenchPreferences();
-
-    expect(useChat.getState().workbenchPreferences).toEqual({
-      attachPageByDefault: false,
-    });
-  });
-
-  it('keeps the newest provider and preference refresh when older reads resolve or reject late', async () => {
+  it('keeps the newest provider refresh when older reads resolve late', async () => {
     let resolveOld!: (value: Record<string, unknown>) => void;
     let resolveNew!: (value: Record<string, unknown>) => void;
     const old = new Promise<Record<string, unknown>>((resolve) => { resolveOld = resolve; });
     const newest = new Promise<Record<string, unknown>>((resolve) => { resolveNew = resolve; });
     (globalThis as any).browser.storage.local.get = vi.fn().mockReturnValueOnce(old).mockReturnValueOnce(newest)
-      .mockResolvedValue({ 'runi:workbench-preferences': { attachPageByDefault: true } });
+      .mockResolvedValue({});
     const first = useChat.getState().refreshProvider();
     const second = useChat.getState().refreshProvider();
     resolveNew({ 'runi:settings': { activeProviderId: 'new', providers: [{ ...provider, id: 'new', model: 'new-model' }] } });
@@ -250,12 +238,6 @@ describe('chat store page context', () => {
     resolveOld({ 'runi:settings': { activeProviderId: 'old', providers: [{ ...provider, id: 'old', model: 'old-model' }] } });
     await first;
     expect(useChat.getState().selectedProviderId).toBe('new');
-
-    const oldPrefs = Promise.reject(new Error('old failure'));
-    const newPrefs = Promise.resolve({ 'runi:workbench-preferences': { attachPageByDefault: false } });
-    (globalThis as any).browser.storage.local.get = vi.fn().mockReturnValueOnce(oldPrefs).mockReturnValueOnce(newPrefs);
-    await Promise.all([useChat.getState().refreshWorkbenchPreferences(), useChat.getState().refreshWorkbenchPreferences()]);
-    expect(useChat.getState().workbenchPreferences).toEqual({ attachPageByDefault: false });
   });
 
   it('keeps the latest conversation selection when an earlier read resolves late', async () => {
@@ -636,51 +618,6 @@ describe('chat store page context', () => {
     await expect(open).resolves.toBe(false);
     expect(useChat.getState().conversationId).toBe(expectedId);
     expect(useChat.getState().messages).toEqual([]);
-  });
-
-  it('preserves an existing chat error when workbench preferences load successfully', async () => {
-    useChat.setState({ error: 'The provider request failed.' });
-    (globalThis as typeof globalThis & { browser: any }).browser.storage.local.get = vi.fn().mockResolvedValue({
-      'runi:workbench-preferences': { attachPageByDefault: false },
-    });
-
-    await useChat.getState().refreshWorkbenchPreferences();
-
-    expect(useChat.getState()).toMatchObject({
-      error: 'The provider request failed.',
-      workbenchPreferences: { attachPageByDefault: false },
-    });
-  });
-
-  it('preserves an existing chat error when workbench preference loading fails', async () => {
-    useChat.setState({
-      error: 'The agent request failed.',
-      workbenchPreferences: { attachPageByDefault: false },
-    });
-    (globalThis as typeof globalThis & { browser: any }).browser.storage.local.get = vi.fn().mockResolvedValue({
-      'runi:workbench-preferences': { attachPageByDefault: 'not-a-boolean' },
-    });
-
-    await useChat.getState().refreshWorkbenchPreferences();
-
-    expect(useChat.getState()).toMatchObject({
-      error: 'The agent request failed.',
-      workbenchPreferences: { attachPageByDefault: true },
-    });
-  });
-
-  it('restores safe defaults and publishes invalid preference errors when no chat error exists', async () => {
-    useChat.setState({ workbenchPreferences: { attachPageByDefault: false } });
-    (globalThis as typeof globalThis & { browser: any }).browser.storage.local.get = vi.fn().mockResolvedValue({
-      'runi:workbench-preferences': { attachPageByDefault: 'not-a-boolean' },
-    });
-
-    await useChat.getState().refreshWorkbenchPreferences();
-
-    expect(useChat.getState()).toMatchObject({
-      error: 'Invalid workbench preferences',
-      workbenchPreferences: { attachPageByDefault: true },
-    });
   });
 
   it('creates an agent without browser tools when a normal send requests it', async () => {

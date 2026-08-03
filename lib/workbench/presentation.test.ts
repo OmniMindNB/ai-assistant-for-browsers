@@ -74,15 +74,11 @@ describe('filterShortcutCommands', () => {
 
 describe('resolvePageAttached', () => {
   it.each([
-    ['available', true, true],
-    ['available', false, false],
-    ['loading', true, true],
-    ['loading', false, false],
-    ['restricted', true, false],
-    ['restricted', false, false],
-    ['error', true, false],
-    ['error', false, false],
-  ] as const)('status=%s, attachPageByDefault=%s -> %s', (status, attachPageByDefault, expected) => {
-    expect(resolvePageAttached(status, attachPageByDefault)).toBe(expected);
+    ['available', true],
+    ['loading', true],
+    ['restricted', false],
+    ['error', false],
+  ] as const)('status=%s -> %s', (status, expected) => {
+    expect(resolvePageAttached(status)).toBe(expected);
   });
 });

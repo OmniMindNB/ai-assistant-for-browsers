@@ -21,7 +21,6 @@ import { WorkbenchHeader } from './components/WorkbenchHeader';
 import { ActivityStepList } from './components/ActivityStepList';
 import { WorkbenchComposer } from './components/WorkbenchComposer';
 import type { PendingConfirmation, UIMessage } from './store';
-import { WORKBENCH_PREFERENCES_KEY } from '@/lib/workbench/preferences';
 import { resolvePageAttached, type ResolvedShortcutCommand } from '@/lib/workbench/presentation';
 import {
   IconChevronDown,
@@ -44,13 +43,11 @@ export default function App() {
     shortcuts,
     shortcutErrors,
     pageContext,
-    workbenchPreferences,
     setInput,
     refreshProvider,
     refreshShortcuts,
     refreshConversations,
     refreshPageContext,
-    refreshWorkbenchPreferences,
     selectProviderAndModel,
     send,
     editMessage,
@@ -85,14 +82,12 @@ export default function App() {
     refreshShortcuts();
     refreshConversations();
     refreshPageContext();
-    refreshWorkbenchPreferences();
     restoreTabConversation();
   }, [
     refreshProvider,
     refreshShortcuts,
     refreshConversations,
     refreshPageContext,
-    refreshWorkbenchPreferences,
     restoreTabConversation,
   ]);
 
@@ -104,7 +99,6 @@ export default function App() {
       if (areaName !== 'local') return;
       if (SHORTCUTS_STORAGE_KEY in changes) void refreshShortcuts();
       if (STORAGE_KEY in changes) void refreshProvider();
-      if (WORKBENCH_PREFERENCES_KEY in changes) void refreshWorkbenchPreferences();
     };
     browser.storage.onChanged.addListener(listener);
     return () => browser.storage.onChanged.removeListener(listener);
@@ -161,7 +155,7 @@ export default function App() {
 
   async function submitMessage() {
     resetToFollowing();
-    const attached = resolvePageAttached(pageContext.status, workbenchPreferences.attachPageByDefault);
+    const attached = resolvePageAttached(pageContext.status);
     await send(undefined, { withoutBrowserTools: !attached });
   }
 

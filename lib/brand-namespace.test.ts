@@ -9,10 +9,6 @@ import { loadLocale, saveLocale } from './i18n';
 import { loadSettings, saveSettings } from './settings';
 import { defaultShortcutConfigs, loadShortcutConfigs, saveShortcutConfigs } from './shortcuts';
 import { loadTheme, saveTheme } from './theme';
-import {
-  loadWorkbenchPreferences,
-  saveWorkbenchPreferences,
-} from './workbench/preferences';
 
 const originalBrowser = (globalThis as typeof globalThis & { browser?: unknown }).browser;
 
@@ -58,13 +54,11 @@ describe('Runi persistence namespace', () => {
     const legacyShortcutsKey = `${['alu', 'minum'].join('')}:shortcuts`;
     const legacyThemeKey = `${['alu', 'minum'].join('')}:theme`;
     const legacyLocaleKey = `${['alu', 'minum'].join('')}:locale`;
-    const legacyPreferencesKey = ['workbench', 'Preferences'].join('');
     const legacyLocal = {
       [legacySettingsKey]: { providers: [{ id: 'legacy-provider' }] },
       [legacyShortcutsKey]: [],
       [legacyThemeKey]: 'dark',
       [legacyLocaleKey]: 'zh',
-      [legacyPreferencesKey]: { attachPageByDefault: false },
     };
     const { local, localRemove } = installStorage({ local: legacyLocal });
 
@@ -75,13 +69,11 @@ describe('Runi persistence namespace', () => {
     });
     await expect(loadTheme()).resolves.toBe('auto');
     await expect(loadLocale()).resolves.toBe('auto');
-    await expect(loadWorkbenchPreferences()).resolves.toEqual({ attachPageByDefault: true });
 
     await saveSettings({ providers: [] });
     await saveShortcutConfigs([]);
     await saveTheme('light');
     await saveLocale('en');
-    await saveWorkbenchPreferences({ attachPageByDefault: false });
 
     expect(local).toMatchObject({
       ...legacyLocal,
@@ -89,7 +81,6 @@ describe('Runi persistence namespace', () => {
       'runi:shortcuts': [],
       'runi:theme': 'light',
       'runi:locale': 'en',
-      'runi:workbench-preferences': { attachPageByDefault: false },
     });
     expect(localRemove).not.toHaveBeenCalled();
   });
