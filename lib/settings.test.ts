@@ -5,6 +5,7 @@ import {
   CUSTOM_PRESET_VALUE,
   draftPlaceholders,
   hasDuplicateProviderName,
+  presetDisplayName,
   resolvePresetSelection,
   resolveProviderApi,
   trimProviderDraft,
@@ -260,5 +261,41 @@ describe('draftPlaceholders', () => {
     expect(p.baseURL).toBe('https://api.deepseek.com');
     expect(p.model).toBe('deepseek-v4-pro');
     expect(p.extras).toBe('e.g. deepseek-v4-flash');
+  });
+
+  it('uses the Chinese preset name in zh but the English display name in en', () => {
+    expect(draftPlaceholders('通义千问').name).toBe('例如 通义千问');
+    expect(draftPlaceholders('通义千问', 'en').name).toBe('e.g. Qwen (Tongyi)');
+  });
+});
+
+describe('presetDisplayName', () => {
+  it('returns the Chinese name by default (zh)', () => {
+    const preset = resolvePresetSelection('通义千问')!;
+    expect(presetDisplayName(preset)).toBe('通义千问');
+  });
+
+  it('returns nameEn under the en locale when present', () => {
+    const preset = resolvePresetSelection('智谱 GLM')!;
+    expect(presetDisplayName(preset, 'en')).toBe('Zhipu GLM');
+  });
+
+  it('falls back to name under en when nameEn is absent (e.g. OpenAI, already Latin)', () => {
+    const preset = resolvePresetSelection('OpenAI')!;
+    expect(presetDisplayName(preset, 'en')).toBe('OpenAI');
+  });
+});
+
+describe('applyPresetToDraft with locale', () => {
+  it('fills the localized display name into a new draft when locale is en', () => {
+    const preset = resolvePresetSelection('本地 (Ollama)')!;
+    const { draft } = applyPresetToDraft(baseDraft, '', preset, false, 'en');
+    expect(draft.name).toBe('Ollama (Local)');
+  });
+
+  it('defaults to the Chinese name when locale is omitted', () => {
+    const preset = resolvePresetSelection('本地 (Ollama)')!;
+    const { draft } = applyPresetToDraft(baseDraft, '', preset, false);
+    expect(draft.name).toBe('本地 (Ollama)');
   });
 });

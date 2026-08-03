@@ -23,12 +23,18 @@ export interface Settings {
 }
 
 /**
+ * Provider 预设；`nameEn` 仅用于 `name` 含中文的条目（英文 UI 下的展示/填充替身）。
+ * `name` 始终是下拉选项的匹配键（resolvePresetSelection 依赖其稳定性），不随 locale 变化。
+ */
+export type ProviderPreset = Omit<ProviderConfig, 'id' | 'apiKey'> & { nameEn?: string };
+
+/**
  * 常用 OpenAI 兼容 Provider 预设（用于「设置」页快速填充）。
  * model/models 按各厂商官方文档核对（2026-07），moonshot-v1/qwen-plus/glm-4-flash 等旧模型
  * 已停用或被取代，deepseek-chat/deepseek-reasoner 亦即将下线。
  * 默认模型统一取各厂商当前最新旗舰（能力最强档位），其余档位放入 models 供「其他可用模型」参考。
  */
-export const PROVIDER_PRESETS: Array<Omit<ProviderConfig, 'id' | 'apiKey'>> = [
+export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     name: 'DeepSeek',
     baseURL: 'https://api.deepseek.com',
@@ -43,12 +49,14 @@ export const PROVIDER_PRESETS: Array<Omit<ProviderConfig, 'id' | 'apiKey'>> = [
   },
   {
     name: '通义千问',
+    nameEn: 'Qwen (Tongyi)',
     baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     model: 'qwen3.7-max',
     models: ['qwen3.7-max', 'qwen3.7-plus', 'qwen3.6-flash'],
   },
   {
     name: '智谱 GLM',
+    nameEn: 'Zhipu GLM',
     baseURL: 'https://open.bigmodel.cn/api/paas/v4',
     model: 'glm-5.2',
     models: ['glm-5.2', 'glm-4.7', 'glm-4.7-flash'],
@@ -61,6 +69,7 @@ export const PROVIDER_PRESETS: Array<Omit<ProviderConfig, 'id' | 'apiKey'>> = [
   },
   {
     name: '本地 (Ollama)',
+    nameEn: 'Ollama (Local)',
     baseURL: 'http://localhost:11434/v1',
     model: 'llama3.1',
     models: ['llama3.1', 'qwen3', 'deepseek-r1'],
@@ -78,16 +87,14 @@ export const CUSTOM_PRESET_VALUE = '__custom__';
  * 穿过 applyPresetToDraft 时，添加态（!isEditing）整体覆盖 → 清空字段；
  * 编辑态（isEditing）「非空不覆盖」→ 已保存的值不被误清。
  */
-export const CUSTOM_PRESET: Omit<ProviderConfig, 'id' | 'apiKey'> = {
+export const CUSTOM_PRESET: ProviderPreset = {
   name: '',
   baseURL: '',
   model: '',
 };
 
 /** 下拉值 → 预设；返回 undefined 表示占位符态（不做任何填充）。 */
-export function resolvePresetSelection(
-  value: string,
-): Omit<ProviderConfig, 'id' | 'apiKey'> | undefined {
+export function resolvePresetSelection(value: string): ProviderPreset | undefined {
   // 哨兵优先判断：正确性不依赖 `__` 前缀命名约定是否被严格遵守。
   if (value === CUSTOM_PRESET_VALUE) return CUSTOM_PRESET;
   return PROVIDER_PRESETS.find((p) => p.name === value);
@@ -103,6 +110,14 @@ export interface DraftPlaceholders {
 
 /** draftPlaceholders 的语言参数；与 lib/i18n 的 ResolvedLocale 同构，但本文件不依赖 lib/i18n。 */
 export type ProviderPlaceholderLocale = 'zh' | 'en';
+
+/** 预设展示名：英文 UI 下有 nameEn 则用 nameEn（避免中文品牌名混入英文界面），否则回退到 name。 */
+export function presetDisplayName(
+  preset: Pick<ProviderPreset, 'name' | 'nameEn'>,
+  locale: ProviderPlaceholderLocale = 'zh',
+): string {
+  return locale === 'en' && preset.nameEn ? preset.nameEn : preset.name;
+}
 
 /** 自定义态：示例必须与具体厂商无关，否则会误导用户以为该字段有固定取值。 */
 const CUSTOM_PLACEHOLDERS_BY_LOCALE: Record<ProviderPlaceholderLocale, DraftPlaceholders> = {
@@ -149,7 +164,7 @@ export function draftPlaceholders(
   if (!preset) return defaultPlaceholders(locale);
   const extras = (preset.models ?? []).filter((m) => m !== preset.model);
   return {
-    name: examplePrefix(locale, preset.name),
+    name: examplePrefix(locale, presetDisplayName(preset, locale)),
     baseURL: preset.baseURL,
     model: preset.model,
     // 无其他模型可举例时不给提示：给错厂商的示例比不给示例更糟。
@@ -214,22 +229,25 @@ export function trimProviderDraft(draft: ProviderConfig): ProviderConfig {
  * 编辑已有 Provider 时（isEditing）仅在字段为空时填充，避免误触预设下拉静默丢失已保存的自定义值。
  * 添加新 Provider 时（!isEditing）草稿本就未保存，直接用预设值整体覆盖，
  * 使「快速预设」可在多个预设间自由切换比对，而不会被上一次选择的预设「锁死」。
+ * name 字段按 locale 走 presetDisplayName：英文 UI 下不应把中文品牌名（如「通义千问」）填进表单。
  */
 export function applyPresetToDraft(
   draft: ProviderConfig,
   extrasText: string,
-  preset: Omit<ProviderConfig, 'id' | 'apiKey'>,
+  preset: ProviderPreset,
   isEditing: boolean,
+  locale: ProviderPlaceholderLocale = 'zh',
 ): { draft: ProviderConfig; extrasText: string } {
+  const presetName = presetDisplayName(preset, locale);
   if (!isEditing) {
     return {
-      draft: { ...draft, name: preset.name, baseURL: preset.baseURL, model: preset.model },
+      draft: { ...draft, name: presetName, baseURL: preset.baseURL, model: preset.model },
       extrasText,
     };
   }
   const nextDraft: ProviderConfig = {
     ...draft,
-    name: draft.name || preset.name,
+    name: draft.name || presetName,
     baseURL: draft.baseURL || preset.baseURL,
     model: draft.model || preset.model,
   };
