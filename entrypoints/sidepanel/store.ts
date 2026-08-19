@@ -903,10 +903,22 @@ function findLastAssistant(messages: unknown[]): LastAssistantInfo | undefined {
   return undefined;
 }
 
+// "Failed to fetch" 是浏览器 fetch() 在网络层失败时的原始报错（断网、DNS 解析失败、连接被拒、CORS 拦截等），
+// 与「Base URL / API Key / 模型名填错」是两类完全不同的问题，不能用同一句排查建议糊弄过去。
+function isNetworkFetchError(reason: string): boolean {
+  return /failed to fetch|network ?error|ERR_(NAME_NOT_RESOLVED|CONNECTION|INTERNET_DISCONNECTED|NETWORK_CHANGED)/i.test(
+    reason,
+  );
+}
+
 // 一轮 Agent 运行结束却没有任何文本时，尽可能说明原因，而不是只丢一句「没有生成文本结果」。
 function describeEmptyAgentRun(last: LastAssistantInfo | undefined): string {
   if (last?.stopReason === 'error') {
-    return t('store.modelCallFailed', { reason: last.errorMessage || t('store.unknownError') });
+    const reason = last.errorMessage || t('store.unknownError');
+    if (isNetworkFetchError(reason)) {
+      return t('store.modelCallNetworkError', { reason });
+    }
+    return t('store.modelCallFailed', { reason });
   }
   if (last?.stopReason === 'length') {
     return t('store.tokenLimitReached');

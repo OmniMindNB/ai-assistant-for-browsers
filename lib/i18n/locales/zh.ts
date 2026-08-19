@@ -231,6 +231,8 @@ export const zh = {
   'store.staleBackgroundWarning':
     '当前扩展后台服务仍是旧版本，浏览器 Agent 工具尚未加载，因此我不会基于猜测回答。\n\n缺失消息类型：{missingTypes}\n\n请在浏览器扩展管理页点击 Runi 的「重新加载」，然后刷新当前网页并重新打开侧边栏。',
   'store.modelCallFailed': '模型调用失败：{reason}\n\n请检查设置中的 Base URL、API Key 和模型名称是否正确。',
+  'store.modelCallNetworkError':
+    '无法连接到模型服务（{reason}）。这通常是网络问题，而非配置错误，请检查：\n1. 当前设备是否联网\n2. 是否需要科学上网 / 代理才能访问该 Base URL\n3. Base URL 是否可从当前网络访问（例如是否被防火墙拦截）\n\n若网络确认正常，再检查设置中的 Base URL、API Key 和模型名称。',
   'store.unknownError': '未知错误',
   'store.tokenLimitReached': '模型在生成过程中达到了 token 上限（可能是思考阶段耗尽了预算），未能给出正式回复。请重试或简化问题。',
   'store.generationAborted': '本次生成已被中止。',

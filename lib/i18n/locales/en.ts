@@ -238,6 +238,8 @@ export const en: Record<keyof typeof zh, string> = {
   'store.staleBackgroundWarning':
     'The extension\'s background service is still an old version and the browser agent tools haven\'t loaded, so I won\'t guess an answer.\n\nMissing message types: {missingTypes}\n\nClick "Reload" for Runi on the extensions management page, then refresh this page and reopen the side panel.',
   'store.modelCallFailed': 'Model call failed: {reason}\n\nPlease check the Base URL, API key, and model name in Settings.',
+  'store.modelCallNetworkError':
+    "Couldn't connect to the model service ({reason}). This is usually a network issue, not a configuration error. Please check:\n1. Whether this device is connected to the internet\n2. Whether reaching that Base URL requires a VPN/proxy\n3. Whether the Base URL is reachable from this network (e.g. blocked by a firewall)\n\nIf your network is confirmed fine, then check the Base URL, API key, and model name in Settings.",
   'store.unknownError': 'Unknown error',
   'store.tokenLimitReached':
     'The model hit its token limit while generating (possibly exhausted during reasoning) and did not produce a final reply. Please retry or simplify your question.',
