@@ -5,6 +5,7 @@ export type MessageType =
   | 'PING'
   | 'EXTRACT_PAGE'
   | 'GET_SELECTION'
+  | 'ASK_SELECTION'
   | 'GET_ACTIVE_TAB'
   | 'QUERY_DOM'
   | 'GET_HTML'
@@ -67,6 +68,11 @@ export interface PageContent {
 
 /** GET_SELECTION 返回的页面选区数据 */
 export interface PageSelection {
+  text: string;
+}
+
+/** ASK_SELECTION：content script 主动上报"用户点击了划词提问气泡"，携带选中的文本。 */
+export interface AskSelectionPayload {
   text: string;
 }
 
