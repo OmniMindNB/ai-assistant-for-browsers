@@ -40,7 +40,7 @@ import { describeToolActivity } from '@/lib/agent/activity-description';
 import { finishActivityStep, markActivityStepSlow, upsertActivityStep, type ActivityStep } from '@/lib/agent/activity-steps';
 import { getConversationIdForTab, setConversationIdForTab } from '@/lib/agent/tab-conversation';
 import { clearPendingAskForTab, getPendingAskForTab, pendingAskStorageKey } from '@/lib/agent/tab-pending-ask';
-import { buildSelectionAskTemplate } from '@/lib/selection-ask';
+import { buildSelectionAskTemplate, truncateSelectionText } from '@/lib/selection-ask';
 import { getCurrentLocale, t } from '@/lib/i18n';
 import { isCurrentTabReadable } from '@/lib/current-tab-readability';
 import {
@@ -91,6 +91,8 @@ interface ChatState {
   input: string;
   /** 每次消费一条划词提问 pending ask 后设为 Date.now()；WorkbenchComposer 据此判断"该聚焦输入框了"。 */
   pendingFocusToken: number;
+  /** 划词提问消费到的待引用文字（裁剪后）；作为独立卡片显示在输入框上方，不混入 input。 */
+  quotedSelection: string | null;
   busy: boolean;
   error: string | null;
   pendingConfirmation: PendingConfirmation | null;
@@ -107,6 +109,7 @@ interface ChatState {
   shortcutErrors: string[];
   pageContext: PageContextState;
   setInput: (v: string) => void;
+  clearQuotedSelection: () => void;
   refreshProvider: () => Promise<void>;
   refreshShortcuts: () => Promise<void>;
   refreshPageContext: () => Promise<void>;
@@ -265,7 +268,7 @@ async function consumePendingAskForTab(tabId: number): Promise<void> {
   const pendingAsk = await getPendingAskForTab(tabId);
   if (!pendingAsk) return;
   await clearPendingAskForTab(tabId);
-  useChat.setState({ input: buildSelectionAskTemplate(pendingAsk, t), pendingFocusToken: Date.now() });
+  useChat.setState({ quotedSelection: truncateSelectionText(pendingAsk), pendingFocusToken: Date.now() });
 }
 
 function genConversationId(): string {
@@ -286,8 +289,9 @@ function makeMessage(
   role: 'user' | 'assistant',
   content: string,
   kind?: 'input' | 'action',
+  quotedText?: string,
 ): UIMessage {
-  return { id: genMessageId(), role, content, createdAt: Date.now(), kind };
+  return { id: genMessageId(), role, content, createdAt: Date.now(), kind, quotedText };
 }
 
 export const useChat = create<ChatState>((set, get) => ({
@@ -295,6 +299,7 @@ export const useChat = create<ChatState>((set, get) => ({
   activitySteps: [],
   input: '',
   pendingFocusToken: 0,
+  quotedSelection: null,
   busy: false,
   error: null,
   pendingConfirmation: null,
@@ -309,6 +314,7 @@ export const useChat = create<ChatState>((set, get) => ({
   pageContext: { status: 'loading' },
 
   setInput: (v) => set({ input: v }),
+  clearQuotedSelection: () => set({ quotedSelection: null }),
 
   refreshProvider: async () => {
     const requestId = ++providerRequestId;
@@ -390,11 +396,20 @@ export const useChat = create<ChatState>((set, get) => ({
   },
 
   send: async (text, options) => {
-    const content = (text ?? get().input).trim();
-    if (!content || get().busy) return false;
-    return runAgent(set, get, makeMessage('user', content, 'input'), content, {
-      withoutBrowserTools: options?.withoutBrowserTools,
-    });
+    const question = (text ?? get().input).trim();
+    if (!question || get().busy) return false;
+    const quoted = get().quotedSelection;
+    const agentUserContent = quoted ? buildSelectionAskTemplate(quoted, t) + question : question;
+    return runAgent(
+      set,
+      get,
+      makeMessage('user', question, 'input', quoted ?? undefined),
+      agentUserContent,
+      {
+        withoutBrowserTools: options?.withoutBrowserTools,
+        clearQuotedSelection: true,
+      },
+    );
   },
 
   editMessage: async (id, newContent) => {
@@ -535,6 +550,7 @@ export const useChat = create<ChatState>((set, get) => ({
         content: r.content,
         createdAt: r.createdAt,
         kind: r.kind,
+        quotedText: r.quotedText,
       }));
     clearAllSlowActivityTimers();
     set({
@@ -622,6 +638,8 @@ interface RunAgentOptions {
   withoutBrowserTools?: boolean;
   systemPromptSuffix?: string;
   origin?: ConversationOrigin;
+  /** 提交本轮时是否顺带清空 quotedSelection；只有主输入框发送需要，编辑历史消息/运行快捷指令时不动它。 */
+  clearQuotedSelection?: boolean;
 }
 
 async function runAgent(
@@ -703,6 +721,7 @@ async function runAgent(
     messages: [...history, display, makeMessage('assistant', '')],
     activitySteps: [],
     input: '',
+    ...(options.clearQuotedSelection ? { quotedSelection: null } : {}),
     busy: true,
     error: null,
     pendingConfirmation: null,

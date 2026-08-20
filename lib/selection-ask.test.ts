@@ -7,6 +7,7 @@ import {
   clampBubblePosition,
   loadSelectionAskEnabled,
   saveSelectionAskEnabled,
+  truncateSelectionText,
 } from './selection-ask';
 
 const t = ((key: TranslationKey, vars?: Record<string, string | number>) =>
@@ -26,6 +27,18 @@ describe('buildSelectionAskTemplate', () => {
     const result = buildSelectionAskTemplate(long, t);
     expect(result).toContain('x'.repeat(4000));
     expect(result).not.toContain('x'.repeat(4001));
+  });
+});
+
+describe('truncateSelectionText', () => {
+  it('trims surrounding whitespace', () => {
+    expect(truncateSelectionText('  hello world  ')).toBe('hello world');
+  });
+
+  it('truncates selections longer than the shared shortcut selection limit', () => {
+    const long = 'x'.repeat(5000);
+    const result = truncateSelectionText(long);
+    expect(result).toBe('x'.repeat(4000));
   });
 });
 

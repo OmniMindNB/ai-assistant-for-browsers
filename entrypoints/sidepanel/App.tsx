@@ -33,6 +33,7 @@ export default function App() {
     activitySteps,
     input,
     pendingFocusToken,
+    quotedSelection,
     busy,
     error,
     pendingConfirmation,
@@ -45,6 +46,7 @@ export default function App() {
     shortcutErrors,
     pageContext,
     setInput,
+    clearQuotedSelection,
     refreshProvider,
     refreshShortcuts,
     refreshConversations,
@@ -307,6 +309,7 @@ export default function App() {
             selectedProviderId={selectedProviderId}
             selectedModel={selectedModel}
             pendingFocusToken={pendingFocusToken}
+            quotedSelection={quotedSelection}
             onInput={setInput}
             onSend={submitMessage}
             onStop={stop}
@@ -314,6 +317,7 @@ export default function App() {
             onRetryPageContext={refreshPageContext}
             onRunShortcut={executeShortcut}
             onSelectProviderModel={selectProviderAndModel}
+            onClearQuotedSelection={clearQuotedSelection}
           />
       </div>
     </div>
@@ -375,21 +379,32 @@ function Message({
       );
     }
     return (
-      <div className="group flex items-center justify-end gap-1.5">
-        {!busy && isEditableMessage(message) && (
-          <button
-            type="button"
-            onClick={onBeginEdit}
-            aria-label={t('chat.editMessageAriaLabel')}
-            title={t('chat.editMessageAriaLabel')}
-            // 只挂 hover 会让这个功能对键盘用户不存在，因此同时响应 focus-visible。
-            className="shrink-0 rounded-md p-1.5 text-neutral-400 opacity-0 transition-opacity hover:text-neutral-600 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 group-hover:opacity-100 dark:hover:text-neutral-200"
+      <div className="flex flex-col items-end gap-1">
+        {message.quotedText && (
+          <div
+            role="note"
+            aria-label={t('workbench.quotedSelectionLabel')}
+            className="max-w-[85%] rounded-xl border-l-2 border-indigo-400 bg-neutral-100 px-3 py-1.5 dark:border-indigo-500 dark:bg-neutral-900"
           >
-            <IconPencil className="h-3.5 w-3.5" />
-          </button>
+            <p className="line-clamp-3 text-xs text-neutral-500 dark:text-neutral-400">{message.quotedText}</p>
+          </div>
         )}
-        <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-neutral-900 px-4 py-2.5 text-sm text-white dark:bg-neutral-700">
-          {content}
+        <div className="group flex items-center gap-1.5">
+          {!busy && isEditableMessage(message) && (
+            <button
+              type="button"
+              onClick={onBeginEdit}
+              aria-label={t('chat.editMessageAriaLabel')}
+              title={t('chat.editMessageAriaLabel')}
+              // 只挂 hover 会让这个功能对键盘用户不存在，因此同时响应 focus-visible。
+              className="shrink-0 rounded-md p-1.5 text-neutral-400 opacity-0 transition-opacity hover:text-neutral-600 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 group-hover:opacity-100 dark:hover:text-neutral-200"
+            >
+              <IconPencil className="h-3.5 w-3.5" />
+            </button>
+          )}
+          <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-neutral-900 px-4 py-2.5 text-sm text-white dark:bg-neutral-700">
+            {content}
+          </div>
         </div>
       </div>
     );

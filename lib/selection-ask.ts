@@ -14,10 +14,14 @@ export async function saveSelectionAskEnabled(enabled: boolean): Promise<void> {
   await browser.storage.local.set({ [SELECTION_ASK_ENABLED_KEY]: enabled });
 }
 
-/** 把 pending 选区文字拼成预填到聊天输入框的引用文本；截断长度与划词快捷指令保持一致。 */
+/** 划词提问引用文本的长度裁剪；与划词快捷指令保持一致的截断长度。 */
+export function truncateSelectionText(text: string): string {
+  return text.trim().slice(0, MAX_SHORTCUT_SELECTION_CHARS);
+}
+
+/** 把裁剪后的选区文字拼成发给 agent 的引用模板；不含用户问题本身，调用方负责拼接。 */
 export function buildSelectionAskTemplate(text: string, translate: Translate): string {
-  const truncated = text.trim().slice(0, MAX_SHORTCUT_SELECTION_CHARS);
-  return translate('store.selectionAskTemplate', { selection: truncated });
+  return translate('store.selectionAskTemplate', { selection: truncateSelectionText(text) });
 }
 
 export interface BubbleRect {

@@ -13,8 +13,9 @@ function msg(
   role: 'user' | 'assistant',
   content: string,
   kind?: 'input' | 'action',
+  quotedText?: string,
 ): ChatMessage {
-  return { id, role, content, createdAt: 1000, kind };
+  return { id, role, content, createdAt: 1000, kind, quotedText };
 }
 
 describe('isEditableMessage', () => {
@@ -98,6 +99,11 @@ describe('toMessageRecords', () => {
       createdAt: 1000,
       kind: 'action',
     });
+  });
+
+  it('保留 quotedText', () => {
+    const records = toMessageRecords('c-1', [msg('a', 'user', '问', 'input', '选中的原文')]);
+    expect(records[0].quotedText).toBe('选中的原文');
   });
 
   it('空数组返回空数组', () => {

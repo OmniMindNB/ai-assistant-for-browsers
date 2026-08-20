@@ -4,7 +4,7 @@ import { providerModels, type ProviderConfig } from '@/lib/settings';
 import type { ShortcutConfig, ResolvedShortcut } from '@/lib/shortcuts';
 import { filterShortcutCommands, isUsableShortcutCommand } from '@/lib/workbench/presentation';
 import type { PageContextState } from '../store';
-import { IconCheck, IconChevronDown, IconSend, IconStop } from '../icons';
+import { IconCheck, IconChevronDown, IconClose, IconSend, IconStop } from '../icons';
 
 export interface WorkbenchComposerProps {
   input: string;
@@ -16,12 +16,15 @@ export interface WorkbenchComposerProps {
   shortcuts: Array<{ config: ShortcutConfig; resolved: ResolvedShortcut }>;
   /** 每次划词提问预填输入框后变为一个新的非零值；0 表示"从未发生过"，不触发聚焦。 */
   pendingFocusToken: number;
+  /** 划词提问消费到的待引用文字（裁剪后）；渲染成独立卡片，null 时不显示。 */
+  quotedSelection: string | null;
   onInput(value: string): void;
   onSend(): void;
   onStop(): void;
   onRetryPageContext(): void;
   onRunShortcut(shortcut: ShortcutConfig): void;
   onSelectProviderModel(providerId: string, model: string): void;
+  onClearQuotedSelection(): void;
 }
 
 type Popover = 'commands' | 'models' | null;
@@ -39,12 +42,14 @@ export function WorkbenchComposer({
   selectedModel,
   shortcuts,
   pendingFocusToken,
+  quotedSelection,
   onInput,
   onSend,
   onStop,
   onRetryPageContext,
   onRunShortcut,
   onSelectProviderModel,
+  onClearQuotedSelection,
 }: WorkbenchComposerProps) {
   const { t } = useTranslation();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -292,6 +297,27 @@ export function WorkbenchComposer({
             </button>
           ))}
         </div>
+
+        {quotedSelection && (
+          <div
+            role="note"
+            aria-label={t('workbench.quotedSelectionLabel')}
+            className="mb-2 flex items-start gap-2 rounded-xl border-l-2 border-indigo-400 bg-neutral-100 py-1.5 pl-3 pr-2 dark:border-indigo-500 dark:bg-neutral-900"
+          >
+            <p className="line-clamp-3 min-w-0 flex-1 text-xs text-neutral-500 dark:text-neutral-400">
+              {quotedSelection}
+            </p>
+            <button
+              type="button"
+              onClick={onClearQuotedSelection}
+              aria-label={t('workbench.clearQuotedSelection')}
+              title={t('workbench.clearQuotedSelection')}
+              className="shrink-0 rounded-md p-1 text-neutral-400 transition-colors hover:bg-neutral-200 hover:text-neutral-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
+            >
+              <IconClose className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
 
         <div className="relative flex items-end gap-2 rounded-2xl border border-neutral-300 bg-white p-2 shadow-sm transition-colors focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/30 dark:border-neutral-700 dark:bg-neutral-900">
           <textarea

@@ -36,7 +36,9 @@ const chatStore = {
     title: 'Example article',
     url: 'https://example.com/article',
   } as PageContextState,
+  quotedSelection: null,
   setInput: vi.fn(),
+  clearQuotedSelection: vi.fn(),
   refreshProvider: vi.fn(),
   refreshShortcuts: vi.fn(),
   refreshConversations: vi.fn(),
@@ -217,12 +219,14 @@ const composerProps: WorkbenchComposerProps = {
   selectedModel: '',
   shortcuts: [readingShortcut],
   pendingFocusToken: 0,
+  quotedSelection: null,
   onInput: vi.fn(),
   onSend: vi.fn(),
   onStop: vi.fn(),
   onRetryPageContext: vi.fn(),
   onRunShortcut: vi.fn(),
   onSelectProviderModel: vi.fn(),
+  onClearQuotedSelection: vi.fn(),
 };
 
 const configuredProvider: ProviderConfig = {
@@ -270,6 +274,45 @@ describe('workbench composer', () => {
     await waitFor(() => expect(textarea).toHaveFocus());
     expect(textarea.selectionStart).toBe('quoted selection'.length);
     expect(textarea.selectionEnd).toBe('quoted selection'.length);
+  });
+
+  it('renders the quoted selection as a dismissible card, separate from the (empty) textarea', () => {
+    render(
+      <LocaleProvider>
+        <WorkbenchComposer {...composerProps} input="" quotedSelection="the selected text" />
+      </LocaleProvider>,
+    );
+
+    expect(screen.getByText('the selected text')).toBeInTheDocument();
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('');
+  });
+
+  it('does not render a quote card when there is no quoted selection', () => {
+    render(
+      <LocaleProvider>
+        <WorkbenchComposer {...composerProps} quotedSelection={null} />
+      </LocaleProvider>,
+    );
+
+    expect(screen.queryByRole('note')).not.toBeInTheDocument();
+  });
+
+  it('calls onClearQuotedSelection when the quote card dismiss button is clicked', async () => {
+    const user = userEvent.setup();
+    const onClearQuotedSelection = vi.fn();
+    render(
+      <LocaleProvider>
+        <WorkbenchComposer
+          {...composerProps}
+          quotedSelection="the selected text"
+          onClearQuotedSelection={onClearQuotedSelection}
+        />
+      </LocaleProvider>,
+    );
+
+    await user.click(screen.getByRole('button', { name: en['workbench.clearQuotedSelection'] }));
+
+    expect(onClearQuotedSelection).toHaveBeenCalledOnce();
   });
 
   it('opens slash commands, filters, and runs the selected command', async () => {

@@ -920,16 +920,17 @@ describe('chat store page context', () => {
         set: vi.fn().mockResolvedValue(undefined),
         remove: vi.fn().mockResolvedValue(undefined),
       };
-      useChat.setState({ input: '', pendingFocusToken: 0 });
+      useChat.setState({ input: '', quotedSelection: null, pendingFocusToken: 0 });
     });
 
-    it('prefills the composer and bumps the focus token when a pending ask exists for this tab', async () => {
+    it('sets quotedSelection and bumps the focus token when a pending ask exists for this tab, without touching input', async () => {
       const key = 'runi:tab-pending-ask:42';
       (globalThis as any).browser.storage.session.get = vi.fn().mockResolvedValue({ [key]: 'selected text' });
 
       await useChat.getState().restoreTabConversation();
 
-      expect(useChat.getState().input).toContain('selected text');
+      expect(useChat.getState().quotedSelection).toBe('selected text');
+      expect(useChat.getState().input).toBe('');
       expect(useChat.getState().pendingFocusToken).toBeGreaterThan(0);
       expect((globalThis as any).browser.storage.session.remove).toHaveBeenCalledWith(key);
     });
@@ -938,6 +939,7 @@ describe('chat store page context', () => {
       await useChat.getState().restoreTabConversation();
 
       expect(useChat.getState().input).toBe('');
+      expect(useChat.getState().quotedSelection).toBeNull();
       expect(useChat.getState().pendingFocusToken).toBe(0);
     });
 
@@ -946,7 +948,7 @@ describe('chat store page context', () => {
     it('consumes a pending ask that arrives while the panel is already open, without a second restore', async () => {
       const key = 'runi:tab-pending-ask:42';
       await useChat.getState().restoreTabConversation();
-      expect(useChat.getState().input).toBe('');
+      expect(useChat.getState().quotedSelection).toBeNull();
       expect(useChat.getState().pendingFocusToken).toBe(0);
 
       (globalThis as any).browser.storage.session.get = vi
@@ -954,7 +956,7 @@ describe('chat store page context', () => {
         .mockResolvedValue({ [key]: 'freshly selected text' });
       emitStorageChange({ [key]: { newValue: 'freshly selected text' } }, 'session');
 
-      await vi.waitFor(() => expect(useChat.getState().input).toContain('freshly selected text'));
+      await vi.waitFor(() => expect(useChat.getState().quotedSelection).toBe('freshly selected text'));
       expect(useChat.getState().pendingFocusToken).toBeGreaterThan(0);
       expect((globalThis as any).browser.storage.session.remove).toHaveBeenCalledWith(key);
     });
@@ -971,8 +973,64 @@ describe('chat store page context', () => {
       emitStorageChange({ [key]: {} }, 'session');
 
       await Promise.resolve();
-      expect(useChat.getState().input).toBe('');
+      expect(useChat.getState().quotedSelection).toBeNull();
       expect(useChat.getState().pendingFocusToken).toBe(0);
+    });
+  });
+
+  describe('quoted selection composition on send', () => {
+    beforeEach(() => {
+      mocks.createBrowserAgent.mockReturnValue(makeAgent());
+      mocks.sendMessage.mockImplementation((type: string) => {
+        if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: [
+          'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE',
+          'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION',
+          'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
+        ] } });
+        return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+      });
+      useChat.setState({ input: '', quotedSelection: null });
+    });
+
+    it('sends the quote-formatted template plus the question to the agent, but stores only the question as the displayed message', async () => {
+      useChat.setState({ quotedSelection: 'the selected text' });
+
+      await useChat.getState().send('what does this mean?');
+
+      const agent = mocks.createBrowserAgent.mock.results[0].value;
+      expect(agent.prompt).toHaveBeenCalledWith(expect.stringContaining('the selected text'));
+      expect(agent.prompt).toHaveBeenCalledWith(expect.stringContaining('what does this mean?'));
+
+      const userMessage = useChat.getState().messages.find((m) => m.role === 'user')!;
+      expect(userMessage.content).toBe('what does this mean?');
+      expect(userMessage.quotedText).toBe('the selected text');
+    });
+
+    it('clears quotedSelection once the message is committed', async () => {
+      useChat.setState({ quotedSelection: 'the selected text' });
+
+      await useChat.getState().send('a question');
+
+      expect(useChat.getState().quotedSelection).toBeNull();
+    });
+
+    it('sends just the question, with no quotedText, when there is no pending quote', async () => {
+      await useChat.getState().send('a plain question');
+
+      const agent = mocks.createBrowserAgent.mock.results[0].value;
+      expect(agent.prompt).toHaveBeenCalledWith('a plain question');
+
+      const userMessage = useChat.getState().messages.find((m) => m.role === 'user')!;
+      expect(userMessage.quotedText).toBeUndefined();
+    });
+
+    it('clearQuotedSelection clears the pending quote without sending anything', () => {
+      useChat.setState({ quotedSelection: 'the selected text' });
+
+      useChat.getState().clearQuotedSelection();
+
+      expect(useChat.getState().quotedSelection).toBeNull();
+      expect(mocks.createBrowserAgent).not.toHaveBeenCalled();
     });
   });
 });

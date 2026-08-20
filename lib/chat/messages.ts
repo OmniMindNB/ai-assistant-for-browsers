@@ -11,6 +11,8 @@ export interface ChatMessage {
   createdAt: number;
   /** 仅用户消息有意义：input = 普通输入（可编辑），action = 快捷操作（不可编辑） */
   kind?: 'input' | 'action';
+  /** 划词提问时被引用的选区原文（裁剪后）；存在时渲染成独立的引用卡片而不是拼进 content。 */
+  quotedText?: string;
 }
 
 const TITLE_MAX_CHARS = 40;
@@ -55,6 +57,7 @@ export function toMessageRecords(
     content: message.content,
     createdAt: message.createdAt,
     kind: message.kind,
+    quotedText: message.quotedText,
   }));
 }
 

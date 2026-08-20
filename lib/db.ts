@@ -14,6 +14,11 @@ export interface ChatMessageRecord {
    * 不建索引，因此无需 Dexie 版本迁移；存量记录无此字段，按 input 处理。
    */
   kind?: 'input' | 'action';
+  /**
+   * 划词提问时被引用的选区原文（裁剪后），仅用于渲染成独立的引用卡片；
+   * 不建索引，同上无需 Dexie 版本迁移；存量记录无此字段即视为没有引用。
+   */
+  quotedText?: string;
 }
 
 export interface ConversationRecord {
