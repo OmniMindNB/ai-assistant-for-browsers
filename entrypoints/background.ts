@@ -17,6 +17,7 @@ import {
   type ModifyDomResult,
   type NavigateTabPayload,
   type NavigateTabResult,
+  type AskSelectionPayload,
   type PageContent,
   type PageMetaResult,
   type PageScriptInfo,
@@ -39,12 +40,14 @@ import { fetchPageResourceText } from '@/lib/page-resource-fetch';
 import { resolveTargetTab } from '@/lib/agent/tab-target';
 import { sendToContentScript } from '@/lib/agent/content-script-messaging';
 import { clearConversationIdForTab } from '@/lib/agent/tab-conversation';
+import { clearPendingAskForTab, setPendingAskForTab } from '@/lib/agent/tab-pending-ask';
 
 const DEFAULT_TOOL_MAX_CHARS = 12000;
 const SUPPORTED_MESSAGE_TYPES = [
   'PING',
   'EXTRACT_PAGE',
   'GET_SELECTION',
+  'ASK_SELECTION',
   'GET_ACTIVE_TAB',
   'QUERY_DOM',
   'GET_HTML',
@@ -100,8 +103,8 @@ export default defineBackground(() => {
   });
 
   browser.runtime.onMessage.addListener(
-    (message: Message, _sender, sendResponse: (r: MessageResponse) => void) => {
-      handleMessage(message)
+    (message: Message, sender, sendResponse: (r: MessageResponse) => void) => {
+      handleMessage(message, sender)
         .then((data) => sendResponse({ id: message.id, ok: true, data }))
         .catch((error: unknown) =>
           sendResponse({
@@ -120,6 +123,9 @@ export default defineBackground(() => {
     clearConversationIdForTab(tabId).catch((err: unknown) =>
       console.error('[Runi] clearConversationIdForTab on tab close:', err),
     );
+    clearPendingAskForTab(tabId).catch((err: unknown) =>
+      console.error('[Runi] clearPendingAskForTab on tab close:', err),
+    );
   });
 });
 
@@ -131,7 +137,35 @@ function requireTabId(message: Message): number {
   return message.tabId;
 }
 
-async function handleMessage(message: Message): Promise<unknown> {
+/** 从 addListener 的回调签名里提取 sender 参数的类型，不依赖猜测具体的 polyfill 类型名。 */
+type MessageSender = Parameters<Parameters<typeof browser.runtime.onMessage.addListener>[0]>[1];
+
+/**
+ * ASK_SELECTION 是唯一一个由 content script 主动发起、不携带 tabId 的消息——它的语义就是
+ * "当前这个 tab 的用户点了划词提问气泡"，tab 身份直接来自 sender.tab.id，不走其它消息类型
+ * 依赖的"侧边栏在回合开始时解析并透传 tabId"那套逻辑。
+ */
+async function handleAskSelection(sender: MessageSender | undefined, payload: AskSelectionPayload | undefined): Promise<void> {
+  const tabId = sender?.tab?.id;
+  if (typeof tabId !== 'number') return;
+  const text = payload?.text?.trim();
+  if (!text) return;
+
+  // 两次 sidePanel 调用必须在这里同步发起、不经过任何 await/.then 链，否则 Chrome 会认为已经
+  // 脱离了触发本次消息的用户手势，抛出
+  // "sidePanel.open() may only be called in response to a user gesture."
+  // ——与上方 action.onClicked 监听器（第 91-100 行）的写法保持一致。
+  browser.sidePanel
+    ?.setOptions?.({ tabId, path: 'sidepanel.html', enabled: true })
+    .catch((err: unknown) => console.error('[Runi] sidePanel setOptions (ask-selection):', err));
+  browser.sidePanel
+    ?.open?.({ tabId })
+    .catch((err: unknown) => console.error('[Runi] sidePanel open (ask-selection):', err));
+
+  await setPendingAskForTab(tabId, text);
+}
+
+async function handleMessage(message: Message, sender?: MessageSender): Promise<unknown> {
   switch (message.type) {
     case 'PING':
       return { pong: true, ts: Date.now(), agentProtocol: 1, supportedTypes: SUPPORTED_MESSAGE_TYPES };
@@ -144,6 +178,9 @@ async function handleMessage(message: Message): Promise<unknown> {
 
     case 'GET_SELECTION':
       return getActiveSelection(requireTabId(message));
+
+    case 'ASK_SELECTION':
+      return handleAskSelection(sender, message.payload as AskSelectionPayload | undefined);
 
     case 'QUERY_DOM':
       return queryDom(message.payload as QueryDomPayload, requireTabId(message));
