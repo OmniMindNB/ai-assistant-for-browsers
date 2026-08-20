@@ -434,6 +434,21 @@ describe('grouped options settings', () => {
     const toggle = await screen.findByRole('checkbox', { name: 'Enable selection-ask bubble' });
     expect(toggle).not.toBeChecked();
   });
+
+  it('reverts the selection-ask toggle and shows an error when persisting it fails', async () => {
+    const user = userEvent.setup();
+    const set = (globalThis as any).browser.storage.local.set as ReturnType<typeof vi.fn>;
+    renderWithLocale(<ShortcutSettings />);
+
+    const toggle = await screen.findByRole('checkbox', { name: 'Enable selection-ask bubble' });
+    expect(toggle).toBeChecked();
+
+    set.mockRejectedValueOnce(new Error('write rejected'));
+    await user.click(toggle);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not save shortcuts.');
+    expect(toggle).toBeChecked();
+  });
 });
 
 describe('SettingsShell', () => {

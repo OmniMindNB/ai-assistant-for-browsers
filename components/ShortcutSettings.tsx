@@ -79,9 +79,13 @@ export default function ShortcutSettings() {
         if (!active) return;
         setErrors([storageErrorMessage(error)]);
       });
-    loadSelectionAskEnabled().then((enabled) => {
-      if (active) setSelectionAskEnabled(enabled);
-    });
+    loadSelectionAskEnabled()
+      .then((enabled) => {
+        if (active) setSelectionAskEnabled(enabled);
+      })
+      .catch((error: unknown) => {
+        if (active) setErrors([storageErrorMessage(error)]);
+      });
 
     const handleStorageChange: Parameters<typeof browser.storage.onChanged.addListener>[0] = (
       changes,
@@ -108,7 +112,12 @@ export default function ShortcutSettings() {
   async function toggleSelectionAsk() {
     const next = !selectionAskEnabled;
     setSelectionAskEnabled(next);
-    await saveSelectionAskEnabled(next);
+    try {
+      await saveSelectionAskEnabled(next);
+    } catch (error) {
+      setSelectionAskEnabled(!next);
+      setErrors([storageErrorMessage(error)]);
+    }
   }
 
   function showValidationErrors(details: string[]) {
