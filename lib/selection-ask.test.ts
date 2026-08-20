@@ -17,7 +17,7 @@ const t = ((key: TranslationKey, vars?: Record<string, string | number>) =>
 describe('buildSelectionAskTemplate', () => {
   it('interpolates the trimmed selection into the template', () => {
     expect(buildSelectionAskTemplate('  hello world  ', t)).toBe(
-      'Regarding the selected text:\n> hello world\n\nMy question: ',
+      'Regarding the selected text:\n```\nhello world\n```\n\nMy question: ',
     );
   });
 
