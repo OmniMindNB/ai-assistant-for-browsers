@@ -216,6 +216,7 @@ const composerProps: WorkbenchComposerProps = {
   selectedProviderId: null,
   selectedModel: '',
   shortcuts: [readingShortcut],
+  pendingFocusToken: 0,
   onInput: vi.fn(),
   onSend: vi.fn(),
   onStop: vi.fn(),
@@ -251,6 +252,27 @@ function ComposerHarness({ initialInput = '', ...props }: Partial<WorkbenchCompo
 }
 
 describe('workbench composer', () => {
+  it('focuses the textarea and moves the cursor to the end when pendingFocusToken advances', async () => {
+    const { rerender } = render(
+      <LocaleProvider>
+        <WorkbenchComposer {...composerProps} input="quoted selection" pendingFocusToken={0} />
+      </LocaleProvider>,
+    );
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    textarea.blur();
+    expect(textarea).not.toHaveFocus();
+
+    rerender(
+      <LocaleProvider>
+        <WorkbenchComposer {...composerProps} input="quoted selection" pendingFocusToken={12345} />
+      </LocaleProvider>,
+    );
+
+    await waitFor(() => expect(textarea).toHaveFocus());
+    expect(textarea.selectionStart).toBe('quoted selection'.length);
+    expect(textarea.selectionEnd).toBe('quoted selection'.length);
+  });
+
   it('opens slash commands, filters, and runs the selected command', async () => {
     const user = userEvent.setup();
     const onRunShortcut = vi.fn();

@@ -32,6 +32,7 @@ export default function App() {
     messages,
     activitySteps,
     input,
+    pendingFocusToken,
     busy,
     error,
     pendingConfirmation,
@@ -305,6 +306,7 @@ export default function App() {
             providers={providers}
             selectedProviderId={selectedProviderId}
             selectedModel={selectedModel}
+            pendingFocusToken={pendingFocusToken}
             onInput={setInput}
             onSend={submitMessage}
             onStop={stop}

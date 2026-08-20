@@ -14,6 +14,8 @@ export interface WorkbenchComposerProps {
   selectedProviderId: string | null;
   selectedModel: string;
   shortcuts: Array<{ config: ShortcutConfig; resolved: ResolvedShortcut }>;
+  /** 每次划词提问预填输入框后变为一个新的非零值；0 表示"从未发生过"，不触发聚焦。 */
+  pendingFocusToken: number;
   onInput(value: string): void;
   onSend(): void;
   onStop(): void;
@@ -36,6 +38,7 @@ export function WorkbenchComposer({
   selectedProviderId,
   selectedModel,
   shortcuts,
+  pendingFocusToken,
   onInput,
   onSend,
   onStop,
@@ -73,6 +76,14 @@ export function WorkbenchComposer({
     element.style.height = 'auto';
     element.style.height = `${Math.min(element.scrollHeight, 160)}px`;
   }, [input]);
+
+  useEffect(() => {
+    if (pendingFocusToken === 0) return;
+    const element = textareaRef.current;
+    if (!element) return;
+    element.focus();
+    element.setSelectionRange(element.value.length, element.value.length);
+  }, [pendingFocusToken]);
 
   useEffect(() => {
     if (startsSlashCommand(input)) {
