@@ -1,45 +1,33 @@
 // 语言（i18n）管理：默认跟随浏览器，可手动覆盖为中文/English。
 // 与 lib/theme.ts 的 auto/手动覆盖模式一致；偏好存于 chrome.storage.local，不同步到云端。
+// React 无关的基础函数（loadLocale/saveLocale/resolveLocale/localeFromLanguageTag/interpolate）
+// 已拆到 ./core.ts，这里原样 re-export，保持所有既有 import 路径不变。
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { zh } from './locales/zh';
 import { en } from './locales/en';
+import {
+  interpolate,
+  loadLocale,
+  localeFromLanguageTag,
+  resolveLocale,
+  saveLocale,
+  LOCALE_KEY,
+  type LocaleMode,
+  type ResolvedLocale,
+} from './core';
 
-export type LocaleMode = 'auto' | 'zh' | 'en';
-export type ResolvedLocale = 'zh' | 'en';
+export {
+  interpolate,
+  loadLocale,
+  localeFromLanguageTag,
+  resolveLocale,
+  saveLocale,
+  LOCALE_KEY,
+};
+export type { LocaleMode, ResolvedLocale };
+
 export type TranslationKey = keyof typeof zh;
-
-export const LOCALE_KEY = 'runi:locale';
 const DICTS: Record<ResolvedLocale, Record<TranslationKey, string>> = { zh, en };
-
-export async function loadLocale(): Promise<LocaleMode> {
-  const res = await browser.storage.local.get(LOCALE_KEY);
-  return (res[LOCALE_KEY] as LocaleMode) ?? 'auto';
-}
-
-export async function saveLocale(mode: LocaleMode): Promise<void> {
-  await browser.storage.local.set({ [LOCALE_KEY]: mode });
-}
-
-/** 纯函数：给定浏览器语言标签，判断落在 zh 还是 en（未识别语言一律落到 en）。 */
-export function localeFromLanguageTag(tag: string): ResolvedLocale {
-  return tag.toLowerCase().startsWith('zh') ? 'zh' : 'en';
-}
-
-function detectBrowserLanguage(): string {
-  return browser.i18n?.getUILanguage?.() ?? navigator.language;
-}
-
-/** auto 模式下解析浏览器语言；zh/en 原样返回。 */
-export function resolveLocale(mode: LocaleMode): ResolvedLocale {
-  if (mode === 'zh' || mode === 'en') return mode;
-  return localeFromLanguageTag(detectBrowserLanguage());
-}
-
-/** {name} 占位符替换；未提供 vars 时原样返回。 */
-export function interpolate(template: string, vars?: Record<string, string | number>): string {
-  if (!vars) return template;
-  return template.replace(/\{(\w+)\}/g, (match, name: string) => (name in vars ? String(vars[name]) : match));
-}
 
 let currentLocale: ResolvedLocale = resolveLocale('auto');
 

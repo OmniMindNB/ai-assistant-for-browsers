@@ -7,9 +7,8 @@ import {
   type PageContent,
   type PageSelection,
 } from '@/lib/messaging';
-import { loadLocale, resolveLocale } from '@/lib/i18n';
-import { en } from '@/lib/i18n/locales/en';
-import { zh } from '@/lib/i18n/locales/zh';
+import { loadLocale, resolveLocale } from '@/lib/i18n/core';
+import { SELECTION_ASK_BUBBLE_LABEL } from '@/lib/i18n/locales/selection-ask-bubble-label';
 import {
   SELECTION_ASK_ENABLED_KEY,
   clampBubblePosition,
@@ -83,7 +82,8 @@ function getSelection(): PageSelection {
 // ---- 划词提问悬浮气泡 ----
 // 不能用 lib/i18n 的 t()/applyLocale()：applyLocale() 会写 document.documentElement.lang，
 // 在内容脚本里调用会篡改被访问网页本身的 lang 属性。这里只解析一次 locale，
-// 直接从字典取用到的这一个文案。
+// 直接从 SELECTION_ASK_BUBBLE_LABEL（只含这一个文案的极小模块，见其头部注释）取值——
+// 内容脚本跑在每个页面里，不能为一句按钮文案把完整字典和 React 运行时打进产物。
 let bubbleLabel = 'Ask Runi';
 let bubbleHost: HTMLElement | null = null;
 let bubbleSelectionText = '';
@@ -99,7 +99,7 @@ const BUBBLE_BUTTON_STYLE =
 
 async function initSelectionAskBubble(): Promise<void> {
   const locale = resolveLocale(await loadLocale());
-  bubbleLabel = (locale === 'zh' ? zh : en)['shortcut.selectionAskBubbleLabel'];
+  bubbleLabel = SELECTION_ASK_BUBBLE_LABEL[locale];
 
   selectionAskEnabled = await loadSelectionAskEnabled();
   if (selectionAskEnabled) attachSelectionAskListeners();

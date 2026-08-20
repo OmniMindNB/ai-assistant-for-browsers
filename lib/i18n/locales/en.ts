@@ -1,4 +1,5 @@
 import { zh } from './zh';
+import { SELECTION_ASK_BUBBLE_LABEL } from './selection-ask-bubble-label';
 
 export const en: Record<keyof typeof zh, string> = {
   'common.cancel': 'Cancel',
@@ -176,7 +177,7 @@ export const en: Record<keyof typeof zh, string> = {
   'shortcut.builtinTranslateName': 'Translate selection',
   'shortcut.builtinTranslatePrompt':
     'Translate the selected text into English; if it is already in English, translate it into Chinese instead. Keep the tone and meaning faithful.',
-  'shortcut.selectionAskBubbleLabel': 'Ask Runi',
+  'shortcut.selectionAskBubbleLabel': SELECTION_ASK_BUBBLE_LABEL.en,
   'shortcut.selectionAskToggleLabel': 'Enable selection-ask bubble',
   'shortcut.heading': 'Shortcuts',
   'shortcut.description': 'Customize shortcut names, prompts, scopes, and display order.',

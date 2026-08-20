@@ -1,3 +1,5 @@
+import { SELECTION_ASK_BUBBLE_LABEL } from './selection-ask-bubble-label';
+
 export const zh = {
   'common.cancel': '取消',
   'common.delete': '删除',
@@ -170,7 +172,7 @@ export const zh = {
   'shortcut.builtinTranslateName': '翻译划词',
   'shortcut.builtinTranslatePrompt':
     '将选中文本翻译成中文；如果原文本身已经是中文，则翻译成英文。请保持原意和语气。',
-  'shortcut.selectionAskBubbleLabel': '问 Runi',
+  'shortcut.selectionAskBubbleLabel': SELECTION_ASK_BUBBLE_LABEL.zh,
   'shortcut.selectionAskToggleLabel': '启用划词提问气泡',
   'shortcut.heading': '快捷方式',
   'shortcut.description': '自定义快捷方式的名称、提示词、作用范围和显示顺序。',
