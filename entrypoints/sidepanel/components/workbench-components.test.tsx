@@ -259,7 +259,6 @@ describe('workbench composer', () => {
       </LocaleProvider>,
     );
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
-    textarea.blur();
     expect(textarea).not.toHaveFocus();
 
     rerender(
