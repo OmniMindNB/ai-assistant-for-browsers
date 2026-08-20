@@ -1,10 +1,20 @@
 import { Readability } from '@mozilla/readability';
 import {
+  sendMessage,
+  type AskSelectionPayload,
   type Message,
   type MessageResponse,
   type PageContent,
   type PageSelection,
 } from '@/lib/messaging';
+import { loadLocale, resolveLocale } from '@/lib/i18n';
+import { en } from '@/lib/i18n/locales/en';
+import { zh } from '@/lib/i18n/locales/zh';
+import {
+  SELECTION_ASK_ENABLED_KEY,
+  clampBubblePosition,
+  loadSelectionAskEnabled,
+} from '@/lib/selection-ask';
 
 // Content Script：页面交互层（ref: technical-plan.md §3.2、§4.1）
 export default defineContentScript({
@@ -23,6 +33,8 @@ export default defineContentScript({
         return false;
       },
     );
+
+    initSelectionAskBubble();
   },
 });
 
@@ -66,4 +78,118 @@ function extractPage(): PageContent {
 
 function getSelection(): PageSelection {
   return { text: (window.getSelection()?.toString() ?? '').trim() };
+}
+
+// ---- 划词提问悬浮气泡 ----
+// 不能用 lib/i18n 的 t()/applyLocale()：applyLocale() 会写 document.documentElement.lang，
+// 在内容脚本里调用会篡改被访问网页本身的 lang 属性。这里只解析一次 locale，
+// 直接从字典取用到的这一个文案。
+let bubbleLabel = 'Ask Runi';
+let bubbleHost: HTMLElement | null = null;
+let bubbleSelectionText = '';
+let selectionAskEnabled = false;
+
+const BUBBLE_SIZE = { width: 88, height: 32 };
+const BUBBLE_BUTTON_STYLE =
+  'all: initial; display: inline-flex; align-items: center; justify-content: center; ' +
+  'width: 88px; height: 32px; border-radius: 9999px; border: none; cursor: pointer; ' +
+  'background: #4f46e5; color: #ffffff; ' +
+  'font: 500 12px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; ' +
+  'box-shadow: 0 2px 8px rgba(0,0,0,0.24);';
+
+async function initSelectionAskBubble(): Promise<void> {
+  const locale = resolveLocale(await loadLocale());
+  bubbleLabel = (locale === 'zh' ? zh : en)['shortcut.selectionAskBubbleLabel'];
+
+  selectionAskEnabled = await loadSelectionAskEnabled();
+  if (selectionAskEnabled) attachSelectionAskListeners();
+
+  browser.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'local' || !(SELECTION_ASK_ENABLED_KEY in changes)) return;
+    const next = (changes[SELECTION_ASK_ENABLED_KEY].newValue as boolean | undefined) ?? true;
+    if (next === selectionAskEnabled) return;
+    selectionAskEnabled = next;
+    if (selectionAskEnabled) {
+      attachSelectionAskListeners();
+    } else {
+      detachSelectionAskListeners();
+      removeBubble();
+    }
+  });
+}
+
+function attachSelectionAskListeners(): void {
+  document.addEventListener('mouseup', handleMouseUp);
+  document.addEventListener('mousedown', handleOutsideMouseDown, true);
+  document.addEventListener('scroll', handleScrollAway, true);
+  document.addEventListener('keydown', handleEscapeKey);
+}
+
+function detachSelectionAskListeners(): void {
+  document.removeEventListener('mouseup', handleMouseUp);
+  document.removeEventListener('mousedown', handleOutsideMouseDown, true);
+  document.removeEventListener('scroll', handleScrollAway, true);
+  document.removeEventListener('keydown', handleEscapeKey);
+}
+
+function handleMouseUp(): void {
+  removeBubble();
+  const selection = window.getSelection();
+  const text = (selection?.toString() ?? '').trim();
+  if (!text || !selection || selection.rangeCount === 0) return;
+  const rect = selection.getRangeAt(0).getBoundingClientRect();
+  if (rect.width === 0 && rect.height === 0) return;
+  bubbleSelectionText = text;
+  showBubble(rect);
+}
+
+function showBubble(rect: DOMRect): void {
+  const host = document.createElement('div');
+  host.style.position = 'fixed';
+  host.style.zIndex = '2147483647';
+  const { top, left } = clampBubblePosition(
+    { top: rect.top, left: rect.left, right: rect.right, bottom: rect.bottom },
+    { width: window.innerWidth, height: window.innerHeight },
+    BUBBLE_SIZE,
+  );
+  host.style.top = `${top}px`;
+  host.style.left = `${left}px`;
+
+  const shadow = host.attachShadow({ mode: 'closed' });
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = bubbleLabel;
+  button.style.cssText = BUBBLE_BUTTON_STYLE;
+  button.addEventListener('click', handleBubbleClick);
+  shadow.appendChild(button);
+
+  document.documentElement.appendChild(host);
+  bubbleHost = host;
+}
+
+async function handleBubbleClick(): Promise<void> {
+  const text = bubbleSelectionText;
+  removeBubble();
+  if (!text) return;
+  await sendMessage('ASK_SELECTION', { text } satisfies AskSelectionPayload);
+}
+
+function handleOutsideMouseDown(event: MouseEvent): void {
+  if (!bubbleHost) return;
+  if (event.composedPath().includes(bubbleHost)) return;
+  removeBubble();
+}
+
+function handleScrollAway(): void {
+  removeBubble();
+}
+
+function handleEscapeKey(event: KeyboardEvent): void {
+  if (event.key === 'Escape') removeBubble();
+}
+
+function removeBubble(): void {
+  bubbleHost?.remove();
+  bubbleHost = null;
+  bubbleSelectionText = '';
 }
