@@ -895,4 +895,34 @@ describe('chat store page context', () => {
     await expect(useChat.getState().send(undefined, { withoutBrowserTools: true })).resolves.toBe(false);
     expect(mocks.createBrowserAgent).not.toHaveBeenCalled();
   });
+
+  describe('restoreTabConversation pending ask', () => {
+    beforeEach(() => {
+      (globalThis as any).browser.tabs = { query: vi.fn().mockResolvedValue([{ id: 42 }]) };
+      (globalThis as any).browser.storage.session = {
+        get: vi.fn().mockResolvedValue({}),
+        set: vi.fn().mockResolvedValue(undefined),
+        remove: vi.fn().mockResolvedValue(undefined),
+      };
+      useChat.setState({ input: '', pendingFocusToken: 0 });
+    });
+
+    it('prefills the composer and bumps the focus token when a pending ask exists for this tab', async () => {
+      const key = 'runi:tab-pending-ask:42';
+      (globalThis as any).browser.storage.session.get = vi.fn().mockResolvedValue({ [key]: 'selected text' });
+
+      await useChat.getState().restoreTabConversation();
+
+      expect(useChat.getState().input).toContain('selected text');
+      expect(useChat.getState().pendingFocusToken).toBeGreaterThan(0);
+      expect((globalThis as any).browser.storage.session.remove).toHaveBeenCalledWith(key);
+    });
+
+    it('leaves the composer untouched when there is no pending ask for this tab', async () => {
+      await useChat.getState().restoreTabConversation();
+
+      expect(useChat.getState().input).toBe('');
+      expect(useChat.getState().pendingFocusToken).toBe(0);
+    });
+  });
 });

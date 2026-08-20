@@ -39,6 +39,8 @@ import { summarizeToolCallForConfirmation } from '@/lib/agent/confirm-summary';
 import { describeToolActivity } from '@/lib/agent/activity-description';
 import { finishActivityStep, markActivityStepSlow, upsertActivityStep, type ActivityStep } from '@/lib/agent/activity-steps';
 import { getConversationIdForTab, setConversationIdForTab } from '@/lib/agent/tab-conversation';
+import { clearPendingAskForTab, getPendingAskForTab } from '@/lib/agent/tab-pending-ask';
+import { buildSelectionAskTemplate } from '@/lib/selection-ask';
 import { getCurrentLocale, t } from '@/lib/i18n';
 import { isCurrentTabReadable } from '@/lib/current-tab-readability';
 import {
@@ -87,6 +89,8 @@ interface ChatState {
   messages: UIMessage[];
   activitySteps: ActivityStep[];
   input: string;
+  /** 每次消费一条划词提问 pending ask 后设为 Date.now()；WorkbenchComposer 据此判断"该聚焦输入框了"。 */
+  pendingFocusToken: number;
   busy: boolean;
   error: string | null;
   pendingConfirmation: PendingConfirmation | null;
@@ -277,6 +281,7 @@ export const useChat = create<ChatState>((set, get) => ({
   messages: [],
   activitySteps: [],
   input: '',
+  pendingFocusToken: 0,
   busy: false,
   error: null,
   pendingConfirmation: null,
@@ -540,6 +545,12 @@ export const useChat = create<ChatState>((set, get) => ({
       await get().openConversation(savedId);
     } else {
       await setConversationIdForTab(tabId, get().conversationId);
+    }
+
+    const pendingAsk = await getPendingAskForTab(tabId);
+    if (pendingAsk) {
+      await clearPendingAskForTab(tabId);
+      set({ input: buildSelectionAskTemplate(pendingAsk, t), pendingFocusToken: Date.now() });
     }
   },
 
