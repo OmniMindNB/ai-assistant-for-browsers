@@ -10,6 +10,22 @@ const mocks = vi.hoisted(() => ({
   listConversations: vi.fn(),
 }));
 
+// store.ts 在模块加载时就注册了一个 storage.onChanged 监听器（面板已打开时实时消费 pending ask）。
+// lib/test-setup.ts 的默认 browser 替身里没有 storage.onChanged，而 vi.hoisted 会在本文件的
+// import 求值之前运行——正好可以在 ./store 被导入前装好替身，并捕获它注册的那个回调。
+const storageListeners = vi.hoisted(() => {
+  const listeners: Array<(changes: Record<string, { newValue?: unknown }>, areaName: string) => void> = [];
+  (globalThis as any).browser.storage.onChanged = {
+    addListener: (listener: any) => { listeners.push(listener); },
+    removeListener: () => undefined,
+  };
+  return listeners;
+});
+
+function emitStorageChange(changes: Record<string, { newValue?: unknown }>, areaName: string): void {
+  for (const listener of storageListeners) listener(changes, areaName);
+}
+
 vi.mock('@/lib/messaging', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/messaging')>()),
   sendMessage: mocks.sendMessage,
@@ -921,6 +937,40 @@ describe('chat store page context', () => {
     it('leaves the composer untouched when there is no pending ask for this tab', async () => {
       await useChat.getState().restoreTabConversation();
 
+      expect(useChat.getState().input).toBe('');
+      expect(useChat.getState().pendingFocusToken).toBe(0);
+    });
+
+    // sidePanel.open() 对已经打开的面板是 no-op，不会重新触发 restoreTabConversation，
+    // 所以这一条刻意不再调用它——只靠 storage.onChanged 事件驱动消费。
+    it('consumes a pending ask that arrives while the panel is already open, without a second restore', async () => {
+      const key = 'runi:tab-pending-ask:42';
+      await useChat.getState().restoreTabConversation();
+      expect(useChat.getState().input).toBe('');
+      expect(useChat.getState().pendingFocusToken).toBe(0);
+
+      (globalThis as any).browser.storage.session.get = vi
+        .fn()
+        .mockResolvedValue({ [key]: 'freshly selected text' });
+      emitStorageChange({ [key]: { newValue: 'freshly selected text' } }, 'session');
+
+      await vi.waitFor(() => expect(useChat.getState().input).toContain('freshly selected text'));
+      expect(useChat.getState().pendingFocusToken).toBeGreaterThan(0);
+      expect((globalThis as any).browser.storage.session.remove).toHaveBeenCalledWith(key);
+    });
+
+    it('ignores storage changes from another area, another tab, or a pending-ask deletion', async () => {
+      const key = 'runi:tab-pending-ask:42';
+      await useChat.getState().restoreTabConversation();
+      (globalThis as any).browser.storage.session.get = vi
+        .fn()
+        .mockResolvedValue({ [key]: 'must not be consumed' });
+
+      emitStorageChange({ [key]: { newValue: 'x' } }, 'local');
+      emitStorageChange({ 'runi:tab-pending-ask:99': { newValue: 'x' } }, 'session');
+      emitStorageChange({ [key]: {} }, 'session');
+
+      await Promise.resolve();
       expect(useChat.getState().input).toBe('');
       expect(useChat.getState().pendingFocusToken).toBe(0);
     });

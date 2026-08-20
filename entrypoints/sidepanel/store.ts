@@ -39,7 +39,7 @@ import { summarizeToolCallForConfirmation } from '@/lib/agent/confirm-summary';
 import { describeToolActivity } from '@/lib/agent/activity-description';
 import { finishActivityStep, markActivityStepSlow, upsertActivityStep, type ActivityStep } from '@/lib/agent/activity-steps';
 import { getConversationIdForTab, setConversationIdForTab } from '@/lib/agent/tab-conversation';
-import { clearPendingAskForTab, getPendingAskForTab } from '@/lib/agent/tab-pending-ask';
+import { clearPendingAskForTab, getPendingAskForTab, pendingAskStorageKey } from '@/lib/agent/tab-pending-ask';
 import { buildSelectionAskTemplate } from '@/lib/selection-ask';
 import { getCurrentLocale, t } from '@/lib/i18n';
 import { isCurrentTabReadable } from '@/lib/current-tab-readability';
@@ -253,6 +253,19 @@ async function resolveActiveTab(): Promise<ActiveTabInfo> {
     throw new Error(res.error ?? t('store.noActiveTab'));
   }
   return res.data;
+}
+
+/**
+ * 消费某个 tab 的划词提问 pending 数据：面板挂载时（restoreTabConversation）、以及面板已经打开时
+ * 收到新的 pending 写入（下方的 storage.onChanged 监听器）都会调用它。
+ * 用 useChat.setState 而不是闭包里的 set，是因为模块级监听器拿不到 set/get；两者等价——
+ * 调用发生时 useChat 早已构造完成。
+ */
+async function consumePendingAskForTab(tabId: number): Promise<void> {
+  const pendingAsk = await getPendingAskForTab(tabId);
+  if (!pendingAsk) return;
+  await clearPendingAskForTab(tabId);
+  useChat.setState({ input: buildSelectionAskTemplate(pendingAsk, t), pendingFocusToken: Date.now() });
 }
 
 function genConversationId(): string {
@@ -547,11 +560,7 @@ export const useChat = create<ChatState>((set, get) => ({
       await setConversationIdForTab(tabId, get().conversationId);
     }
 
-    const pendingAsk = await getPendingAskForTab(tabId);
-    if (pendingAsk) {
-      await clearPendingAskForTab(tabId);
-      set({ input: buildSelectionAskTemplate(pendingAsk, t), pendingFocusToken: Date.now() });
-    }
+    await consumePendingAskForTab(tabId);
   },
 
   removeConversation: async (id) => {
@@ -591,6 +600,19 @@ useChat.subscribe((state, prevState) => {
   if (state.conversationId === prevState.conversationId) return;
   if (panelTabId === null) return;
   setConversationIdForTab(panelTabId, state.conversationId).catch(() => undefined);
+});
+
+// 面板已经打开时（sidePanel.open() 对已打开的面板是 no-op，不会重新触发挂载时的
+// restoreTabConversation），靠这个监听器实时消费新写入的 pending ask——否则用户在已打开的
+// 面板前再次点击气泡会看起来毫无反应，直到面板下次被销毁重建才会“迟到”地预填进去。
+// 与上面的 subscribe 一样是"绑定在 panelTabId 上、每个面板文档生命周期内注册一次"的模块级副作用，
+// 不需要显式移除：Chrome 销毁/重建面板文档时整个模块也随之重建，没有泄漏可言。
+browser.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== 'session' || panelTabId === null) return;
+  const change = changes[pendingAskStorageKey(panelTabId)];
+  // 跳过删除侧的变化——那正是本函数自己 clearPendingAskForTab 触发的回声。
+  if (!change || !change.newValue) return;
+  void consumePendingAskForTab(panelTabId);
 });
 
 interface RunAgentOptions {
