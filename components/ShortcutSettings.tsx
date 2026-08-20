@@ -21,6 +21,11 @@ import {
   type ShortcutConfig,
   type ShortcutScope,
 } from '@/lib/shortcuts';
+import {
+  SELECTION_ASK_ENABLED_KEY,
+  loadSelectionAskEnabled,
+  saveSelectionAskEnabled,
+} from '@/lib/selection-ask';
 
 interface ShortcutDraft {
   name: string;
@@ -58,6 +63,7 @@ export default function ShortcutSettings() {
   const [fieldErrors, setFieldErrors] = useState<ShortcutFieldErrors>({});
   const [flash, setFlash] = useState<string | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [selectionAskEnabled, setSelectionAskEnabled] = useState(true);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const promptInputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -73,17 +79,23 @@ export default function ShortcutSettings() {
         if (!active) return;
         setErrors([storageErrorMessage(error)]);
       });
+    loadSelectionAskEnabled().then((enabled) => {
+      if (active) setSelectionAskEnabled(enabled);
+    });
 
     const handleStorageChange: Parameters<typeof browser.storage.onChanged.addListener>[0] = (
       changes,
       areaName,
     ) => {
       if (areaName !== 'local') return;
-      const change = changes[SHORTCUTS_STORAGE_KEY];
-      if (!change) return;
-      const result = validateShortcutConfigs(change.newValue);
-      setItems(result.shortcuts);
-      showValidationErrors(result.errors);
+      const shortcutsChange = changes[SHORTCUTS_STORAGE_KEY];
+      if (shortcutsChange) {
+        const result = validateShortcutConfigs(shortcutsChange.newValue);
+        setItems(result.shortcuts);
+        showValidationErrors(result.errors);
+      }
+      const toggleChange = changes[SELECTION_ASK_ENABLED_KEY];
+      if (toggleChange) setSelectionAskEnabled((toggleChange.newValue as boolean | undefined) ?? true);
     };
 
     browser.storage.onChanged.addListener(handleStorageChange);
@@ -92,6 +104,12 @@ export default function ShortcutSettings() {
       browser.storage.onChanged.removeListener(handleStorageChange);
     };
   }, [t]);
+
+  async function toggleSelectionAsk() {
+    const next = !selectionAskEnabled;
+    setSelectionAskEnabled(next);
+    await saveSelectionAskEnabled(next);
+  }
 
   function showValidationErrors(details: string[]) {
     if (details.length === 0) {
@@ -298,6 +316,15 @@ export default function ShortcutSettings() {
 
   return (
     <section className="mb-6">
+      <label className="mb-4 flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+        <input
+          type="checkbox"
+          checked={selectionAskEnabled}
+          onChange={() => void toggleSelectionAsk()}
+          className="h-4 w-4 rounded border-neutral-300 text-indigo-600 focus:ring-indigo-500 dark:border-neutral-700"
+        />
+        {t('shortcut.selectionAskToggleLabel')}
+      </label>
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-medium text-neutral-700 dark:text-neutral-200">

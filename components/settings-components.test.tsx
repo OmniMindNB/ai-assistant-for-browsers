@@ -413,6 +413,27 @@ describe('grouped options settings', () => {
     expect(set).not.toHaveBeenCalled();
     expect(screen.getByText('Summarize page')).toBeVisible();
   });
+
+  it('defaults the selection-ask toggle to checked and persists a change', async () => {
+    const user = userEvent.setup();
+    const set = (globalThis as any).browser.storage.local.set as ReturnType<typeof vi.fn>;
+    renderWithLocale(<ShortcutSettings />);
+
+    const toggle = await screen.findByRole('checkbox', { name: 'Enable selection-ask bubble' });
+    expect(toggle).toBeChecked();
+
+    await user.click(toggle);
+
+    expect(set).toHaveBeenCalledWith({ 'runi:selection-ask-enabled': false });
+  });
+
+  it('reflects a previously saved disabled state for the selection-ask toggle', async () => {
+    storageData['runi:selection-ask-enabled'] = false;
+    renderWithLocale(<ShortcutSettings />);
+
+    const toggle = await screen.findByRole('checkbox', { name: 'Enable selection-ask bubble' });
+    expect(toggle).not.toBeChecked();
+  });
 });
 
 describe('SettingsShell', () => {
