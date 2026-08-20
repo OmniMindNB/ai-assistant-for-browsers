@@ -132,7 +132,8 @@ function detachSelectionAskListeners(): void {
   document.removeEventListener('keydown', handleEscapeKey);
 }
 
-function handleMouseUp(): void {
+function handleMouseUp(event: MouseEvent): void {
+  if (bubbleHost && event.composedPath().includes(bubbleHost)) return;
   removeBubble();
   const selection = window.getSelection();
   const text = (selection?.toString() ?? '').trim();
