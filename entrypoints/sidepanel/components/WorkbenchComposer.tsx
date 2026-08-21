@@ -4,7 +4,9 @@ import { providerModels, type ProviderConfig } from '@/lib/settings';
 import type { ShortcutConfig, ResolvedShortcut } from '@/lib/shortcuts';
 import { filterShortcutCommands, isUsableShortcutCommand } from '@/lib/workbench/presentation';
 import type { PageContextState } from '../store';
-import { IconCheck, IconChevronDown, IconClose, IconSend, IconStop } from '../icons';
+import type { MessageAttachment } from '@/lib/chat/attachments';
+import { AttachmentChip } from './AttachmentChip';
+import { IconCheck, IconChevronDown, IconClose, IconPaperclip, IconSend, IconStop } from '../icons';
 
 export interface WorkbenchComposerProps {
   input: string;
@@ -18,6 +20,8 @@ export interface WorkbenchComposerProps {
   pendingFocusToken: number;
   /** 划词提问消费到的待引用文字（裁剪后）；渲染成独立卡片，null 时不显示。 */
   quotedSelection: string | null;
+  /** 待发送的附件（文本类/图片）。 */
+  attachments: MessageAttachment[];
   onInput(value: string): void;
   onSend(): void;
   onStop(): void;
@@ -25,6 +29,8 @@ export interface WorkbenchComposerProps {
   onRunShortcut(shortcut: ShortcutConfig): void;
   onSelectProviderModel(providerId: string, model: string): void;
   onClearQuotedSelection(): void;
+  onAddAttachmentFiles(files: FileList): void;
+  onRemoveAttachment(id: string): void;
 }
 
 type Popover = 'commands' | 'models' | null;
@@ -43,6 +49,7 @@ export function WorkbenchComposer({
   shortcuts,
   pendingFocusToken,
   quotedSelection,
+  attachments,
   onInput,
   onSend,
   onStop,
@@ -50,10 +57,13 @@ export function WorkbenchComposer({
   onRunShortcut,
   onSelectProviderModel,
   onClearQuotedSelection,
+  onAddAttachmentFiles,
+  onRemoveAttachment,
 }: WorkbenchComposerProps) {
   const { t } = useTranslation();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const modelTriggerRef = useRef<HTMLButtonElement>(null);
   const modelItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [openPopover, setOpenPopover] = useState<Popover>(null);
@@ -319,7 +329,37 @@ export function WorkbenchComposer({
           </div>
         )}
 
+        {attachments.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {attachments.map((attachment) => (
+              <AttachmentChip key={attachment.id} attachment={attachment} onRemove={() => onRemoveAttachment(attachment.id)} />
+            ))}
+          </div>
+        )}
+
         <div className="relative flex items-end gap-2 rounded-2xl border border-neutral-300 bg-white p-2 shadow-sm transition-colors focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/30 dark:border-neutral-700 dark:bg-neutral-900">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept="image/*,.txt,.md,.markdown,.json,.csv,.log,.js,.jsx,.ts,.tsx,.py,.java,.go,.rs,.c,.cpp,.h,.hpp,.css,.html,.htm,.xml,.yaml,.yml,.sh,.bash,.ini,.toml,.rb,.php,.sql"
+            className="hidden"
+            onChange={(event) => {
+              const { files } = event.target;
+              if (files && files.length > 0) onAddAttachmentFiles(files);
+              event.target.value = '';
+            }}
+          />
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => fileInputRef.current?.click()}
+            aria-label={t('workbench.attachButtonLabel')}
+            title={t('workbench.attachButtonLabel')}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
+          >
+            <IconPaperclip className="h-5 w-5" />
+          </button>
           <textarea
             ref={textareaRef}
             value={input}
