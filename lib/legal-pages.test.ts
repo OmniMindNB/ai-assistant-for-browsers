@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
 const frontMatter = (path: string) => {
-  const source = read(path);
+  const source = read(path).replace(/\r\n/g, '\n');
   const match = source.match(/^---\n([\s\S]*?)\n---\n/);
   expect(match, `${path} must start with Jekyll front matter`).not.toBeNull();
 

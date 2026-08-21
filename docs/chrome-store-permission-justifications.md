@@ -1,6 +1,6 @@
 # Chrome Web Store Permission and Data-Use Answers
 
-Paste-ready answers for the Chrome Web Store Developer Dashboard. The `1.1.1` Store build uses this permission set:
+Paste-ready answers for the Chrome Web Store Developer Dashboard. The `1.1.2` Store build uses this permission set:
 
 ```text
 permissions: sidePanel, storage, scripting, activeTab, tabs
@@ -120,13 +120,13 @@ Mark **collected/processed** for the core feature.
 **English**
 
 ```text
-When the user initiates a request, Runi may process the current page’s title, URL, readable text, selected text, HTML, DOM structure and attributes, metadata, scripts, stylesheets, computed styles, and a visible-tab screenshot, depending on the tools used. Relevant text and page-derived tool results are sent directly to the AI provider endpoint configured by the user solely to answer or carry out that request. Runi has no developer-operated backend, does not sell this data, and does not use it for advertising, profiling, credit decisions, or unrelated purposes. In version 1.1.1, screenshot image bytes remain transient in tool details and are not included in the provider request.
+When the user initiates a request, Runi may process the current page’s title, URL, readable text, selected text, HTML, DOM structure and attributes, metadata, scripts, stylesheets, computed styles, and a visible-tab screenshot, depending on the tools used. Relevant text and page-derived tool results are sent directly to the AI provider endpoint configured by the user solely to answer or carry out that request. Runi has no developer-operated backend, does not sell this data, and does not use it for advertising, profiling, credit decisions, or unrelated purposes. In version 1.1.2, screenshot image bytes remain transient in tool details and are not included in the provider request.
 ```
 
 **简体中文**
 
 ```text
-用户发起请求后，Runi 可能会根据所用工具处理当前页面的标题、URL、可读正文、选中文本、HTML、DOM 结构与属性、元信息、脚本、样式表、计算样式和可见标签页截图。与请求有关的文本和页面工具结果会直接发送到用户配置的 AI Provider 端点，仅用于回答或执行该请求。Runi 不运营开发者后端，不出售这些数据，也不会将其用于广告、画像、信贷判断或无关用途。在 1.1.1 中，截图图片字节仅短暂保存在工具详情中，不会包含在 Provider 请求里。
+用户发起请求后，Runi 可能会根据所用工具处理当前页面的标题、URL、可读正文、选中文本、HTML、DOM 结构与属性、元信息、脚本、样式表、计算样式和可见标签页截图。与请求有关的文本和页面工具结果会直接发送到用户配置的 AI Provider 端点，仅用于回答或执行该请求。Runi 不运营开发者后端，不出售这些数据，也不会将其用于广告、画像、信贷判断或无关用途。在 1.1.2 中，截图图片字节仅短暂保存在工具详情中，不会包含在 Provider 请求里。
 ```
 
 ### `Web history` / web browsing activity
