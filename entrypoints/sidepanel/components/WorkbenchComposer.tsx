@@ -1,10 +1,21 @@
-import { useEffect, useRef, useState, type FocusEvent, type KeyboardEvent } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type DragEvent,
+  type FocusEvent,
+  type KeyboardEvent,
+} from 'react';
 import { useTranslation } from '@/lib/i18n';
 import { providerModels, type ProviderConfig } from '@/lib/settings';
 import type { ShortcutConfig, ResolvedShortcut } from '@/lib/shortcuts';
 import { filterShortcutCommands, isUsableShortcutCommand } from '@/lib/workbench/presentation';
 import type { PageContextState } from '../store';
-import type { MessageAttachment } from '@/lib/chat/attachments';
+import {
+  isAttachmentBusy,
+  isAttachmentReady,
+  type PendingAttachment,
+} from '@/lib/chat/attachments';
 import { AttachmentChip } from './AttachmentChip';
 import { IconCheck, IconChevronDown, IconClose, IconPaperclip, IconSend, IconStop } from '../icons';
 
@@ -20,8 +31,8 @@ export interface WorkbenchComposerProps {
   pendingFocusToken: number;
   /** 划词提问消费到的待引用文字（裁剪后）；渲染成独立卡片，null 时不显示。 */
   quotedSelection: string | null;
-  /** 待发送的附件（文本类/图片）。 */
-  attachments: MessageAttachment[];
+  /** 待发送附件的完整生命周期；历史附件由消息列表单独只读渲染。 */
+  attachments: PendingAttachment[];
   onInput(value: string): void;
   onSend(): void;
   onStop(): void;
@@ -29,8 +40,9 @@ export interface WorkbenchComposerProps {
   onRunShortcut(shortcut: ShortcutConfig): void;
   onSelectProviderModel(providerId: string, model: string): void;
   onClearQuotedSelection(): void;
-  onAddAttachmentFiles(files: FileList): void;
+  onAddAttachmentFiles(files: FileList | File[]): void;
   onRemoveAttachment(id: string): void;
+  onRetryAttachment(id: string): void;
 }
 
 type Popover = 'commands' | 'models' | null;
@@ -59,6 +71,7 @@ export function WorkbenchComposer({
   onClearQuotedSelection,
   onAddAttachmentFiles,
   onRemoveAttachment,
+  onRetryAttachment,
 }: WorkbenchComposerProps) {
   const { t } = useTranslation();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -66,14 +79,20 @@ export function WorkbenchComposer({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const modelTriggerRef = useRef<HTMLButtonElement>(null);
   const modelItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const dragDepthRef = useRef(0);
   const [openPopover, setOpenPopover] = useState<Popover>(null);
   const [highlightedCommand, setHighlightedCommand] = useState(0);
   const [composing, setComposing] = useState(false);
+  const [fileDragActive, setFileDragActive] = useState(false);
   const slashCommands = filterShortcutCommands(shortcuts, input);
   const commands = startsSlashCommand(input) || openPopover === 'commands'
     ? startsSlashCommand(input) ? slashCommands : filterShortcutCommands(shortcuts, '/')
     : [];
-  const canSend = input.trim().length > 0 && !busy;
+  const hasBusyAttachment = attachments.some(isAttachmentBusy);
+  const hasReadyAttachment = attachments.some(isAttachmentReady);
+  const canSend = !busy
+    && !hasBusyAttachment
+    && (input.trim().length > 0 || hasReadyAttachment);
   const selectedProvider = providers.find((provider) => provider.id === selectedProviderId);
   const currentModel = selectedModel || selectedProvider?.model || '';
   const modelOptions = providers.flatMap((provider) =>
@@ -220,10 +239,43 @@ export function WorkbenchComposer({
       return;
     }
 
-    if (event.key === 'Enter' && !event.shiftKey && !busy && input.trim()) {
+    if (event.key === 'Enter' && !event.shiftKey && canSend) {
       event.preventDefault();
       onSend();
     }
+  }
+
+  function isFileDrag(event: DragEvent<HTMLElement>): boolean {
+    return Array.from(event.dataTransfer.types).includes('Files');
+  }
+
+  function handleDragEnter(event: DragEvent<HTMLDivElement>) {
+    if (!isFileDrag(event)) return;
+    event.preventDefault();
+    dragDepthRef.current += 1;
+    setFileDragActive(true);
+  }
+
+  function handleDragOver(event: DragEvent<HTMLDivElement>) {
+    if (!isFileDrag(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+  }
+
+  function handleDragLeave(event: DragEvent<HTMLDivElement>) {
+    if (!isFileDrag(event)) return;
+    event.preventDefault();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setFileDragActive(false);
+  }
+
+  function handleDrop(event: DragEvent<HTMLDivElement>) {
+    if (!isFileDrag(event)) return;
+    event.preventDefault();
+    dragDepthRef.current = 0;
+    setFileDragActive(false);
+    const files = Array.from(event.dataTransfer.files);
+    if (files.length > 0) onAddAttachmentFiles(files);
   }
 
   return (
@@ -332,19 +384,35 @@ export function WorkbenchComposer({
         {attachments.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-1.5">
             {attachments.map((attachment) => (
-              <AttachmentChip key={attachment.id} attachment={attachment} onRemove={() => onRemoveAttachment(attachment.id)} />
+              <AttachmentChip
+                key={attachment.id}
+                pending={attachment}
+                onRemove={onRemoveAttachment}
+                onRetry={onRetryAttachment}
+              />
             ))}
           </div>
         )}
 
-        <div className="relative flex items-end gap-2 rounded-2xl border border-neutral-300 bg-white p-2 shadow-sm transition-colors focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/30 dark:border-neutral-700 dark:bg-neutral-900">
+        <div
+          data-testid="composer-drop-zone"
+          onDragEnter={handleDragEnter}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          className={`relative flex items-end gap-2 rounded-2xl border p-2 shadow-sm transition-colors focus-within:ring-2 focus-within:ring-indigo-500/30 ${
+            fileDragActive
+              ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-500/30 dark:border-indigo-400 dark:bg-indigo-950/40'
+              : 'border-neutral-300 bg-white focus-within:border-indigo-500 dark:border-neutral-700 dark:bg-neutral-900'
+          }`}
+        >
           {/* tabIndex={-1}：真实浏览器里 display:none 的元素天然不在 tab 序列里，
               但 jsdom 的 userEvent tab 模拟不遵循这条规则，需要显式声明保持行为一致。 */}
           <input
             ref={fileInputRef}
             type="file"
             multiple
-            accept="image/*,.txt,.md,.markdown,.json,.csv,.log,.js,.jsx,.ts,.tsx,.py,.java,.go,.rs,.c,.cpp,.h,.hpp,.css,.html,.htm,.xml,.yaml,.yml,.sh,.bash,.ini,.toml,.rb,.php,.sql"
+            accept=".pdf,application/pdf,image/*,.txt,.md,.markdown,.json,.csv,.log,.js,.jsx,.ts,.tsx,.py,.java,.go,.rs,.c,.cpp,.h,.hpp,.css,.html,.htm,.xml,.yaml,.yml,.sh,.bash,.ini,.toml,.rb,.php,.sql"
             className="hidden"
             tabIndex={-1}
             onChange={(event) => {
@@ -376,7 +444,7 @@ export function WorkbenchComposer({
             aria-expanded={openPopover === 'commands'}
             aria-controls={openPopover === 'commands' ? 'workbench-slash-commands' : undefined}
             aria-activedescendant={openPopover === 'commands' && commands.length ? `workbench-command-${commands[highlightedCommand]?.config.id}` : undefined}
-            placeholder={t('workbench.composerPlaceholder')}
+            placeholder={fileDragActive ? t('workbench.dropPdfPrompt') : t('workbench.composerPlaceholder')}
             className="max-h-40 min-h-[40px] flex-1 resize-none bg-transparent px-2 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none dark:text-neutral-100 dark:placeholder:text-neutral-600"
           />
           {busy ? (

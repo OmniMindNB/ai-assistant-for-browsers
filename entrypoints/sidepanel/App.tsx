@@ -7,7 +7,6 @@ const Markdown = lazy(() => import('./Markdown'));
 import { nextThemeMode, useTheme } from '@/lib/theme';
 import { useTranslation } from '@/lib/i18n';
 import { discardedCount, isEditableMessage } from '@/lib/chat/messages';
-import { isAttachmentReady } from '@/lib/chat/attachments';
 import { isNearBottom } from '@/lib/scroll';
 import {
   resolveShortcut,
@@ -52,6 +51,8 @@ export default function App() {
     clearQuotedSelection,
     addAttachmentFiles,
     removeAttachment,
+    retryAttachment,
+    disposeAttachments,
     refreshProvider,
     refreshShortcuts,
     refreshConversations,
@@ -98,6 +99,8 @@ export default function App() {
     refreshPageContext,
     restoreTabConversation,
   ]);
+
+  useEffect(() => () => disposeAttachments(), [disposeAttachments]);
 
   useEffect(() => {
     const listener = (
@@ -315,7 +318,7 @@ export default function App() {
             selectedModel={selectedModel}
             pendingFocusToken={pendingFocusToken}
             quotedSelection={quotedSelection}
-            attachments={pendingAttachments.filter(isAttachmentReady).map((item) => item.attachment)}
+            attachments={pendingAttachments}
             onInput={setInput}
             onSend={submitMessage}
             onStop={stop}
@@ -326,6 +329,7 @@ export default function App() {
             onClearQuotedSelection={clearQuotedSelection}
             onAddAttachmentFiles={addAttachmentFiles}
             onRemoveAttachment={removeAttachment}
+            onRetryAttachment={retryAttachment}
           />
       </div>
     </div>

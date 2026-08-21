@@ -162,6 +162,24 @@ export function IconCheck({ className }: IconProps) {
   );
 }
 
+export function IconLoader({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M21 12a9 9 0 1 1-6.2-8.56" />
+    </Svg>
+  );
+}
+
+export function IconAlertTriangle({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M10.3 3.7 2.4 17.5A2 2 0 0 0 4.1 20h15.8a2 2 0 0 0 1.7-2.5L13.7 3.7a2 2 0 0 0-3.4 0Z" />
+      <line x1="12" y1="9" x2="12" y2="13" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
+    </Svg>
+  );
+}
+
 export function IconSun({ className }: IconProps) {
   return (
     <Svg className={className}>

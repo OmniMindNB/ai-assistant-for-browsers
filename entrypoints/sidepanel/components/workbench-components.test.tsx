@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConversationRecord } from '@/lib/db';
+import type { PendingAttachment } from '@/lib/chat/attachments';
 import { LocaleProvider } from '@/lib/i18n';
 import { en } from '@/lib/i18n/locales/en';
 import { zh } from '@/lib/i18n/locales/zh';
@@ -15,6 +16,7 @@ import { HistoryDrawer } from './HistoryDrawer';
 import { WorkbenchEmptyState } from './WorkbenchEmptyState';
 import { WorkbenchHeader } from './WorkbenchHeader';
 import { WorkbenchComposer, type WorkbenchComposerProps } from './WorkbenchComposer';
+import { AttachmentChip } from './AttachmentChip';
 
 const chatStore = {
   messages: [],
@@ -42,6 +44,8 @@ const chatStore = {
   clearQuotedSelection: vi.fn(),
   addAttachmentFiles: vi.fn(),
   removeAttachment: vi.fn(),
+  retryAttachment: vi.fn(),
+  disposeAttachments: vi.fn(),
   refreshProvider: vi.fn(),
   refreshShortcuts: vi.fn(),
   refreshConversations: vi.fn(),
@@ -155,6 +159,7 @@ beforeEach(() => {
     busy: false,
     error: null,
     pendingConfirmation: null,
+    pendingAttachments: [],
     pageContext: {
       status: 'available' as const,
       tabId: 1,
@@ -233,6 +238,7 @@ const composerProps: WorkbenchComposerProps = {
   attachments: [],
   onAddAttachmentFiles: vi.fn(),
   onRemoveAttachment: vi.fn(),
+  onRetryAttachment: vi.fn(),
 };
 
 const configuredProvider: ProviderConfig = {
@@ -242,6 +248,38 @@ const configuredProvider: ProviderConfig = {
   apiKey: 'test-key',
   model: 'model-one',
   models: ['model-one', 'model-two'],
+};
+
+const readyPdf: PendingAttachment = {
+  id: 'ready-pdf',
+  name: 'ready.pdf',
+  mimeType: 'application/pdf',
+  size: 10,
+  kind: 'pdf',
+  status: 'ready',
+  attachment: {
+    id: 'ready-pdf',
+    name: 'ready.pdf',
+    mimeType: 'application/pdf',
+    size: 10,
+    kind: 'pdf',
+    pageCount: 2,
+    extractedChars: 20,
+    truncated: false,
+  },
+  transientText: 'ready text',
+};
+
+const retryablePdfError: PendingAttachment = {
+  id: 'failed-pdf',
+  name: 'report.pdf',
+  mimeType: 'application/pdf',
+  size: 10,
+  kind: 'pdf',
+  status: 'error',
+  file: new File(['%PDF-x'], 'report.pdf'),
+  reason: 'parse-failed',
+  retryable: true,
 };
 
 function ComposerHarness({ initialInput = '', ...props }: Partial<WorkbenchComposerProps> & { initialInput?: string }) {
@@ -262,6 +300,179 @@ function ComposerHarness({ initialInput = '', ...props }: Partial<WorkbenchCompo
 }
 
 describe('workbench composer', () => {
+  it('shows PDF progress and disables send while parsing', () => {
+    render(
+      <ComposerHarness
+        initialInput="summarize"
+        attachments={[{
+          status: 'parsing',
+          id: 'a',
+          taskId: 't',
+          file: new File([], 'report.pdf'),
+          name: 'report.pdf',
+          mimeType: 'application/pdf',
+          size: 10,
+          kind: 'pdf',
+          completedPages: 2,
+          pageCount: 4,
+        }]}
+      />,
+    );
+
+    expect(screen.getByText('50%')).toBeVisible();
+    expect(screen.getByText('Parsing')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
+  });
+
+  it('enables attachment-only send for a ready PDF', () => {
+    render(<ComposerHarness initialInput="" attachments={[readyPdf]} />);
+
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled();
+    expect(screen.getByText('2 pages')).toBeVisible();
+  });
+
+  it('shows retry only for retryable errors', async () => {
+    const user = userEvent.setup();
+    const onRetryAttachment = vi.fn();
+    const nonRetryableError: PendingAttachment = {
+      ...retryablePdfError,
+      id: 'no-text-pdf',
+      name: 'scan.pdf',
+      reason: 'no-extractable-text',
+      retryable: false,
+    };
+    render(
+      <ComposerHarness
+        attachments={[retryablePdfError, nonRetryableError]}
+        onRetryAttachment={onRetryAttachment}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Retry report.pdf' }));
+    expect(onRetryAttachment).toHaveBeenCalledWith(retryablePdfError.id);
+    expect(screen.queryByRole('button', { name: 'Retry scan.pdf' })).toBeNull();
+    expect(screen.getAllByRole('alert')).toHaveLength(2);
+  });
+
+  it('lets valid text bypass an error attachment but will not send the error alone', () => {
+    const { rerender } = render(
+      <ComposerHarness initialInput="summarize" attachments={[retryablePdfError]} />,
+    );
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled();
+
+    rerender(
+      <LocaleProvider>
+        <WorkbenchComposer
+          {...composerProps}
+          input=""
+          attachments={[retryablePdfError]}
+        />
+      </LocaleProvider>,
+    );
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
+  });
+
+  it('shows queued and truncated PDF states with accessible per-file removal', async () => {
+    const user = userEvent.setup();
+    const onRemoveAttachment = vi.fn();
+    const queued: PendingAttachment = {
+      status: 'queued',
+      id: 'queued-pdf',
+      taskId: 'queued-task',
+      file: new File([], 'queued.pdf'),
+      name: 'queued.pdf',
+      mimeType: 'application/pdf',
+      size: 10,
+      kind: 'pdf',
+    };
+    const truncated: PendingAttachment = {
+      id: 'truncated-pdf',
+      name: 'long.pdf',
+      mimeType: 'application/pdf',
+      size: 10,
+      kind: 'pdf',
+      status: 'ready',
+      attachment: {
+        id: 'truncated-pdf',
+        name: 'long.pdf',
+        mimeType: 'application/pdf',
+        size: 10,
+        kind: 'pdf',
+        pageCount: 2,
+        extractedChars: 60_000,
+        truncated: true,
+      },
+      transientText: 'ready text',
+    };
+    render(
+      <ComposerHarness
+        attachments={[queued, truncated]}
+        onRemoveAttachment={onRemoveAttachment}
+      />,
+    );
+
+    expect(screen.getByText('Waiting to parse')).toBeVisible();
+    expect(screen.getByText('Truncated (too long)')).toHaveAttribute(
+      'title',
+      'Limited to the first 60,000 extracted characters',
+    );
+    await user.click(screen.getByRole('button', { name: 'Remove queued.pdf' }));
+    expect(onRemoveAttachment).toHaveBeenCalledWith('queued-pdf');
+  });
+
+  it('renders historical PDF chips as read-only', () => {
+    render(
+      <LocaleProvider>
+        <AttachmentChip attachment={readyPdf.attachment} />
+      </LocaleProvider>,
+    );
+
+    expect(screen.getByText('ready.pdf')).toBeVisible();
+    expect(screen.getByText('2 pages')).toBeVisible();
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('highlights file drag without intercepting text drag and submits dropped files', () => {
+    const onAddAttachmentFiles = vi.fn();
+    render(<ComposerHarness onAddAttachmentFiles={onAddAttachmentFiles} />);
+    const zone = screen.getByTestId('composer-drop-zone');
+    const textPreventDefault = vi.fn();
+    fireEvent.dragEnter(zone, {
+      dataTransfer: { types: ['text/plain'] },
+      preventDefault: textPreventDefault,
+    });
+    expect(screen.queryByText('Drop to add PDF')).toBeNull();
+    expect(textPreventDefault).not.toHaveBeenCalled();
+
+    const pdf = new File(['%PDF-x'], 'report.pdf', { type: 'application/pdf' });
+    fireEvent.dragEnter(zone, { dataTransfer: { types: ['Files'], files: [pdf] } });
+    expect(screen.getByRole('textbox')).toHaveAttribute('placeholder', 'Drop to add PDF');
+    fireEvent.drop(zone, { dataTransfer: { types: ['Files'], files: [pdf] } });
+    expect(onAddAttachmentFiles).toHaveBeenCalledWith([pdf]);
+    expect(screen.getByRole('textbox')).not.toHaveAttribute('placeholder', 'Drop to add PDF');
+  });
+
+  it('keeps the drop highlight while file drag moves across child controls', () => {
+    render(<ComposerHarness />);
+    const zone = screen.getByTestId('composer-drop-zone');
+
+    fireEvent.dragEnter(zone, { dataTransfer: { types: ['Files'] } });
+    fireEvent.dragEnter(screen.getByRole('textbox'), { dataTransfer: { types: ['Files'] } });
+    fireEvent.dragLeave(screen.getByRole('textbox'), { dataTransfer: { types: ['Files'] } });
+    expect(screen.getByRole('textbox')).toHaveAttribute('placeholder', 'Drop to add PDF');
+    fireEvent.dragLeave(zone, { dataTransfer: { types: ['Files'] } });
+    expect(screen.getByRole('textbox')).not.toHaveAttribute('placeholder', 'Drop to add PDF');
+  });
+
+  it('offers PDF files through the attachment picker', () => {
+    const { container } = render(<ComposerHarness />);
+
+    expect(container.querySelector('input[type="file"]')).toHaveAttribute(
+      'accept',
+      expect.stringContaining('.pdf,application/pdf'),
+    );
+  });
+
   it('focuses the textarea and moves the cursor to the end when pendingFocusToken advances', async () => {
     const { rerender } = render(
       <LocaleProvider>
@@ -632,6 +843,24 @@ describe('activity step list', () => {
 });
 
 describe('workbench context controls', () => {
+  it('routes attachment retries from the compact chip to the store', async () => {
+    const user = userEvent.setup();
+    (chatStore as any).pendingAttachments = [retryablePdfError];
+    render(<LocaleProvider><App /></LocaleProvider>);
+
+    await user.click(screen.getByRole('button', { name: 'Retry report.pdf' }));
+
+    expect(chatStore.retryAttachment).toHaveBeenCalledWith('failed-pdf');
+  });
+
+  it('disposes transient attachments when the sidepanel unmounts', () => {
+    const { unmount } = render(<LocaleProvider><App /></LocaleProvider>);
+
+    unmount();
+
+    expect(chatStore.disposeAttachments).toHaveBeenCalledOnce();
+  });
+
   it('refreshes providers when browser storage changes externally', () => {
     render(<LocaleProvider><App /></LocaleProvider>);
     storageChangeListener?.({
