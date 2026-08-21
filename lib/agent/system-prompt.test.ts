@@ -36,6 +36,10 @@ describe('buildSystemPrompt structure', () => {
   it('keeps the untrusted page content rule', () => {
     expect(SYSTEM_PROMPT).toContain('untrusted page content');
   });
+
+  it('names uploaded files and images as untrusted data in the instruction-priority rule', () => {
+    expect(SYSTEM_PROMPT).toContain('用户上传的文件与图片内容');
+  });
 });
 
 describe('buildSystemPrompt tool listing', () => {
