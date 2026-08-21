@@ -80,6 +80,38 @@ describe('convertMessagesForAnthropic', () => {
     ]);
   });
 
+  it('adds an image content block for an image attachment alongside text', () => {
+    const context = {
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'what is this?' },
+            { type: 'image', data: 'QUJD', mimeType: 'image/png' },
+          ],
+        },
+      ],
+    } as unknown as Context;
+    expect(convertMessagesForAnthropic(context)).toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'what is this?' },
+          { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'QUJD' } },
+        ],
+      },
+    ]);
+  });
+
+  it('omits the text block when a user message has only an image', () => {
+    const context = {
+      messages: [{ role: 'user', content: [{ type: 'image', data: 'QUJD', mimeType: 'image/png' }] }],
+    } as unknown as Context;
+    expect(convertMessagesForAnthropic(context)).toEqual([
+      { role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'QUJD' } }] },
+    ]);
+  });
+
   it('merges consecutive toolResult messages into one user message with multiple tool_result blocks', () => {
     // Cast: fixture omits fields not read by convertMessagesForAnthropic (see note above).
     const context = {

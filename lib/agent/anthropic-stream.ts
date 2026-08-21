@@ -1,7 +1,7 @@
 // lib/agent/anthropic-stream.ts
 import { createAssistantMessageEventStream, type Api, type AssistantMessageEvent, type Context, type Model } from '@earendil-works/pi-ai';
 import type { StreamFn } from '@earendil-works/pi-agent-core';
-import { buildPartial, createAssistantMessage, describeHttpFailure, finishStream, stringifyContent, type ToolCallAccumulator } from './stream-shared';
+import { buildPartial, createAssistantMessage, describeHttpFailure, extractImageParts, finishStream, stringifyContent, type ToolCallAccumulator } from './stream-shared';
 
 const ANTHROPIC_VERSION = '2023-06-01';
 
@@ -210,7 +210,13 @@ export function convertMessagesForAnthropic(context: Context): Array<Record<stri
   const result: Array<Record<string, unknown>> = [];
   for (const message of context.messages) {
     if (message.role === 'user') {
-      result.push({ role: 'user', content: [{ type: 'text', text: stringifyContent(message.content) }] });
+      const blocks: Array<Record<string, unknown>> = [];
+      const text = stringifyContent(message.content);
+      if (text) blocks.push({ type: 'text', text });
+      for (const image of extractImageParts(message.content)) {
+        blocks.push({ type: 'image', source: { type: 'base64', media_type: image.mimeType, data: image.data } });
+      }
+      result.push({ role: 'user', content: blocks });
       continue;
     }
     if (message.role === 'toolResult') {
