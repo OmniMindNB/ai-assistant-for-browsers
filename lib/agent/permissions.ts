@@ -23,6 +23,7 @@ export const READ_ONLY_TOOL_NAMES = new Set([
   'browser_get_computed_style',
   'browser_get_page_meta',
   'browser_screenshot',
+  'browser_get_form',
 ]);
 
 export const CONFIRM_TOOL_NAMES = new Set([

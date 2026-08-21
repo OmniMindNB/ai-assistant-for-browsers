@@ -8,6 +8,8 @@ import {
   type ClickElementResult,
   type GetComputedStylePayload,
   type GetComputedStyleResult,
+  type GetFormPayload,
+  type GetFormResult,
   type GetHtmlPayload,
   type GetHtmlResult,
   type GetScriptsPayload,
@@ -44,6 +46,7 @@ export function createBrowserTools(tabId: number): BrowserAgentTool[] {
     makeReadPageTool(tabId),
     makeGetPageMetaTool(tabId),
     makeInspectPageImplementationTool(tabId),
+    makeGetFormTool(tabId),
     makeQueryDomTool(tabId),
     makeGetHtmlTool(tabId),
     makeGetScriptsTool(tabId),
@@ -234,6 +237,36 @@ function makeInspectPageImplementationTool(tabId: number): BrowserAgentTool {
         formatJson('页面实现巡检（untrusted page content）', report),
         report as unknown as Record<string, unknown>,
       );
+    },
+  };
+}
+
+function makeGetFormTool(tabId: number): BrowserAgentTool {
+  return {
+    name: 'browser_get_form',
+    label: 'Get Form',
+    description:
+      'Read every form control on the page as structured data: kind, label, current value, checked state, select options, requiredness, visibility and native validation message. Each field gets a stable fieldId — always use these ids with browser_fill_form instead of writing your own CSS selectors. Prefer this over browser_read_page or browser_get_html for any form task; readable-text extraction strips form controls entirely.',
+    parameters: Type.Object({
+      selector: Type.Optional(Type.String({ description: 'Limit collection to this container. Defaults to the whole document.' })),
+      includeHidden: Type.Optional(Type.Boolean({ description: 'Include hidden and invisible fields. Defaults to false.' })),
+    }),
+    execute: async (_toolCallId, params) => {
+      const payload = params as GetFormPayload;
+      const response = (await sendMessage<GetFormPayload, GetFormResult>('GET_FORM', payload, tabId)) as MessageResponse<GetFormResult>;
+      if (!response.ok || !response.data) throw new Error(response.error ?? '表单读取失败');
+
+      const data = response.data;
+      const notes: string[] = [];
+      if (data.unreachable.iframes > 0) {
+        notes.push(`页面中有 ${data.unreachable.iframes} 个 iframe，其内部表单当前版本无法读取或操作。`);
+      }
+      if (data.unreachable.closedShadowRoots > 0) {
+        notes.push(`页面中有 ${data.unreachable.closedShadowRoots} 个可能含 closed shadow root 的自定义元素，其内部字段不可见。`);
+      }
+      if (data.truncated) notes.push('字段数量已达上限，请用 selector 参数缩小范围后重新读取。');
+
+      return textResult([formatJson('表单结构', data), ...notes].join('\n'), data as unknown as Record<string, unknown>);
     },
   };
 }

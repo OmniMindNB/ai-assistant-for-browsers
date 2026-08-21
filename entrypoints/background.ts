@@ -3,8 +3,11 @@ import {
   type CaptureScreenshotResult,
   type ClickElementPayload,
   type ClickElementResult,
+  type FormFieldDescriptor,
   type GetComputedStylePayload,
   type GetComputedStyleResult,
+  type GetFormPayload,
+  type GetFormResult,
   type GetHtmlPayload,
   type GetHtmlResult,
   type GetScriptsPayload,
@@ -41,6 +44,9 @@ import { resolveTargetTab } from '@/lib/agent/tab-target';
 import { sendToContentScript } from '@/lib/agent/content-script-messaging';
 import { clearConversationIdForTab } from '@/lib/agent/tab-conversation';
 import { clearPendingAskForTab, setPendingAskForTab } from '@/lib/agent/tab-pending-ask';
+import { collectFormFields } from '@/lib/agent/form-dom';
+import { toFieldDescriptor } from '@/lib/agent/form-schema';
+import { setFormFieldsForTab, type FormFieldHandle } from '@/lib/agent/tab-form-fields';
 
 const DEFAULT_TOOL_MAX_CHARS = 12000;
 const SUPPORTED_MESSAGE_TYPES = [
@@ -55,6 +61,7 @@ const SUPPORTED_MESSAGE_TYPES = [
   'GET_STYLESHEETS',
   'GET_COMPUTED_STYLE',
   'GET_PAGE_META',
+  'GET_FORM',
   'CAPTURE_SCREENSHOT',
   'SET_STYLE',
   'MODIFY_DOM',
@@ -200,6 +207,9 @@ async function handleMessage(message: Message, sender?: MessageSender): Promise<
     case 'GET_PAGE_META':
       return getPageMeta(requireTabId(message));
 
+    case 'GET_FORM':
+      return getForm(message.payload as GetFormPayload, requireTabId(message));
+
     case 'CAPTURE_SCREENSHOT':
       return captureScreenshot(message.payload as CaptureScreenshotPayload, requireTabId(message));
 
@@ -295,6 +305,57 @@ async function queryDom(payload: QueryDomPayload, tabId: number): Promise<QueryD
       }),
     };
   });
+}
+
+const MAX_FORM_FIELDS = 120;
+const MAX_SELECT_OPTIONS = 50;
+
+async function getForm(payload: GetFormPayload, tabId: number): Promise<GetFormResult> {
+  const collected = await executeInTab(
+    tabId,
+    {
+      selector: payload?.selector,
+      includeHidden: payload?.includeHidden,
+      maxFields: MAX_FORM_FIELDS,
+      maxOptions: MAX_SELECT_OPTIONS,
+    },
+    collectFormFields,
+  );
+
+  const fields: FormFieldDescriptor[] = [];
+  const handles: Record<string, FormFieldHandle> = {};
+  const orphanFieldIds: string[] = [];
+
+  collected.raws.forEach((raw, index) => {
+    const fieldId = `f${index + 1}`;
+    const descriptor = toFieldDescriptor(raw, fieldId);
+    fields.push(descriptor);
+    handles[fieldId] = {
+      path: raw.path,
+      expect: { tag: raw.tag, type: raw.type, name: raw.name, label: descriptor.label },
+      sensitive: descriptor.sensitive,
+      kind: descriptor.kind,
+    };
+    if (!descriptor.formId) orphanFieldIds.push(fieldId);
+  });
+
+  await setFormFieldsForTab(tabId, { url: collected.url, fields: handles });
+
+  return {
+    forms: collected.forms.map((form) => ({
+      formId: `form${form.formIndex}`,
+      name: form.name,
+      action: form.action,
+      method: form.method,
+      submitFieldIds: fields
+        .filter((field) => field.kind === 'submit' && field.formId === `form${form.formIndex}`)
+        .map((field) => field.fieldId),
+    })),
+    fields,
+    orphanFieldIds,
+    unreachable: collected.unreachable,
+    truncated: collected.truncated,
+  };
 }
 
 async function getHtml(payload: GetHtmlPayload, tabId: number): Promise<GetHtmlResult> {

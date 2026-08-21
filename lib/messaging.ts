@@ -13,6 +13,7 @@ export type MessageType =
   | 'GET_STYLESHEETS'
   | 'GET_COMPUTED_STYLE'
   | 'GET_PAGE_META'
+  | 'GET_FORM'
   | 'CAPTURE_SCREENSHOT'
   | 'SET_STYLE'
   | 'MODIFY_DOM'
