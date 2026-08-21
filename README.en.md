@@ -12,6 +12,7 @@
 - 🔍 **Evidence-driven analysis**: automatically reads page text / DOM / scripts / stylesheets / computed styles / screenshots, and when answering "how is this implemented," cites specific code evidence instead of giving a generic description
 - 🔑 **Bring your own model**: connect any OpenAI-compatible provider / API key / model — not locked to a single vendor
 - 🗂️ **Local-first**: conversation history is stored only in local IndexedDB, never synced to any cloud
+- 📎 **Local file context**: Attach text, images, or PDFs. PDF text is extracted locally (20 MB / 60,000 characters, no OCR), used for one turn, and only file metadata remains in history.
 - 📄 **Page summarization / comprehension aids**: extract key points, explain terms, and answer questions grounded in page context, all in one click
 - ⚡ **Skill system**: turn common actions into reusable, centrally managed Skills
 

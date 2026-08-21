@@ -98,6 +98,8 @@
 
 ## 变更日志
 
+- 2026-08-21: Added local PDF attachment parsing with Worker-backed progress, drag-and-drop, bounded concurrency, and metadata-only history persistence ([design](superpowers/specs/2026-08-21-pdf-upload-experience-design.md), [plan](superpowers/plans/2026-08-21-pdf-upload-experience.md)).
+
 | 日期 | 内容 | 关联 |
 |------|------|------|
 | 2026-08-02 | 把单行活动指示替换为可累积的本轮步骤历史：`activitySteps` 数组替代单槽 `currentActivity`，每个工具调用运行时显示脉冲圆点，成功后转为过去式文案+勾选图标常驻显示（不再立即清空），失败/被拒绝转为永久失败项（不再 2.5 秒后自动消失）；工具调用超过 6 秒未结束时追加统一的「时间较长」后缀（不按工具区分文案，不做实时秒数）；两次工具调用之间/组织最终回答时，消息气泡尾部追加与首字等待态复用的打字动效，覆盖此前完全静默的思考间隙。新增纯函数模块 `lib/agent/activity-steps.ts`（`upsertActivityStep`/`finishActivityStep`/`markActivityStepSlow`），`CurrentActivityLine` 组件删除，替换为 `ActivityStepList`。验证：`pnpm compile` 通过，`pnpm test`（34 个测试文件、420 个测试）通过，`pnpm build`（Chrome MV3）成功构建；含真实 LLM 交互的人工验收（多步骤进度条、拒绝后永久失败项、6 秒慢速升级提示、思考间隙提示、回合结束清空）尚未执行，待人工在 pnpm dev 环境下验证。 | [设计](superpowers/specs/2026-08-02-agent-progress-feedback-design.md) |
