@@ -103,6 +103,31 @@ describe('convertMessagesForAnthropic', () => {
     ]);
   });
 
+  it('adds an image content block for each image when a user message has multiple images', () => {
+    const context = {
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'compare these' },
+            { type: 'image', data: 'QUJD', mimeType: 'image/png' },
+            { type: 'image', data: 'RUZH', mimeType: 'image/jpeg' },
+          ],
+        },
+      ],
+    } as unknown as Context;
+    expect(convertMessagesForAnthropic(context)).toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'compare these' },
+          { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'QUJD' } },
+          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'RUZH' } },
+        ],
+      },
+    ]);
+  });
+
   it('omits the text block when a user message has only an image', () => {
     const context = {
       messages: [{ role: 'user', content: [{ type: 'image', data: 'QUJD', mimeType: 'image/png' }] }],

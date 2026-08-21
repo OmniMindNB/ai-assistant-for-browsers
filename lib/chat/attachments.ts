@@ -68,8 +68,10 @@ export async function readAttachment(file: File): Promise<AttachmentReadResult> 
         },
       };
     }
-    const text = await file.text();
-    const truncated = text.length > MAX_ATTACHMENT_TEXT_CHARS;
+    const readByteLimit = MAX_ATTACHMENT_TEXT_CHARS * 4; // UTF-8 worst case: 4 bytes/char
+    const readSource = file.size > readByteLimit ? file.slice(0, readByteLimit) : file;
+    const text = await readSource.text();
+    const truncated = file.size > readByteLimit || text.length > MAX_ATTACHMENT_TEXT_CHARS;
     return {
       ok: true,
       attachment: {
@@ -78,7 +80,7 @@ export async function readAttachment(file: File): Promise<AttachmentReadResult> 
         mimeType: file.type || 'text/plain',
         size: file.size,
         kind: 'text',
-        textContent: truncated ? text.slice(0, MAX_ATTACHMENT_TEXT_CHARS) : text,
+        textContent: text.length > MAX_ATTACHMENT_TEXT_CHARS ? text.slice(0, MAX_ATTACHMENT_TEXT_CHARS) : text,
         truncated,
       },
     };
@@ -103,7 +105,7 @@ async function readFileAsDataUrl(file: File): Promise<string> {
 export function buildAttachmentTextTemplate(attachment: MessageAttachment, translate: Translate): string {
   return translate('store.attachmentTextTemplate', {
     name: attachment.name,
-    content: attachment.textContent ?? '',
+    content: JSON.stringify(attachment.textContent ?? ''),
   });
 }
 

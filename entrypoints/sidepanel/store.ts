@@ -349,7 +349,7 @@ export const useChat = create<ChatState>((set, get) => ({
       ? t('workbench.attachmentLimitReached', { max: MAX_ATTACHMENTS_PER_MESSAGE })
       : undefined;
     set((s) => ({
-      pendingAttachments: [...s.pendingAttachments, ...added],
+      pendingAttachments: [...s.pendingAttachments, ...added].slice(0, MAX_ATTACHMENTS_PER_MESSAGE),
       error: failureMessage ?? limitMessage ?? s.error,
     }));
   },
@@ -891,6 +891,8 @@ async function runAgent(
       return true;
     }
 
+    // 不能传 undefined 作为显式第二参数：store-context.test.tsx 里 toHaveBeenCalledWith('...') 断言的是单参数调用，
+    // 传两个参数（哪怕第二个是 undefined）会让 vitest 的参数数组比对失败。
     if (options.images && options.images.length > 0) {
       await agent.prompt(agentUserContent, options.images);
     } else {

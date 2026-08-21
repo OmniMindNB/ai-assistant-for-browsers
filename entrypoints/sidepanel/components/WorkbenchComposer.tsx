@@ -338,6 +338,8 @@ export function WorkbenchComposer({
         )}
 
         <div className="relative flex items-end gap-2 rounded-2xl border border-neutral-300 bg-white p-2 shadow-sm transition-colors focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/30 dark:border-neutral-700 dark:bg-neutral-900">
+          {/* tabIndex={-1}：真实浏览器里 display:none 的元素天然不在 tab 序列里，
+              但 jsdom 的 userEvent tab 模拟不遵循这条规则，需要显式声明保持行为一致。 */}
           <input
             ref={fileInputRef}
             type="file"
