@@ -13,6 +13,7 @@
     "zip:firefox": "wxt zip -b firefox",
     "compile": "tsc --noEmit",
     "test": "vitest run",
+    "verify:pdfjs-assets": "node scripts/verify-pdfjs-assets.mjs",
     "postinstall": "wxt prepare"
   },
   "dependencies": {
