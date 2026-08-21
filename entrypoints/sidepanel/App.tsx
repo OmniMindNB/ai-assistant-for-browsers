@@ -20,6 +20,7 @@ import { WorkbenchEmptyState } from './components/WorkbenchEmptyState';
 import { WorkbenchHeader } from './components/WorkbenchHeader';
 import { ActivityStepList } from './components/ActivityStepList';
 import { WorkbenchComposer } from './components/WorkbenchComposer';
+import { AttachmentChip } from './components/AttachmentChip';
 import type { PendingConfirmation, UIMessage } from './store';
 import { resolvePageAttached, type ResolvedShortcutCommand } from '@/lib/workbench/presentation';
 import {
@@ -34,6 +35,7 @@ export default function App() {
     input,
     pendingFocusToken,
     quotedSelection,
+    pendingAttachments,
     busy,
     error,
     pendingConfirmation,
@@ -47,6 +49,8 @@ export default function App() {
     pageContext,
     setInput,
     clearQuotedSelection,
+    addAttachmentFiles,
+    removeAttachment,
     refreshProvider,
     refreshShortcuts,
     refreshConversations,
@@ -310,6 +314,7 @@ export default function App() {
             selectedModel={selectedModel}
             pendingFocusToken={pendingFocusToken}
             quotedSelection={quotedSelection}
+            attachments={pendingAttachments}
             onInput={setInput}
             onSend={submitMessage}
             onStop={stop}
@@ -318,6 +323,8 @@ export default function App() {
             onRunShortcut={executeShortcut}
             onSelectProviderModel={selectProviderAndModel}
             onClearQuotedSelection={clearQuotedSelection}
+            onAddAttachmentFiles={addAttachmentFiles}
+            onRemoveAttachment={removeAttachment}
           />
       </div>
     </div>
@@ -387,6 +394,13 @@ function Message({
             className="max-w-[85%] rounded-xl border-l-2 border-indigo-400 bg-neutral-100 px-3 py-1.5 dark:border-indigo-500 dark:bg-neutral-900"
           >
             <p className="line-clamp-3 text-xs text-neutral-500 dark:text-neutral-400">{message.quotedText}</p>
+          </div>
+        )}
+        {message.attachments && message.attachments.length > 0 && (
+          <div className="flex flex-wrap justify-end gap-1.5">
+            {message.attachments.map((attachment) => (
+              <AttachmentChip key={attachment.id} attachment={attachment} />
+            ))}
           </div>
         )}
         <div className="group flex items-center gap-1.5">
