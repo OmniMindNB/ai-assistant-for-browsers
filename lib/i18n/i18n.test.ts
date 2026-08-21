@@ -24,6 +24,17 @@ const contextWorkbenchKeys = [
   'shortcut.deleteAria',
 ] as const;
 
+const attachmentKeys = [
+  'store.attachmentTextTemplate',
+  'workbench.attachButtonLabel',
+  'workbench.removeAttachmentLabel',
+  'workbench.attachmentTruncatedBadge',
+  'workbench.attachmentLimitReached',
+  'workbench.attachmentTooLarge',
+  'workbench.attachmentUnsupportedType',
+  'workbench.attachmentReadFailed',
+] as const;
+
 describe('privacy disclosure translations', () => {
   it('provides every required string in English and Chinese', () => {
     for (const key of privacyKeys) {
@@ -47,6 +58,17 @@ describe('context workbench translations', () => {
 
   it('keeps the English and Chinese dictionaries on the same key set', () => {
     expect(Object.keys(en).sort()).toEqual(Object.keys(zh).sort());
+  });
+});
+
+describe('attachment translations', () => {
+  it('provides every required attachment string in English and Chinese', () => {
+    for (const key of attachmentKeys) {
+      expect(en[key]).toEqual(expect.any(String));
+      expect(en[key]).not.toBe('');
+      expect(zh[key]).toEqual(expect.any(String));
+      expect(zh[key]).not.toBe('');
+    }
   });
 });
 
