@@ -7,6 +7,7 @@ const Markdown = lazy(() => import('./Markdown'));
 import { nextThemeMode, useTheme } from '@/lib/theme';
 import { useTranslation } from '@/lib/i18n';
 import { discardedCount, isEditableMessage } from '@/lib/chat/messages';
+import { isAttachmentReady } from '@/lib/chat/attachments';
 import { isNearBottom } from '@/lib/scroll';
 import {
   resolveShortcut,
@@ -314,7 +315,7 @@ export default function App() {
             selectedModel={selectedModel}
             pendingFocusToken={pendingFocusToken}
             quotedSelection={quotedSelection}
-            attachments={pendingAttachments}
+            attachments={pendingAttachments.filter(isAttachmentReady).map((item) => item.attachment)}
             onInput={setInput}
             onSend={submitMessage}
             onStop={stop}

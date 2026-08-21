@@ -43,12 +43,23 @@ import { clearPendingAskForTab, getPendingAskForTab, pendingAskStorageKey } from
 import { buildSelectionAskTemplate, truncateSelectionText } from '@/lib/selection-ask';
 import {
   MAX_ATTACHMENTS_PER_MESSAGE,
-  buildAttachmentTextTemplate,
+  buildPendingAttachmentText,
+  classifyFile,
+  isAttachmentBusy,
+  isAttachmentReady,
   readAttachment,
-  toImageContent,
-  type AttachmentReadFailure,
+  toMessageAttachment,
+  toPendingImageContent,
   type MessageAttachment,
+  type PendingAttachment,
 } from '@/lib/chat/attachments';
+import { PdfParseQueue } from '@/lib/chat/pdf-parse-queue';
+import {
+  MAX_ATTACHMENT_PDF_BYTES,
+  MAX_ATTACHMENT_PDF_TEXT_CHARS,
+  type PdfExtractionResult,
+} from '@/lib/chat/pdf-extractor';
+import { extractPdfAttachment } from '@/lib/chat/pdfjs-runtime';
 import type { ImageContent } from '@earendil-works/pi-ai';
 import { getCurrentLocale, t } from '@/lib/i18n';
 import { isCurrentTabReadable } from '@/lib/current-tab-readability';
@@ -102,8 +113,8 @@ interface ChatState {
   pendingFocusToken: number;
   /** 划词提问消费到的待引用文字（裁剪后）；作为独立卡片显示在输入框上方，不混入 input。 */
   quotedSelection: string | null;
-  /** 待发送的附件（文本类/图片），单条消息最多 MAX_ATTACHMENTS_PER_MESSAGE 个。 */
-  pendingAttachments: MessageAttachment[];
+  /** 待发送附件的瞬态生命周期；只有 ready 元数据会进入历史。 */
+  pendingAttachments: PendingAttachment[];
   busy: boolean;
   error: string | null;
   pendingConfirmation: PendingConfirmation | null;
@@ -123,6 +134,8 @@ interface ChatState {
   clearQuotedSelection: () => void;
   addAttachmentFiles: (files: FileList | File[]) => Promise<void>;
   removeAttachment: (id: string) => void;
+  retryAttachment: (id: string) => Promise<void>;
+  disposeAttachments: () => void;
   refreshProvider: () => Promise<void>;
   refreshShortcuts: () => Promise<void>;
   refreshPageContext: () => Promise<void>;
@@ -168,6 +181,12 @@ const conversationMutationTails = new Map<string, Promise<void>>();
 const successfulDeletedConversationIds = new Set<string>();
 const pendingDeletionGenerations = new Map<string, number>();
 let conversationMutationGeneration = 0;
+const pdfParseQueue = new PdfParseQueue(2);
+
+type StoreSet = (
+  partial: Partial<ChatState> | ((state: ChatState) => Partial<ChatState>),
+) => void;
+type StoreGet = () => ChatState;
 
 function enqueueConversationMutation(id: string, mutation: () => Promise<void>): Promise<void> {
   const previous = conversationMutationTails.get(id) ?? Promise.resolve();
@@ -201,6 +220,94 @@ function captureConversationOrigin(get: () => ChatState): ConversationOrigin {
 
 function isCurrentOrigin(origin: ConversationOrigin, get: () => ChatState): boolean {
   return conversationEpoch === origin.conversationEpoch && get().conversationId === origin.conversationId;
+}
+
+function replacePendingAttachment(
+  set: StoreSet,
+  id: string,
+  taskId: string,
+  replace: (current: PendingAttachment) => PendingAttachment,
+): void {
+  set((state) => ({
+    pendingAttachments: state.pendingAttachments.map((item) =>
+      item.id === id && 'taskId' in item && item.taskId === taskId ? replace(item) : item,
+    ),
+  }));
+}
+
+function cancelPendingAttachments(items: PendingAttachment[]): void {
+  for (const item of items) {
+    if (item.status === 'queued' || item.status === 'parsing') pdfParseQueue.cancel(item.taskId);
+  }
+}
+
+async function parseReservedPdf(
+  set: StoreSet,
+  get: StoreGet,
+  reserved: Extract<PendingAttachment, { status: 'queued' | 'parsing' }>,
+  origin: ConversationOrigin,
+): Promise<void> {
+  const current = get().pendingAttachments.find((item) => item.id === reserved.id);
+  if (
+    !isCurrentOrigin(origin, get) ||
+    !current ||
+    !('taskId' in current) ||
+    current.taskId !== reserved.taskId
+  ) return;
+
+  let result: PdfExtractionResult;
+  try {
+    result = await pdfParseQueue.enqueue(reserved.taskId, (signal) => {
+      replacePendingAttachment(set, reserved.id, reserved.taskId, (item) => ({
+        ...item,
+        status: 'parsing',
+      } as PendingAttachment));
+      return extractPdfAttachment(reserved.file, {
+        maxChars: MAX_ATTACHMENT_PDF_TEXT_CHARS,
+        signal,
+        onProgress: (completedPages, pageCount) => replacePendingAttachment(
+          set,
+          reserved.id,
+          reserved.taskId,
+          (item) => ({ ...item, status: 'parsing', completedPages, pageCount } as PendingAttachment),
+        ),
+      });
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') return;
+    result = { ok: false, reason: 'parse-failed' };
+  }
+
+  if (!isCurrentOrigin(origin, get)) return;
+  replacePendingAttachment(set, reserved.id, reserved.taskId, (item) => result.ok ? {
+    id: item.id,
+    name: item.name,
+    mimeType: 'application/pdf',
+    size: item.size,
+    kind: 'pdf',
+    status: 'ready',
+    attachment: {
+      id: item.id,
+      name: item.name,
+      mimeType: 'application/pdf',
+      size: item.size,
+      kind: 'pdf',
+      pageCount: result.value.pageCount,
+      extractedChars: result.value.extractedChars,
+      truncated: result.value.truncated,
+    },
+    transientText: result.value.text,
+  } : {
+    id: item.id,
+    name: item.name,
+    mimeType: 'application/pdf',
+    size: item.size,
+    kind: 'pdf',
+    status: 'error',
+    file: reserved.file,
+    reason: result.reason,
+    retryable: result.reason === 'read-failed' || result.reason === 'parse-failed',
+  });
 }
 
 function isCurrentRun(run: ActiveRun, get: () => ChatState): boolean {
@@ -334,28 +441,102 @@ export const useChat = create<ChatState>((set, get) => ({
   addAttachmentFiles: async (files) => {
     const list = Array.from(files);
     if (list.length === 0) return;
-    const current = get().pendingAttachments;
-    const remainingSlots = Math.max(0, MAX_ATTACHMENTS_PER_MESSAGE - current.length);
-    const toRead = list.slice(0, remainingSlots);
-    const overflow = list.length > toRead.length;
-    const results = await Promise.all(toRead.map(readAttachment));
-    const added: MessageAttachment[] = [];
-    let failureMessage: string | undefined;
-    for (const result of results) {
-      if (result.ok) added.push(result.attachment);
-      else failureMessage ??= describeAttachmentFailure(result.failure);
-    }
-    const limitMessage = overflow
+    const available = MAX_ATTACHMENTS_PER_MESSAGE - get().pendingAttachments.length;
+    const selected = list.slice(0, Math.max(0, available));
+    const origin = captureConversationOrigin(get);
+    const reserved: PendingAttachment[] = selected.map((file) => {
+      const id = crypto.randomUUID();
+      const taskId = crypto.randomUUID();
+      const kind = classifyFile(file);
+      const base = {
+        id,
+        file,
+        name: file.name,
+        mimeType: file.type || (kind === 'pdf' ? 'application/pdf' : 'application/octet-stream'),
+        size: file.size,
+      };
+      if (kind === 'unsupported') {
+        return { ...base, kind, status: 'error', reason: 'unsupported-type', retryable: false };
+      }
+      if (kind === 'pdf' && file.size > MAX_ATTACHMENT_PDF_BYTES) {
+        return { ...base, kind, status: 'error', reason: 'too-large', retryable: false };
+      }
+      return { ...base, kind, taskId, status: 'queued' };
+    });
+    const limitMessage = list.length > selected.length
       ? t('workbench.attachmentLimitReached', { max: MAX_ATTACHMENTS_PER_MESSAGE })
       : undefined;
     set((s) => ({
-      pendingAttachments: [...s.pendingAttachments, ...added].slice(0, MAX_ATTACHMENTS_PER_MESSAGE),
-      error: failureMessage ?? limitMessage ?? s.error,
+      pendingAttachments: [...s.pendingAttachments, ...reserved],
+      error: limitMessage ?? s.error,
+    }));
+
+    // Give the caller one render turn with stable queued placeholders before
+    // a free queue slot promotes any PDF to parsing.
+    await Promise.resolve();
+    await Promise.all(reserved.map(async (item) => {
+      if (item.status === 'error' || item.status === 'ready') return;
+      if (item.kind === 'pdf') return parseReservedPdf(set, get, item, origin);
+
+      const result = await readAttachment(item.file, item.id);
+      if (!isCurrentOrigin(origin, get)) return;
+      replacePendingAttachment(set, item.id, item.taskId, (current) => result.ok ? {
+        id: current.id,
+        name: current.name,
+        mimeType: current.mimeType,
+        size: current.size,
+        kind: result.attachment.kind,
+        status: 'ready',
+        attachment: result.attachment,
+      } : {
+        id: current.id,
+        name: current.name,
+        mimeType: current.mimeType,
+        size: current.size,
+        kind: item.kind,
+        status: 'error',
+        file: item.file,
+        reason: result.failure.reason,
+        retryable: false,
+      });
     }));
   },
 
-  removeAttachment: (id) =>
-    set((s) => ({ pendingAttachments: s.pendingAttachments.filter((a) => a.id !== id) })),
+  removeAttachment: (id) => {
+    const item = get().pendingAttachments.find((candidate) => candidate.id === id);
+    if (item && (item.status === 'queued' || item.status === 'parsing')) pdfParseQueue.cancel(item.taskId);
+    set((state) => ({
+      pendingAttachments: state.pendingAttachments.filter((candidate) => candidate.id !== id),
+    }));
+  },
+
+  retryAttachment: async (id) => {
+    const failed = get().pendingAttachments.find(
+      (item): item is Extract<PendingAttachment, { status: 'error' }> =>
+        item.id === id && item.status === 'error',
+    );
+    if (!failed || !failed.retryable || !failed.file || failed.kind !== 'pdf') return;
+    const queued: Extract<PendingAttachment, { status: 'queued' | 'parsing' }> = {
+      id: failed.id,
+      name: failed.name,
+      mimeType: 'application/pdf',
+      size: failed.size,
+      kind: 'pdf',
+      status: 'queued',
+      taskId: crypto.randomUUID(),
+      file: failed.file,
+    };
+    set((state) => ({
+      pendingAttachments: state.pendingAttachments.map((item) => item.id === id ? queued : item),
+    }));
+    await parseReservedPdf(set, get, queued, captureConversationOrigin(get));
+  },
+
+  disposeAttachments: () => {
+    const pending = get().pendingAttachments;
+    cancelPendingAttachments(pending);
+    set({ pendingAttachments: [] });
+  },
 
   refreshProvider: async () => {
     const requestId = ++providerRequestId;
@@ -437,19 +618,31 @@ export const useChat = create<ChatState>((set, get) => ({
   },
 
   send: async (text, options) => {
+    const pending = get().pendingAttachments;
+    if (pending.some(isAttachmentBusy) || get().busy) return false;
+    const ready = pending.filter(isAttachmentReady);
     const question = (text ?? get().input).trim();
-    if (!question || get().busy) return false;
+    if (!question && ready.length === 0) return false;
+    const displayText = question || t('store.attachmentOnlyPrompt');
     const quoted = get().quotedSelection;
-    const attachments = get().pendingAttachments;
-    const textAttachments = attachments.filter((a) => a.kind === 'text');
-    const imageAttachments = attachments.filter((a) => a.kind === 'image');
-    const attachmentText = textAttachments.map((a) => buildAttachmentTextTemplate(a, t)).join('');
-    const agentUserContent = (quoted ? buildSelectionAskTemplate(quoted, t) : '') + attachmentText + question;
-    const images = imageAttachments.map(toImageContent);
+    const storedAttachments = ready
+      .map(toMessageAttachment)
+      .filter((item): item is MessageAttachment => item !== null);
+    const attachmentText = ready.map((item) => buildPendingAttachmentText(item, t)).join('');
+    const agentUserContent = (quoted ? buildSelectionAskTemplate(quoted, t) : '') + attachmentText + displayText;
+    const images = ready
+      .map(toPendingImageContent)
+      .filter((item): item is ImageContent => item !== null);
     return runAgent(
       set,
       get,
-      makeMessage('user', question, 'input', quoted ?? undefined, attachments.length ? attachments : undefined),
+      makeMessage(
+        'user',
+        displayText,
+        'input',
+        quoted ?? undefined,
+        storedAttachments.length ? storedAttachments : undefined,
+      ),
       agentUserContent,
       {
         withoutBrowserTools: options?.withoutBrowserTools,
@@ -561,6 +754,7 @@ export const useChat = create<ChatState>((set, get) => ({
   },
 
   clear: () => {
+    get().disposeAttachments();
     clearAllSlowActivityTimers();
     ++conversationOpenRequestId;
     invalidateActiveRun(set, get);
@@ -580,6 +774,7 @@ export const useChat = create<ChatState>((set, get) => ({
   },
 
   openConversation: async (id) => {
+    get().disposeAttachments();
     const requestId = ++conversationOpenRequestId;
     invalidateActiveRun(set, get);
     conversationEpoch += 1;
@@ -632,6 +827,7 @@ export const useChat = create<ChatState>((set, get) => ({
     ++conversationOpenRequestId;
     const removingActive = get().conversationId === id;
     if (removingActive) {
+      get().disposeAttachments();
       invalidateActiveRun(set, get, false);
       conversationEpoch += 1;
     }
@@ -645,6 +841,7 @@ export const useChat = create<ChatState>((set, get) => ({
     if (get().conversationId === id) {
       // A run can start while deletion/list refresh awaits. Do not let it
       // persist the record that has just been deleted.
+      get().disposeAttachments();
       invalidateActiveRun(set, get, false);
       conversationEpoch += 1;
       clearAllSlowActivityTimers();
@@ -768,6 +965,7 @@ async function runAgent(
     }
     history = current.slice(0, index);
   }
+  if (options.clearAttachments) cancelPendingAttachments(get().pendingAttachments);
   clearAllSlowActivityTimers();
   set({
     messages: [...history, display, makeMessage('assistant', '')],
@@ -1097,16 +1295,6 @@ async function persistConversationSnapshot(conversationId: string, messages: UIM
   } catch (e) {
     console.error('[Runi] 持久化会话失败', e);
   }
-}
-
-function describeAttachmentFailure(failure: AttachmentReadFailure): string {
-  const key =
-    failure.reason === 'too-large'
-      ? 'workbench.attachmentTooLarge'
-      : failure.reason === 'unsupported-type'
-        ? 'workbench.attachmentUnsupportedType'
-        : 'workbench.attachmentReadFailed';
-  return t(key, { name: failure.name });
 }
 
 function errMsg(e: unknown): string {

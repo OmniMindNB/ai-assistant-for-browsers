@@ -26,6 +26,7 @@ const contextWorkbenchKeys = [
 
 const attachmentKeys = [
   'store.attachmentTextTemplate',
+  'store.attachmentOnlyPrompt',
   'workbench.attachButtonLabel',
   'workbench.removeAttachmentLabel',
   'workbench.attachmentTruncatedBadge',
@@ -33,6 +34,11 @@ const attachmentKeys = [
   'workbench.attachmentTooLarge',
   'workbench.attachmentUnsupportedType',
   'workbench.attachmentReadFailed',
+  'workbench.pdfTooLarge',
+  'workbench.pdfInvalid',
+  'workbench.pdfPasswordProtected',
+  'workbench.pdfNoText',
+  'workbench.pdfParseFailed',
 ] as const;
 
 describe('privacy disclosure translations', () => {

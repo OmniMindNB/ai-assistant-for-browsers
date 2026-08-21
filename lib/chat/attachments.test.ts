@@ -8,6 +8,7 @@ import {
   readAttachment,
   buildAttachmentTextTemplate,
   buildPendingAttachmentText,
+  attachmentFailureLabel,
   isAttachmentBusy,
   isAttachmentReady,
   toMessageAttachment,
@@ -155,6 +156,24 @@ describe('pending attachments', () => {
     expect(isAttachmentReady(readyPdf)).toBe(true);
     expect(isAttachmentReady(error)).toBe(false);
     expect(toMessageAttachment(error)).toBeNull();
+  });
+
+  it('uses PDF-specific normalized failure labels', () => {
+    expect(attachmentFailureLabel('too-large', 'report.pdf', t, 'pdf')).toBe(
+      '“report.pdf” exceeds the 20 MB PDF limit',
+    );
+    expect(attachmentFailureLabel('invalid-pdf', 'report.pdf', t, 'pdf')).toBe(
+      '“report.pdf” is not a valid PDF',
+    );
+    expect(attachmentFailureLabel('password-protected', 'report.pdf', t, 'pdf')).toBe(
+      '“report.pdf” is password-protected',
+    );
+    expect(attachmentFailureLabel('no-extractable-text', 'report.pdf', t, 'pdf')).toBe(
+      'No extractable text found in “report.pdf”',
+    );
+    expect(attachmentFailureLabel('parse-failed', 'report.pdf', t, 'pdf')).toBe(
+      'Could not parse “report.pdf”',
+    );
   });
 });
 

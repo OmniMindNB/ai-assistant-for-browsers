@@ -196,3 +196,22 @@ export function toPendingImageContent(item: PendingAttachment): ImageContent | n
   if (item.status !== 'ready' || item.attachment.kind !== 'image') return null;
   return toImageContent(item.attachment);
 }
+
+export function attachmentFailureLabel(
+  reason: AttachmentReadFailureReason | PdfExtractionFailureReason,
+  name: string,
+  translate: Translate,
+  kind: PendingAttachmentBase['kind'],
+): string {
+  const keys = {
+    'too-large': kind === 'pdf' ? 'workbench.pdfTooLarge' : 'workbench.attachmentTooLarge',
+    'unsupported-type': 'workbench.attachmentUnsupportedType',
+    'read-failed': 'workbench.attachmentReadFailed',
+    'invalid-pdf': 'workbench.pdfInvalid',
+    'password-protected': 'workbench.pdfPasswordProtected',
+    'no-extractable-text': 'workbench.pdfNoText',
+    'parse-failed': 'workbench.pdfParseFailed',
+    cancelled: 'workbench.pdfParseFailed',
+  } as const;
+  return translate(keys[reason], { name });
+}

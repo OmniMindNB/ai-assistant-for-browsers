@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   getConversationMessages: vi.fn(),
   deleteConversation: vi.fn(),
   listConversations: vi.fn(),
+  extractPdfAttachment: vi.fn(),
 }));
 
 // store.ts 在模块加载时就注册了一个 storage.onChanged 监听器（面板已打开时实时消费 pending ask）。
@@ -49,6 +50,10 @@ vi.mock('@/lib/db', async (importOriginal) => ({
   listConversations: mocks.listConversations,
 }));
 
+vi.mock('@/lib/chat/pdfjs-runtime', () => ({
+  extractPdfAttachment: mocks.extractPdfAttachment,
+}));
+
 import { useChat } from './store';
 
 const provider = {
@@ -87,6 +92,7 @@ describe('chat store page context', () => {
     mocks.getConversationMessages.mockReset().mockResolvedValue([]);
     mocks.deleteConversation.mockReset().mockResolvedValue(undefined);
     mocks.listConversations.mockReset().mockResolvedValue([]);
+    mocks.extractPdfAttachment.mockReset().mockResolvedValue({ ok: false, reason: 'parse-failed' });
     mocks.createBrowserAgent.mockReturnValue(makeAgent());
     agentEventListener = undefined;
     (globalThis as typeof globalThis & { browser: any }).browser.storage.local.get = vi.fn().mockResolvedValue({});
@@ -1044,22 +1050,25 @@ describe('chat store page context', () => {
       await useChat.getState().addAttachmentFiles([file]);
       expect(useChat.getState().pendingAttachments).toHaveLength(1);
       expect(useChat.getState().pendingAttachments[0]).toMatchObject({
-        name: 'notes.txt', kind: 'text', textContent: 'file contents',
+        name: 'notes.txt', kind: 'text', status: 'ready',
+        attachment: { kind: 'text', textContent: 'file contents' },
       });
     });
 
     it('rejects a file over the image size limit and reports which file', async () => {
       const big = new File([new Uint8Array(5 * 1024 * 1024 + 1)], 'big.png', { type: 'image/png' });
       await useChat.getState().addAttachmentFiles([big]);
-      expect(useChat.getState().pendingAttachments).toHaveLength(0);
-      expect(useChat.getState().error).toContain('big.png');
+      expect(useChat.getState().pendingAttachments[0]).toMatchObject({
+        status: 'error', name: 'big.png', reason: 'too-large', retryable: false,
+      });
     });
 
     it('rejects an unsupported file type and reports which file', async () => {
       const file = new File(['x'], 'archive.zip', { type: 'application/zip' });
       await useChat.getState().addAttachmentFiles([file]);
-      expect(useChat.getState().pendingAttachments).toHaveLength(0);
-      expect(useChat.getState().error).toContain('archive.zip');
+      expect(useChat.getState().pendingAttachments[0]).toMatchObject({
+        status: 'error', name: 'archive.zip', reason: 'unsupported-type', retryable: false,
+      });
     });
 
     it('caps pending attachments at 5 and reports the limit', async () => {
@@ -1078,6 +1087,140 @@ describe('chat store page context', () => {
       useChat.getState().removeAttachment(first.id);
       expect(useChat.getState().pendingAttachments).toHaveLength(1);
       expect(useChat.getState().pendingAttachments[0].name).toBe('b.txt');
+    });
+
+    it('reserves a PDF chip immediately and blocks send until parsing completes', async () => {
+      let finish!: (value: any) => void;
+      mocks.extractPdfAttachment.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+
+      const adding = useChat.getState().addAttachmentFiles([
+        new File(['%PDF-body'], 'report.pdf', { type: 'application/pdf' }),
+      ]);
+
+      expect(useChat.getState().pendingAttachments[0]).toMatchObject({ status: 'queued', name: 'report.pdf' });
+      await expect(useChat.getState().send('summarize')).resolves.toBe(false);
+      finish({ ok: true, value: { text: 'private text', pageCount: 3, extractedChars: 12, truncated: false } });
+      await adding;
+      expect(useChat.getState().pendingAttachments[0]).toMatchObject({
+        status: 'ready',
+        attachment: { kind: 'pdf', pageCount: 3, extractedChars: 12 },
+        transientText: 'private text',
+      });
+    });
+
+    it('cancels removed work and ignores a late result', async () => {
+      let finish!: (value: any) => void;
+      let signal!: AbortSignal;
+      mocks.extractPdfAttachment.mockImplementation((_file, options) => new Promise((resolve) => {
+        finish = resolve;
+        signal = options.signal;
+      }));
+      const adding = useChat.getState().addAttachmentFiles([new File(['%PDF-x'], 'a.pdf')]);
+      const id = useChat.getState().pendingAttachments[0].id;
+      await vi.waitFor(() => expect(signal).toBeDefined());
+
+      useChat.getState().removeAttachment(id);
+
+      expect(signal.aborted).toBe(true);
+      finish({ ok: true, value: { text: 'late', pageCount: 1, extractedChars: 4, truncated: false } });
+      await adding;
+      expect(useChat.getState().pendingAttachments).toEqual([]);
+    });
+
+    it('reserves five slots across overlapping add calls', async () => {
+      const first = useChat.getState().addAttachmentFiles([
+        new File(['a'], '1.txt'), new File(['b'], '2.txt'), new File(['c'], '3.txt'),
+      ]);
+      const second = useChat.getState().addAttachmentFiles([
+        new File(['d'], '4.txt'), new File(['e'], '5.txt'), new File(['f'], '6.txt'),
+      ]);
+
+      await Promise.all([first, second]);
+
+      expect(useChat.getState().pendingAttachments).toHaveLength(5);
+    });
+
+    it('clears pending jobs when starting a new chat', async () => {
+      mocks.extractPdfAttachment.mockImplementation((_file, options) => new Promise((resolve) => {
+        options.signal.addEventListener('abort', () => resolve({ ok: false, reason: 'cancelled' }));
+      }));
+      const adding = useChat.getState().addAttachmentFiles([new File(['%PDF-x'], 'a.pdf')]);
+
+      useChat.getState().clear();
+
+      await adding;
+      expect(useChat.getState().pendingAttachments).toEqual([]);
+    });
+
+    it('clears pending jobs after a conversation is opened successfully', async () => {
+      mocks.extractPdfAttachment.mockImplementation((_file, options) => new Promise((resolve) => {
+        options.signal.addEventListener('abort', () => resolve({ ok: false, reason: 'cancelled' }));
+      }));
+      mocks.getConversationMessages.mockResolvedValue([]);
+      const adding = useChat.getState().addAttachmentFiles([new File(['%PDF-x'], 'a.pdf')]);
+
+      await expect(useChat.getState().openConversation('saved')).resolves.toBe(true);
+
+      await adding;
+      expect(useChat.getState().pendingAttachments).toEqual([]);
+    });
+
+    it('disposes pending attachment jobs without changing the conversation', async () => {
+      mocks.extractPdfAttachment.mockImplementation((_file, options) => new Promise((resolve) => {
+        options.signal.addEventListener('abort', () => resolve({ ok: false, reason: 'cancelled' }));
+      }));
+      const conversationId = useChat.getState().conversationId;
+      const adding = useChat.getState().addAttachmentFiles([new File(['%PDF-x'], 'a.pdf')]);
+
+      useChat.getState().disposeAttachments();
+
+      await adding;
+      expect(useChat.getState().pendingAttachments).toEqual([]);
+      expect(useChat.getState().conversationId).toBe(conversationId);
+    });
+
+    it('clears attachment work when a conversation becomes active during its deletion', async () => {
+      let resolveDelete!: () => void;
+      let finish!: (value: any) => void;
+      let signal!: AbortSignal;
+      mocks.deleteConversation.mockImplementationOnce(() => new Promise<void>((resolve) => {
+        resolveDelete = resolve;
+      }));
+      mocks.extractPdfAttachment.mockImplementation((_file, options) => new Promise((resolve) => {
+        finish = resolve;
+        signal = options.signal;
+      }));
+      useChat.setState({ conversationId: 'A' });
+      const removing = useChat.getState().removeConversation('B');
+      await vi.waitFor(() => expect(mocks.deleteConversation).toHaveBeenCalledWith('B'));
+      await useChat.getState().openConversation('B');
+      const adding = useChat.getState().addAttachmentFiles([new File(['%PDF-x'], 'b.pdf')]);
+      await vi.waitFor(() => expect(signal).toBeDefined());
+
+      resolveDelete();
+      await removing;
+      const wasAborted = signal.aborted;
+      finish({ ok: false, reason: 'cancelled' });
+      await adding;
+
+      expect(wasAborted).toBe(true);
+      expect(useChat.getState().pendingAttachments).toEqual([]);
+    });
+
+    it('retries a parse failure with the same attachment ID', async () => {
+      mocks.extractPdfAttachment
+        .mockResolvedValueOnce({ ok: false, reason: 'parse-failed' })
+        .mockResolvedValueOnce({
+          ok: true,
+          value: { text: 'ok', pageCount: 1, extractedChars: 2, truncated: false },
+        });
+      await useChat.getState().addAttachmentFiles([new File(['%PDF-x'], 'a.pdf')]);
+      const failed = useChat.getState().pendingAttachments[0];
+      expect(failed).toMatchObject({ status: 'error', retryable: true });
+
+      await useChat.getState().retryAttachment(failed.id);
+
+      expect(useChat.getState().pendingAttachments[0]).toMatchObject({ status: 'ready', id: failed.id });
     });
   });
 
@@ -1123,6 +1266,81 @@ describe('chat store page context', () => {
         expect.any(String),
         [expect.objectContaining({ type: 'image', mimeType: 'image/png' })],
       );
+    });
+
+    it('sends PDF text once but keeps only metadata on the displayed and persisted message', async () => {
+      mocks.extractPdfAttachment.mockResolvedValue({
+        ok: true,
+        value: { text: 'private PDF text', pageCount: 2, extractedChars: 16, truncated: false },
+      });
+      await useChat.getState().addAttachmentFiles([
+        new File(['%PDF-x'], 'a.pdf', { type: 'application/pdf' }),
+      ]);
+
+      await useChat.getState().send('summarize');
+
+      const agent = mocks.createBrowserAgent.mock.results[0].value;
+      expect(agent.prompt.mock.calls[0][0]).toContain('private PDF text');
+      const userMessage = useChat.getState().messages.find((message) => message.role === 'user')!;
+      expect(userMessage.attachments?.[0]).toMatchObject({ kind: 'pdf', pageCount: 2 });
+      expect(JSON.stringify(userMessage)).not.toContain('private PDF text');
+      expect(JSON.stringify(mocks.replaceConversationMessages.mock.calls)).not.toContain('private PDF text');
+    });
+
+    it('allows typed text to send while an error chip remains', async () => {
+      useChat.setState({ pendingAttachments: [{
+        status: 'error', id: 'bad', name: 'bad.pdf', mimeType: 'application/pdf', size: 10,
+        kind: 'pdf', reason: 'invalid-pdf', retryable: false,
+      }] });
+
+      await expect(useChat.getState().send('continue without it')).resolves.toBe(true);
+    });
+
+    it('does not send when only an error chip remains', async () => {
+      useChat.setState({ pendingAttachments: [{
+        status: 'error', id: 'bad', name: 'bad.pdf', mimeType: 'application/pdf', size: 10,
+        kind: 'pdf', reason: 'invalid-pdf', retryable: false,
+      }] });
+
+      await expect(useChat.getState().send()).resolves.toBe(false);
+    });
+
+    it('uses the localized default prompt for attachment-only send', async () => {
+      mocks.extractPdfAttachment.mockResolvedValue({
+        ok: true,
+        value: { text: 'pdf text', pageCount: 1, extractedChars: 8, truncated: false },
+      });
+      await useChat.getState().addAttachmentFiles([new File(['%PDF-x'], 'a.pdf')]);
+
+      await expect(useChat.getState().send()).resolves.toBe(true);
+
+      const agent = mocks.createBrowserAgent.mock.results[0].value;
+      expect(agent.prompt.mock.calls[0][0]).toContain('Analyze the attached file.');
+    });
+
+    it('cancels attachment work added while send preflight is still pending', async () => {
+      let resolveProvider!: (value: typeof provider) => void;
+      let finish!: (value: any) => void;
+      let signal!: AbortSignal;
+      mocks.getActiveProvider.mockReturnValueOnce(new Promise((resolve) => {
+        resolveProvider = resolve;
+      }));
+      mocks.extractPdfAttachment.mockImplementation((_file, options) => new Promise((resolve) => {
+        finish = resolve;
+        signal = options.signal;
+      }));
+      const sending = useChat.getState().send('send now');
+      const adding = useChat.getState().addAttachmentFiles([new File(['%PDF-x'], 'late.pdf')]);
+      await vi.waitFor(() => expect(signal).toBeDefined());
+
+      resolveProvider(provider);
+      await expect(sending).resolves.toBe(true);
+      const wasAborted = signal.aborted;
+      finish({ ok: false, reason: 'cancelled' });
+      await adding;
+
+      expect(wasAborted).toBe(true);
+      expect(useChat.getState().pendingAttachments).toEqual([]);
     });
   });
 });
