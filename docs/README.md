@@ -33,10 +33,14 @@ flowchart LR
 | [specs/](specs/) | 功能规格说明 |
 | [adr/_template.md](adr/_template.md) | ADR 模板 |
 | [specs/_template.md](specs/_template.md) | Spec 模板 |
+| [superpowers/specs/](superpowers/specs/) | 逐任务设计说明（按日期命名，配合下面的实现计划） |
 | [superpowers/plans/](superpowers/plans/) | 逐任务实现计划（会话级 TODO，完成状态以 PROGRESS.md/Spec 为准） |
 | [chrome-store-permission-justifications.md](chrome-store-permission-justifications.md) | Chrome 应用商店权限申请理由说明 |
-| [privacy-policy.md](privacy-policy.md) | 隐私政策 |
+| [privacy-policy.md](privacy-policy.md) / [privacy-policy.en.md](privacy-policy.en.md) | 隐私政策（中 / 英） |
+| [chrome-store-listing.zh-CN.md](chrome-store-listing.zh-CN.md) / [chrome-store-listing.en.md](chrome-store-listing.en.md) | 商店商品详情文案（中 / 英，可直接粘贴） |
 | [chrome-store-submission-guide.md](chrome-store-submission-guide.md) | Chrome 应用商店上架操作指南（账号注册/素材/Dashboard 表单/审核） |
+| [chrome-store-release-checklist-1.1.md](chrome-store-release-checklist-1.1.md) | 1.1 发布前的打包/合规/素材核对清单 |
+| [store-assets/](store-assets/) | 商店图标、截图与宣传图素材 |
 
 ## 约定
 
