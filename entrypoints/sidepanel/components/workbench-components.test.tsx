@@ -227,6 +227,9 @@ const composerProps: WorkbenchComposerProps = {
   onRunShortcut: vi.fn(),
   onSelectProviderModel: vi.fn(),
   onClearQuotedSelection: vi.fn(),
+  attachments: [],
+  onAddAttachmentFiles: vi.fn(),
+  onRemoveAttachment: vi.fn(),
 };
 
 const configuredProvider: ProviderConfig = {
@@ -456,6 +459,7 @@ describe('workbench composer', () => {
     await waitFor(() => expect(screen.getByRole('menuitem', { name: 'model-one' })).toHaveFocus());
     await user.keyboard('{ArrowDown}');
     await waitFor(() => expect(screen.getByRole('menuitem', { name: 'model-two' })).toHaveFocus());
+    await user.tab();
     await user.tab();
     await user.tab();
     await user.tab();

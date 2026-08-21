@@ -344,6 +344,7 @@ export function WorkbenchComposer({
             multiple
             accept="image/*,.txt,.md,.markdown,.json,.csv,.log,.js,.jsx,.ts,.tsx,.py,.java,.go,.rs,.c,.cpp,.h,.hpp,.css,.html,.htm,.xml,.yaml,.yml,.sh,.bash,.ini,.toml,.rb,.php,.sql"
             className="hidden"
+            tabIndex={-1}
             onChange={(event) => {
               const { files } = event.target;
               if (files && files.length > 0) onAddAttachmentFiles(files);
