@@ -1,7 +1,7 @@
 // lib/agent/openai-stream.test.ts
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AssistantMessageEvent, AssistantMessageEventStream, Api, Context, Model } from '@earendil-works/pi-ai';
-import { browserOpenAIStream, openAiCompletionsUrl } from './openai-stream';
+import { browserOpenAIStream, convertUserContent, openAiCompletionsUrl } from './openai-stream';
 
 function makeModel(): Model<Api> {
   return {
@@ -42,6 +42,32 @@ describe('openAiCompletionsUrl', () => {
     expect(openAiCompletionsUrl('https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions')).toBe(
       'https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions',
     );
+  });
+});
+
+describe('convertUserContent', () => {
+  it('returns a plain string unchanged when content is already a string', () => {
+    expect(convertUserContent('hi')).toBe('hi');
+  });
+
+  it('collapses an array of only text parts to a plain string, matching pre-image-support behavior', () => {
+    expect(convertUserContent([{ type: 'text', text: 'hi' }])).toBe('hi');
+  });
+
+  it('returns multi-part content with an image_url block when an image is present', () => {
+    const result = convertUserContent([
+      { type: 'text', text: 'what is this?' },
+      { type: 'image', data: 'QUJD', mimeType: 'image/png' },
+    ]);
+    expect(result).toEqual([
+      { type: 'text', text: 'what is this?' },
+      { type: 'image_url', image_url: { url: 'data:image/png;base64,QUJD' } },
+    ]);
+  });
+
+  it('omits the text block when there is no text alongside an image', () => {
+    const result = convertUserContent([{ type: 'image', data: 'QUJD', mimeType: 'image/png' }]);
+    expect(result).toEqual([{ type: 'image_url', image_url: { url: 'data:image/png;base64,QUJD' } }]);
   });
 });
 

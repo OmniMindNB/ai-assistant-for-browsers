@@ -1,7 +1,7 @@
 // lib/agent/openai-stream.ts
-import { createAssistantMessageEventStream, type Api, type AssistantMessageEvent, type Context, type Model, type ToolCall, type Usage } from '@earendil-works/pi-ai';
+import { createAssistantMessageEventStream, type Api, type AssistantMessageEvent, type Context, type Model, type ToolCall, type Usage, type UserMessage } from '@earendil-works/pi-ai';
 import type { StreamFn } from '@earendil-works/pi-agent-core';
-import { buildPartial, createAssistantMessage, describeHttpFailure, finishStream, stringifyContent, type ToolCallAccumulator } from './stream-shared';
+import { buildPartial, createAssistantMessage, describeHttpFailure, extractImageParts, finishStream, stringifyContent, type ToolCallAccumulator } from './stream-shared';
 
 // OpenAI 生态的约定与 Anthropic 相反：版本段写在 base_url 里，客户端只补 `/chat/completions`
 // （参见 anthropicMessagesUrl 的反向说明）。这里不替用户补版本段——各厂商版本段互不相同
@@ -183,7 +183,7 @@ function processChunk(
 function convertMessages(context: Context): Array<Record<string, unknown>> {
   return context.messages.map((message) => {
     if (message.role === 'user') {
-      return { role: 'user', content: stringifyContent(message.content) };
+      return { role: 'user', content: convertUserContent(message.content) };
     }
     if (message.role === 'toolResult') {
       return {
@@ -210,4 +210,21 @@ function convertMessages(context: Context): Array<Record<string, unknown>> {
       tool_calls: toolCalls.length ? toolCalls : undefined,
     };
   });
+}
+
+/**
+ * 无图片时必须原样返回 stringifyContent() 拍平出的纯字符串，不能因为这次改动把所有
+ * user content 都换成数组形态——否则会改变既有请求体的形状。
+ */
+export function convertUserContent(content: UserMessage['content']): string | Array<Record<string, unknown>> {
+  if (typeof content === 'string') return content;
+  const images = extractImageParts(content);
+  if (images.length === 0) return stringifyContent(content);
+  const parts: Array<Record<string, unknown>> = [];
+  const text = stringifyContent(content);
+  if (text) parts.push({ type: 'text', text });
+  for (const image of images) {
+    parts.push({ type: 'image_url', image_url: { url: `data:${image.mimeType};base64,${image.data}` } });
+  }
+  return parts;
 }
