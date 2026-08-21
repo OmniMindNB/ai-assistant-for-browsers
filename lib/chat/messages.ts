@@ -14,7 +14,7 @@ export interface ChatMessage {
   kind?: 'input' | 'action';
   /** 划词提问时被引用的选区原文（裁剪后）；存在时渲染成独立的引用卡片而不是拼进 content。 */
   quotedText?: string;
-  /** 上传附件（文本类/图片）；存在时随历史消息一起渲染成只读芯片列表，不重新进入后续轮次的 prompt。 */
+  /** 已就绪附件的历史安全投影（文本/图片/PDF 元数据）；不重新进入后续轮次的 prompt。 */
   attachments?: MessageAttachment[];
 }
 

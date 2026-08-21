@@ -18,7 +18,7 @@ export function AttachmentChip({ attachment, onRemove }: AttachmentChipProps) {
         <IconFileText className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
       )}
       <span className="max-w-[120px] truncate">{attachment.name}</span>
-      {attachment.truncated && (
+      {attachment.kind !== 'image' && attachment.truncated && (
         <span title={t('workbench.attachmentTruncatedBadge')} className="text-neutral-400">
           …
         </span>

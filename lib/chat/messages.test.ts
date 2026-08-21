@@ -113,12 +113,24 @@ describe('toMessageRecords', () => {
 
   it('保留 attachments', () => {
     const attachment: MessageAttachment = {
-      id: 'a1', name: 'notes.txt', mimeType: 'text/plain', size: 5, kind: 'text', textContent: 'hello',
+      id: 'a1', name: 'notes.txt', mimeType: 'text/plain', size: 5, kind: 'text', textContent: 'hello', truncated: false,
     };
     const records = toMessageRecords('c-1', [
       { id: 'a', role: 'user', content: '问', createdAt: 1000, attachments: [attachment] },
     ]);
     expect(records[0].attachments).toEqual([attachment]);
+  });
+
+  it('persists PDF metadata without transient extraction state', () => {
+    const pdf: MessageAttachment = {
+      id: 'pdf-1', name: 'report.pdf', mimeType: 'application/pdf', size: 100,
+      kind: 'pdf', pageCount: 12, extractedChars: 42_000, truncated: false,
+    };
+    const records = toMessageRecords('c-1', [{
+      id: 'm-1', role: 'user', content: 'Summarize', createdAt: 1, attachments: [pdf],
+    }]);
+    expect(records[0].attachments).toEqual([pdf]);
+    expect(JSON.stringify(records[0])).not.toMatch(/transientText|file|taskId|status|private extracted text/);
   });
 
   it('没有附件时 attachments 为 undefined', () => {

@@ -21,7 +21,8 @@ export interface ChatMessageRecord {
    */
   quotedText?: string;
   /**
-   * 上传附件（文本类/图片），仅用户消息有意义，随该轮一起落库供历史回看渲染；
+   * 已就绪附件（文本/图片/PDF 元数据），仅用户消息有意义，随该轮一起落库供历史回看渲染；
+   * PDF 提取文本和全部进行中状态不在此类型中，因而不能进入 IndexedDB。
    * 不建索引，同上无需 Dexie 版本迁移；存量记录无此字段即视为没有附件。
    */
   attachments?: MessageAttachment[];
