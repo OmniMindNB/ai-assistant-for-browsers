@@ -16,10 +16,10 @@ const englishLegalUrl = repositoryPagesRoot;
 const chineseLegalUrl = `${repositoryPagesRoot}zh-CN/`;
 
 const permittedLegacyReferencesByPath: Record<string, readonly string[]> = {
-  'docs/chrome-store-listing.en.md': [englishUpgradeNotice],
-  'docs/chrome-store-listing.zh-CN.md': [chineseUpgradeNotice],
+  'docs/chrome-store-listing.en.md': [],
+  'docs/chrome-store-listing.zh-CN.md': [],
   'docs/chrome-store-permission-justifications.md': [],
-  'docs/chrome-store-submission-guide.md': [chineseUpgradeNotice],
+  'docs/chrome-store-submission-guide.md': [],
 };
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -105,10 +105,10 @@ describe('Runi active product identity', () => {
     expect(withoutPermittedLegacyReferences(path, source)).not.toMatch(legacyBrandPattern);
   });
 
-  it('keeps the exact fresh-data upgrade notices on the relaunch surfaces', () => {
-    expect(read('docs/chrome-store-listing.en.md')).toContain(englishUpgradeNotice);
-    expect(read('docs/chrome-store-listing.zh-CN.md')).toContain(chineseUpgradeNotice);
-    expect(read('docs/chrome-store-submission-guide.md')).toContain(chineseUpgradeNotice);
+  it('does not keep obsolete relaunch upgrade notices on current store surfaces', () => {
+    expect(read('docs/chrome-store-listing.en.md')).not.toContain(englishUpgradeNotice);
+    expect(read('docs/chrome-store-listing.zh-CN.md')).not.toContain(chineseUpgradeNotice);
+    expect(read('docs/chrome-store-submission-guide.md')).not.toContain(chineseUpgradeNotice);
   });
 
   it.each([

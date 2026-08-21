@@ -23,7 +23,7 @@ Productivity
 ## Single purpose
 
 ```text
-Runi is one controllable AI sidebar agent that helps the user understand and work with the current web page, including making user-requested page changes after approval.
+Runi is one controllable AI sidebar agent that helps the user understand and work with the current web page and user-selected files, including making user-requested page changes after approval.
 ```
 
 ## Detailed description
@@ -36,15 +36,15 @@ Your page, your way.
 Use Runi to:
 
 • Summarize the current page and ask page-grounded questions.
+• Attach text files, images, and PDFs to a request. PDF text is extracted locally before analysis.
 • Inspect page evidence such as readable text, HTML, DOM structure, scripts, stylesheets, and computed styles for technical analysis.
 • Request page transformations and browser-page actions. Before write actions run, Runi shows the planned operation and asks for your approval; that decision applies to the current turn.
 • Connect your own OpenAI-compatible or Anthropic-compatible AI provider, including a custom endpoint.
 
-Runi is local-first: provider settings, API keys, interface preferences, and conversation history are stored in your browser. Runi has no developer-operated backend, analytics, or advertising SDK. When you initiate an Agent request, you direct Runi to transmit your API key, current prompt, recent conversation context, and relevant current-page tool results directly from the extension to the AI provider endpoint you configured as needed to fulfill that request. That provider processes the request under its own terms and privacy policy.
+Runi is local-first: provider settings, API keys, interface preferences, and conversation history are stored in your browser. Text and image attachment contents may be stored with local conversation history; PDF text is extracted locally for the current request and is not persisted as PDF content. Runi has no developer-operated backend, analytics, or advertising SDK. When you initiate an Agent request, you direct Runi to transmit your API key, current prompt, recent conversation context, relevant current-page tool results, and the contents of files you selected for that request directly from the extension to the AI provider endpoint you configured as needed to fulfill that request. That provider processes the request under its own terms and privacy policy.
 
 Runi reads or changes a page only after you open the product and initiate an action. Before the first write action in a turn, Runi asks for approval and reuses that decision only for that turn.
 
-Brand upgrade notice: Runi uses a new local data namespace and does not read Aluminum settings or conversations. After upgrading, configure your provider and API key again.
 ```
 
 ## Screenshot captions
@@ -52,7 +52,7 @@ Brand upgrade notice: Runi uses a new local data namespace and does not read Alu
 1. `Understand any page — Summaries and answers grounded in the current page.`
 2. `See the evidence — Inspect DOM, styles, scripts, and computed behavior.`
 3. `You stay in control — Review the planned page action and approve it before write tools run.`
-4. `Your provider, your choice — Recent conversation context may be sent to your configured provider after you start a request.`
+4. `Ask across pages and files — Attach text, images, and PDFs to the current request.`
 
 ## Currently deployed privacy-policy URL
 

@@ -14,13 +14,13 @@ The source of truth is `wxt.config.ts`. Re-check the generated manifest before u
 **English**
 
 ```text
-Runi is one controllable AI sidebar agent that helps the user understand and work with the current web page, including making user-requested page changes after approval.
+Runi is one controllable AI sidebar agent that helps the user understand and work with the current web page and user-selected files, including making user-requested page changes after approval.
 ```
 
 **简体中文**
 
 ```text
-Runi 是一个可控的 AI 侧边栏 Agent，帮助用户理解和处理当前网页，并在用户批准后执行其请求的页面修改。
+Runi 是一个可控的 AI 侧边栏 Agent，帮助用户理解和处理当前网页及其主动选择的文件，并在用户批准后执行其请求的页面修改。
 ```
 
 ## `activeTab`
@@ -145,13 +145,21 @@ Runi processes the URL of the current user-selected page and, for requested impl
 Runi 会处理用户当前选择页面的 URL；在用户请求页面实现分析时，还会处理该页面引用的脚本或样式表 URL。当前页面 URL 和与请求有关的页面工具结果可能会直接发送到用户配置的 AI Provider，仅用于当前请求。Runi 不建立浏览历史画像，不把 URL 用于分析或广告，也不会发送到开发者运营的后端。
 ```
 
+### User-selected attachment content
+
+When the user explicitly attaches a text file, image, or PDF, Runi processes its file name, MIME type, size, and content for that request. PDF text is extracted locally. Text and image attachment contents may be stored with local conversation history; for PDFs, only metadata is stored and the extracted text is transient. When the user sends the request, text content, image bytes, or extracted PDF text is sent directly to the configured AI provider. Because arbitrary user-selected files can contain sensitive information, disclose all applicable live-form categories conservatively.
+
+用户明确附加文本文件、图片或 PDF 时，Runi 会为该请求处理文件名、MIME 类型、大小和内容。PDF 文本在本地提取。文本和图片附件内容可能随本地对话历史保存；PDF 仅保存元数据，提取文本为短暂处理。用户发送请求时，文本内容、图片字节或提取出的 PDF 文本会直接发送到已配置的 AI Provider。由于用户选择的任意文件可能包含敏感信息，应按实时表单定义谨慎披露所有适用类别。
+
 ### Other categories and live-form review
 
 - **User activity:** Runi does not collect behavioral analytics. User-approved click, type, select, scroll, navigation, and page-storage actions are executed as core functionality rather than recorded for analytics.
 - **Authentication information:** Provider API keys are stored locally and transmitted only to the configured provider endpoint as authentication credentials. Check whether the live form defines user-supplied third-party API keys as this category.
 - **Personally identifiable information / personal communications:** Do not answer categorically “No” merely because Runi does not solicit these categories. Conversation content and current-page content can contain personal information entered or selected by the user, and recent conversation content is sent to the configured AI provider.
+- **Health information / financial and payment information:** Mark these categories collected/processed because arbitrary user-selected attachments may contain them and their content is sent to the configured AI provider when the user sends the request. Runi does not solicit or use this content for profiling, creditworthiness, lending, or advertising.
+- **Location / user activity:** Leave unchecked. Runi does not collect precise location or behavioral analytics; user-approved page actions are executed as core functionality rather than recorded as activity data.
 
-> **Reviewer hard stop:** Before saving Privacy practices, inspect the live Dashboard wording for conversation content and user-entered personal information. If the current form treats prompts or user-to-AI conversations as `Personal communications`, or treats incidental personal information in prompts/page content as `Personally identifiable information`, disclose the applicable category. Record the final category decisions in the release checklist.
+For `1.1.2`, the conservative Dashboard selection is: Personally identifiable information, Health information, Financial and payment information, Authentication information, Personal communications, Web history, and Website content. Leave Location and User activity unchecked. Re-check the live category wording before saving.
 
 ### Required use certifications
 

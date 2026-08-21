@@ -76,8 +76,8 @@ describe('maintained privacy disclosure contract', () => {
       /^生效日期：(\d{4}-\d{2}-\d{2})$/m,
     )?.[1];
 
-    expect(englishDate).toBe('2026-08-02');
-    expect(chineseDate).toBe('2026-08-02');
+    expect(englishDate).toBe('2026-08-21');
+    expect(chineseDate).toBe('2026-08-21');
     expect(englishDate).toBe(chineseDate);
   });
 
@@ -189,16 +189,18 @@ describe('maintained release capability contract', () => {
     }
   });
 
-  it('names the provider-transmission screenshot consistently across release surfaces', () => {
+  it('names the attachment screenshot consistently across release surfaces', () => {
     expect(readRepoFile('docs/chrome-store-submission-guide.md')).toContain(
-      'screenshot-04-provider.png',
+      'screenshot-04-attachments.png',
     );
-    expect(readRepoFile('demo/store-assets-frame.html')).toContain('04-provider.png');
+    expect(readRepoFile('demo/store-assets-frame.html')).toContain(
+      'screenshot-04-attachments.png',
+    );
     expect(readRepoFile('docs/chrome-store-listing.en.md')).toContain(
-      'Your provider, your choice',
+      'Ask across pages and files',
     );
     expect(readRepoFile('docs/chrome-store-listing.zh-CN.md')).toContain(
-      '由你选择 Provider',
+      '结合网页与文件提问',
     );
   });
 

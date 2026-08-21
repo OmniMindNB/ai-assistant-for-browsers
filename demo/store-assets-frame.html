@@ -71,18 +71,6 @@
         box-shadow: 0 8px 24px rgb(0 0 0 / 24%);
       }
 
-      .version {
-        margin-left: 4px;
-        padding: 4px 9px;
-        color: #c8ddff;
-        font-size: 12px;
-        font-weight: 700;
-        letter-spacing: 0.08em;
-        border: 1px solid rgb(177 211 255 / 26%);
-        border-radius: 999px;
-        background: rgb(255 255 255 / 8%);
-      }
-
       .copy {
         position: absolute;
         z-index: 2;
@@ -472,6 +460,41 @@
         background: #f5f3ff;
       }
 
+      .mock-attachment {
+        display: grid;
+        grid-template-columns: 36px 1fr;
+        gap: 10px;
+        align-items: center;
+        padding: 10px 12px;
+        color: #312e81;
+        font-size: 10px;
+        border: 1px solid #c7d2fe;
+        border-radius: 13px;
+        background: #eef2ff;
+      }
+
+      .mock-attachment b {
+        display: grid;
+        width: 36px;
+        height: 36px;
+        place-items: center;
+        color: #fff;
+        font-size: 9px;
+        border-radius: 9px;
+        background: #4f46e5;
+      }
+
+      .mock-attachment strong,
+      .mock-attachment small {
+        display: block;
+      }
+
+      .mock-attachment small,
+      .mock-privacy-hint {
+        color: #64748b;
+        font-size: 9px;
+      }
+
       .mock-composer {
         margin: 0 14px 14px;
         padding: 10px 12px;
@@ -683,10 +706,10 @@
             "The first write each turn asks for approval",
             "03-confirm.png",
           ],
-          provider: [
-            "Your provider, your choice",
-            "Recent context is sent only after you start a request",
-            "04-provider.png",
+          attachments: [
+            "Ask across pages and files",
+            "Attach text, images, and PDFs to the current request",
+            "screenshot-04-attachments.png",
           ],
         },
         "zh-CN": {
@@ -705,10 +728,10 @@
             "每轮第一次写操作先展示内容，再等待批准",
             "03-confirm.png",
           ],
-          provider: [
-            "由你选择 Provider",
-            "发起请求后，近期上下文才会发送",
-            "04-provider.png",
+          attachments: [
+            "结合网页与文件提问",
+            "附加文本、图片或 PDF，与当前页面一起分析",
+            "screenshot-04-attachments.png",
           ],
         },
       };
@@ -754,18 +777,13 @@
             deny: "Deny",
             hint: "Once approved, further write actions this turn run automatically without asking again.",
           },
-          provider: {
-            settings: "Provider settings",
-            badge: "Stored locally",
-            fields: [
-              ["Base URL", "https://api.example.com/v1"],
-              ["Model", "runi-assistant"],
-              ["API key", "••••••••••••••••"],
-            ],
-            localTitle: "Stored locally in your browser",
-            localBody: "Provider settings, API keys, and conversation history stay in local extension storage.",
-            sendTitle: "Sent after you initiate a request",
-            sendBody: "Your prompt, recent conversation context, and relevant page results go only to your configured AI provider.",
+          attachments: {
+            user: "Summarize the attached launch brief",
+            file: "launch-brief.pdf",
+            status: "12 pages · ready",
+            title: "The brief is ready to review",
+            body: "PDF text was extracted locally. Key milestones, risks, and next steps are summarized.",
+            privacy: "🔒 Sent to your configured provider when you send",
           },
         },
         "zh-CN": {
@@ -804,44 +822,18 @@
             deny: "拒绝",
             hint: "批准后，本轮内后续的写操作会自动执行，无需逐条确认。",
           },
-          provider: {
-            settings: "Provider 设置",
-            badge: "保存在本地",
-            fields: [
-              ["基础地址", "https://api.example.com/v1"],
-              ["模型", "runi-assistant"],
-              ["API Key", "••••••••••••••••"],
-            ],
-            localTitle: "数据保存在浏览器本地",
-            localBody: "Provider 设置、API Key 和对话历史保存在扩展的本地存储中。",
-            sendTitle: "发起请求后才会发送",
-            sendBody: "当前提示词、近期对话上下文和相关页面结果仅发送到你配置的 AI Provider。",
+          attachments: {
+            user: "总结附件中的发布简报",
+            file: "launch-brief.pdf",
+            status: "12 页 · 已就绪",
+            title: "发布简报已整理完成",
+            body: "PDF 文本已在本地提取。已汇总关键里程碑、风险与下一步。",
+            privacy: "🔒 发送时会传给你配置的 AI Provider",
           },
         },
       };
 
-      const pageMarkup = (text, isProvider) => {
-        if (isProvider) {
-          return `
-            <p class="mock-kicker">${text.pageKicker}</p>
-            <h2>${text.pageTitle}</h2>
-            <p class="mock-page-lede">${text.pageLede}</p>
-            <div class="mock-settings-card">
-              <div class="mock-setting-title">
-                <span>${text.provider.settings}</span>
-                <span class="mock-badge">${text.provider.badge}</span>
-              </div>
-              ${text.provider.fields
-                .map(
-                  ([label, value]) => `
-                    <div class="mock-field"><span>${label}</span><span>${value}</span></div>
-                  `,
-                )
-                .join("")}
-            </div>
-          `;
-        }
-
+      const pageMarkup = (text) => {
         return `
           <p class="mock-kicker">${text.pageKicker}</p>
           <h2>${text.pageTitle}</h2>
@@ -883,16 +875,18 @@
           `;
         }
 
-        if (selectedScene === "provider") {
+        if (selectedScene === "attachments") {
           return `
-            <div class="mock-privacy-card">
-              <strong>${text.provider.localTitle}</strong>
-              ${text.provider.localBody}
+            <div class="mock-bubble user">${text.attachments.user}</div>
+            <div class="mock-attachment">
+              <b>PDF</b>
+              <span><strong>${text.attachments.file}</strong><small>${text.attachments.status}</small></span>
             </div>
-            <div class="mock-privacy-card provider">
-              <strong>${text.provider.sendTitle}</strong>
-              ${text.provider.sendBody}
+            <div class="mock-bubble assistant">
+              <strong>${text.attachments.title}</strong>
+              ${text.attachments.body}
             </div>
+            <div class="mock-privacy-hint">${text.attachments.privacy}</div>
           `;
         }
 
@@ -934,7 +928,6 @@
             <div class="brand">
               <img src="${icon}" alt="" />
               <span>Runi</span>
-              <span class="version">V1.1</span>
             </div>
             <div class="copy">
               <h1>${headline}</h1>
@@ -947,7 +940,7 @@
                   <span class="mock-address">runi.local/workspace</span>
                 </div>
                 <div class="mock-content">
-                  <section class="mock-page">${pageMarkup(text, scene === "provider")}</section>
+                  <section class="mock-page">${pageMarkup(text)}</section>
                   <aside class="mock-panel">
                     <header class="mock-panel-header">
                       <img src="${icon}" alt="" />
@@ -955,7 +948,7 @@
                       <small>${text.panelLabel}</small>
                     </header>
                     <div class="mock-thread">${threadMarkup(text, scene)}</div>
-                    <div class="mock-composer">${text.composer}</div>
+                    <div class="mock-composer">＋&nbsp;&nbsp;${text.composer}</div>
                   </aside>
                 </div>
               </div>

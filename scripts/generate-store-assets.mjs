@@ -53,20 +53,15 @@ const locales = {
         deny: 'Deny',
         hint: ['Once approved, further write actions this turn', 'run automatically without asking again.'],
       },
-      provider: {
-        headline: 'Your provider, your choice',
-        subtitle: 'Recent context is sent only after you start a request',
-        settings: 'Provider settings',
-        badge: 'Stored locally',
-        fields: [
-          ['Base URL', 'https://api.example.com/v1'],
-          ['Model', 'runi-assistant'],
-          ['API key', '••••••••••••••••'],
-        ],
-        localTitle: 'Stored locally in your browser',
-        localLines: ['Provider settings, API keys, and conversation', 'history stay in local extension storage.'],
-        sendTitle: 'Sent after you initiate a request',
-        sendLines: ['Your prompt, recent conversation context, and relevant', 'page results go only to your configured AI provider.'],
+      attachments: {
+        headline: 'Ask across pages and files',
+        subtitle: 'Attach text, images, and PDFs to the current request',
+        user: 'Summarize the attached launch brief',
+        file: 'launch-brief.pdf',
+        status: '12 pages · ready',
+        title: 'The brief is ready to review',
+        lines: ['PDF text was extracted locally.', 'Key milestones, risks, and next steps are summarized.'],
+        privacy: 'Sent to your configured provider when you send',
       },
     },
   },
@@ -109,20 +104,15 @@ const locales = {
         deny: '拒绝',
         hint: ['批准后，本轮内后续的写操作会自动执行，', '无需逐条确认。'],
       },
-      provider: {
-        headline: '由你选择 Provider',
-        subtitle: '发起请求后，近期上下文才会发送',
-        settings: 'Provider 设置',
-        badge: '保存在本地',
-        fields: [
-          ['基础地址', 'https://api.example.com/v1'],
-          ['模型', 'runi-assistant'],
-          ['API Key', '••••••••••••••••'],
-        ],
-        localTitle: '数据保存在浏览器本地',
-        localLines: ['Provider 设置、API Key 和对话历史', '保存在扩展的本地存储中。'],
-        sendTitle: '发起请求后才会发送',
-        sendLines: ['当前提示词、近期对话上下文和相关页面结果', '仅发送到你配置的 AI Provider。'],
+      attachments: {
+        headline: '结合网页与文件提问',
+        subtitle: '附加文本、图片或 PDF，与当前页面一起分析',
+        user: '总结附件中的发布简报',
+        file: 'launch-brief.pdf',
+        status: '12 页 · 已就绪',
+        title: '发布简报已整理完成',
+        lines: ['PDF 文本已在本地提取。', '已汇总关键里程碑、风险与下一步。'],
+        privacy: '发送时会传给你配置的 AI Provider',
       },
     },
   },
@@ -174,22 +164,6 @@ function pagePanel(locale) {
   </g>`;
 }
 
-function providerPage(locale, scene) {
-  const c = locales[locale];
-  return `<g>
-    ${text(110, 298, c.pageKicker, 'class="kicker"')}
-    ${text(110, 346, c.pageTitle, 'class="page-title"')}
-    ${text(110, 383, c.pageLede, 'class="page-lede"')}
-    <rect x="110" y="424" width="605" height="240" rx="17" fill="#fff" fill-opacity=".94" stroke="#dfe5ec"/>
-    ${text(132, 458, scene.settings, 'class="setting-title"')}
-    <rect x="602" y="441" width="91" height="26" rx="13" fill="#eef2ff"/>${text(647.5, 459, scene.badge, 'class="badge" text-anchor="middle"')}
-    ${scene.fields.map(([label, value], index) => {
-      const y = 493 + index * 50;
-      return `${text(132, y + 20, label, 'class="field-label"')}<rect x="262" y="${y}" width="411" height="34" rx="9" fill="#f8fafc" stroke="#dce3eb"/>${text(278, y + 22, value, 'class="field-value"')}`;
-    }).join('')}
-  </g>`;
-}
-
 function bubble(x, y, width, height, fill, stroke = 'none', radius = 13) {
   return `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="${radius}" fill="${fill}" stroke="${stroke}"/>`;
 }
@@ -197,13 +171,14 @@ function bubble(x, y, width, height, fill, stroke = 'none', radius = 13) {
 function thread(locale, sceneName) {
   const c = locales[locale];
   const scene = c.scenes[sceneName];
-  if (sceneName === 'provider') {
-    return `${bubble(853, 314, 330, 105, '#f8fafc', '#dbe4f0')}
-      ${text(871, 342, scene.localTitle, 'class="bubble-title"')}
-      ${scene.localLines.map((line, i) => text(871, 368 + i * 18, line, 'class="bubble-copy"')).join('')}
-      ${bubble(853, 434, 330, 113, '#f5f3ff', '#c4b5fd')}
-      ${text(871, 462, scene.sendTitle, 'class="bubble-title"')}
-      ${scene.sendLines.map((line, i) => text(871, 488 + i * 18, line, 'class="bubble-copy"')).join('')}`;
+  if (sceneName === 'attachments') {
+    return `${bubble(907, 314, 276, 42, '#4f46e5')}${text(921, 340, scene.user, 'class="user-copy"')}
+      ${bubble(853, 374, 330, 66, '#eef2ff', '#c7d2fe')}
+      <rect x="869" y="390" width="34" height="34" rx="9" fill="#4f46e5"/>${text(886, 412, 'PDF', 'class="file-kind" text-anchor="middle"')}
+      ${text(914, 399, scene.file, 'class="file-name"')}${text(914, 421, scene.status, 'class="file-status"')}
+      ${bubble(853, 454, 330, 104, '#f8fafc', '#e2e8f0')}${text(871, 483, scene.title, 'class="bubble-title"')}
+      ${scene.lines.map((line, i) => text(871, 509 + i * 18, line, 'class="bubble-copy"')).join('')}
+      ${text(853, 582, `🔒 ${scene.privacy}`, 'class="privacy-hint"')}`;
   }
 
   const userWidth = sceneName === 'evidence' ? 278 : sceneName === 'confirm' ? 203 : 142;
@@ -235,7 +210,7 @@ function screenshotSvg(locale, sceneName) {
     ${commonDefs}
     <style>
       text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",Arial,sans-serif}
-      .brand{fill:#f8fbff;font-size:20px;font-weight:750}.version{fill:#c8ddff;font-size:11px;font-weight:750;letter-spacing:1.2px}
+      .brand{fill:#f8fbff;font-size:20px;font-weight:750}
       .headline{fill:#f8fbff;font-size:44px;font-weight:800;letter-spacing:-1.8px}.subtitle{fill:#cbdcf7;font-size:19px;font-weight:500}
       .toolbar{fill:#718096;font-size:11px;font-weight:650}.kicker{fill:#0e766e;font-size:11px;font-weight:800;letter-spacing:1.4px}
       .page-title{fill:#172b35;font-size:35px;font-weight:800;letter-spacing:-1.2px}.page-lede{fill:#607075;font-size:14px}
@@ -244,11 +219,11 @@ function screenshotSvg(locale, sceneName) {
       .bubble-title{fill:#172554;font-size:11px;font-weight:750}.bubble-copy{fill:#475569;font-size:10px}.bullet{fill:#4f46e5;font-size:12px;font-weight:900}
       .activity{fill:#475569;font-size:9px}.code{fill:#c7d2fe;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9px}
       .confirm-title{fill:#78350f;font-size:10.5px;font-weight:750}.confirm-copy{fill:#78350f;font-size:10px}.confirm-button{fill:#fff;font-size:10px;font-weight:700}.deny-button{fill:#475569;font-size:10px;font-weight:700}.hint{fill:#92400e;font-size:9px}
-      .composer{fill:#94a3b8;font-size:10px}.setting-title{fill:#1f2937;font-size:13px;font-weight:750}.badge{fill:#4f46e5;font-size:9px;font-weight:700}.field-label{fill:#64748b;font-size:11px}.field-value{fill:#475569;font-size:11px}
+      .composer{fill:#94a3b8;font-size:10px}.attach-icon{fill:#64748b;font-size:18px;font-weight:500}.file-kind{fill:#fff;font-size:8px;font-weight:800}.file-name{fill:#312e81;font-size:10px;font-weight:750}.file-status{fill:#64748b;font-size:9px}.privacy-hint{fill:#64748b;font-size:8.5px}
     </style>
     <rect width="1280" height="800" fill="url(#brandBg)"/><rect width="1280" height="800" fill="url(#glow)"/><rect width="1280" height="800" fill="url(#grid)"/>
     <image href="${icon}" x="64" y="43" width="36" height="36"/><rect x="64" y="43" width="36" height="36" rx="9" fill="none" stroke="#fff" stroke-opacity=".22"/>
-    ${text(112, 68, 'Runi', 'class="brand"')}<rect x="166" y="49" width="43" height="24" rx="12" fill="#fff" fill-opacity=".08" stroke="#b1d3ff" stroke-opacity=".26"/>${text(187.5, 65.5, 'V1.1', 'class="version" text-anchor="middle"')}
+    ${text(112, 68, 'Runi', 'class="brand"')}
     ${text(64, 134, scene.headline, 'class="headline"')}${text(64, 174, scene.subtitle, 'class="subtitle"')}
     <g filter="url(#shadow)"><rect x="64" y="205" width="1152" height="545" rx="22" fill="#f7f8fb" stroke="#cfe3ff" stroke-opacity=".7"/></g>
     <g clip-path="url(#captureClip)">
@@ -256,11 +231,11 @@ function screenshotSvg(locale, sceneName) {
       <circle cx="81" cy="224" r="3.5" fill="#94a3b8"/><circle cx="93" cy="224" r="3.5" fill="#94a3b8"/><circle cx="105" cy="224" r="3.5" fill="#94a3b8"/>
       <rect x="121" y="212" width="245" height="24" rx="12" fill="#fff" stroke="#d5dde7"/>${text(135, 228, 'runi.local/workspace', 'class="toolbar"')}
       <rect x="64" y="243" width="762" height="507" fill="url(#pageBg)"/><rect x="826" y="243" width="390" height="507" fill="#fff"/><path d="M826 243V750" stroke="#dce3ec"/>
-      ${sceneName === 'provider' ? providerPage(locale, scene) : pagePanel(locale)}
+      ${pagePanel(locale)}
       <rect x="826" y="243" width="390" height="50" fill="#fff"/><path d="M826 293H1216" stroke="#e5e7eb"/>
       <image href="${icon}" x="842" y="253" width="29" height="29"/>${text(880, 273, 'Runi', 'class="panel-title"')}${text(1199, 273, c.panel, 'class="panel-label" text-anchor="end"')}
       ${thread(locale, sceneName)}
-      <rect x="840" y="691" width="362" height="43" rx="12" fill="#fff" stroke="#dbe2ea"/>${text(856, 716, c.composer, 'class="composer"')}
+      <rect x="840" y="691" width="362" height="43" rx="12" fill="#fff" stroke="#dbe2ea"/>${text(857, 719, '+', 'class="attach-icon"')}${text(879, 716, c.composer, 'class="composer"')}
     </g>
     <rect x="64" y="205" width="1152" height="545" rx="22" fill="none" stroke="#fff" stroke-opacity=".36"/>
   </svg>`;
@@ -294,7 +269,7 @@ for (const locale of Object.keys(locales)) {
   render(screenshotSvg(locale, 'summary'), join(destination, 'screenshot-01-summary.png'), 1280, 800);
   render(screenshotSvg(locale, 'evidence'), join(destination, 'screenshot-02-evidence.png'), 1280, 800);
   render(screenshotSvg(locale, 'confirm'), join(destination, 'screenshot-03-confirm.png'), 1280, 800);
-  render(screenshotSvg(locale, 'provider'), join(destination, 'screenshot-04-provider.png'), 1280, 800);
+  render(screenshotSvg(locale, 'attachments'), join(destination, 'screenshot-04-attachments.png'), 1280, 800);
 }
 
 rmSync(temporarySvg, { force: true });
