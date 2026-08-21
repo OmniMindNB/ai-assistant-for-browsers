@@ -1,4 +1,5 @@
 import type { ChatMessageRecord } from '@/lib/db';
+import type { MessageAttachment } from './attachments';
 
 // 侧边栏消息的形状与派生规则（ref: docs/superpowers/specs/2026-07-26-edit-history-message-design.md §3）。
 // 本功能的全部可测逻辑集中在这里：vitest 只覆盖 lib/**，entrypoints/ 没有测试基建。
@@ -13,6 +14,8 @@ export interface ChatMessage {
   kind?: 'input' | 'action';
   /** 划词提问时被引用的选区原文（裁剪后）；存在时渲染成独立的引用卡片而不是拼进 content。 */
   quotedText?: string;
+  /** 上传附件（文本类/图片）；存在时随历史消息一起渲染成只读芯片列表，不重新进入后续轮次的 prompt。 */
+  attachments?: MessageAttachment[];
 }
 
 const TITLE_MAX_CHARS = 40;
@@ -58,6 +61,7 @@ export function toMessageRecords(
     createdAt: message.createdAt,
     kind: message.kind,
     quotedText: message.quotedText,
+    attachments: message.attachments,
   }));
 }
 

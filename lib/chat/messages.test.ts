@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { MessageAttachment } from '@/lib/chat/attachments';
 import {
   conversationTitle,
   discardedCount,
@@ -108,6 +109,21 @@ describe('toMessageRecords', () => {
 
   it('空数组返回空数组', () => {
     expect(toMessageRecords('c-1', [])).toEqual([]);
+  });
+
+  it('保留 attachments', () => {
+    const attachment: MessageAttachment = {
+      id: 'a1', name: 'notes.txt', mimeType: 'text/plain', size: 5, kind: 'text', textContent: 'hello',
+    };
+    const records = toMessageRecords('c-1', [
+      { id: 'a', role: 'user', content: '问', createdAt: 1000, attachments: [attachment] },
+    ]);
+    expect(records[0].attachments).toEqual([attachment]);
+  });
+
+  it('没有附件时 attachments 为 undefined', () => {
+    const records = toMessageRecords('c-1', [msg('a', 'user', '问')]);
+    expect(records[0].attachments).toBeUndefined();
   });
 });
 

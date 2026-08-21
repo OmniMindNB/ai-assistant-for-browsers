@@ -1,4 +1,5 @@
 import Dexie, { type Table } from 'dexie';
+import type { MessageAttachment } from './chat/attachments';
 
 // 本地持久化（ref: technical-plan.md §2.4）
 // 对话历史 / Skill 定义存 IndexedDB；API Key 等配置走 chrome.storage（见 settings.ts）。
@@ -19,6 +20,11 @@ export interface ChatMessageRecord {
    * 不建索引，同上无需 Dexie 版本迁移；存量记录无此字段即视为没有引用。
    */
   quotedText?: string;
+  /**
+   * 上传附件（文本类/图片），仅用户消息有意义，随该轮一起落库供历史回看渲染；
+   * 不建索引，同上无需 Dexie 版本迁移；存量记录无此字段即视为没有附件。
+   */
+  attachments?: MessageAttachment[];
 }
 
 export interface ConversationRecord {
