@@ -3,10 +3,14 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('pdfjs-dist', () => ({ GlobalWorkerOptions: {}, getDocument: vi.fn() }));
 vi.mock('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: 'chrome-extension://abc/assets/pdf.worker.mjs' }));
 
-import { getDocument } from 'pdfjs-dist';
+import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 import { buildPdfAssetUrls, extractPdfAttachment } from './pdfjs-runtime';
 
 describe('buildPdfAssetUrls', () => {
+  it('configures PDF.js to use the bundled worker', () => {
+    expect(GlobalWorkerOptions.workerSrc).toBe('chrome-extension://abc/assets/pdf.worker.mjs');
+  });
+
   it('resolves every PDF.js support asset inside the extension origin', () => {
     expect(buildPdfAssetUrls('chrome-extension://abc/')).toEqual({
       cMapUrl: 'chrome-extension://abc/pdfjs/cmaps/',
