@@ -83,12 +83,67 @@ describe('extractPdfText', () => {
     const controller = new AbortController();
     const destroy = vi.fn().mockResolvedValue(undefined);
     const pendingLoader: PdfDocumentLoader = {
-      load: () => ({ promise: new Promise(() => undefined), destroy }),
+      load: () => {
+        queueMicrotask(() => controller.abort());
+        return { promise: new Promise(() => undefined), destroy };
+      },
     };
     const extraction = extractPdfText(pdfFile(), { maxChars: 100, signal: controller.signal }, pendingLoader);
-    controller.abort();
     await expect(extraction).resolves.toEqual({ ok: false, reason: 'cancelled' });
     expect(destroy).toHaveBeenCalledOnce();
+  });
+
+  it('returns cancelled before invoking the loader when already aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const load = loader([]);
+    await expect(extractPdfText(pdfFile(), { maxChars: 100, signal: controller.signal }, load))
+      .resolves.toEqual({ ok: false, reason: 'cancelled' });
+    expect(load.load).not.toHaveBeenCalled();
+  });
+
+  it('cancels while reading a page and destroys the document', async () => {
+    const controller = new AbortController();
+    const documentDestroy = vi.fn().mockResolvedValue(undefined);
+    const getPage = vi.fn(() => new Promise<never>(() => undefined));
+    const pageLoader: PdfDocumentLoader = {
+      load: () => ({
+        promise: Promise.resolve({
+          numPages: 1,
+          getPage,
+          destroy: documentDestroy,
+        }),
+        destroy: vi.fn().mockResolvedValue(undefined),
+      }),
+    };
+    const extraction = extractPdfText(pdfFile(), { maxChars: 100, signal: controller.signal }, pageLoader);
+    await vi.waitFor(() => expect(getPage).toHaveBeenCalledOnce());
+    controller.abort();
+    await expect(extraction).resolves.toEqual({ ok: false, reason: 'cancelled' });
+    expect(documentDestroy).toHaveBeenCalledOnce();
+  });
+
+  it.each(['InvalidPDFException', 'MissingPDFException', 'UnexpectedResponseException'])
+    ('maps %s to invalid-pdf', async (name) => {
+      const parseLoader: PdfDocumentLoader = {
+        load: () => ({
+          promise: Promise.reject(Object.assign(new Error(name), { name })),
+          destroy: vi.fn().mockResolvedValue(undefined),
+        }),
+      };
+      await expect(extractPdfText(pdfFile(), { maxChars: 100 }, parseLoader))
+        .resolves.toEqual({ ok: false, reason: 'invalid-pdf' });
+    });
+
+  it('maps generic parser failures to parse-failed', async () => {
+    const parseLoader: PdfDocumentLoader = {
+      load: () => ({
+        promise: Promise.reject(new Error('broken parser')),
+        destroy: vi.fn().mockResolvedValue(undefined),
+      }),
+    };
+    await expect(extractPdfText(pdfFile(), { maxChars: 100 }, parseLoader))
+      .resolves.toEqual({ ok: false, reason: 'parse-failed' });
   });
 });
 

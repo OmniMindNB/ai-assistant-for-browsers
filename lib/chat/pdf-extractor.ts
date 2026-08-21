@@ -47,6 +47,7 @@ export async function extractPdfText(
   } catch {
     return { ok: false, reason: 'read-failed' };
   }
+  if (options.signal?.aborted) return { ok: false, reason: 'cancelled' };
   const task = loader.load(data);
   let taskDestroyPromise: Promise<void> | undefined;
   const destroyTask = async () => {
@@ -56,25 +57,20 @@ export async function extractPdfText(
   const abort = () => { void destroyTask(); };
   options.signal?.addEventListener('abort', abort, { once: true });
   let document: PdfDocumentLike | undefined;
+  const cancellation = () => new Promise<never>((_resolve, reject) => {
+    if (options.signal?.aborted) reject(new DOMException('Aborted', 'AbortError'));
+    else options.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+  });
   try {
     document = await Promise.race([
       task.promise,
-      new Promise<never>((_resolve, reject) => {
-        if (options.signal?.aborted) {
-          reject(new DOMException('Aborted', 'AbortError'));
-        } else {
-          options.signal?.addEventListener(
-            'abort',
-            () => reject(new DOMException('Aborted', 'AbortError')),
-            { once: true },
-          );
-        }
-      }),
+      cancellation(),
     ]);
     let text = '';
     let truncated = false;
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
-      const content = await (await document.getPage(pageNumber)).getTextContent();
+      const page = await Promise.race([document.getPage(pageNumber), cancellation()]);
+      const content = await Promise.race([page.getTextContent(), cancellation()]);
       const pageText = content.items
         .map((item) => item.str + (item.hasEOL ? '\n' : ' '))
         .join('').trim();
@@ -86,6 +82,7 @@ export async function extractPdfText(
         break;
       }
     }
+    if (options.signal?.aborted) return { ok: false, reason: 'cancelled' };
     if (!text.trim()) return { ok: false, reason: 'no-extractable-text' };
     return { ok: true, value: { text, pageCount: document.numPages, extractedChars: text.length, truncated } };
   } catch (error) {
