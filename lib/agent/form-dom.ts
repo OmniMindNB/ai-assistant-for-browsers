@@ -187,3 +187,217 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
 
   return { url: location.href, raws, forms, unreachable, truncated };
 }
+
+export interface ApplyFillItem {
+  fieldId: string;
+  path: FormFieldPathStep[];
+  expect: { tag: string; type?: string; name?: string; label?: string };
+  kind: string;
+  value?: string;
+  checked?: boolean;
+}
+
+export interface ApplyFillOutcome {
+  fieldId: string;
+  status: 'ok' | 'mismatch' | 'not_found' | 'not_writable' | 'invalid_value';
+  detail?: string;
+  actualValue?: string;
+}
+
+export interface ApplyFillInput {
+  /** 发放句柄时的页面 URL；与当前不符即认为句柄表过期。 */
+  url: string;
+  items: ApplyFillItem[];
+  submit?: { fieldId: string; path: FormFieldPathStep[]; expect: ApplyFillItem['expect'] };
+}
+
+export interface ApplyFillOutput {
+  outcomes: ApplyFillOutcome[];
+  submitted?: { fieldId: string; status: 'ok' | 'not_found' | 'mismatch' | 'not_clickable' };
+  fieldsTableStale?: boolean;
+}
+
+// ⚠️ 同 collectFormFields：本函数会被序列化注入页面，不得引用模块作用域的任何绑定。
+export function applyFormFill(input: ApplyFillInput): ApplyFillOutput {
+  if (input.url && input.url !== location.href) {
+    return { outcomes: [], fieldsTableStale: true };
+  }
+
+  const resolve = (path: FormFieldPathStep[]): Element | null => {
+    let scope: ParentNode | null = document;
+    let element: Element | null = null;
+    for (const step of path) {
+      if (step.kind === 'shadow') {
+        const shadowRoot: ShadowRoot | null = (element as HTMLElement | null)?.shadowRoot ?? null;
+        if (!shadowRoot) return null;
+        scope = shadowRoot;
+        continue;
+      }
+      if (!scope) return null;
+      const matches: Element[] = Array.from(scope.querySelectorAll(`:scope > ${step.selector}`));
+      element = matches[step.index] ?? null;
+      if (!element) return null;
+      scope = element;
+    }
+    return element;
+  };
+
+  const matchesExpect = (element: Element, expected: ApplyFillItem['expect']): boolean => {
+    if (element.tagName.toLowerCase() !== expected.tag.toLowerCase()) return false;
+    const actualType = element.getAttribute('type') || undefined;
+    if ((expected.type || undefined) !== actualType) return false;
+    const actualName = element.getAttribute('name') || undefined;
+    return (expected.name || undefined) === actualName;
+  };
+
+  const fireInput = (element: HTMLElement, data: string): void => {
+    element.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, inputType: 'insertText', data }));
+    element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data }));
+  };
+
+  const outcomes: ApplyFillOutcome[] = [];
+
+  for (const item of input.items) {
+    const element = resolve(item.path);
+    if (!element) {
+      outcomes.push({ fieldId: item.fieldId, status: 'not_found', detail: '定位路径已解析不到元素。' });
+      continue;
+    }
+    if (!matchesExpect(element, item.expect)) {
+      outcomes.push({
+        fieldId: item.fieldId,
+        status: 'mismatch',
+        detail: '该位置的元素与读取时不一致，页面可能已变化，请重新调用 browser_get_form。',
+      });
+      continue;
+    }
+
+    const asInput = element as HTMLInputElement;
+    if (asInput.disabled === true || asInput.readOnly === true) {
+      outcomes.push({ fieldId: item.fieldId, status: 'not_writable', detail: '字段处于禁用或只读状态。' });
+      continue;
+    }
+
+    const wantsChecked = typeof item.checked === 'boolean';
+    const wantsValue = typeof item.value === 'string';
+
+    if (item.kind === 'checkbox' || item.kind === 'radio') {
+      if (!wantsChecked) {
+        outcomes.push({ fieldId: item.fieldId, status: 'invalid_value', detail: '勾选类字段需要 checked 参数，而不是 value。' });
+        continue;
+      }
+      if (asInput.checked !== item.checked) {
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'checked')?.set;
+        if (setter) setter.call(asInput, item.checked);
+        else asInput.checked = item.checked as boolean;
+        asInput.dispatchEvent(new Event('input', { bubbles: true }));
+        asInput.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      const actual = asInput.checked;
+      outcomes.push(
+        actual === item.checked
+          ? { fieldId: item.fieldId, status: 'ok', actualValue: String(actual) }
+          : { fieldId: item.fieldId, status: 'invalid_value', detail: '写入后回读不符。', actualValue: String(actual) },
+      );
+      continue;
+    }
+
+    if (!wantsValue) {
+      outcomes.push({ fieldId: item.fieldId, status: 'invalid_value', detail: '该字段需要 value 参数。' });
+      continue;
+    }
+    const value = item.value as string;
+
+    if (item.kind === 'select') {
+      const select = element as HTMLSelectElement;
+      const options = Array.from(select.options);
+      const target =
+        options.find((option) => option.value === value) ??
+        options.find((option) => (option.textContent || '').replace(/\s+/g, ' ').trim() === value);
+      if (!target) {
+        outcomes.push({
+          fieldId: item.fieldId,
+          status: 'invalid_value',
+          detail: `没有 value 或文案等于 "${value}" 的选项，原值未改动。`,
+          actualValue: select.value,
+        });
+        continue;
+      }
+      select.value = target.value;
+      select.dispatchEvent(new Event('input', { bubbles: true }));
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      outcomes.push(
+        select.value === target.value
+          ? { fieldId: item.fieldId, status: 'ok', actualValue: select.value }
+          : { fieldId: item.fieldId, status: 'invalid_value', detail: '写入后回读不符。', actualValue: select.value },
+      );
+      continue;
+    }
+
+    if (item.kind === 'contenteditable') {
+      const host = element as HTMLElement;
+      host.focus();
+      fireInput(host, value);
+      host.textContent = value;
+      host.dispatchEvent(new Event('change', { bubbles: true }));
+      host.blur();
+      const actual = host.textContent ?? '';
+      outcomes.push(
+        actual === value
+          ? { fieldId: item.fieldId, status: 'ok', actualValue: actual }
+          : { fieldId: item.fieldId, status: 'invalid_value', detail: '富文本写入后回读不符。', actualValue: actual },
+      );
+      continue;
+    }
+
+    // text / textarea：用原生 setter 绕开 React 的 value tracker，
+    // 并补齐 focus/blur，让依赖 touched / blur 校验的表单库能正常工作。
+    const prototype = element.tagName.toLowerCase() === 'textarea' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+    asInput.focus();
+    if (setter) setter.call(asInput, value);
+    else asInput.value = value;
+    fireInput(asInput, value);
+    asInput.dispatchEvent(new Event('change', { bubbles: true }));
+    asInput.blur();
+    const actual = asInput.value;
+    outcomes.push(
+      actual === value
+        ? { fieldId: item.fieldId, status: 'ok', actualValue: actual }
+        : { fieldId: item.fieldId, status: 'invalid_value', detail: '写入后回读不符，页面组件可能改写或拒绝了这个值。', actualValue: actual },
+    );
+  }
+
+  let submitted: ApplyFillOutput['submitted'];
+  if (input.submit) {
+    const element = resolve(input.submit.path);
+    if (!element) {
+      submitted = { fieldId: input.submit.fieldId, status: 'not_found' };
+    } else if (!matchesExpect(element, input.submit.expect)) {
+      submitted = { fieldId: input.submit.fieldId, status: 'mismatch' };
+    } else {
+      const button = element as HTMLElement;
+      const rect = button.getBoundingClientRect();
+      const disabled = (button as HTMLButtonElement).disabled === true;
+      const hasBox = rect.width > 0 || rect.height > 0;
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const topMost = document.elementFromPoint(centerX, centerY);
+      const covered = topMost != null && topMost !== button && !button.contains(topMost);
+      if (disabled || !hasBox || covered) {
+        submitted = { fieldId: input.submit.fieldId, status: 'not_clickable' };
+      } else {
+        for (const type of ['pointerdown', 'mousedown']) {
+          button.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
+        }
+        button.focus();
+        for (const type of ['pointerup', 'mouseup', 'click']) {
+          button.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
+        }
+        submitted = { fieldId: input.submit.fieldId, status: 'ok' };
+      }
+    }
+  }
+
+  return { outcomes, submitted };
+}

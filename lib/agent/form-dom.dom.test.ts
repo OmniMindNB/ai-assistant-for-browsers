@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { collectFormFields } from './form-dom';
+import { applyFormFill, type ApplyFillItem } from './form-dom';
 
 const INPUT = { maxFields: 120, maxOptions: 50 };
 
@@ -127,5 +128,212 @@ describe('collectFormFields', () => {
     render(`<form id="a"><input name="in-a" /></form><form id="b"><input name="in-b" /></form>`);
     const output = collectFormFields({ ...INPUT, selector: '#b' });
     expect(output.raws.map((raw) => raw.name)).toEqual(['in-b']);
+  });
+});
+
+// jsdom's selector engine (@asamuzakjp/dom-selector, as used by jsdom 30) fails to
+// resolve `:scope` when the query root is a ShadowRoot: `shadowRoot.querySelectorAll(
+// ':scope > x')` and even `shadowRoot.querySelectorAll(':scope x')` always return an
+// empty list, even though the shadow root genuinely has a matching direct child
+// (verified directly: `sr.children.length` is 1 while `sr.querySelectorAll(':scope > *')`
+// is 0, and this reproduces with a bare DocumentFragment too — it is not specific to
+// shadow DOM semantics, just this engine's `:scope` root resolution). This is a jsdom
+// limitation, not a spec behavior: real browsers resolve `:scope` on a ShadowRoot to
+// the shadow root itself. applyFormFill's resolve() relies on `:scope > tag` to walk
+// into shadow roots, so without a fix every field behind a shadow root would spuriously
+// resolve to not_found in this test environment. Patch just the `:scope > tag` shape
+// resolve() actually issues, scoped to ShadowRoot, so the test exercises the real
+// resolve() traversal/index logic instead of stubbing around it.
+const originalShadowRootQuerySelectorAll = ShadowRoot.prototype.querySelectorAll;
+ShadowRoot.prototype.querySelectorAll = function (this: ShadowRoot, selectors: string) {
+  const match = /^:scope\s*>\s*(.+)$/.exec(selectors.trim());
+  if (match) {
+    const tag = match[1];
+    return Array.from(this.children).filter((el) => el.matches(tag)) as unknown as NodeListOf<Element>;
+  }
+  return originalShadowRootQuerySelectorAll.call(this, selectors);
+} as typeof originalShadowRootQuerySelectorAll;
+
+function item(overrides: Partial<ApplyFillItem> = {}): ApplyFillItem {
+  return {
+    fieldId: 'f1',
+    path: [
+      { kind: 'selector', selector: 'body', index: 0 },
+      { kind: 'selector', selector: 'form', index: 0 },
+      { kind: 'selector', selector: 'input', index: 0 },
+    ],
+    expect: { tag: 'input', type: 'text', name: 'email', label: '邮箱' },
+    kind: 'text',
+    ...overrides,
+  };
+}
+
+describe('applyFormFill', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('writes a text input and dispatches input/change so frameworks observe it', () => {
+    document.body.innerHTML = `<form><input type="text" name="email" /></form>`;
+    const input = document.querySelector('input')!;
+    const seen: string[] = [];
+    for (const type of ['focus', 'beforeinput', 'input', 'change', 'blur']) {
+      input.addEventListener(type, () => seen.push(type));
+    }
+
+    const output = applyFormFill({ url: location.href, items: [item({ value: 'a@b.c' })] });
+
+    expect(output.outcomes[0].status).toBe('ok');
+    expect(input.value).toBe('a@b.c');
+    expect(seen).toEqual(['focus', 'beforeinput', 'input', 'change', 'blur']);
+  });
+
+  it('returns not_found when the path resolves to nothing', () => {
+    document.body.innerHTML = `<form></form>`;
+    const output = applyFormFill({ url: location.href, items: [item({ value: 'x' })] });
+    expect(output.outcomes[0].status).toBe('not_found');
+  });
+
+  it('returns mismatch and writes nothing when the field changed since it was read', () => {
+    document.body.innerHTML = `<form><input type="text" name="phone" /></form>`;
+    const input = document.querySelector('input')!;
+    const output = applyFormFill({ url: location.href, items: [item({ value: 'x' })] });
+    expect(output.outcomes[0].status).toBe('mismatch');
+    expect(input.value).toBe('');
+  });
+
+  it('returns not_writable for disabled and readOnly fields', () => {
+    document.body.innerHTML = `<form><input type="text" name="email" disabled /></form>`;
+    expect(applyFormFill({ url: location.href, items: [item({ value: 'x' })] }).outcomes[0].status).toBe('not_writable');
+
+    document.body.innerHTML = `<form><input type="text" name="email" readonly /></form>`;
+    expect(applyFormFill({ url: location.href, items: [item({ value: 'x' })] }).outcomes[0].status).toBe('not_writable');
+  });
+
+  it('returns invalid_value when a checkbox is handed a text value', () => {
+    document.body.innerHTML = `<form><input type="checkbox" name="agree" /></form>`;
+    const output = applyFormFill({
+      url: location.href,
+      items: [item({ kind: 'checkbox', expect: { tag: 'input', type: 'checkbox', name: 'agree' }, value: 'yes' })],
+    });
+    expect(output.outcomes[0].status).toBe('invalid_value');
+  });
+
+  it('sets checkbox state through the checked property and is idempotent', () => {
+    document.body.innerHTML = `<form><input type="checkbox" name="agree" /></form>`;
+    const checkbox = document.querySelector('input')!;
+    const base = item({ kind: 'checkbox', expect: { tag: 'input', type: 'checkbox', name: 'agree' }, checked: true });
+
+    expect(applyFormFill({ url: location.href, items: [base] }).outcomes[0].status).toBe('ok');
+    expect(checkbox.checked).toBe(true);
+    // 再写一次 true 不能把它翻回 false
+    expect(applyFormFill({ url: location.href, items: [base] }).outcomes[0].status).toBe('ok');
+    expect(checkbox.checked).toBe(true);
+    // value 属性不能被动过
+    expect(checkbox.getAttribute('value')).toBeNull();
+  });
+
+  it('selects an option by value and by visible label', () => {
+    document.body.innerHTML = `<form><select name="city"><option value="bj">北京</option><option value="sh">上海</option></select></form>`;
+    const select = document.querySelector('select')!;
+    const base = item({
+      kind: 'select',
+      path: [
+        { kind: 'selector', selector: 'body', index: 0 },
+        { kind: 'selector', selector: 'form', index: 0 },
+        { kind: 'selector', selector: 'select', index: 0 },
+      ],
+      expect: { tag: 'select', name: 'city' },
+    });
+
+    expect(applyFormFill({ url: location.href, items: [{ ...base, value: 'sh' }] }).outcomes[0].status).toBe('ok');
+    expect(select.value).toBe('sh');
+
+    expect(applyFormFill({ url: location.href, items: [{ ...base, value: '北京' }] }).outcomes[0].status).toBe('ok');
+    expect(select.value).toBe('bj');
+  });
+
+  it('refuses an unknown select value before touching the element', () => {
+    document.body.innerHTML = `<form><select name="city"><option value="bj">北京</option></select></form>`;
+    const select = document.querySelector('select')!;
+    const output = applyFormFill({
+      url: location.href,
+      items: [
+        item({
+          kind: 'select',
+          path: [
+            { kind: 'selector', selector: 'body', index: 0 },
+            { kind: 'selector', selector: 'form', index: 0 },
+            { kind: 'selector', selector: 'select', index: 0 },
+          ],
+          expect: { tag: 'select', name: 'city' },
+          value: '广州',
+        }),
+      ],
+    });
+    expect(output.outcomes[0].status).toBe('invalid_value');
+    expect(select.value).toBe('bj'); // 原值没有被清空
+  });
+
+  it('reports invalid_value with the actual value when a framework reverts the write', () => {
+    document.body.innerHTML = `<form><input type="text" name="email" /></form>`;
+    const input = document.querySelector('input')!;
+    input.addEventListener('input', () => {
+      input.value = '被组件改写';
+    });
+    const output = applyFormFill({ url: location.href, items: [item({ value: 'a@b.c' })] });
+    expect(output.outcomes[0].status).toBe('invalid_value');
+    expect(output.outcomes[0].actualValue).toBe('被组件改写');
+  });
+
+  it('keeps filling the remaining fields when one of them fails', () => {
+    document.body.innerHTML = `<form><input type="text" name="email" /><input type="text" name="phone" /></form>`;
+    const output = applyFormFill({
+      url: location.href,
+      items: [
+        item({ fieldId: 'f1', expect: { tag: 'input', type: 'text', name: 'nope' }, value: 'x' }),
+        item({
+          fieldId: 'f2',
+          path: [
+            { kind: 'selector', selector: 'body', index: 0 },
+            { kind: 'selector', selector: 'form', index: 0 },
+            { kind: 'selector', selector: 'input', index: 1 },
+          ],
+          expect: { tag: 'input', type: 'text', name: 'phone' },
+          value: '13800000000',
+        }),
+      ],
+    });
+    expect(output.outcomes.map((outcome) => outcome.status)).toEqual(['mismatch', 'ok']);
+    expect((document.querySelector('input[name=phone]') as HTMLInputElement).value).toBe('13800000000');
+  });
+
+  it('writes into an element behind an open shadow root', () => {
+    document.body.innerHTML = `<div></div>`;
+    const host = document.querySelector('div')!;
+    host.attachShadow({ mode: 'open' }).innerHTML = `<input type="text" name="email" />`;
+    const output = applyFormFill({
+      url: location.href,
+      items: [
+        item({
+          path: [
+            { kind: 'selector', selector: 'body', index: 0 },
+            { kind: 'selector', selector: 'div', index: 0 },
+            { kind: 'shadow' },
+            { kind: 'selector', selector: 'input', index: 0 },
+          ],
+          value: 'a@b.c',
+        }),
+      ],
+    });
+    expect(output.outcomes[0].status).toBe('ok');
+    expect((host.shadowRoot!.querySelector('input') as HTMLInputElement).value).toBe('a@b.c');
+  });
+
+  it('reports the page as stale when the url no longer matches', () => {
+    document.body.innerHTML = `<form><input type="text" name="email" /></form>`;
+    const output = applyFormFill({ url: 'https://elsewhere.test/page', items: [item({ value: 'x' })] });
+    expect(output.fieldsTableStale).toBe(true);
+    expect(output.outcomes).toHaveLength(0);
   });
 });

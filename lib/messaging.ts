@@ -321,6 +321,27 @@ export interface GetFormResult {
   truncated: boolean;
 }
 
+export interface FillFormPayload {
+  fields: { fieldId: string; value?: string; checked?: boolean }[];
+  /** 可选：填完后点击这个按钮，与填写共用同一次确认。 */
+  submit?: { fieldId: string };
+}
+
+export interface FillFormFieldOutcome {
+  fieldId: string;
+  status: 'ok' | 'mismatch' | 'not_found' | 'not_writable' | 'invalid_value' | 'blocked_sensitive';
+  detail?: string;
+  /** 写后回读的实际值；敏感字段永不回传。 */
+  actualValue?: string;
+}
+
+export interface FillFormResult {
+  outcomes: FillFormFieldOutcome[];
+  submitted?: { fieldId: string; status: 'ok' | 'not_found' | 'mismatch' | 'not_clickable' };
+  /** 句柄表已失效（页面导航或 storage 丢失），模型必须重新调用 browser_get_form。 */
+  fieldsTableStale?: boolean;
+}
+
 /** 生成唯一消息 ID */
 export function newMessageId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
