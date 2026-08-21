@@ -1,6 +1,6 @@
 // lib/agent/stream-shared.ts
 // 协议无关的流式响应内部状态与事件构建工具，供 openai-stream.ts / anthropic-stream.ts 共用。
-import type { AssistantMessage, AssistantMessageEvent, Api, Model, ToolCall, Usage } from '@earendil-works/pi-ai';
+import type { AssistantMessage, AssistantMessageEvent, Api, ImageContent, Model, ToolCall, Usage } from '@earendil-works/pi-ai';
 
 export interface ToolCallAccumulator {
   id: string;
@@ -116,4 +116,12 @@ export function stringifyContent(content: unknown): string {
       .join('\n');
   }
   return '';
+}
+
+export function extractImageParts(content: unknown): ImageContent[] {
+  if (!Array.isArray(content)) return [];
+  return content.filter(
+    (part): part is ImageContent =>
+      Boolean(part && typeof part === 'object' && (part as { type?: unknown }).type === 'image'),
+  );
 }
