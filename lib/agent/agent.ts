@@ -173,7 +173,7 @@ export function createModel(provider: ProviderConfig): Model<Api> {
     provider: provider.id || provider.name,
     baseUrl: provider.baseURL,
     reasoning: false,
-    input: ['text'],
+    input: ['text', 'image'],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 128000,
     // Reasoning models (e.g. Anthropic-compatible providers that emit a `thinking` block before

@@ -191,4 +191,8 @@ describe('createModel', () => {
     expect(model.provider).toBe('p-1');
     expect(model.baseUrl).toBe('https://example.com/v1');
   });
+
+  it('declares both text and image input support', () => {
+    expect(createModel(baseProvider).input).toEqual(['text', 'image']);
+  });
 });
