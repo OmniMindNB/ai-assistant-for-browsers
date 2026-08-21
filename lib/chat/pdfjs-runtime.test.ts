@@ -20,6 +20,7 @@ describe('buildPdfAssetUrls', () => {
   });
 
   it('loads an attachment with extension-local PDF.js assets', async () => {
+    const destroy = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal('browser', {
       runtime: { getURL: vi.fn(() => 'chrome-extension://abc/') },
     });
@@ -29,9 +30,8 @@ describe('buildPdfAssetUrls', () => {
         getPage: async () => ({
           getTextContent: async () => ({ items: [{ str: 'Extracted text' }] }),
         }),
-        destroy: async () => {},
       }),
-      destroy: async () => {},
+      destroy,
     } as never);
 
     await expect(extractPdfAttachment(
@@ -41,6 +41,7 @@ describe('buildPdfAssetUrls', () => {
       ok: true,
       value: { text: 'Extracted text', pageCount: 1, extractedChars: 14, truncated: false },
     });
+    expect(destroy).toHaveBeenCalledOnce();
 
     expect(getDocument).toHaveBeenCalledWith({
       data: expect.any(Uint8Array),

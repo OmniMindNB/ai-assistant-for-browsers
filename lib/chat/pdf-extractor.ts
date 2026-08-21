@@ -14,7 +14,6 @@ export interface PdfTextItemLike { str: string; hasEOL?: boolean }
 export interface PdfDocumentLike {
   numPages: number;
   getPage(pageNumber: number): Promise<{ getTextContent(): Promise<{ items: PdfTextItemLike[] }> }>;
-  destroy(): Promise<void>;
 }
 export interface PdfLoadingTaskLike {
   promise: Promise<PdfDocumentLike>;
@@ -31,6 +30,20 @@ export interface PdfExtractionOptions {
 export type PdfExtractionResult =
   | { ok: true; value: { text: string; pageCount: number; extractedChars: number; truncated: boolean } }
   | { ok: false; reason: PdfExtractionFailureReason };
+
+function raceWithAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise;
+  if (signal.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'));
+
+  let onAbort!: () => void;
+  const cancellation = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(new DOMException('Aborted', 'AbortError'));
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+  return Promise.race([promise, cancellation]).finally(() => {
+    signal.removeEventListener('abort', onAbort);
+  });
+}
 
 export async function extractPdfText(
   file: File,
@@ -57,20 +70,13 @@ export async function extractPdfText(
   const abort = () => { void destroyTask(); };
   options.signal?.addEventListener('abort', abort, { once: true });
   let document: PdfDocumentLike | undefined;
-  const cancellation = () => new Promise<never>((_resolve, reject) => {
-    if (options.signal?.aborted) reject(new DOMException('Aborted', 'AbortError'));
-    else options.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
-  });
   try {
-    document = await Promise.race([
-      task.promise,
-      cancellation(),
-    ]);
+    document = await raceWithAbort(task.promise, options.signal);
     let text = '';
     let truncated = false;
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
-      const page = await Promise.race([document.getPage(pageNumber), cancellation()]);
-      const content = await Promise.race([page.getTextContent(), cancellation()]);
+      const page = await raceWithAbort(document.getPage(pageNumber), options.signal);
+      const content = await raceWithAbort(page.getTextContent(), options.signal);
       const pageText = content.items
         .map((item) => item.str + (item.hasEOL ? '\n' : ' '))
         .join('').trim();
@@ -97,7 +103,6 @@ export async function extractPdfText(
     return { ok: false, reason: 'parse-failed' };
   } finally {
     options.signal?.removeEventListener('abort', abort);
-    if (document) await document.destroy();
-    else await destroyTask();
+    await destroyTask();
   }
 }
