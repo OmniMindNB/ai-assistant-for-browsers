@@ -1033,4 +1033,51 @@ describe('chat store page context', () => {
       expect(mocks.createBrowserAgent).not.toHaveBeenCalled();
     });
   });
+
+  describe('pendingAttachments management', () => {
+    beforeEach(() => {
+      useChat.setState({ pendingAttachments: [], error: null });
+    });
+
+    it('adds a text file via addAttachmentFiles', async () => {
+      const file = new File(['file contents'], 'notes.txt', { type: 'text/plain' });
+      await useChat.getState().addAttachmentFiles([file]);
+      expect(useChat.getState().pendingAttachments).toHaveLength(1);
+      expect(useChat.getState().pendingAttachments[0]).toMatchObject({
+        name: 'notes.txt', kind: 'text', textContent: 'file contents',
+      });
+    });
+
+    it('rejects a file over the image size limit and reports which file', async () => {
+      const big = new File([new Uint8Array(5 * 1024 * 1024 + 1)], 'big.png', { type: 'image/png' });
+      await useChat.getState().addAttachmentFiles([big]);
+      expect(useChat.getState().pendingAttachments).toHaveLength(0);
+      expect(useChat.getState().error).toContain('big.png');
+    });
+
+    it('rejects an unsupported file type and reports which file', async () => {
+      const file = new File(['x'], 'archive.zip', { type: 'application/zip' });
+      await useChat.getState().addAttachmentFiles([file]);
+      expect(useChat.getState().pendingAttachments).toHaveLength(0);
+      expect(useChat.getState().error).toContain('archive.zip');
+    });
+
+    it('caps pending attachments at 5 and reports the limit', async () => {
+      const files = Array.from({ length: 6 }, (_, i) => new File([`f${i}`], `f${i}.txt`, { type: 'text/plain' }));
+      await useChat.getState().addAttachmentFiles(files);
+      expect(useChat.getState().pendingAttachments).toHaveLength(5);
+      expect(useChat.getState().error).toContain('5');
+    });
+
+    it('removeAttachment drops only the matching attachment', async () => {
+      await useChat.getState().addAttachmentFiles([
+        new File(['a'], 'a.txt', { type: 'text/plain' }),
+        new File(['b'], 'b.txt', { type: 'text/plain' }),
+      ]);
+      const [first] = useChat.getState().pendingAttachments;
+      useChat.getState().removeAttachment(first.id);
+      expect(useChat.getState().pendingAttachments).toHaveLength(1);
+      expect(useChat.getState().pendingAttachments[0].name).toBe('b.txt');
+    });
+  });
 });

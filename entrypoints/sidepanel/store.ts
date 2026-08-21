@@ -41,6 +41,12 @@ import { finishActivityStep, markActivityStepSlow, upsertActivityStep, type Acti
 import { getConversationIdForTab, setConversationIdForTab } from '@/lib/agent/tab-conversation';
 import { clearPendingAskForTab, getPendingAskForTab, pendingAskStorageKey } from '@/lib/agent/tab-pending-ask';
 import { buildSelectionAskTemplate, truncateSelectionText } from '@/lib/selection-ask';
+import {
+  MAX_ATTACHMENTS_PER_MESSAGE,
+  readAttachment,
+  type AttachmentReadFailure,
+  type MessageAttachment,
+} from '@/lib/chat/attachments';
 import { getCurrentLocale, t } from '@/lib/i18n';
 import { isCurrentTabReadable } from '@/lib/current-tab-readability';
 import {
@@ -93,6 +99,8 @@ interface ChatState {
   pendingFocusToken: number;
   /** 划词提问消费到的待引用文字（裁剪后）；作为独立卡片显示在输入框上方，不混入 input。 */
   quotedSelection: string | null;
+  /** 待发送的附件（文本类/图片），单条消息最多 MAX_ATTACHMENTS_PER_MESSAGE 个。 */
+  pendingAttachments: MessageAttachment[];
   busy: boolean;
   error: string | null;
   pendingConfirmation: PendingConfirmation | null;
@@ -110,6 +118,8 @@ interface ChatState {
   pageContext: PageContextState;
   setInput: (v: string) => void;
   clearQuotedSelection: () => void;
+  addAttachmentFiles: (files: FileList | File[]) => Promise<void>;
+  removeAttachment: (id: string) => void;
   refreshProvider: () => Promise<void>;
   refreshShortcuts: () => Promise<void>;
   refreshPageContext: () => Promise<void>;
@@ -300,6 +310,7 @@ export const useChat = create<ChatState>((set, get) => ({
   input: '',
   pendingFocusToken: 0,
   quotedSelection: null,
+  pendingAttachments: [],
   busy: false,
   error: null,
   pendingConfirmation: null,
@@ -315,6 +326,32 @@ export const useChat = create<ChatState>((set, get) => ({
 
   setInput: (v) => set({ input: v }),
   clearQuotedSelection: () => set({ quotedSelection: null }),
+
+  addAttachmentFiles: async (files) => {
+    const list = Array.from(files);
+    if (list.length === 0) return;
+    const current = get().pendingAttachments;
+    const remainingSlots = Math.max(0, MAX_ATTACHMENTS_PER_MESSAGE - current.length);
+    const toRead = list.slice(0, remainingSlots);
+    const overflow = list.length > toRead.length;
+    const results = await Promise.all(toRead.map(readAttachment));
+    const added: MessageAttachment[] = [];
+    let failureMessage: string | undefined;
+    for (const result of results) {
+      if (result.ok) added.push(result.attachment);
+      else failureMessage ??= describeAttachmentFailure(result.failure);
+    }
+    const limitMessage = overflow
+      ? t('workbench.attachmentLimitReached', { max: MAX_ATTACHMENTS_PER_MESSAGE })
+      : undefined;
+    set((s) => ({
+      pendingAttachments: [...s.pendingAttachments, ...added],
+      error: failureMessage ?? limitMessage ?? s.error,
+    }));
+  },
+
+  removeAttachment: (id) =>
+    set((s) => ({ pendingAttachments: s.pendingAttachments.filter((a) => a.id !== id) })),
 
   refreshProvider: async () => {
     const requestId = ++providerRequestId;
@@ -1038,6 +1075,16 @@ async function persistConversationSnapshot(conversationId: string, messages: UIM
   } catch (e) {
     console.error('[Runi] 持久化会话失败', e);
   }
+}
+
+function describeAttachmentFailure(failure: AttachmentReadFailure): string {
+  const key =
+    failure.reason === 'too-large'
+      ? 'workbench.attachmentTooLarge'
+      : failure.reason === 'unsupported-type'
+        ? 'workbench.attachmentUnsupportedType'
+        : 'workbench.attachmentReadFailed';
+  return t(key, { name: failure.name });
 }
 
 function errMsg(e: unknown): string {
