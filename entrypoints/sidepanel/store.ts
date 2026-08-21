@@ -43,10 +43,13 @@ import { clearPendingAskForTab, getPendingAskForTab, pendingAskStorageKey } from
 import { buildSelectionAskTemplate, truncateSelectionText } from '@/lib/selection-ask';
 import {
   MAX_ATTACHMENTS_PER_MESSAGE,
+  buildAttachmentTextTemplate,
   readAttachment,
+  toImageContent,
   type AttachmentReadFailure,
   type MessageAttachment,
 } from '@/lib/chat/attachments';
+import type { ImageContent } from '@earendil-works/pi-ai';
 import { getCurrentLocale, t } from '@/lib/i18n';
 import { isCurrentTabReadable } from '@/lib/current-tab-readability';
 import {
@@ -300,8 +303,9 @@ function makeMessage(
   content: string,
   kind?: 'input' | 'action',
   quotedText?: string,
+  attachments?: MessageAttachment[],
 ): UIMessage {
-  return { id: genMessageId(), role, content, createdAt: Date.now(), kind, quotedText };
+  return { id: genMessageId(), role, content, createdAt: Date.now(), kind, quotedText, attachments };
 }
 
 export const useChat = create<ChatState>((set, get) => ({
@@ -436,15 +440,22 @@ export const useChat = create<ChatState>((set, get) => ({
     const question = (text ?? get().input).trim();
     if (!question || get().busy) return false;
     const quoted = get().quotedSelection;
-    const agentUserContent = quoted ? buildSelectionAskTemplate(quoted, t) + question : question;
+    const attachments = get().pendingAttachments;
+    const textAttachments = attachments.filter((a) => a.kind === 'text');
+    const imageAttachments = attachments.filter((a) => a.kind === 'image');
+    const attachmentText = textAttachments.map((a) => buildAttachmentTextTemplate(a, t)).join('');
+    const agentUserContent = (quoted ? buildSelectionAskTemplate(quoted, t) : '') + attachmentText + question;
+    const images = imageAttachments.map(toImageContent);
     return runAgent(
       set,
       get,
-      makeMessage('user', question, 'input', quoted ?? undefined),
+      makeMessage('user', question, 'input', quoted ?? undefined, attachments.length ? attachments : undefined),
       agentUserContent,
       {
         withoutBrowserTools: options?.withoutBrowserTools,
         clearQuotedSelection: true,
+        clearAttachments: true,
+        images: images.length ? images : undefined,
       },
     );
   },
@@ -588,6 +599,7 @@ export const useChat = create<ChatState>((set, get) => ({
         createdAt: r.createdAt,
         kind: r.kind,
         quotedText: r.quotedText,
+        attachments: r.attachments,
       }));
     clearAllSlowActivityTimers();
     set({
@@ -677,6 +689,9 @@ interface RunAgentOptions {
   origin?: ConversationOrigin;
   /** 提交本轮时是否顺带清空 quotedSelection；只有主输入框发送需要，编辑历史消息/运行快捷指令时不动它。 */
   clearQuotedSelection?: boolean;
+  images?: ImageContent[];
+  /** 提交本轮时是否顺带清空 pendingAttachments；语义与 clearQuotedSelection 完全对称。 */
+  clearAttachments?: boolean;
 }
 
 async function runAgent(
@@ -759,6 +774,7 @@ async function runAgent(
     activitySteps: [],
     input: '',
     ...(options.clearQuotedSelection ? { quotedSelection: null } : {}),
+    ...(options.clearAttachments ? { pendingAttachments: [] } : {}),
     busy: true,
     error: null,
     pendingConfirmation: null,
@@ -875,7 +891,11 @@ async function runAgent(
       return true;
     }
 
-    await agent.prompt(agentUserContent);
+    if (options.images && options.images.length > 0) {
+      await agent.prompt(agentUserContent, options.images);
+    } else {
+      await agent.prompt(agentUserContent);
+    }
     if (!isCurrentRun(run, get)) return false;
     if (!acc.trim()) {
       // pi-agent-core 不会为流式错误抛异常：agent-loop 遇到 stopReason "error"/"aborted" 时

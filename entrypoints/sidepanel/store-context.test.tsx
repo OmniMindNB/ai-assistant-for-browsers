@@ -1080,4 +1080,49 @@ describe('chat store page context', () => {
       expect(useChat.getState().pendingAttachments[0].name).toBe('b.txt');
     });
   });
+
+  describe('attachment composition on send', () => {
+    beforeEach(() => {
+      mocks.createBrowserAgent.mockReturnValue(makeAgent());
+      mocks.sendMessage.mockImplementation((type: string) => {
+        if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: [
+          'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE',
+          'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION',
+          'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
+        ] } });
+        return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+      });
+      useChat.setState({ input: '', pendingAttachments: [] });
+    });
+
+    it('folds a text attachment into the prompt text, clears pendingAttachments, and stores it on the message', async () => {
+      await useChat.getState().addAttachmentFiles([new File(['secret notes'], 'notes.txt', { type: 'text/plain' })]);
+
+      await useChat.getState().send('summarize this');
+
+      const agent = mocks.createBrowserAgent.mock.results[0].value;
+      expect(agent.prompt).toHaveBeenCalledWith(expect.stringContaining('secret notes'));
+      expect(agent.prompt).toHaveBeenCalledWith(expect.stringContaining('summarize this'));
+      expect(useChat.getState().pendingAttachments).toHaveLength(0);
+
+      const userMessage = useChat.getState().messages.find((m) => m.role === 'user')!;
+      expect(userMessage.content).toBe('summarize this');
+      expect(userMessage.attachments).toHaveLength(1);
+      expect(userMessage.attachments![0].name).toBe('notes.txt');
+    });
+
+    it('passes an image attachment to agent.prompt as the second argument', async () => {
+      await useChat.getState().addAttachmentFiles([
+        new File([new Uint8Array([1, 2, 3])], 'photo.png', { type: 'image/png' }),
+      ]);
+
+      await useChat.getState().send('what is this?');
+
+      const agent = mocks.createBrowserAgent.mock.results[0].value;
+      expect(agent.prompt).toHaveBeenCalledWith(
+        expect.any(String),
+        [expect.objectContaining({ type: 'image', mimeType: 'image/png' })],
+      );
+    });
+  });
 });
