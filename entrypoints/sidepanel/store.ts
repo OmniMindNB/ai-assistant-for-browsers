@@ -625,30 +625,20 @@ export const useChat = create<ChatState>((set, get) => ({
     if (!question && ready.length === 0) return false;
     const displayText = question || t('store.attachmentOnlyPrompt');
     const quoted = get().quotedSelection;
-    const storedAttachments = ready
-      .map(toMessageAttachment)
-      .filter((item): item is MessageAttachment => item !== null);
-    const attachmentText = ready.map((item) => buildPendingAttachmentText(item, t)).join('');
-    const agentUserContent = (quoted ? buildSelectionAskTemplate(quoted, t) : '') + attachmentText + displayText;
-    const images = ready
-      .map(toPendingImageContent)
-      .filter((item): item is ImageContent => item !== null);
     return runAgent(
       set,
       get,
-      makeMessage(
-        'user',
-        displayText,
-        'input',
-        quoted ?? undefined,
-        storedAttachments.length ? storedAttachments : undefined,
-      ),
-      agentUserContent,
+      makeMessage('user', displayText, 'input', quoted ?? undefined),
+      displayText,
       {
         withoutBrowserTools: options?.withoutBrowserTools,
         clearQuotedSelection: true,
         clearAttachments: true,
-        images: images.length ? images : undefined,
+        attachmentSubmission: {
+          question,
+          quoted,
+          attachmentIds: ready.map((item) => item.id),
+        },
       },
     );
   },
@@ -837,21 +827,25 @@ export const useChat = create<ChatState>((set, get) => ({
       if (removingActive && get().conversationId === id) set({ error: errMsg(error) });
       return;
     }
-    await get().refreshConversations();
-    if (get().conversationId === id) {
-      // A run can start while deletion/list refresh awaits. Do not let it
-      // persist the record that has just been deleted.
-      get().disposeAttachments();
-      invalidateActiveRun(set, get, false);
-      conversationEpoch += 1;
-      clearAllSlowActivityTimers();
-      set({
-        messages: [],
-        activitySteps: [],
-        conversationId: genConversationId(),
-        busy: false,
-        pendingConfirmation: null,
-      });
+    try {
+      await get().refreshConversations();
+    } finally {
+      if (get().conversationId === id) {
+        // A run can start while deletion/list refresh awaits. Do not let it
+        // persist the record that has just been deleted. This cleanup is
+        // authoritative even when refreshing the drawer fails afterward.
+        get().disposeAttachments();
+        invalidateActiveRun(set, get, false);
+        conversationEpoch += 1;
+        clearAllSlowActivityTimers();
+        set({
+          messages: [],
+          activitySteps: [],
+          conversationId: genConversationId(),
+          busy: false,
+          pendingConfirmation: null,
+        });
+      }
     }
   },
 }));
@@ -889,6 +883,16 @@ interface RunAgentOptions {
   images?: ImageContent[];
   /** 提交本轮时是否顺带清空 pendingAttachments；语义与 clearQuotedSelection 完全对称。 */
   clearAttachments?: boolean;
+  /**
+   * 主输入框发送开始时允许提交的 ready 附件 ID。真正的 prompt 和历史投影在异步
+   * 前置检查结束后重建，因此期间被移除/清空的附件不能借旧闭包进入请求或持久化；
+   * 期间新添加的附件也不会被并入已经点击发送的这一轮。
+   */
+  attachmentSubmission?: {
+    question: string;
+    quoted: string | null;
+    attachmentIds: string[];
+  };
 }
 
 async function runAgent(
@@ -965,10 +969,41 @@ async function runAgent(
     }
     history = current.slice(0, index);
   }
+  let committedDisplay = display;
+  let committedAgentUserContent = agentUserContent;
+  let committedImages = options.images;
+  if (options.attachmentSubmission) {
+    const { question, quoted, attachmentIds } = options.attachmentSubmission;
+    const allowedIds = new Set(attachmentIds);
+    const ready = get().pendingAttachments.filter(
+      (item) => allowedIds.has(item.id) && isAttachmentReady(item),
+    );
+    if (!question && ready.length === 0) {
+      settleRun(run);
+      return false;
+    }
+    const displayText = question || t('store.attachmentOnlyPrompt');
+    const storedAttachments = ready
+      .map(toMessageAttachment)
+      .filter((item): item is MessageAttachment => item !== null);
+    const attachmentText = ready.map((item) => buildPendingAttachmentText(item, t)).join('');
+    committedDisplay = {
+      ...display,
+      content: displayText,
+      quotedText: quoted ?? undefined,
+      attachments: storedAttachments.length ? storedAttachments : undefined,
+    };
+    committedAgentUserContent =
+      (quoted ? buildSelectionAskTemplate(quoted, t) : '') + attachmentText + displayText;
+    const images = ready
+      .map(toPendingImageContent)
+      .filter((item): item is ImageContent => item !== null);
+    committedImages = images.length ? images : undefined;
+  }
   if (options.clearAttachments) cancelPendingAttachments(get().pendingAttachments);
   clearAllSlowActivityTimers();
   set({
-    messages: [...history, display, makeMessage('assistant', '')],
+    messages: [...history, committedDisplay, makeMessage('assistant', '')],
     activitySteps: [],
     input: '',
     ...(options.clearQuotedSelection ? { quotedSelection: null } : {}),
@@ -1091,10 +1126,10 @@ async function runAgent(
 
     // 不能传 undefined 作为显式第二参数：store-context.test.tsx 里 toHaveBeenCalledWith('...') 断言的是单参数调用，
     // 传两个参数（哪怕第二个是 undefined）会让 vitest 的参数数组比对失败。
-    if (options.images && options.images.length > 0) {
-      await agent.prompt(agentUserContent, options.images);
+    if (committedImages && committedImages.length > 0) {
+      await agent.prompt(committedAgentUserContent, committedImages);
     } else {
-      await agent.prompt(agentUserContent);
+      await agent.prompt(committedAgentUserContent);
     }
     if (!isCurrentRun(run, get)) return false;
     if (!acc.trim()) {

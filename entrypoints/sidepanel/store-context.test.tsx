@@ -1207,6 +1207,32 @@ describe('chat store page context', () => {
       expect(useChat.getState().pendingAttachments).toEqual([]);
     });
 
+    it('still clears an attachment when deleted conversation refresh fails after becoming active', async () => {
+      let resolveDelete!: () => void;
+      mocks.deleteConversation.mockImplementationOnce(() => new Promise<void>((resolve) => {
+        resolveDelete = resolve;
+      }));
+      mocks.listConversations.mockRejectedValueOnce(new Error('refresh failed'));
+      useChat.setState({ conversationId: 'A' });
+      const removing = useChat.getState().removeConversation('B');
+      await vi.waitFor(() => expect(mocks.deleteConversation).toHaveBeenCalledWith('B'));
+      await useChat.getState().openConversation('B');
+      useChat.setState({ pendingAttachments: [{
+        status: 'ready', id: 'pdf-b', name: 'b.pdf', mimeType: 'application/pdf', size: 10, kind: 'pdf',
+        attachment: {
+          id: 'pdf-b', name: 'b.pdf', mimeType: 'application/pdf', size: 10, kind: 'pdf',
+          pageCount: 1, extractedChars: 7, truncated: false,
+        },
+        transientText: 'private',
+      }] });
+
+      resolveDelete();
+
+      await expect(removing).rejects.toThrow('refresh failed');
+      expect(useChat.getState().conversationId).not.toBe('B');
+      expect(useChat.getState().pendingAttachments).toEqual([]);
+    });
+
     it('retries a parse failure with the same attachment ID', async () => {
       mocks.extractPdfAttachment
         .mockResolvedValueOnce({ ok: false, reason: 'parse-failed' })
@@ -1341,6 +1367,53 @@ describe('chat store page context', () => {
 
       expect(wasAborted).toBe(true);
       expect(useChat.getState().pendingAttachments).toEqual([]);
+    });
+
+    it('does not send or persist a ready PDF removed during send preflight', async () => {
+      mocks.extractPdfAttachment.mockResolvedValue({
+        ok: true,
+        value: { text: 'removed private text', pageCount: 1, extractedChars: 20, truncated: false },
+      });
+      await useChat.getState().addAttachmentFiles([new File(['%PDF-x'], 'removed.pdf')]);
+      const id = useChat.getState().pendingAttachments[0].id;
+      let resolveProvider!: (value: typeof provider) => void;
+      mocks.getActiveProvider.mockReturnValueOnce(new Promise((resolve) => {
+        resolveProvider = resolve;
+      }));
+      const sending = useChat.getState().send('continue without removed file');
+
+      useChat.getState().removeAttachment(id);
+      resolveProvider(provider);
+
+      await expect(sending).resolves.toBe(true);
+      const agent = mocks.createBrowserAgent.mock.results[0].value;
+      expect(agent.prompt).toHaveBeenCalledWith('continue without removed file');
+      const userMessage = useChat.getState().messages.find((message) => message.role === 'user')!;
+      expect(userMessage.attachments).toBeUndefined();
+      expect(JSON.stringify(mocks.replaceConversationMessages.mock.calls)).not.toContain('removed private text');
+    });
+
+    it('does not send or persist a ready PDF disposed during send preflight', async () => {
+      mocks.extractPdfAttachment.mockResolvedValue({
+        ok: true,
+        value: { text: 'disposed private text', pageCount: 1, extractedChars: 21, truncated: false },
+      });
+      await useChat.getState().addAttachmentFiles([new File(['%PDF-x'], 'disposed.pdf')]);
+      let resolveProvider!: (value: typeof provider) => void;
+      mocks.getActiveProvider.mockReturnValueOnce(new Promise((resolve) => {
+        resolveProvider = resolve;
+      }));
+      const sending = useChat.getState().send('continue after disposal');
+
+      useChat.getState().disposeAttachments();
+      resolveProvider(provider);
+
+      await expect(sending).resolves.toBe(true);
+      const agent = mocks.createBrowserAgent.mock.results[0].value;
+      expect(agent.prompt).toHaveBeenCalledWith('continue after disposal');
+      const userMessage = useChat.getState().messages.find((message) => message.role === 'user')!;
+      expect(userMessage.attachments).toBeUndefined();
+      expect(JSON.stringify(mocks.replaceConversationMessages.mock.calls)).not.toContain('disposed private text');
     });
   });
 });
