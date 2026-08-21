@@ -278,6 +278,48 @@ export interface SetStorageResult {
   key: string;
 }
 
+export type FormFieldKind =
+  | 'text' | 'textarea' | 'select' | 'checkbox' | 'radio'
+  | 'contenteditable' | 'file' | 'submit' | 'button' | 'unsupported';
+
+export interface FormFieldDescriptor {
+  fieldId: string;
+  kind: FormFieldKind;
+  type?: string;
+  name?: string;
+  label?: string;
+  placeholder?: string;
+  required: boolean;
+  disabled: boolean;
+  readOnly: boolean;
+  visible: boolean;
+  /** 敏感字段不返回值，只给 valueState。 */
+  value?: string;
+  valueState: 'filled' | 'empty';
+  checked?: boolean;
+  options?: { value: string; label: string; selected: boolean }[];
+  sensitive: boolean;
+  writable: boolean;
+  clickable: boolean;
+  fingerprint: string;
+  formId?: string;
+  validationMessage?: string;
+}
+
+export interface GetFormPayload {
+  selector?: string;
+  includeHidden?: boolean;
+}
+
+export interface GetFormResult {
+  forms: { formId: string; name?: string; action?: string; method?: string; submitFieldIds: string[] }[];
+  fields: FormFieldDescriptor[];
+  orphanFieldIds: string[];
+  /** 如实上报「这里有内容但我看不见」，避免模型在主框架里反复试探。 */
+  unreachable: { iframes: number; closedShadowRoots: number };
+  truncated: boolean;
+}
+
 /** 生成唯一消息 ID */
 export function newMessageId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
