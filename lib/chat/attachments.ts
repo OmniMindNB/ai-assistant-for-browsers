@@ -128,8 +128,10 @@ async function readFileAsDataUrl(file: File): Promise<string> {
 /** 拼进当轮 prompt 文本部分的模板；标注为参考数据而非指令，呼应 selection-ask 的处理方式。 */
 export function buildAttachmentTextTemplate(attachment: MessageAttachment, translate: Translate): string {
   return translate('store.attachmentTextTemplate', {
-    name: attachment.name,
-    content: JSON.stringify(attachment.kind === 'text' ? attachment.textContent : ''),
+    attachment: JSON.stringify({
+      name: attachment.name,
+      content: attachment.kind === 'text' ? attachment.textContent : '',
+    }),
   });
 }
 
@@ -191,8 +193,7 @@ export function buildPendingAttachmentText(item: PendingAttachment, translate: T
     ? item.transientText ?? ''
     : item.attachment.textContent;
   return translate('store.attachmentTextTemplate', {
-    name: item.attachment.name,
-    content: JSON.stringify(content),
+    attachment: JSON.stringify({ name: item.attachment.name, content }),
   });
 }
 
