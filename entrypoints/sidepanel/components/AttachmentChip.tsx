@@ -1,5 +1,6 @@
 import { attachmentFailureLabel, type MessageAttachment, type PendingAttachment } from '@/lib/chat/attachments';
 import { useTranslation } from '@/lib/i18n';
+import { useId } from 'react';
 import {
   IconAlertTriangle,
   IconCheck,
@@ -50,6 +51,7 @@ function AttachmentStatusIcon({ status, truncated }: { status: ChipStatus; trunc
 
 export function AttachmentChip(props: AttachmentChipProps) {
   const { t } = useTranslation();
+  const truncationDescriptionId = useId();
   const pending = 'pending' in props ? props.pending : null;
   const historical = 'attachment' in props ? props.attachment : null;
   const status: ChipStatus = pending?.status ?? 'history';
@@ -64,6 +66,7 @@ export function AttachmentChip(props: AttachmentChipProps) {
   const onRemove = 'onRemove' in props ? props.onRemove : undefined;
   const truncated = readyPdf?.truncated
     ?? (readyAttachment?.kind === 'text' ? readyAttachment.truncated : false);
+  const hasPdfTruncationDescription = readyPdf?.truncated ?? false;
   const stateLabel = status === 'queued'
     ? t('workbench.attachmentQueued')
     : status === 'parsing'
@@ -74,6 +77,8 @@ export function AttachmentChip(props: AttachmentChipProps) {
     <div
       role={error ? 'alert' : undefined}
       aria-live={error ? undefined : 'polite'}
+      aria-describedby={hasPdfTruncationDescription ? truncationDescriptionId : undefined}
+      tabIndex={hasPdfTruncationDescription ? 0 : undefined}
       className={chipClass(status)}
     >
       {readyAttachment?.kind === 'image' && readyAttachment.dataUrl ? (
@@ -97,6 +102,11 @@ export function AttachmentChip(props: AttachmentChipProps) {
           className="shrink-0 text-amber-700 dark:text-amber-300"
         >
           {t('workbench.attachmentTruncatedBadge')}
+        </span>
+      )}
+      {hasPdfTruncationDescription && (
+        <span id={truncationDescriptionId} className="sr-only">
+          {t('workbench.pdfTruncatedDetail')}
         </span>
       )}
       {error && (

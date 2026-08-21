@@ -9,6 +9,7 @@ import {
   buildAttachmentTextTemplate,
   buildPendingAttachmentText,
   attachmentFailureLabel,
+  hasBusyAttachments,
   isAttachmentBusy,
   isAttachmentReady,
   toMessageAttachment,
@@ -146,6 +147,20 @@ describe('pending attachments', () => {
       status: 'error', id: '1', file: new File([], 'a.pdf'), name: 'a.pdf',
       mimeType: 'application/pdf', size: 0, kind: 'pdf', reason: 'invalid-pdf', retryable: false,
     })).toBe(false);
+  });
+
+  it('reports whether any pending attachment blocks request submission', () => {
+    const parsing: PendingAttachment = {
+      status: 'parsing', id: '2', taskId: 't2', file: new File([], 'a.pdf'),
+      name: 'a.pdf', mimeType: 'application/pdf', size: 0, kind: 'pdf',
+    };
+    const error: PendingAttachment = {
+      status: 'error', id: '3', name: 'bad.pdf', mimeType: 'application/pdf', size: 0,
+      kind: 'pdf', reason: 'invalid-pdf', retryable: false,
+    };
+
+    expect(hasBusyAttachments([error, parsing])).toBe(true);
+    expect(hasBusyAttachments([error, readyPdf])).toBe(false);
   });
 
   it('only projects ready attachments into persisted messages', () => {

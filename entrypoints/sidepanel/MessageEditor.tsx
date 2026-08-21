@@ -6,11 +6,13 @@ import { useTranslation } from '@/lib/i18n';
 export default function MessageEditor({
   initialContent,
   discardCount,
+  disabled = false,
   onCancel,
   onSubmit,
 }: {
   initialContent: string;
   discardCount: number;
+  disabled?: boolean;
   onCancel: () => void;
   onSubmit: (content: string) => void;
 }) {
@@ -37,7 +39,7 @@ export default function MessageEditor({
     el.style.height = `${Math.min(el.scrollHeight, cap)}px`;
   }, [text]);
 
-  const canSubmit = text.trim().length > 0;
+  const canSubmit = !disabled && text.trim().length > 0;
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Escape') {
@@ -61,7 +63,8 @@ export default function MessageEditor({
         onChange={(e) => setText(e.target.value)}
         onKeyDown={onKeyDown}
         aria-label={t('chat.editMessageEditorAriaLabel')}
-        className="max-h-[40vh] w-full resize-none overflow-y-auto rounded-2xl border border-neutral-300 bg-white px-4 py-2.5 text-sm text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+        disabled={disabled}
+        className="max-h-[40vh] w-full resize-none overflow-y-auto rounded-2xl border border-neutral-300 bg-white px-4 py-2.5 text-sm text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
       />
       <div className="flex items-center justify-between gap-3">
         <span className="min-w-0 text-xs text-neutral-500 dark:text-neutral-400">

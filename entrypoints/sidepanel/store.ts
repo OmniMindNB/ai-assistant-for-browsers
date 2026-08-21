@@ -45,7 +45,7 @@ import {
   MAX_ATTACHMENTS_PER_MESSAGE,
   buildPendingAttachmentText,
   classifyFile,
-  isAttachmentBusy,
+  hasBusyAttachments,
   isAttachmentReady,
   readAttachment,
   toMessageAttachment,
@@ -619,7 +619,7 @@ export const useChat = create<ChatState>((set, get) => ({
 
   send: async (text, options) => {
     const pending = get().pendingAttachments;
-    if (pending.some(isAttachmentBusy) || get().busy) return false;
+    if (hasBusyAttachments(pending) || get().busy) return false;
     const ready = pending.filter(isAttachmentReady);
     const question = (text ?? get().input).trim();
     if (!question && ready.length === 0) return false;
@@ -645,7 +645,7 @@ export const useChat = create<ChatState>((set, get) => ({
 
   editMessage: async (id, newContent) => {
     const trimmed = newContent.trim();
-    if (!trimmed || get().busy) return false;
+    if (!trimmed || get().busy || hasBusyAttachments(get().pendingAttachments)) return false;
     const messages = get().messages;
     const index = findMessageIndex(messages, id);
     if (index < 0 || !isEditableMessage(messages[index])) return false;
@@ -657,7 +657,7 @@ export const useChat = create<ChatState>((set, get) => ({
   },
 
   runShortcut: async (shortcut) => {
-    if (get().busy) return;
+    if (get().busy || hasBusyAttachments(get().pendingAttachments)) return;
     const origin = captureConversationOrigin(get);
     const resolved = resolveShortcut({ ...shortcut }, t);
     let tab: ActiveTabInfo | undefined;
@@ -903,6 +903,7 @@ async function runAgent(
   options: RunAgentOptions = {},
 ): Promise<boolean> {
   const initialState = get();
+  if (hasBusyAttachments(initialState.pendingAttachments)) return false;
   const origin = options.origin ?? captureConversationOrigin(get);
   if (origin.conversationId !== initialState.conversationId || origin.conversationEpoch !== conversationEpoch) return false;
   const run: ActiveRun = {

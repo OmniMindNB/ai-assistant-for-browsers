@@ -83,6 +83,21 @@ function makeAgent() {
   };
 }
 
+function parsingPdfAttachment() {
+  return {
+    status: 'parsing' as const,
+    id: 'parsing-pdf',
+    taskId: 'parsing-task',
+    file: new File([], 'parsing.pdf'),
+    name: 'parsing.pdf',
+    mimeType: 'application/pdf',
+    size: 10,
+    kind: 'pdf' as const,
+    completedPages: 1,
+    pageCount: 4,
+  };
+}
+
 describe('chat store page context', () => {
   beforeEach(() => {
     mocks.sendMessage.mockReset();
@@ -1248,6 +1263,37 @@ describe('chat store page context', () => {
 
       expect(useChat.getState().pendingAttachments[0]).toMatchObject({ status: 'ready', id: failed.id });
     });
+  });
+
+  it('does not start a shortcut while an attachment is parsing', async () => {
+    useChat.setState({ pendingAttachments: [parsingPdfAttachment()] });
+
+    await useChat.getState().runShortcut({
+      id: 'custom:read',
+      origin: 'custom',
+      scope: 'none',
+      customized: true,
+      name: 'Read',
+      prompt: 'Read the page',
+    });
+
+    expect(mocks.createBrowserAgent).not.toHaveBeenCalled();
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('does not submit a message edit while an attachment is parsing', async () => {
+    const message = { id: 'editable', role: 'user' as const, content: 'old', createdAt: 1, kind: 'input' as const };
+    useChat.setState({
+      messages: [message],
+      pendingAttachments: [parsingPdfAttachment()],
+    });
+
+    await expect(useChat.getState().editMessage(message.id, 'new')).resolves.toBe(false);
+
+    expect(mocks.createBrowserAgent).not.toHaveBeenCalled();
+    expect(mocks.getActiveProvider).not.toHaveBeenCalled();
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+    expect(useChat.getState().messages).toEqual([message]);
   });
 
   describe('attachment composition on send', () => {

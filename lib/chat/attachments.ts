@@ -170,6 +170,11 @@ export function isAttachmentBusy(item: PendingAttachment): boolean {
   return item.status === 'queued' || item.status === 'parsing';
 }
 
+/** Shared request gate: no model request may start while local attachment work is unsettled. */
+export function hasBusyAttachments(items: readonly PendingAttachment[]): boolean {
+  return items.some(isAttachmentBusy);
+}
+
 export function isAttachmentReady(item: PendingAttachment): item is ReadyPendingAttachment {
   return item.status === 'ready';
 }

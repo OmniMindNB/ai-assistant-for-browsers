@@ -12,7 +12,7 @@ import type { ShortcutConfig, ResolvedShortcut } from '@/lib/shortcuts';
 import { filterShortcutCommands, isUsableShortcutCommand } from '@/lib/workbench/presentation';
 import type { PageContextState } from '../store';
 import {
-  isAttachmentBusy,
+  hasBusyAttachments,
   isAttachmentReady,
   type PendingAttachment,
 } from '@/lib/chat/attachments';
@@ -88,10 +88,10 @@ export function WorkbenchComposer({
   const commands = startsSlashCommand(input) || openPopover === 'commands'
     ? startsSlashCommand(input) ? slashCommands : filterShortcutCommands(shortcuts, '/')
     : [];
-  const hasBusyAttachment = attachments.some(isAttachmentBusy);
+  const attachmentBusy = hasBusyAttachments(attachments);
+  const requestBlocked = busy || attachmentBusy;
   const hasReadyAttachment = attachments.some(isAttachmentReady);
-  const canSend = !busy
-    && !hasBusyAttachment
+  const canSend = !requestBlocked
     && (input.trim().length > 0 || hasReadyAttachment);
   const selectedProvider = providers.find((provider) => provider.id === selectedProviderId);
   const currentModel = selectedModel || selectedProvider?.model || '';
@@ -133,6 +133,12 @@ export function WorkbenchComposer({
   }, [commands.length, highlightedCommand]);
 
   useEffect(() => {
+    if (!busy) return;
+    dragDepthRef.current = 0;
+    setFileDragActive(false);
+  }, [busy]);
+
+  useEffect(() => {
     if (!openPopover) return;
     const closeOnOutsideClick = (event: MouseEvent) => {
       if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpenPopover(null);
@@ -147,7 +153,7 @@ export function WorkbenchComposer({
 
   function runCommand(index: number) {
     const command = commands[index];
-    if (!command || busy) return;
+    if (!command || requestBlocked) return;
     onRunShortcut(command.config);
     setOpenPopover(null);
     if (startsSlashCommand(input)) onInput('');
@@ -250,27 +256,27 @@ export function WorkbenchComposer({
   }
 
   function handleDragEnter(event: DragEvent<HTMLDivElement>) {
-    if (!isFileDrag(event)) return;
+    if (busy || !isFileDrag(event)) return;
     event.preventDefault();
     dragDepthRef.current += 1;
     setFileDragActive(true);
   }
 
   function handleDragOver(event: DragEvent<HTMLDivElement>) {
-    if (!isFileDrag(event)) return;
+    if (busy || !isFileDrag(event)) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = 'copy';
   }
 
   function handleDragLeave(event: DragEvent<HTMLDivElement>) {
-    if (!isFileDrag(event)) return;
+    if (busy || !isFileDrag(event)) return;
     event.preventDefault();
     dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
     if (dragDepthRef.current === 0) setFileDragActive(false);
   }
 
   function handleDrop(event: DragEvent<HTMLDivElement>) {
-    if (!isFileDrag(event)) return;
+    if (busy || !isFileDrag(event)) return;
     event.preventDefault();
     dragDepthRef.current = 0;
     setFileDragActive(false);
@@ -349,7 +355,7 @@ export function WorkbenchComposer({
             <button
               key={config.id}
               type="button"
-              disabled={busy}
+              disabled={requestBlocked}
               onClick={() => onRunShortcut(config)}
               aria-label={resolved.name}
               title={resolved.name}
@@ -468,8 +474,8 @@ export function WorkbenchComposer({
                   title={resolved.name}
                   aria-label={resolved.name}
                   onMouseEnter={() => setHighlightedCommand(index)}
-                  disabled={busy}
-                  aria-disabled={busy}
+                  disabled={requestBlocked}
+                  aria-disabled={requestBlocked}
                   onClick={() => runCommand(index)}
                   className={`block w-full truncate rounded-lg px-3 py-2 text-left text-sm disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${index === highlightedCommand ? 'bg-neutral-100 dark:bg-neutral-800' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}
                 >

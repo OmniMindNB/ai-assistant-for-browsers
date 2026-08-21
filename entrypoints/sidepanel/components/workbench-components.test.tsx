@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConversationRecord } from '@/lib/db';
@@ -11,6 +11,7 @@ import type { ProviderConfig } from '@/lib/settings';
 import type { ResolvedShortcutCommand } from '@/lib/workbench/presentation';
 import type { ActivityStep, PageContextState } from '../store';
 import App from '../App';
+import MessageEditor from '../MessageEditor';
 import { ActivityStepList } from './ActivityStepList';
 import { HistoryDrawer } from './HistoryDrawer';
 import { WorkbenchEmptyState } from './WorkbenchEmptyState';
@@ -160,6 +161,7 @@ beforeEach(() => {
     error: null,
     pendingConfirmation: null,
     pendingAttachments: [],
+    shortcuts: [],
     pageContext: {
       status: 'available' as const,
       tabId: 1,
@@ -282,6 +284,19 @@ const retryablePdfError: PendingAttachment = {
   retryable: true,
 };
 
+const parsingPdf: PendingAttachment = {
+  status: 'parsing',
+  id: 'parsing-pdf',
+  taskId: 'parsing-task',
+  file: new File([], 'parsing.pdf'),
+  name: 'parsing.pdf',
+  mimeType: 'application/pdf',
+  size: 10,
+  kind: 'pdf',
+  completedPages: 1,
+  pageCount: 4,
+};
+
 function ComposerHarness({ initialInput = '', ...props }: Partial<WorkbenchComposerProps> & { initialInput?: string }) {
   const [input, setInput] = useState(initialInput);
   return (
@@ -322,6 +337,23 @@ describe('workbench composer', () => {
     expect(screen.getByText('50%')).toBeVisible();
     expect(screen.getByText('Parsing')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
+  });
+
+  it('does not submit with Enter while an attachment is parsing', async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn();
+    render(
+      <ComposerHarness
+        initialInput="summarize"
+        attachments={[parsingPdf]}
+        onSend={onSend}
+      />,
+    );
+
+    await user.click(screen.getByRole('textbox'));
+    await user.keyboard('{Enter}');
+
+    expect(onSend).not.toHaveBeenCalled();
   });
 
   it('enables attachment-only send for a ready PDF', () => {
@@ -473,6 +505,53 @@ describe('workbench composer', () => {
     );
   });
 
+  it('does not intercept or submit file drops while generation is busy', () => {
+    const onAddAttachmentFiles = vi.fn();
+    render(<ComposerHarness busy onAddAttachmentFiles={onAddAttachmentFiles} />);
+    const zone = screen.getByTestId('composer-drop-zone');
+    const pdf = new File(['%PDF-x'], 'report.pdf', { type: 'application/pdf' });
+
+    expect(fireEvent.dragEnter(zone, {
+      dataTransfer: { types: ['Files'], files: [pdf] },
+    })).toBe(true);
+    expect(screen.getByRole('textbox')).not.toHaveAttribute('placeholder', 'Drop to add PDF');
+    expect(fireEvent.drop(zone, {
+      dataTransfer: { types: ['Files'], files: [pdf] },
+    })).toBe(true);
+    expect(onAddAttachmentFiles).not.toHaveBeenCalled();
+  });
+
+  it('exposes the PDF truncation limit as a keyboard-accessible description', () => {
+    const truncated: PendingAttachment = {
+      id: 'accessible-truncated-pdf',
+      name: 'accessible.pdf',
+      mimeType: 'application/pdf',
+      size: 10,
+      kind: 'pdf',
+      status: 'ready',
+      attachment: {
+        id: 'accessible-truncated-pdf',
+        name: 'accessible.pdf',
+        mimeType: 'application/pdf',
+        size: 10,
+        kind: 'pdf',
+        pageCount: 2,
+        extractedChars: 60_000,
+        truncated: true,
+      },
+      transientText: 'ready text',
+    };
+    render(
+      <LocaleProvider>
+        <AttachmentChip pending={truncated} onRemove={vi.fn()} onRetry={vi.fn()} />
+      </LocaleProvider>,
+    );
+
+    const chip = screen.getByText('accessible.pdf').closest('div');
+    expect(chip).toHaveAttribute('tabindex', '0');
+    expect(chip).toHaveAccessibleDescription('Limited to the first 60,000 extracted characters');
+  });
+
   it('focuses the textarea and moves the cursor to the end when pendingFocusToken advances', async () => {
     const { rerender } = render(
       <LocaleProvider>
@@ -542,6 +621,28 @@ describe('workbench composer', () => {
     await user.keyboard('{ArrowDown}{Enter}');
 
     expect(onRunShortcut).toHaveBeenCalledWith(readingShortcut.config);
+  });
+
+  it('blocks slash-command submission while an attachment is parsing', async () => {
+    const user = userEvent.setup();
+    const onRunShortcut = vi.fn();
+    render(<ComposerHarness attachments={[parsingPdf]} onRunShortcut={onRunShortcut} />);
+
+    await user.type(screen.getByRole('textbox'), '/阅读');
+    await user.keyboard('{Enter}');
+
+    expect(onRunShortcut).not.toHaveBeenCalled();
+  });
+
+  it('disables composer quick shortcuts while an attachment is parsing', async () => {
+    const user = userEvent.setup();
+    const onRunShortcut = vi.fn();
+    render(<ComposerHarness attachments={[parsingPdf]} onRunShortcut={onRunShortcut} />);
+
+    const shortcut = screen.getByRole('button', { name: '阅读页面' });
+    expect(shortcut).toBeDisabled();
+    await user.click(shortcut);
+    expect(onRunShortcut).not.toHaveBeenCalled();
   });
 
   it('sends on Enter and inserts a newline on Shift+Enter', async () => {
@@ -843,6 +944,40 @@ describe('activity step list', () => {
 });
 
 describe('workbench context controls', () => {
+  it('disables empty-state shortcuts while an attachment is parsing', async () => {
+    const user = userEvent.setup();
+    (chatStore as any).shortcuts = emptyStateShortcuts.map(({ config }) => config);
+    (chatStore as any).pendingAttachments = [parsingPdf];
+    render(<LocaleProvider><App /></LocaleProvider>);
+
+    const shortcut = within(screen.getByRole('main')).getByRole('button', { name: 'Shortcut 1' });
+    expect(shortcut).toBeDisabled();
+    await user.click(shortcut);
+    expect(chatStore.runShortcut).not.toHaveBeenCalled();
+  });
+
+  it('disables an open message editor while an attachment is parsing', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(
+      <LocaleProvider>
+        <MessageEditor
+          initialContent="updated question"
+          discardCount={0}
+          disabled
+          onCancel={vi.fn()}
+          onSubmit={onSubmit}
+        />
+      </LocaleProvider>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await user.click(screen.getByRole('textbox', { name: 'Edit message' }));
+    await user.keyboard('{Enter}');
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
   it('routes attachment retries from the compact chip to the store', async () => {
     const user = userEvent.setup();
     (chatStore as any).pendingAttachments = [retryablePdfError];

@@ -7,6 +7,7 @@ const Markdown = lazy(() => import('./Markdown'));
 import { nextThemeMode, useTheme } from '@/lib/theme';
 import { useTranslation } from '@/lib/i18n';
 import { discardedCount, isEditableMessage } from '@/lib/chat/messages';
+import { hasBusyAttachments } from '@/lib/chat/attachments';
 import { isNearBottom } from '@/lib/scroll';
 import {
   resolveShortcut,
@@ -85,6 +86,7 @@ export default function App() {
     config,
     resolved: resolveShortcut(config, t),
   }));
+  const requestBlocked = busy || hasBusyAttachments(pendingAttachments);
 
   useEffect(() => {
     refreshProvider();
@@ -142,6 +144,7 @@ export default function App() {
     // 不可编辑 / 空内容 / Provider 未配置 / API Key 缺失 / 标签页解析失败等前置失败
     // 都会返回 false，此时编辑框保持打开、用户刚敲的内容原样保留，页面上方的
     // error 提示负责说明失败原因，不在编辑框里再加一套错误 UI。
+    if (requestBlocked) return;
     resetToFollowing();
     const ok = await editMessage(id, content);
     if (ok) setEditingId(null);
@@ -171,6 +174,7 @@ export default function App() {
   }
 
   function executeShortcut(shortcut: ShortcutConfig) {
+    if (requestBlocked) return;
     resetToFollowing();
     runShortcut(shortcut);
   }
@@ -249,7 +253,7 @@ export default function App() {
                 {messages.length === 0 ? (
                   <WorkbenchEmptyState
                     shortcuts={resolvedShortcuts}
-                    busy={busy}
+                    busy={requestBlocked}
                     onRunShortcut={executeShortcut}
                   />
                 ) : (
@@ -258,6 +262,7 @@ export default function App() {
                       key={m.id}
                       message={m}
                       busy={busy}
+                      requestBlocked={requestBlocked}
                       showThinkingIndicator={
                         i === messages.length - 1 && busy && !pendingConfirmation && !hasRunningActivityStep
                       }
@@ -356,6 +361,7 @@ function ProviderBanner({ onOpenSettings }: { onOpenSettings: () => void }) {
 function Message({
   message,
   busy,
+  requestBlocked,
   showThinkingIndicator,
   editing,
   discardCount,
@@ -365,6 +371,7 @@ function Message({
 }: {
   message: UIMessage;
   busy: boolean;
+  requestBlocked: boolean;
   showThinkingIndicator: boolean;
   editing: boolean;
   discardCount: number;
@@ -383,6 +390,7 @@ function Message({
             <MessageEditor
               initialContent={content}
               discardCount={discardCount}
+              disabled={requestBlocked}
               onCancel={onCancelEdit}
               onSubmit={onSubmitEdit}
             />
@@ -409,7 +417,7 @@ function Message({
           </div>
         )}
         <div className="group flex items-center gap-1.5">
-          {!busy && isEditableMessage(message) && (
+          {!requestBlocked && isEditableMessage(message) && (
             <button
               type="button"
               onClick={onBeginEdit}
