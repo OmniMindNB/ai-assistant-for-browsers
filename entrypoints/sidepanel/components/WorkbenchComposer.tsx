@@ -107,6 +107,10 @@ export function WorkbenchComposer({
   useEffect(() => {
     const element = textareaRef.current;
     if (!element) return;
+    if (!input) {
+      element.style.height = '';
+      return;
+    }
     element.style.height = 'auto';
     element.style.height = `${Math.min(element.scrollHeight, 160)}px`;
   }, [input]);

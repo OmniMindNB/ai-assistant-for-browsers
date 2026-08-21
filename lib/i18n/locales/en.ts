@@ -87,7 +87,7 @@ export const en: Record<keyof typeof zh, string> = {
   'sidebar.deleteConversationAriaLabel': 'Delete conversation {title}',
   'sidebar.confirmDeleteConversation': 'Delete this conversation?',
   'workbench.history': 'Conversation history',
-  'workbench.composerPlaceholder': 'Ask a question, or describe a browser task… Enter to send, Shift+Enter for a new line',
+  'workbench.composerPlaceholder': 'Ask a question or describe a task…',
   'workbench.emptyTitle': 'Ready when you are',
   'workbench.emptyDescription': 'Ask about the current page, or describe a browser task you want me to complete.',
   'workbench.more': 'More options',

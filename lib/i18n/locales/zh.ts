@@ -84,7 +84,7 @@ export const zh = {
   'sidebar.deleteConversationAriaLabel': '删除会话 {title}',
   'sidebar.confirmDeleteConversation': '确定删除此会话吗？',
   'workbench.history': '对话历史',
-  'workbench.composerPlaceholder': '输入你的问题，或描述要执行的浏览器任务… Enter 发送，Shift+Enter 换行',
+  'workbench.composerPlaceholder': '输入问题或任务…',
   'workbench.emptyTitle': '可以开始了',
   'workbench.emptyDescription': '问我关于当前页面的问题，或者描述一个想让我在浏览器里完成的任务。',
   'workbench.more': '更多选项',
