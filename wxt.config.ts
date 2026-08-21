@@ -1,12 +1,22 @@
 import { defineConfig } from 'wxt';
 import tailwindcss from '@tailwindcss/vite';
+import { viteStaticCopy } from 'vite-plugin-static-copy';
 
 // See https://wxt.dev/api/config.html
 export default defineConfig({
   modules: ['@wxt-dev/module-react'],
   srcDir: '.',
   vite: () => ({
-    plugins: [tailwindcss()],
+    plugins: [
+      tailwindcss(),
+      viteStaticCopy({
+        targets: [
+          { src: 'node_modules/pdfjs-dist/cmaps/*', dest: 'pdfjs/cmaps' },
+          { src: 'node_modules/pdfjs-dist/standard_fonts/*', dest: 'pdfjs/standard_fonts' },
+          { src: 'node_modules/pdfjs-dist/wasm/*', dest: 'pdfjs/wasm' },
+        ],
+      }),
+    ],
     build: {
       // pi-agent-core 传递依赖 pi-ai 的模型目录较大，属于死代码，不影响运行时开销，调高阈值消除构建噪音
       chunkSizeWarningLimit: 1000,
