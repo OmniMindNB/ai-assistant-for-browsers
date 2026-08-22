@@ -92,4 +92,23 @@ describe('browser_fill_form', () => {
     const fields = Array.from({ length: 51 }, (_, index) => ({ fieldId: `f${index}`, value: 'x' }));
     await expect(fillFormTool().execute('call-1', { fields })).rejects.toThrow('50');
   });
+
+  it('surfaces a not_found submit outcome instead of staying silent', async () => {
+    sendMessage.mockResolvedValueOnce({
+      id: '1',
+      ok: true,
+      data: {
+        outcomes: [{ fieldId: 'f1', status: 'ok' }],
+        submitted: { fieldId: 'f9', status: 'not_found' },
+      },
+    });
+    const output = await fillFormTool().execute('call-1', {
+      fields: [{ fieldId: 'f1', value: 'x' }],
+      submit: { fieldId: 'f9' },
+    });
+    const text = (output.content[0] as { text: string }).text;
+    expect(text).toContain('提交按钮');
+    expect(text).toContain('f9');
+    expect(text).toContain('not_found');
+  });
 });

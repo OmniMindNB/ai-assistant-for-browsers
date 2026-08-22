@@ -401,6 +401,9 @@ async function fillForm(payload: FillFormPayload, tabId: number): Promise<FillFo
   }
 
   const submitHandle = payload?.submit ? table.fields[payload.submit.fieldId] : undefined;
+  // submit.fieldId 未知或已过期时，句柄解析不到——必须如实报告 not_found，
+  // 不能让 submit 静默从 applyFormFill 的入参里消失，导致模型收不到任何提交失败的信号。
+  const submitFieldMissing = Boolean(payload?.submit) && !submitHandle;
   const applied = await executeInTab(
     tabId,
     {
@@ -425,7 +428,11 @@ async function fillForm(payload: FillFormPayload, tabId: number): Promise<FillFo
     return blocked ?? byId.get(field.fieldId) ?? { fieldId: field.fieldId, status: 'not_found' };
   });
 
-  return { outcomes: ordered, submitted: applied.submitted };
+  const submitted = submitFieldMissing
+    ? { fieldId: payload!.submit!.fieldId, status: 'not_found' as const }
+    : applied.submitted;
+
+  return { outcomes: ordered, submitted };
 }
 
 async function getHtml(payload: GetHtmlPayload, tabId: number): Promise<GetHtmlResult> {
