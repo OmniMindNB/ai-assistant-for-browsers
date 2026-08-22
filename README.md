@@ -107,7 +107,6 @@ docs/               # 文档（文档驱动开发）
 本项目采用**文档驱动开发**。先文档后代码，文档为单一事实来源。
 
 - [文档体系说明](docs/README.md)
-- [产品需求（最初版本，不可变历史）](docs/plan.md)
 - [技术规划](docs/technical-plan.md)
 - [Agent 设计与分阶段计划](docs/agent-plan.md)
 - [进度看板与变更日志](docs/PROGRESS.md)

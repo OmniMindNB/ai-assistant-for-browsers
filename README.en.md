@@ -107,7 +107,6 @@ docs/               # Documentation (docs-driven development)
 This project follows **docs-driven development**: docs come before code, and docs are the single source of truth.
 
 - [Documentation overview](docs/README.md)
-- [Product requirements (original, immutable history)](docs/plan.md)
 - [Technical plan](docs/technical-plan.md)
 - [Agent design and phased plan](docs/agent-plan.md)
 - [Progress board and changelog](docs/PROGRESS.md)
