@@ -5,7 +5,7 @@
 ## 阶段总览
 
 > 方向调整（2026-06-13）：从「关键词触发 + 文本上下文」转向「Agent 循环 + 工具调用」，
-> 详见 [ADR-0003](adr/0003-agent-loop-and-tool-calling.md) 与 [agent-plan.md](agent-plan.md)。
+> 详见 [ADR-0003](adr/0003-agent-loop-and-tool-calling.md)（agent-plan.md 已于 2026-08-22 归档删除）。
 > 原 Phase 3/4/5 顺延到 Agent Phase B/C 之后，Skill 演化为「固化的工具调用序列」。
 
 | 阶段 | 目标 | 状态 |
@@ -35,7 +35,7 @@
 
 ## Phase 1 — MVP 对话（功能 1、2）
 
-参考：[technical-plan.md §4.1、§5](technical-plan.md)
+参考：technical-plan.md §4.1、§5（已于 2026-08-22 归档删除）
 
 - [x] OpenAI 兼容的流式对话客户端（原 `lib/llm.ts`，SSE 逐 token 输出；Agent 化后无调用方，已作为死代码删除，功能由 `lib/agent/stream.ts` 承接）
 - [x] Provider / API Key 配置：「设置」页表单 + 预设（`entrypoints/options`、`lib/settings.ts`）
@@ -55,7 +55,7 @@
 
 ## Phase 2 — 脚本生成与注入（功能 3）
 
-参考：[technical-plan.md §4.2](technical-plan.md)
+参考：technical-plan.md §4.2（已于 2026-08-22 归档删除）
 
 - [x] LLM 生成脚本 → 预览 → 人工确认 → 注入执行（底层能力已完成）
 - [x] 静态安全校验：acorn AST 扫描危险 API（`lib/security.ts`）
@@ -73,7 +73,7 @@
 
 ## Agent Phase A — Agent 循环 + 只读检查工具（修复「脱靶」）
 
-参考：[ADR-0003](adr/0003-agent-loop-and-tool-calling.md)、[agent-plan.md](agent-plan.md)
+参考：[ADR-0003](adr/0003-agent-loop-and-tool-calling.md)（agent-plan.md 已于 2026-08-22 归档删除）
 
 - [x] A0'：**Pi 打包 spike** —— ✅ 已验证通过（2026-06-13）：`@earendil-works/pi-agent-core` + `pi-ai` 在 WXT MV3 `pnpm build` 成功；`node:fs` 仅 warning 且被 Node 运行时守卫（源码显式面向浏览器）；agent 入口约 1.69MB（可接受）。**直接用 Pi，不启用降级方案 D**
 - [x] A1：`lib/agent/agent.ts` 封装 Pi `Agent`（传入 browser `streamFn`、`beforeToolCall` 作为 Deny-First 闸门、`AgentTool` 注册）+ 轮次熔断

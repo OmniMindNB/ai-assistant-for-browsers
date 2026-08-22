@@ -24,9 +24,6 @@ flowchart LR
 
 | 路径 | 用途 |
 |------|------|
-| [technical-plan.md](technical-plan.md) | 总体技术规划 |
-| [agent-plan.md](agent-plan.md) | Agent 循环/工具调用的详细设计与分阶段计划 |
-| [research-report.md](research-report.md) | Agent 化改造前的技术调研报告（ADR-0003 决策依据） |
 | [PROGRESS.md](PROGRESS.md) | 阶段进度与任务看板（持续更新） |
 | [adr/](adr/) | 架构决策记录（Architecture Decision Records） |
 | [adr/_template.md](adr/_template.md) | ADR 模板 |
