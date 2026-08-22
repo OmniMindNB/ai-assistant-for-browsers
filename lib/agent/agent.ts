@@ -107,7 +107,8 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
       });
       if (permissionBlock) return recordPreExecutionBlock(permissionBlock);
 
-      if (isConfirmTool && confirmGateState.decision === 'approved') {
+      const alwaysApproved = confirmGateState.alwaysApprovedCallIds.has(context.toolCall.id);
+      if (isConfirmTool && (confirmGateState.decision === 'approved' || alwaysApproved)) {
         policy.approveWrite();
         const approvedPolicyBlock = policy.preflight(context.toolCall.name, context.args, isConfirmTool);
         return approvedPolicyBlock ? recordPreExecutionBlock(approvedPolicyBlock) : undefined;

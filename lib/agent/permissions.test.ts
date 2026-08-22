@@ -86,3 +86,41 @@ describe('beforeToolCallPermissionGate', () => {
     expect(onConfirm).toHaveBeenCalledWith('call-1', 'browser_click', { selector: 'button' }, expect.any(String));
   });
 });
+
+describe('submit intent escalation', () => {
+  it('keeps decideToolPermission pure — it never denies on sensitive fields', () => {
+    expect(decideToolPermission('browser_fill_form', { fields: [{ fieldId: 'f1', value: 'x' }] }).level).toBe('confirm');
+  });
+
+  it('escalates a click that submits a form to confirm_always', async () => {
+    const state = createConfirmGateState();
+    const onConfirm = vi.fn().mockResolvedValue(true);
+    state.decision = 'approved'; // 本轮早先已批准过一次写操作
+
+    const result = await beforeToolCallPermissionGate(
+      { toolCall: { id: 'call-1', name: 'browser_click' }, args: { selector: 'button' } } as any,
+      {
+        gateState: state,
+        onConfirm,
+        resolveSubmitIntent: async () => ({ isSubmit: true, formAction: 'https://example.com/checkout', fieldCount: 12 }),
+      },
+    );
+
+    expect(result).toBeUndefined();
+    expect(onConfirm).toHaveBeenCalledTimes(1); // 尽管本轮已批准，仍然又问了一次
+  });
+
+  it('leaves a non-submitting click on the once-per-turn path', async () => {
+    const state = createConfirmGateState();
+    state.decision = 'approved';
+    const onConfirm = vi.fn().mockResolvedValue(true);
+
+    const result = await beforeToolCallPermissionGate(
+      { toolCall: { id: 'call-2', name: 'browser_click' }, args: { selector: 'a' } } as any,
+      { gateState: state, onConfirm, resolveSubmitIntent: async () => ({ isSubmit: false }) },
+    );
+
+    expect(result).toBeUndefined();
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+});
