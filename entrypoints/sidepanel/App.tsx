@@ -490,7 +490,7 @@ function ConfirmationCard({
       <div className="mb-2 flex items-center gap-2 font-medium text-amber-900 dark:text-amber-200">
         {t('confirm.title')}
       </div>
-      <p className="mb-2 text-amber-900/90 dark:text-amber-200/90">{confirmation.summary}</p>
+      <p className="mb-2 whitespace-pre-line text-amber-900/90 dark:text-amber-200/90">{confirmation.summary}</p>
       {confirmation.codePreview && (
         <pre className="mb-2 max-h-40 overflow-auto rounded-lg bg-neutral-900/90 p-2 text-[11px] text-neutral-100">
           {confirmation.codePreview}

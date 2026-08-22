@@ -3,8 +3,14 @@ import {
   type CaptureScreenshotResult,
   type ClickElementPayload,
   type ClickElementResult,
+  type FillFormFieldOutcome,
+  type FillFormPayload,
+  type FillFormResult,
+  type FormFieldDescriptor,
   type GetComputedStylePayload,
   type GetComputedStyleResult,
+  type GetFormPayload,
+  type GetFormResult,
   type GetHtmlPayload,
   type GetHtmlResult,
   type GetScriptsPayload,
@@ -23,6 +29,8 @@ import {
   type PageScriptInfo,
   type PageStylesheetInfo,
   type PageSelection,
+  type ProbeClickTargetPayload,
+  type ProbeClickTargetResult,
   type QueryDomPayload,
   type QueryDomResult,
   type ScrollPagePayload,
@@ -41,6 +49,19 @@ import { resolveTargetTab } from '@/lib/agent/tab-target';
 import { sendToContentScript } from '@/lib/agent/content-script-messaging';
 import { clearConversationIdForTab } from '@/lib/agent/tab-conversation';
 import { clearPendingAskForTab, setPendingAskForTab } from '@/lib/agent/tab-pending-ask';
+import { mergeFillOutcomes, planFormFill } from '@/lib/agent/fill-form-request';
+import {
+  applyFormFill,
+  clickElementInPage,
+  collectFormFields,
+  probeClickTarget,
+  selectOptionInPage,
+  typeTextInPage,
+  type ApplyFillItem,
+} from '@/lib/agent/form-dom';
+import { toFieldDescriptor } from '@/lib/agent/form-schema';
+import { getFormFieldsForTab, setFormFieldsForTab, type FormFieldHandle } from '@/lib/agent/tab-form-fields';
+import { decideSubmitIntent } from '@/lib/agent/form-submit';
 
 const DEFAULT_TOOL_MAX_CHARS = 12000;
 const SUPPORTED_MESSAGE_TYPES = [
@@ -55,6 +76,9 @@ const SUPPORTED_MESSAGE_TYPES = [
   'GET_STYLESHEETS',
   'GET_COMPUTED_STYLE',
   'GET_PAGE_META',
+  'GET_FORM',
+  'FILL_FORM',
+  'PROBE_CLICK_TARGET',
   'CAPTURE_SCREENSHOT',
   'SET_STYLE',
   'MODIFY_DOM',
@@ -200,6 +224,15 @@ async function handleMessage(message: Message, sender?: MessageSender): Promise<
     case 'GET_PAGE_META':
       return getPageMeta(requireTabId(message));
 
+    case 'GET_FORM':
+      return getForm(message.payload as GetFormPayload, requireTabId(message));
+
+    case 'FILL_FORM':
+      return fillForm(message.payload as FillFormPayload, requireTabId(message));
+
+    case 'PROBE_CLICK_TARGET':
+      return probeSubmitIntent(message.payload as ProbeClickTargetPayload, requireTabId(message));
+
     case 'CAPTURE_SCREENSHOT':
       return captureScreenshot(message.payload as CaptureScreenshotPayload, requireTabId(message));
 
@@ -295,6 +328,115 @@ async function queryDom(payload: QueryDomPayload, tabId: number): Promise<QueryD
       }),
     };
   });
+}
+
+const MAX_FORM_FIELDS = 120;
+const MAX_SELECT_OPTIONS = 50;
+
+async function getForm(payload: GetFormPayload, tabId: number): Promise<GetFormResult> {
+  const collected = await executeInTab(
+    tabId,
+    {
+      selector: payload?.selector,
+      includeHidden: payload?.includeHidden,
+      maxFields: MAX_FORM_FIELDS,
+      maxOptions: MAX_SELECT_OPTIONS,
+    },
+    collectFormFields,
+  );
+
+  const fields: FormFieldDescriptor[] = [];
+  const handles: Record<string, FormFieldHandle> = {};
+  const orphanFieldIds: string[] = [];
+
+  collected.raws.forEach((raw, index) => {
+    const fieldId = `f${index + 1}`;
+    const descriptor = toFieldDescriptor(raw, fieldId);
+    fields.push(descriptor);
+    handles[fieldId] = {
+      path: raw.path,
+      expect: { tag: raw.tag, type: raw.type, name: raw.name, label: descriptor.label },
+      sensitive: descriptor.sensitive,
+      kind: descriptor.kind,
+    };
+    if (!descriptor.formId) orphanFieldIds.push(fieldId);
+  });
+
+  await setFormFieldsForTab(tabId, { url: collected.url, fields: handles });
+
+  return {
+    forms: collected.forms.map((form) => ({
+      formId: `form${form.formIndex}`,
+      name: form.name,
+      action: form.action,
+      method: form.method,
+      submitFieldIds: fields
+        .filter((field) => field.kind === 'submit' && field.formId === `form${form.formIndex}`)
+        .map((field) => field.fieldId),
+    })),
+    fields,
+    orphanFieldIds,
+    unreachable: collected.unreachable,
+    truncated: collected.truncated,
+  };
+}
+
+async function fillForm(payload: FillFormPayload, tabId: number): Promise<FillFormResult> {
+  const table = await getFormFieldsForTab(tabId);
+  if (!table) {
+    return { outcomes: [], fieldsTableStale: true };
+  }
+
+  const plan = planFormFill(payload, table);
+  const applied = await executeInTab(
+    tabId,
+    { url: table.url, items: plan.items, submit: plan.submit },
+    applyFormFill,
+  );
+
+  if (applied.fieldsTableStale) {
+    return { outcomes: [], fieldsTableStale: true };
+  }
+
+  return {
+    outcomes: mergeFillOutcomes(payload, plan.blocked, applied.outcomes),
+    submitted: plan.submitFieldMissing
+      ? { fieldId: payload!.submit!.fieldId, status: 'not_found' as const }
+      : applied.submitted,
+  };
+}
+
+async function probeSubmitIntent(payload: ProbeClickTargetPayload, tabId: number): Promise<ProbeClickTargetResult> {
+  const needsTable = Boolean(payload?.submitFieldId || payload?.fieldIds?.length);
+  const table = needsTable ? await getFormFieldsForTab(tabId) : undefined;
+
+  // 卡片要展示的 label 从句柄表来，不从页面重新取——句柄表就是读表单那一刻的真相。
+  const fieldLabels = payload?.fieldIds?.map((fieldId) => ({
+    fieldId,
+    label: table?.fields[fieldId]?.expect.label,
+  }));
+
+  const handle = payload?.submitFieldId ? table?.fields[payload.submitFieldId] : undefined;
+  if (!payload?.selector && !handle) return { isSubmit: false, fieldLabels };
+
+  const probe = await executeInTab(
+    tabId,
+    { selector: payload?.selector, index: payload?.index, path: handle?.path },
+    probeClickTarget,
+  );
+  if (!probe.found) return { isSubmit: false, fieldLabels };
+
+  return {
+    ...decideSubmitIntent({
+      tag: probe.tag,
+      type: probe.type,
+      hasFormOwner: probe.hasFormOwner,
+      formAction: probe.formAction,
+      textContent: probe.textContent,
+      fieldCount: probe.fieldCount,
+    }),
+    fieldLabels,
+  };
 }
 
 async function getHtml(payload: GetHtmlPayload, tabId: number): Promise<GetHtmlResult> {
@@ -552,43 +694,50 @@ async function modifyDom(payload: ModifyDomPayload, tabId: number): Promise<Modi
 }
 
 async function clickElement(payload: ClickElementPayload, tabId: number): Promise<ClickElementResult> {
-  return executeInTab(tabId, payload, (input): ClickElementResult => {
-    const selector = input?.selector || '';
-    const nodes = Array.from(document.querySelectorAll<HTMLElement>(selector));
-    const index = input?.index ?? 0;
-    const target = nodes[index];
-    if (target) target.click();
-    return { selector, matched: nodes.length, clickedIndex: target ? index : null };
-  });
+  const selector = payload?.selector || '';
+  const index = payload?.index ?? 0;
+  const result = await executeInTab(tabId, { selector, index }, clickElementInPage);
+  return {
+    selector,
+    // clickElementInPage 只回报「给定 index 上的目标元素」的结果，不再统计选择器命中的总数；
+    // matched/clickedIndex 保留字段是为了不破坏旧的结果形状，语义收窄为「该 index 上是否存在/点中了元素」。
+    matched: result.status === 'not_found' ? 0 : 1,
+    clickedIndex: result.status === 'ok' ? index : null,
+    status: result.status,
+    detail: result.detail,
+  };
 }
 
 async function typeText(payload: TypeTextPayload, tabId: number): Promise<TypeTextResult> {
-  return executeInTab(tabId, payload, (input): TypeTextResult => {
-    const selector = input?.selector || '';
-    const target = document.querySelector(selector) as HTMLInputElement | HTMLTextAreaElement | null;
-    if (!target) return { selector, matched: false, value: '' };
-
-    const nextValue = input?.replace === false ? `${target.value}${input?.text ?? ''}` : input?.text ?? '';
-    const prototype = target instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-    const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
-    if (setter) setter.call(target, nextValue);
-    else target.value = nextValue;
-
-    target.dispatchEvent(new Event('input', { bubbles: true }));
-    target.dispatchEvent(new Event('change', { bubbles: true }));
-    return { selector, matched: true, value: nextValue };
-  });
+  const selector = payload?.selector || '';
+  const index = payload?.index ?? 0;
+  const result = await executeInTab(
+    tabId,
+    { selector, index, text: payload?.text ?? '', replace: payload?.replace ?? true },
+    typeTextInPage,
+  );
+  return {
+    selector,
+    matched: result.status !== 'not_found',
+    value: result.actualValue ?? '',
+    status: result.status,
+    detail: result.detail,
+    actualValue: result.actualValue,
+  };
 }
 
 async function selectOption(payload: SelectOptionPayload, tabId: number): Promise<SelectOptionResult> {
-  return executeInTab(tabId, payload, (input): SelectOptionResult => {
-    const selector = input?.selector || '';
-    const target = document.querySelector<HTMLSelectElement>(selector);
-    if (!target) return { selector, matched: false, value: input?.value ?? '' };
-    target.value = input?.value ?? '';
-    target.dispatchEvent(new Event('change', { bubbles: true }));
-    return { selector, matched: true, value: target.value };
-  });
+  const selector = payload?.selector || '';
+  const index = payload?.index ?? 0;
+  const result = await executeInTab(tabId, { selector, index, value: payload?.value ?? '' }, selectOptionInPage);
+  return {
+    selector,
+    matched: result.status !== 'not_found',
+    value: result.actualValue ?? payload?.value ?? '',
+    status: result.status,
+    detail: result.detail,
+    actualValue: result.actualValue,
+  };
 }
 
 async function scrollPage(payload: ScrollPagePayload, tabId: number): Promise<ScrollPageResult> {

@@ -265,3 +265,21 @@ describe('buildSystemPrompt options', () => {
     expect(prompt.trimEnd().endsWith('</session_constraints>')).toBe(true);
   });
 });
+
+describe('表单作业流程', () => {
+  it('tells the model to start from browser_get_form', () => {
+    expect(SYSTEM_PROMPT).toContain('browser_get_form');
+  });
+
+  it('tells the model to batch fills instead of calling per field', () => {
+    expect(SYSTEM_PROMPT).toContain('browser_fill_form');
+  });
+
+  it('tells the model to re-read rather than retry after a mismatch', () => {
+    expect(SYSTEM_PROMPT).toContain('mismatch');
+  });
+
+  it('lists the two new tools in the write-tool section derived from CONFIRM_TOOL_NAMES', () => {
+    expect(SYSTEM_PROMPT).toContain('browser_fill_form');
+  });
+});

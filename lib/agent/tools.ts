@@ -6,8 +6,12 @@ import {
   type CaptureScreenshotResult,
   type ClickElementPayload,
   type ClickElementResult,
+  type FillFormPayload,
+  type FillFormResult,
   type GetComputedStylePayload,
   type GetComputedStyleResult,
+  type GetFormPayload,
+  type GetFormResult,
   type GetHtmlPayload,
   type GetHtmlResult,
   type GetScriptsPayload,
@@ -44,6 +48,7 @@ export function createBrowserTools(tabId: number): BrowserAgentTool[] {
     makeReadPageTool(tabId),
     makeGetPageMetaTool(tabId),
     makeInspectPageImplementationTool(tabId),
+    makeGetFormTool(tabId),
     makeQueryDomTool(tabId),
     makeGetHtmlTool(tabId),
     makeGetScriptsTool(tabId),
@@ -53,6 +58,7 @@ export function createBrowserTools(tabId: number): BrowserAgentTool[] {
     makeSetStyleTool(tabId),
     makeModifyDomTool(tabId),
     makeClickTool(tabId),
+    makeFillFormTool(tabId),
     makeTypeTool(tabId),
     makeSelectTool(tabId),
     makeScrollTool(tabId),
@@ -234,6 +240,36 @@ function makeInspectPageImplementationTool(tabId: number): BrowserAgentTool {
         formatJson('页面实现巡检（untrusted page content）', report),
         report as unknown as Record<string, unknown>,
       );
+    },
+  };
+}
+
+function makeGetFormTool(tabId: number): BrowserAgentTool {
+  return {
+    name: 'browser_get_form',
+    label: 'Get Form',
+    description:
+      'Read every form control on the page as structured data: kind, label, current value, checked state, select options, requiredness, visibility and native validation message. Each field gets a stable fieldId — always use these ids with browser_fill_form instead of writing your own CSS selectors. Prefer this over browser_read_page or browser_get_html for any form task; readable-text extraction strips form controls entirely.',
+    parameters: Type.Object({
+      selector: Type.Optional(Type.String({ description: 'Limit collection to this container. Defaults to the whole document.' })),
+      includeHidden: Type.Optional(Type.Boolean({ description: 'Include hidden and invisible fields. Defaults to false.' })),
+    }),
+    execute: async (_toolCallId, params) => {
+      const payload = params as GetFormPayload;
+      const response = (await sendMessage<GetFormPayload, GetFormResult>('GET_FORM', payload, tabId)) as MessageResponse<GetFormResult>;
+      if (!response.ok || !response.data) throw new Error(response.error ?? '表单读取失败');
+
+      const data = response.data;
+      const notes: string[] = [];
+      if (data.unreachable.iframes > 0) {
+        notes.push(`页面中有 ${data.unreachable.iframes} 个 iframe，其内部表单当前版本无法读取或操作。`);
+      }
+      if (data.unreachable.closedShadowRoots > 0) {
+        notes.push(`页面中有 ${data.unreachable.closedShadowRoots} 个可能含 closed shadow root 的自定义元素，其内部字段不可见。`);
+      }
+      if (data.truncated) notes.push('字段数量已达上限，请用 selector 参数缩小范围后重新读取。');
+
+      return textResult([formatJson('表单结构', data), ...notes].join('\n'), data as unknown as Record<string, unknown>);
     },
   };
 }
@@ -426,11 +462,68 @@ function makeClickTool(tabId: number): BrowserAgentTool {
       const payload = params as ClickElementPayload;
       const response = (await sendMessage<ClickElementPayload, ClickElementResult>('CLICK_ELEMENT', payload, tabId)) as MessageResponse<ClickElementResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '点击失败');
-      if (response.data.clickedIndex === null) throw new Error(`未找到匹配 "${response.data.selector}" 的元素。`);
+      if (response.data.status !== 'ok') throw new Error(response.data.detail ?? response.data.status);
       return textResult(
         `已点击匹配 "${response.data.selector}" 的第 ${response.data.clickedIndex} 个元素。`,
         response.data as unknown as Record<string, unknown>,
       );
+    },
+  };
+}
+
+const MAX_FILL_FIELDS_PER_CALL = 50;
+
+function makeFillFormTool(tabId: number): BrowserAgentTool {
+  return {
+    name: 'browser_fill_form',
+    label: 'Fill Form',
+    description:
+      'Fill multiple form fields in one call using the fieldIds returned by browser_get_form, optionally clicking a submit button afterwards. Every field is verified before and after writing, so read the per-field outcomes: only "ok" means the value actually landed. Prefer one batched call over many single-field calls.',
+    parameters: Type.Object({
+      fields: Type.Array(
+        Type.Object({
+          fieldId: Type.String({ description: 'Field id from browser_get_form.' }),
+          value: Type.Optional(Type.String({ description: 'Value for text, textarea, select or contenteditable fields. For select, either the option value or its visible label.' })),
+          checked: Type.Optional(Type.Boolean({ description: 'Desired state for checkbox or radio fields.' })),
+        }),
+        { description: 'Fields to fill, at most 50 per call.' },
+      ),
+      submit: Type.Optional(
+        Type.Object({ fieldId: Type.String({ description: 'Field id of the submit button to click after filling.' }) }),
+      ),
+    }),
+    execute: async (_toolCallId, params) => {
+      const payload = params as FillFormPayload;
+      const fieldCount = payload?.fields?.length ?? 0;
+      if (fieldCount > MAX_FILL_FIELDS_PER_CALL) {
+        throw new Error(`一次最多填写 ${MAX_FILL_FIELDS_PER_CALL} 个字段，本次传入了 ${fieldCount} 个，请分批填写。`);
+      }
+
+      const response = (await sendMessage<FillFormPayload, FillFormResult>('FILL_FORM', payload, tabId)) as MessageResponse<FillFormResult>;
+      if (!response.ok || !response.data) throw new Error(response.error ?? '表单填写失败');
+      if (response.data.fieldsTableStale) {
+        throw new Error('字段表已失效（页面已变化或已导航），请重新调用 browser_get_form 获取新的 fieldId 后再填写。');
+      }
+
+      const outcomes = response.data.outcomes;
+      const succeeded = outcomes.filter((outcome) => outcome.status === 'ok');
+      const failed = outcomes.filter((outcome) => outcome.status !== 'ok');
+      const lines = [
+        `表单填写结果：${succeeded.length} 个成功，${failed.length} 个失败。`,
+        ...failed.map((outcome) =>
+          `- ${outcome.fieldId}：${outcome.status}${outcome.detail ? ` —— ${outcome.detail}` : ''}${
+            outcome.actualValue !== undefined ? `（实际值："${outcome.actualValue}"）` : ''
+          }`,
+        ),
+      ];
+      if (response.data.submitted) {
+        lines.push(`提交按钮 ${response.data.submitted.fieldId}：${response.data.submitted.status}`);
+      }
+      if (failed.length > 0) {
+        lines.push('注意：只有 ok 表示值真正写入了页面。mismatch 或 not_found 说明页面已变化，必须重新调用 browser_get_form，不要原样重试。');
+      }
+
+      return textResult(lines.join('\n'), response.data as unknown as Record<string, unknown>);
     },
   };
 }
@@ -440,9 +533,10 @@ function makeTypeTool(tabId: number): BrowserAgentTool {
     name: 'browser_type',
     label: 'Type',
     description:
-      'Set the value of an input or textarea matching a CSS selector, dispatching input/change events so frameworks like React observe the change.',
+      'Set the value of an input or textarea matching a CSS selector, dispatching input/change events so frameworks like React observe the change. Prefer browser_get_form + browser_fill_form for forms; use this only for one-off edits.',
     parameters: Type.Object({
       selector: Type.String({ description: 'CSS selector for the input or textarea.' }),
+      index: Type.Optional(Type.Number({ description: 'Which matched element to type into, 0-based. Defaults to 0.' })),
       text: Type.String({ description: 'Text to type.' }),
       replace: Type.Optional(Type.Boolean({ description: 'Replace the existing value (default true). Set to false to append.' })),
     }),
@@ -450,7 +544,7 @@ function makeTypeTool(tabId: number): BrowserAgentTool {
       const payload = params as TypeTextPayload;
       const response = (await sendMessage<TypeTextPayload, TypeTextResult>('TYPE_TEXT', payload, tabId)) as MessageResponse<TypeTextResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '输入失败');
-      if (!response.data.matched) throw new Error(`未找到匹配 "${response.data.selector}" 的元素。`);
+      if (response.data.status !== 'ok') throw new Error(response.data.detail ?? response.data.status);
       return textResult(`已在匹配 "${response.data.selector}" 的元素中输入文本。`, response.data as unknown as Record<string, unknown>);
     },
   };
@@ -460,16 +554,18 @@ function makeSelectTool(tabId: number): BrowserAgentTool {
   return {
     name: 'browser_select',
     label: 'Select',
-    description: 'Set a select element value by CSS selector, dispatching a change event.',
+    description:
+      'Set a select element value by CSS selector, dispatching a change event. Prefer browser_get_form + browser_fill_form for forms; use this only for one-off edits.',
     parameters: Type.Object({
       selector: Type.String({ description: 'CSS selector for the select element.' }),
+      index: Type.Optional(Type.Number({ description: 'Which matched element to select, 0-based. Defaults to 0.' })),
       value: Type.String({ description: 'Option value to select.' }),
     }),
     execute: async (_toolCallId, params) => {
       const payload = params as SelectOptionPayload;
       const response = (await sendMessage<SelectOptionPayload, SelectOptionResult>('SELECT_OPTION', payload, tabId)) as MessageResponse<SelectOptionResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '选择失败');
-      if (!response.data.matched) throw new Error(`未找到匹配 "${response.data.selector}" 的元素。`);
+      if (response.data.status !== 'ok') throw new Error(response.data.detail ?? response.data.status);
       return textResult(
         `已将匹配 "${response.data.selector}" 的选项设为 "${response.data.value}"。`,
         response.data as unknown as Record<string, unknown>,

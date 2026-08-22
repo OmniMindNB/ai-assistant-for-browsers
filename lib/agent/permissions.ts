@@ -1,7 +1,8 @@
 import type { BeforeToolCallContext, BeforeToolCallResult } from '@earendil-works/pi-agent-core';
 import { resolveConfirmGate, type ConfirmFn, type ConfirmGateState } from './confirm-gate';
+import type { SubmitIntent } from './form-submit';
 
-export type PermissionLevel = 'always_allow' | 'confirm' | 'deny';
+export type PermissionLevel = 'always_allow' | 'confirm' | 'confirm_always' | 'deny';
 
 export interface PermissionDecision {
   level: PermissionLevel;
@@ -23,12 +24,14 @@ export const READ_ONLY_TOOL_NAMES = new Set([
   'browser_get_computed_style',
   'browser_get_page_meta',
   'browser_screenshot',
+  'browser_get_form',
 ]);
 
 export const CONFIRM_TOOL_NAMES = new Set([
   'browser_set_style',
   'browser_modify_dom',
   'browser_click',
+  'browser_fill_form',
   'browser_type',
   'browser_scroll',
   'browser_select',
@@ -64,29 +67,71 @@ export function decideToolPermission(toolName: string, args: unknown): Permissio
   return { level: 'deny', reason: `未知工具 ${toolName}，已按 Deny-First 策略阻止。` };
 }
 
+/** 探测返回的写意图：是否提交，外加确认卡片要用的字段 label（args 里只有 fieldId）。 */
+export interface ToolWriteIntent extends SubmitIntent {
+  fieldLabels?: { fieldId: string; label?: string }[];
+}
+
 export interface PermissionGateOptions {
   gateState: ConfirmGateState;
   onConfirm?: ConfirmFn;
   signal?: AbortSignal;
+  /**
+   * 「这次点击会不会提交表单」必须看页面实况，而 decideToolPermission 是只看 args 的纯函数。
+   * 因此把探测能力作为依赖注入进来：闸门在放行前发一次只读探测，测试里可以直接 stub。
+   * 这次探测不计入 tool budget——它不是模型发起的工具调用。
+   */
+  resolveSubmitIntent?: (toolName: string, args: unknown) => Promise<ToolWriteIntent | undefined>;
 }
+
+const SUBMIT_CAPABLE_TOOLS = new Set(['browser_click', 'browser_fill_form']);
 
 export async function beforeToolCallPermissionGate(
   context: BeforeToolCallContext,
   options: PermissionGateOptions,
 ): Promise<BeforeToolCallResult | undefined> {
-  const decision = decideToolPermission(context.toolCall.name, context.args);
+  const toolName = context.toolCall.name;
+  const decision = decideToolPermission(toolName, context.args);
   if (decision.level === 'always_allow') return undefined;
   if (decision.level === 'deny') {
     return { block: true, reason: decision.reason ?? '该操作已被安全策略阻止。' };
   }
+
+  let always = false;
+  let reason = decision.reason ?? '该操作会修改页面或浏览器状态，需要用户确认。';
+  let confirmArgs = context.args;
+
+  if (options.resolveSubmitIntent && SUBMIT_CAPABLE_TOOLS.has(toolName)) {
+    const intent = await options.resolveSubmitIntent(toolName, context.args);
+    if (intent?.isSubmit) {
+      always = true;
+      reason = intent.formAction
+        ? `该操作会把表单提交到 ${intent.formAction}，需要单独确认。`
+        : '该操作会提交表单，需要单独确认。';
+    }
+    const labels = intent?.fieldLabels;
+    const record = (context.args ?? {}) as Record<string, unknown>;
+    if (labels?.length && Array.isArray(record.fields)) {
+      confirmArgs = {
+        ...record,
+        fields: (record.fields as Record<string, unknown>[]).map((field) => ({
+          ...field,
+          label: labels.find((entry) => entry.fieldId === field.fieldId)?.label,
+        })),
+        submit: intent?.isSubmit ? { ...(record.submit as object), formAction: intent?.formAction } : record.submit,
+      };
+    }
+  }
+
   return resolveConfirmGate(
     options.gateState,
     context.toolCall.id,
-    context.toolCall.name,
-    context.args,
-    decision.reason ?? '该操作会修改页面或浏览器状态，需要用户确认。',
+    toolName,
+    confirmArgs,
+    reason,
     options.onConfirm,
     options.signal,
+    always,
   );
 }
 

@@ -13,6 +13,9 @@ export type MessageType =
   | 'GET_STYLESHEETS'
   | 'GET_COMPUTED_STYLE'
   | 'GET_PAGE_META'
+  | 'GET_FORM'
+  | 'FILL_FORM'
+  | 'PROBE_CLICK_TARGET'
   | 'CAPTURE_SCREENSHOT'
   | 'SET_STYLE'
   | 'MODIFY_DOM'
@@ -221,10 +224,13 @@ export interface ClickElementResult {
   selector: string;
   matched: number;
   clickedIndex: number | null;
+  status: 'ok' | 'not_found' | 'not_clickable' | 'not_writable' | 'invalid_value' | 'blocked_sensitive';
+  detail?: string;
 }
 
 export interface TypeTextPayload {
   selector: string;
+  index?: number;
   text: string;
   replace?: boolean;
 }
@@ -233,10 +239,14 @@ export interface TypeTextResult {
   selector: string;
   matched: boolean;
   value: string;
+  status: 'ok' | 'not_found' | 'not_clickable' | 'not_writable' | 'invalid_value' | 'blocked_sensitive';
+  detail?: string;
+  actualValue?: string;
 }
 
 export interface SelectOptionPayload {
   selector: string;
+  index?: number;
   value: string;
 }
 
@@ -244,6 +254,9 @@ export interface SelectOptionResult {
   selector: string;
   matched: boolean;
   value: string;
+  status: 'ok' | 'not_found' | 'not_clickable' | 'not_writable' | 'invalid_value' | 'blocked_sensitive';
+  detail?: string;
+  actualValue?: string;
 }
 
 export interface ScrollPagePayload {
@@ -276,6 +289,86 @@ export interface SetStoragePayload {
 export interface SetStorageResult {
   area: 'local' | 'session';
   key: string;
+}
+
+export type FormFieldKind =
+  | 'text' | 'textarea' | 'select' | 'checkbox' | 'radio'
+  | 'contenteditable' | 'file' | 'submit' | 'button' | 'unsupported';
+
+export interface FormFieldDescriptor {
+  fieldId: string;
+  kind: FormFieldKind;
+  type?: string;
+  name?: string;
+  label?: string;
+  placeholder?: string;
+  required: boolean;
+  disabled: boolean;
+  readOnly: boolean;
+  visible: boolean;
+  /** 敏感字段不返回值，只给 valueState。 */
+  value?: string;
+  valueState: 'filled' | 'empty';
+  checked?: boolean;
+  options?: { value: string; label: string; selected: boolean }[];
+  sensitive: boolean;
+  writable: boolean;
+  clickable: boolean;
+  fingerprint: string;
+  formId?: string;
+  validationMessage?: string;
+}
+
+export interface GetFormPayload {
+  selector?: string;
+  includeHidden?: boolean;
+}
+
+export interface GetFormResult {
+  forms: { formId: string; name?: string; action?: string; method?: string; submitFieldIds: string[] }[];
+  fields: FormFieldDescriptor[];
+  orphanFieldIds: string[];
+  /** 如实上报「这里有内容但我看不见」，避免模型在主框架里反复试探。 */
+  unreachable: { iframes: number; closedShadowRoots: number };
+  truncated: boolean;
+}
+
+export interface FillFormPayload {
+  fields: { fieldId: string; value?: string; checked?: boolean }[];
+  /** 可选：填完后点击这个按钮，与填写共用同一次确认。 */
+  submit?: { fieldId: string };
+}
+
+export interface FillFormFieldOutcome {
+  fieldId: string;
+  status: 'ok' | 'mismatch' | 'not_found' | 'not_writable' | 'invalid_value' | 'blocked_sensitive';
+  detail?: string;
+  /** 写后回读的实际值；敏感字段永不回传。 */
+  actualValue?: string;
+}
+
+export interface FillFormResult {
+  outcomes: FillFormFieldOutcome[];
+  submitted?: { fieldId: string; status: 'ok' | 'not_found' | 'mismatch' | 'not_clickable' };
+  /** 句柄表已失效（页面导航或 storage 丢失），模型必须重新调用 browser_get_form。 */
+  fieldsTableStale?: boolean;
+}
+
+export interface ProbeClickTargetPayload {
+  /** browser_click 走这条：直接用选择器定位。 */
+  selector?: string;
+  index?: number;
+  /** browser_fill_form 的 submit 走这条：用句柄定位提交按钮。 */
+  submitFieldId?: string;
+  /** 需要补齐 label 的字段，供确认卡片展示（args 里只有 fieldId）。 */
+  fieldIds?: string[];
+}
+
+export interface ProbeClickTargetResult {
+  isSubmit: boolean;
+  formAction?: string;
+  fieldCount?: number;
+  fieldLabels?: { fieldId: string; label?: string }[];
 }
 
 /** 生成唯一消息 ID */

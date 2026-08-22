@@ -1,0 +1,151 @@
+import { describe, expect, it } from 'vitest';
+import {
+  isSensitiveField,
+  pickFieldLabel,
+  resolveFieldKind,
+  sanitizePageText,
+  toFieldDescriptor,
+  type RawFormField,
+} from './form-schema';
+
+function raw(overrides: Partial<RawFormField> = {}): RawFormField {
+  return {
+    path: [{ kind: 'selector', selector: 'input', index: 0 }],
+    tag: 'input',
+    required: false,
+    disabled: false,
+    readOnly: false,
+    visible: true,
+    contentEditable: false,
+    ...overrides,
+  };
+}
+
+describe('pickFieldLabel', () => {
+  it('prefers the <label for> text over everything else', () => {
+    const field = raw({
+      forLabelText: '邮箱',
+      ancestorLabelText: '祖先',
+      ariaLabel: 'aria',
+      placeholder: '请输入邮箱',
+      name: 'email',
+    });
+    expect(pickFieldLabel(field)).toBe('邮箱');
+  });
+
+  it('falls back through the full priority chain', () => {
+    expect(pickFieldLabel(raw({ ancestorLabelText: '祖先', ariaLabel: 'aria' }))).toBe('祖先');
+    expect(pickFieldLabel(raw({ ariaLabel: 'aria', labelledByText: 'by' }))).toBe('aria');
+    expect(pickFieldLabel(raw({ labelledByText: 'by', placeholder: 'ph' }))).toBe('by');
+    expect(pickFieldLabel(raw({ placeholder: 'ph', name: 'n' }))).toBe('ph');
+    expect(pickFieldLabel(raw({ name: 'n' }))).toBe('n');
+    expect(pickFieldLabel(raw())).toBeUndefined();
+  });
+
+  it('collapses whitespace and truncates to 80 chars', () => {
+    expect(pickFieldLabel(raw({ forLabelText: '  收件\n\n  地址  ' }))).toBe('收件 地址');
+    expect(pickFieldLabel(raw({ forLabelText: 'a'.repeat(200) }))?.length).toBe(80);
+  });
+
+  it('ignores an empty-after-trim label and moves to the next source', () => {
+    expect(pickFieldLabel(raw({ forLabelText: '   ', ariaLabel: 'aria' }))).toBe('aria');
+  });
+});
+
+describe('isSensitiveField', () => {
+  it('flags password inputs', () => {
+    expect(isSensitiveField(raw({ type: 'password' }))).toBe(true);
+  });
+
+  it('flags payment autocomplete tokens', () => {
+    expect(isSensitiveField(raw({ autocomplete: 'cc-number' }))).toBe(true);
+    expect(isSensitiveField(raw({ autocomplete: 'cc-csc' }))).toBe(true);
+  });
+
+  it('flags otp/cvv/ssn style names on a token boundary', () => {
+    expect(isSensitiveField(raw({ name: 'card_cvv' }))).toBe(true);
+    expect(isSensitiveField(raw({ id: 'one-time-otp' }))).toBe(true);
+    expect(isSensitiveField(raw({ name: 'ssn' }))).toBe(true);
+  });
+
+  it('does not flag innocent fields that merely contain those letters', () => {
+    expect(isSensitiveField(raw({ name: 'discount-code' }))).toBe(false);
+    expect(isSensitiveField(raw({ name: 'processing_note' }))).toBe(false);
+    expect(isSensitiveField(raw({ name: 'lesson' }))).toBe(false);
+    expect(isSensitiveField(raw({ type: 'text', name: 'email' }))).toBe(false);
+  });
+});
+
+describe('resolveFieldKind', () => {
+  it('maps inputs by type', () => {
+    expect(resolveFieldKind(raw({ type: 'text' }))).toBe('text');
+    expect(resolveFieldKind(raw({ type: 'email' }))).toBe('text');
+    expect(resolveFieldKind(raw({ type: 'checkbox' }))).toBe('checkbox');
+    expect(resolveFieldKind(raw({ type: 'radio' }))).toBe('radio');
+    expect(resolveFieldKind(raw({ type: 'file' }))).toBe('file');
+    expect(resolveFieldKind(raw({ type: 'submit' }))).toBe('submit');
+  });
+
+  it('maps textarea, select, contenteditable and buttons', () => {
+    expect(resolveFieldKind(raw({ tag: 'textarea' }))).toBe('textarea');
+    expect(resolveFieldKind(raw({ tag: 'select' }))).toBe('select');
+    expect(resolveFieldKind(raw({ tag: 'div', contentEditable: true }))).toBe('contenteditable');
+    expect(resolveFieldKind(raw({ tag: 'button', buttonRole: 'submit' }))).toBe('submit');
+    expect(resolveFieldKind(raw({ tag: 'button', buttonRole: 'button' }))).toBe('button');
+  });
+
+  it('falls back to unsupported for anything else', () => {
+    expect(resolveFieldKind(raw({ tag: 'div' }))).toBe('unsupported');
+  });
+});
+
+describe('toFieldDescriptor', () => {
+  it('omits the value of a sensitive field but still reports whether it is filled', () => {
+    const descriptor = toFieldDescriptor(raw({ type: 'password', name: 'pw', value: 'hunter2' }), 'f1');
+    expect(descriptor.value).toBeUndefined();
+    expect(descriptor.valueState).toBe('filled');
+    expect(descriptor.sensitive).toBe(true);
+    expect(descriptor.writable).toBe(false);
+  });
+
+  it('keeps the value of a normal field and marks it writable', () => {
+    const descriptor = toFieldDescriptor(raw({ type: 'text', name: 'email', value: 'a@b.c' }), 'f2');
+    expect(descriptor.value).toBe('a@b.c');
+    expect(descriptor.valueState).toBe('filled');
+    expect(descriptor.writable).toBe(true);
+  });
+
+  it('marks disabled, readOnly, file and unsupported fields as not writable', () => {
+    expect(toFieldDescriptor(raw({ type: 'text', disabled: true }), 'f3').writable).toBe(false);
+    expect(toFieldDescriptor(raw({ type: 'text', readOnly: true }), 'f4').writable).toBe(false);
+    expect(toFieldDescriptor(raw({ type: 'file' }), 'f5').writable).toBe(false);
+    expect(toFieldDescriptor(raw({ tag: 'div' }), 'f6').writable).toBe(false);
+  });
+
+  it('marks buttons clickable and text fields not', () => {
+    expect(toFieldDescriptor(raw({ tag: 'button', buttonRole: 'submit' }), 'f7').clickable).toBe(true);
+    expect(toFieldDescriptor(raw({ type: 'text' }), 'f8').clickable).toBe(false);
+  });
+
+  it('gives the same fingerprint to structurally identical fields and different ones otherwise', () => {
+    const a = toFieldDescriptor(raw({ type: 'text', name: 'email', forLabelText: '邮箱' }), 'f1');
+    const b = toFieldDescriptor(raw({ type: 'text', name: 'email', forLabelText: '邮箱' }), 'f9');
+    const c = toFieldDescriptor(raw({ type: 'text', name: 'phone', forLabelText: '邮箱' }), 'f10');
+    expect(a.fingerprint).toBe(b.fingerprint);
+    expect(a.fingerprint).not.toBe(c.fingerprint);
+  });
+});
+
+describe('sanitizePageText', () => {
+  it('strips control characters and collapses whitespace', () => {
+    expect(sanitizePageText('a\u0000b\n\nc', 60)).toBe('ab c');
+  });
+
+  it('truncates with an ellipsis', () => {
+    expect(sanitizePageText('x'.repeat(100), 10)).toBe(`${'x'.repeat(10)}…`);
+  });
+
+  it('returns an empty string for undefined-ish input', () => {
+    expect(sanitizePageText('', 10)).toBe('');
+  });
+});

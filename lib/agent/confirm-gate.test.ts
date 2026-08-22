@@ -78,3 +78,34 @@ describe('resolveConfirmGate', () => {
     expect(result).toEqual({ block: true, reason: '用户拒绝了该操作。' });
   });
 });
+
+describe('confirm_always', () => {
+  it('asks again even after the turn was already approved', async () => {
+    const state = createConfirmGateState();
+    const onConfirm = vi.fn().mockResolvedValue(true);
+
+    await resolveConfirmGate(state, 'call-1', 'browser_fill_form', {}, '理由', onConfirm);
+    expect(state.decision).toBe('approved');
+
+    await resolveConfirmGate(state, 'call-2', 'browser_click', {}, '提交理由', onConfirm, undefined, true);
+    expect(onConfirm).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not write the always-decision back into the turn cache', async () => {
+    const state = createConfirmGateState();
+    const onConfirm = vi.fn().mockResolvedValue(false);
+
+    await resolveConfirmGate(state, 'call-1', 'browser_fill_form', {}, '理由', vi.fn().mockResolvedValue(true));
+    const denied = await resolveConfirmGate(state, 'call-2', 'browser_click', {}, '提交', onConfirm, undefined, true);
+
+    expect(denied?.block).toBe(true);
+    // 拒绝提交不能污染已经批准的填写决定
+    expect(state.decision).toBe('approved');
+  });
+
+  it('records approved always-calls so the tool policy can count them as writes', async () => {
+    const state = createConfirmGateState();
+    await resolveConfirmGate(state, 'call-9', 'browser_click', {}, '提交', vi.fn().mockResolvedValue(true), undefined, true);
+    expect(state.alwaysApprovedCallIds.has('call-9')).toBe(true);
+  });
+});
