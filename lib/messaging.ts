@@ -224,10 +224,13 @@ export interface ClickElementResult {
   selector: string;
   matched: number;
   clickedIndex: number | null;
+  status: 'ok' | 'not_found' | 'not_clickable' | 'not_writable' | 'invalid_value' | 'blocked_sensitive';
+  detail?: string;
 }
 
 export interface TypeTextPayload {
   selector: string;
+  index?: number;
   text: string;
   replace?: boolean;
 }
@@ -236,10 +239,14 @@ export interface TypeTextResult {
   selector: string;
   matched: boolean;
   value: string;
+  status: 'ok' | 'not_found' | 'not_clickable' | 'not_writable' | 'invalid_value' | 'blocked_sensitive';
+  detail?: string;
+  actualValue?: string;
 }
 
 export interface SelectOptionPayload {
   selector: string;
+  index?: number;
   value: string;
 }
 
@@ -247,6 +254,9 @@ export interface SelectOptionResult {
   selector: string;
   matched: boolean;
   value: string;
+  status: 'ok' | 'not_found' | 'not_clickable' | 'not_writable' | 'invalid_value' | 'blocked_sensitive';
+  detail?: string;
+  actualValue?: string;
 }
 
 export interface ScrollPagePayload {

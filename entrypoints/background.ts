@@ -49,7 +49,15 @@ import { resolveTargetTab } from '@/lib/agent/tab-target';
 import { sendToContentScript } from '@/lib/agent/content-script-messaging';
 import { clearConversationIdForTab } from '@/lib/agent/tab-conversation';
 import { clearPendingAskForTab, setPendingAskForTab } from '@/lib/agent/tab-pending-ask';
-import { applyFormFill, collectFormFields, probeClickTarget, type ApplyFillItem } from '@/lib/agent/form-dom';
+import {
+  applyFormFill,
+  clickElementInPage,
+  collectFormFields,
+  probeClickTarget,
+  selectOptionInPage,
+  typeTextInPage,
+  type ApplyFillItem,
+} from '@/lib/agent/form-dom';
 import { toFieldDescriptor } from '@/lib/agent/form-schema';
 import { getFormFieldsForTab, setFormFieldsForTab, type FormFieldHandle } from '@/lib/agent/tab-form-fields';
 import { decideSubmitIntent } from '@/lib/agent/form-submit';
@@ -730,43 +738,50 @@ async function modifyDom(payload: ModifyDomPayload, tabId: number): Promise<Modi
 }
 
 async function clickElement(payload: ClickElementPayload, tabId: number): Promise<ClickElementResult> {
-  return executeInTab(tabId, payload, (input): ClickElementResult => {
-    const selector = input?.selector || '';
-    const nodes = Array.from(document.querySelectorAll<HTMLElement>(selector));
-    const index = input?.index ?? 0;
-    const target = nodes[index];
-    if (target) target.click();
-    return { selector, matched: nodes.length, clickedIndex: target ? index : null };
-  });
+  const selector = payload?.selector || '';
+  const index = payload?.index ?? 0;
+  const result = await executeInTab(tabId, { selector, index }, clickElementInPage);
+  return {
+    selector,
+    // clickElementInPage 只回报「给定 index 上的目标元素」的结果，不再统计选择器命中的总数；
+    // matched/clickedIndex 保留字段是为了不破坏旧的结果形状，语义收窄为「该 index 上是否存在/点中了元素」。
+    matched: result.status === 'not_found' ? 0 : 1,
+    clickedIndex: result.status === 'ok' ? index : null,
+    status: result.status,
+    detail: result.detail,
+  };
 }
 
 async function typeText(payload: TypeTextPayload, tabId: number): Promise<TypeTextResult> {
-  return executeInTab(tabId, payload, (input): TypeTextResult => {
-    const selector = input?.selector || '';
-    const target = document.querySelector(selector) as HTMLInputElement | HTMLTextAreaElement | null;
-    if (!target) return { selector, matched: false, value: '' };
-
-    const nextValue = input?.replace === false ? `${target.value}${input?.text ?? ''}` : input?.text ?? '';
-    const prototype = target instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-    const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
-    if (setter) setter.call(target, nextValue);
-    else target.value = nextValue;
-
-    target.dispatchEvent(new Event('input', { bubbles: true }));
-    target.dispatchEvent(new Event('change', { bubbles: true }));
-    return { selector, matched: true, value: nextValue };
-  });
+  const selector = payload?.selector || '';
+  const index = payload?.index ?? 0;
+  const result = await executeInTab(
+    tabId,
+    { selector, index, text: payload?.text ?? '', replace: payload?.replace ?? true },
+    typeTextInPage,
+  );
+  return {
+    selector,
+    matched: result.status !== 'not_found',
+    value: result.actualValue ?? '',
+    status: result.status,
+    detail: result.detail,
+    actualValue: result.actualValue,
+  };
 }
 
 async function selectOption(payload: SelectOptionPayload, tabId: number): Promise<SelectOptionResult> {
-  return executeInTab(tabId, payload, (input): SelectOptionResult => {
-    const selector = input?.selector || '';
-    const target = document.querySelector<HTMLSelectElement>(selector);
-    if (!target) return { selector, matched: false, value: input?.value ?? '' };
-    target.value = input?.value ?? '';
-    target.dispatchEvent(new Event('change', { bubbles: true }));
-    return { selector, matched: true, value: target.value };
-  });
+  const selector = payload?.selector || '';
+  const index = payload?.index ?? 0;
+  const result = await executeInTab(tabId, { selector, index, value: payload?.value ?? '' }, selectOptionInPage);
+  return {
+    selector,
+    matched: result.status !== 'not_found',
+    value: result.actualValue ?? payload?.value ?? '',
+    status: result.status,
+    detail: result.detail,
+    actualValue: result.actualValue,
+  };
 }
 
 async function scrollPage(payload: ScrollPagePayload, tabId: number): Promise<ScrollPageResult> {

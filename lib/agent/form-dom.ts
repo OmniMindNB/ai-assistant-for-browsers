@@ -464,3 +464,117 @@ export function probeClickTarget(input: ProbeClickInput): ProbeClickOutput {
     fieldCount: owner ? owner.elements.length : undefined,
   };
 }
+
+export interface LegacyWriteStatus {
+  status: 'ok' | 'not_found' | 'not_clickable' | 'not_writable' | 'invalid_value' | 'blocked_sensitive';
+  detail?: string;
+  actualValue?: string;
+}
+
+// ⚠️ 序列化注入，禁止引用模块作用域绑定（包括本文件的其它函数）。
+export function clickElementInPage(input: { selector: string; index: number }): LegacyWriteStatus {
+  const nodes = Array.from(document.querySelectorAll<HTMLElement>(input.selector));
+  const target = nodes[input.index ?? 0];
+  if (!target) return { status: 'not_found', detail: `没有匹配 "${input.selector}" 的第 ${input.index ?? 0} 个元素。` };
+
+  const rect = target.getBoundingClientRect();
+  const disabled = (target as HTMLButtonElement).disabled === true;
+  const hasBox = rect.width > 0 || rect.height > 0;
+  const topMost = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+  const covered = topMost != null && topMost !== target && !target.contains(topMost);
+  if (disabled || !hasBox || covered) {
+    return {
+      status: 'not_clickable',
+      detail: disabled ? '元素处于禁用状态。' : !hasBox ? '元素没有可见的布局盒。' : '元素被其它元素遮挡。',
+    };
+  }
+
+  for (const type of ['pointerdown', 'mousedown']) {
+    target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
+  }
+  target.focus();
+  for (const type of ['pointerup', 'mouseup', 'click']) {
+    target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
+  }
+  return { status: 'ok' };
+}
+
+export function typeTextInPage(input: { selector: string; index: number; text: string; replace: boolean }): LegacyWriteStatus {
+  const nodes = Array.from(document.querySelectorAll<HTMLElement>(input.selector));
+  const target = nodes[input.index ?? 0];
+  if (!target) return { status: 'not_found', detail: `没有匹配 "${input.selector}" 的第 ${input.index ?? 0} 个元素。` };
+
+  const asInput = target as HTMLInputElement;
+  const type = (target.getAttribute('type') || '').toLowerCase();
+  const autocomplete = (target.getAttribute('autocomplete') || '').toLowerCase();
+  const identity = `${target.getAttribute('name') || ''} ${target.getAttribute('id') || ''} ${autocomplete}`;
+  const sensitive =
+    type === 'password' ||
+    autocomplete.indexOf('cc-') === 0 ||
+    /(^|[^a-z])(otp|totp|cvv|cvc|csc|ssn|passcode)([^a-z]|$)/i.test(identity);
+  if (sensitive) {
+    return { status: 'blocked_sensitive', detail: '出于安全考虑，本扩展不代填密码与支付类字段，请提示用户手动输入。' };
+  }
+  if (asInput.disabled === true || asInput.readOnly === true) {
+    return { status: 'not_writable', detail: '字段处于禁用或只读状态。' };
+  }
+
+  const tag = target.tagName.toLowerCase();
+  const editable = target.isContentEditable === true;
+  if (!editable && tag !== 'input' && tag !== 'textarea') {
+    return { status: 'not_writable', detail: `"${tag}" 不是可输入的表单控件。` };
+  }
+
+  const nextValue = editable
+    ? (input.replace === false ? `${target.textContent ?? ''}${input.text}` : input.text)
+    : (input.replace === false ? `${asInput.value}${input.text}` : input.text);
+
+  target.focus();
+  if (editable) {
+    target.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, inputType: 'insertText', data: input.text }));
+    target.textContent = nextValue;
+    target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: input.text }));
+  } else {
+    const prototype = tag === 'textarea' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+    if (setter) setter.call(asInput, nextValue);
+    else asInput.value = nextValue;
+    target.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, inputType: 'insertText', data: input.text }));
+    target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: input.text }));
+  }
+  target.dispatchEvent(new Event('change', { bubbles: true }));
+  target.blur();
+
+  const actual = editable ? (target.textContent ?? '') : asInput.value;
+  return actual === nextValue
+    ? { status: 'ok', actualValue: actual }
+    : { status: 'invalid_value', detail: '写入后回读不符，页面组件可能改写或拒绝了这个值。', actualValue: actual };
+}
+
+export function selectOptionInPage(input: { selector: string; index: number; value: string }): LegacyWriteStatus {
+  const nodes = Array.from(document.querySelectorAll<HTMLElement>(input.selector));
+  const target = nodes[input.index ?? 0];
+  if (!target) return { status: 'not_found', detail: `没有匹配 "${input.selector}" 的第 ${input.index ?? 0} 个元素。` };
+  if (target.tagName.toLowerCase() !== 'select') {
+    return {
+      status: 'not_writable',
+      detail: `"${target.tagName.toLowerCase()}" 不是原生 <select>。这可能是自定义下拉组件，请改用 browser_click 依次点开并选择。`,
+    };
+  }
+
+  const select = target as unknown as HTMLSelectElement;
+  const options = Array.from(select.options);
+  const option =
+    options.find((candidate) => candidate.value === input.value) ??
+    options.find((candidate) => (candidate.textContent || '').replace(/\s+/g, ' ').trim() === input.value);
+  if (!option) {
+    return { status: 'invalid_value', detail: `没有 value 或文案等于 "${input.value}" 的选项，原值未改动。`, actualValue: select.value };
+  }
+
+  select.value = option.value;
+  select.dispatchEvent(new Event('input', { bubbles: true }));
+  select.dispatchEvent(new Event('change', { bubbles: true }));
+  return select.value === option.value
+    ? { status: 'ok', actualValue: select.value }
+    : { status: 'invalid_value', detail: '写入后回读不符。', actualValue: select.value };
+}

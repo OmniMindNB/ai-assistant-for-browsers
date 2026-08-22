@@ -462,7 +462,7 @@ function makeClickTool(tabId: number): BrowserAgentTool {
       const payload = params as ClickElementPayload;
       const response = (await sendMessage<ClickElementPayload, ClickElementResult>('CLICK_ELEMENT', payload, tabId)) as MessageResponse<ClickElementResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '点击失败');
-      if (response.data.clickedIndex === null) throw new Error(`未找到匹配 "${response.data.selector}" 的元素。`);
+      if (response.data.status !== 'ok') throw new Error(response.data.detail ?? response.data.status);
       return textResult(
         `已点击匹配 "${response.data.selector}" 的第 ${response.data.clickedIndex} 个元素。`,
         response.data as unknown as Record<string, unknown>,
@@ -533,9 +533,10 @@ function makeTypeTool(tabId: number): BrowserAgentTool {
     name: 'browser_type',
     label: 'Type',
     description:
-      'Set the value of an input or textarea matching a CSS selector, dispatching input/change events so frameworks like React observe the change.',
+      'Set the value of an input or textarea matching a CSS selector, dispatching input/change events so frameworks like React observe the change. Prefer browser_get_form + browser_fill_form for forms; use this only for one-off edits.',
     parameters: Type.Object({
       selector: Type.String({ description: 'CSS selector for the input or textarea.' }),
+      index: Type.Optional(Type.Number({ description: 'Which matched element to type into, 0-based. Defaults to 0.' })),
       text: Type.String({ description: 'Text to type.' }),
       replace: Type.Optional(Type.Boolean({ description: 'Replace the existing value (default true). Set to false to append.' })),
     }),
@@ -543,7 +544,7 @@ function makeTypeTool(tabId: number): BrowserAgentTool {
       const payload = params as TypeTextPayload;
       const response = (await sendMessage<TypeTextPayload, TypeTextResult>('TYPE_TEXT', payload, tabId)) as MessageResponse<TypeTextResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '输入失败');
-      if (!response.data.matched) throw new Error(`未找到匹配 "${response.data.selector}" 的元素。`);
+      if (response.data.status !== 'ok') throw new Error(response.data.detail ?? response.data.status);
       return textResult(`已在匹配 "${response.data.selector}" 的元素中输入文本。`, response.data as unknown as Record<string, unknown>);
     },
   };
@@ -553,16 +554,18 @@ function makeSelectTool(tabId: number): BrowserAgentTool {
   return {
     name: 'browser_select',
     label: 'Select',
-    description: 'Set a select element value by CSS selector, dispatching a change event.',
+    description:
+      'Set a select element value by CSS selector, dispatching a change event. Prefer browser_get_form + browser_fill_form for forms; use this only for one-off edits.',
     parameters: Type.Object({
       selector: Type.String({ description: 'CSS selector for the select element.' }),
+      index: Type.Optional(Type.Number({ description: 'Which matched element to select, 0-based. Defaults to 0.' })),
       value: Type.String({ description: 'Option value to select.' }),
     }),
     execute: async (_toolCallId, params) => {
       const payload = params as SelectOptionPayload;
       const response = (await sendMessage<SelectOptionPayload, SelectOptionResult>('SELECT_OPTION', payload, tabId)) as MessageResponse<SelectOptionResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '选择失败');
-      if (!response.data.matched) throw new Error(`未找到匹配 "${response.data.selector}" 的元素。`);
+      if (response.data.status !== 'ok') throw new Error(response.data.detail ?? response.data.status);
       return textResult(
         `已将匹配 "${response.data.selector}" 的选项设为 "${response.data.value}"。`,
         response.data as unknown as Record<string, unknown>,
