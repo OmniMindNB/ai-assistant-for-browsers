@@ -296,19 +296,22 @@ export type FormFieldPathStep =
 - [x] 读表单与写表单之间字段发生变化时，`fill_form` 对该字段返回 `mismatch` 且**不写入**。
 - [ ] 12 字段表单可在 1 次 `get_form` + 1 次 `fill_form`（+ 可选 1 次提交）内完成，不触发预算耗尽。
 - [x] 同一轮内已批准填写后，点击提交按钮仍会再次弹出确认；拒绝提交不影响已完成的填写。
-- [ ] 密码 / 支付字段：`get_form` 不返回其值；一次同时包含敏感字段与普通字段的 `fill_form`，敏感字段返回 `blocked_sensitive` 且普通字段照常写入；该敏感值不出现在确认卡片与持久化历史中。
+- [x] 密码 / 支付字段：`get_form` 不返回其值；一次同时包含敏感字段与普通字段的 `fill_form`，敏感字段返回 `blocked_sensitive` 且普通字段照常写入；该敏感值不出现在确认卡片与持久化历史中。
 - [x] 用裸 `selector` 绕过句柄表直接对密码框调用 `browser_type`，同样返回 `blocked_sensitive`。
 - [x] 确认卡片对 label / action 做纯文本净化与截断，页面无法通过 label 文案伪造卡片语义。
 - [x] `pnpm compile`、`pnpm test`、`pnpm build`（Chrome MV3）全部通过。
 - [ ] 真机手测清单全部走通：原生 `<form>`、React 受控表单、antd 自定义下拉、Web Components 表单、含 iframe 的页面各一例，**重点验证失败路径如实报错**。
 
-> **验收状态（2026-08-22）**：代码层 11 项已通过自动化测试验证，`pnpm compile` 无错、`pnpm test` 50 个测试文件 / 746 个用例全通过、`pnpm build`（Chrome MV3）成功。
-> 余下 4 项未勾选的原因如实记录如下，**不是遗漏，是当前证据不足**：
+> **验收状态（2026-08-22）**：代码层 12 项已通过自动化测试验证，`pnpm compile` 无错、`pnpm test` 51 个测试文件 / 757 个用例全通过、`pnpm build`（Chrome MV3）成功。
+> 余下 3 项未勾选的原因如实记录如下，**不是遗漏，是当前证据不足**：
 >
 > - **点击 disabled / 不可见 / 被遮挡**：`disabled` 分支已有测试覆盖；**遮挡检测在 jsdom 下测不出真实行为**（jsdom 不实现布局，`getBoundingClientRect` 恒为 0、`elementFromPoint` 恒返回 null），按计划归入真机手测，未为凑覆盖率 stub 假布局。
 > - **12 字段一次读写完成、不触发预算耗尽**：批量工具已落地且单次上限 50 有测试，但「端到端不触发预算耗尽」没有自动化测试断言，需真机跑一次长表单确认。
-> - **敏感字段与普通字段混合填写**：`get_form` 不回传敏感值、裸 `selector` 写密码被拒，两条均有测试；但混合调用时「敏感字段 `blocked_sensitive` 且普通字段照常写入」的过滤逻辑位于 `entrypoints/background.ts` 的 `fillForm`，而 `background.ts` 当前没有测试文件，该分支未被直接覆盖。
 > - **真机手测清单**：尚未执行。
+>
+> **2026-08-22 补齐**：原「敏感字段混合填写」缺口已消除。`fillForm` 中与浏览器 API 无关的两段纯逻辑（请求规划、结果合并）抽出为 `lib/agent/fill-form-request.ts` 的 `planFormFill` / `mergeFillOutcomes`，`background.ts` 改为只做 I/O 编排。新增 11 个用例覆盖混合调用、敏感值不进注入参数、未知 fieldId、提交句柄缺失与结果归位。并做了变异测试验证这些断言不是空转：移除 `handle.sensitive` 分支后恰好 2 条敏感字段用例失败、其余 9 条通过。
+>
+> 顺带修正一处设计：提交目标**不**参与敏感判定。敏感判定的目的是不代填密码/支付「值」，而点击按钮不写入任何值；`<button name="verify-otp">` 会命中敏感 token 正则，若因此拒绝提交，挡掉的是用户已明确批准的操作。
 
 
 ## 开放问题（Open Questions）

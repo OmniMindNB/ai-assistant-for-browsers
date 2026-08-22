@@ -49,6 +49,7 @@ import { resolveTargetTab } from '@/lib/agent/tab-target';
 import { sendToContentScript } from '@/lib/agent/content-script-messaging';
 import { clearConversationIdForTab } from '@/lib/agent/tab-conversation';
 import { clearPendingAskForTab, setPendingAskForTab } from '@/lib/agent/tab-pending-ask';
+import { mergeFillOutcomes, planFormFill } from '@/lib/agent/fill-form-request';
 import {
   applyFormFill,
   clickElementInPage,
@@ -386,49 +387,10 @@ async function fillForm(payload: FillFormPayload, tabId: number): Promise<FillFo
     return { outcomes: [], fieldsTableStale: true };
   }
 
-  const outcomes: FillFormFieldOutcome[] = [];
-  const items: ApplyFillItem[] = [];
-
-  for (const field of payload?.fields ?? []) {
-    const handle = table.fields[field.fieldId];
-    if (!handle) {
-      outcomes.push({ fieldId: field.fieldId, status: 'not_found', detail: '未知的 fieldId，请重新调用 browser_get_form。' });
-      continue;
-    }
-    // 敏感字段在离开 background 之前就被丢弃：值不进注入参数、不进确认卡片、不落库
-    // （ref: Spec-0005 §安全与隐私）。
-    if (handle.sensitive) {
-      outcomes.push({
-        fieldId: field.fieldId,
-        status: 'blocked_sensitive',
-        detail: '出于安全考虑，本扩展不代填密码与支付类字段，请提示用户手动输入。',
-      });
-      continue;
-    }
-    items.push({
-      fieldId: field.fieldId,
-      path: handle.path,
-      expect: handle.expect,
-      kind: handle.kind,
-      value: field.value,
-      checked: field.checked,
-    });
-  }
-
-  const submitHandle = payload?.submit ? table.fields[payload.submit.fieldId] : undefined;
-  // submit.fieldId 未知或已过期时，句柄解析不到——必须如实报告 not_found，
-  // 不能让 submit 静默从 applyFormFill 的入参里消失，导致模型收不到任何提交失败的信号。
-  const submitFieldMissing = Boolean(payload?.submit) && !submitHandle;
+  const plan = planFormFill(payload, table);
   const applied = await executeInTab(
     tabId,
-    {
-      url: table.url,
-      items,
-      submit:
-        payload?.submit && submitHandle
-          ? { fieldId: payload.submit.fieldId, path: submitHandle.path, expect: submitHandle.expect }
-          : undefined,
-    },
+    { url: table.url, items: plan.items, submit: plan.submit },
     applyFormFill,
   );
 
@@ -436,18 +398,12 @@ async function fillForm(payload: FillFormPayload, tabId: number): Promise<FillFo
     return { outcomes: [], fieldsTableStale: true };
   }
 
-  // 保持模型请求里的字段顺序，便于它逐条核对。
-  const byId = new Map(applied.outcomes.map((outcome) => [outcome.fieldId, outcome]));
-  const ordered: FillFormFieldOutcome[] = (payload?.fields ?? []).map((field) => {
-    const blocked = outcomes.find((outcome) => outcome.fieldId === field.fieldId);
-    return blocked ?? byId.get(field.fieldId) ?? { fieldId: field.fieldId, status: 'not_found' };
-  });
-
-  const submitted = submitFieldMissing
-    ? { fieldId: payload!.submit!.fieldId, status: 'not_found' as const }
-    : applied.submitted;
-
-  return { outcomes: ordered, submitted };
+  return {
+    outcomes: mergeFillOutcomes(payload, plan.blocked, applied.outcomes),
+    submitted: plan.submitFieldMissing
+      ? { fieldId: payload!.submit!.fieldId, status: 'not_found' as const }
+      : applied.submitted,
+  };
 }
 
 async function probeSubmitIntent(payload: ProbeClickTargetPayload, tabId: number): Promise<ProbeClickTargetResult> {
