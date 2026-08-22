@@ -99,6 +99,8 @@ export async function beforeToolCallPermissionGate(
 
   let always = false;
   let reason = decision.reason ?? '该操作会修改页面或浏览器状态，需要用户确认。';
+  let confirmArgs = context.args;
+
   if (options.resolveSubmitIntent && SUBMIT_CAPABLE_TOOLS.has(toolName)) {
     const intent = await options.resolveSubmitIntent(toolName, context.args);
     if (intent?.isSubmit) {
@@ -107,13 +109,25 @@ export async function beforeToolCallPermissionGate(
         ? `该操作会把表单提交到 ${intent.formAction}，需要单独确认。`
         : '该操作会提交表单，需要单独确认。';
     }
+    const labels = intent?.fieldLabels;
+    const record = (context.args ?? {}) as Record<string, unknown>;
+    if (labels?.length && Array.isArray(record.fields)) {
+      confirmArgs = {
+        ...record,
+        fields: (record.fields as Record<string, unknown>[]).map((field) => ({
+          ...field,
+          label: labels.find((entry) => entry.fieldId === field.fieldId)?.label,
+        })),
+        submit: intent?.isSubmit ? { ...(record.submit as object), formAction: intent?.formAction } : record.submit,
+      };
+    }
   }
 
   return resolveConfirmGate(
     options.gateState,
     context.toolCall.id,
     toolName,
-    context.args,
+    confirmArgs,
     reason,
     options.onConfirm,
     options.signal,

@@ -7,6 +7,7 @@ import {
 } from '@earendil-works/pi-agent-core';
 import type { Api, Message, Model } from '@earendil-works/pi-ai';
 import { resolveProviderApi, type ProviderConfig } from '@/lib/settings';
+import { sendMessage, type MessageResponse, type ProbeClickTargetPayload, type ProbeClickTargetResult } from '@/lib/messaging';
 import { browserOpenAIStream } from './openai-stream';
 import { browserAnthropicStream } from './anthropic-stream';
 import { beforeToolCallPermissionGate, CONFIRM_TOOL_NAMES } from './permissions';
@@ -104,6 +105,30 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
         gateState: confirmGateState,
         onConfirm: options.onConfirm,
         signal,
+        resolveSubmitIntent: async (toolName, args) => {
+          const record = (args ?? {}) as Record<string, unknown>;
+          const payload: ProbeClickTargetPayload =
+            toolName === 'browser_fill_form'
+              ? {
+                  submitFieldId: (record.submit as { fieldId?: string } | undefined)?.fieldId,
+                  fieldIds: Array.isArray(record.fields)
+                    ? (record.fields as { fieldId?: string }[]).map((field) => String(field.fieldId ?? '')).filter(Boolean)
+                    : [],
+                }
+              : { selector: String(record.selector ?? ''), index: Number(record.index ?? 0) };
+          // 探测失败时不阻断，退回普通 confirm 档位——探测只用于「升级」确认强度，
+          // 它自己出错（包括消息通道本身没有响应、抛异常）不应该把一次正常的写操作也卡死。
+          try {
+            const response = (await sendMessage<ProbeClickTargetPayload, ProbeClickTargetResult>(
+              'PROBE_CLICK_TARGET',
+              payload,
+              options.tabId,
+            )) as MessageResponse<ProbeClickTargetResult> | undefined;
+            return response?.ok && response.data ? response.data : { isSubmit: false };
+          } catch {
+            return { isSubmit: false };
+          }
+        },
       });
       if (permissionBlock) return recordPreExecutionBlock(permissionBlock);
 

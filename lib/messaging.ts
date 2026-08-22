@@ -15,6 +15,7 @@ export type MessageType =
   | 'GET_PAGE_META'
   | 'GET_FORM'
   | 'FILL_FORM'
+  | 'PROBE_CLICK_TARGET'
   | 'CAPTURE_SCREENSHOT'
   | 'SET_STYLE'
   | 'MODIFY_DOM'
@@ -341,6 +342,23 @@ export interface FillFormResult {
   submitted?: { fieldId: string; status: 'ok' | 'not_found' | 'mismatch' | 'not_clickable' };
   /** 句柄表已失效（页面导航或 storage 丢失），模型必须重新调用 browser_get_form。 */
   fieldsTableStale?: boolean;
+}
+
+export interface ProbeClickTargetPayload {
+  /** browser_click 走这条：直接用选择器定位。 */
+  selector?: string;
+  index?: number;
+  /** browser_fill_form 的 submit 走这条：用句柄定位提交按钮。 */
+  submitFieldId?: string;
+  /** 需要补齐 label 的字段，供确认卡片展示（args 里只有 fieldId）。 */
+  fieldIds?: string[];
+}
+
+export interface ProbeClickTargetResult {
+  isSubmit: boolean;
+  formAction?: string;
+  fieldCount?: number;
+  fieldLabels?: { fieldId: string; label?: string }[];
 }
 
 /** 生成唯一消息 ID */

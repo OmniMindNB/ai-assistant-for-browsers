@@ -123,4 +123,21 @@ describe('submit intent escalation', () => {
     expect(result).toBeUndefined();
     expect(onConfirm).not.toHaveBeenCalled();
   });
+
+  it('enriches only the copy handed to the confirmation UI, never the model args', async () => {
+    const args = { fields: [{ fieldId: 'f1', value: 'a@b.c' }] };
+    const onConfirm = vi.fn().mockResolvedValue(true);
+
+    await beforeToolCallPermissionGate(
+      { toolCall: { id: 'call-1', name: 'browser_fill_form' }, args } as any,
+      {
+        gateState: createConfirmGateState(),
+        onConfirm,
+        resolveSubmitIntent: async () => ({ isSubmit: false, fieldLabels: [{ fieldId: 'f1', label: '邮箱' }] }),
+      },
+    );
+
+    expect((onConfirm.mock.calls[0][2] as any).fields[0].label).toBe('邮箱');
+    expect((args.fields[0] as any).label).toBeUndefined();
+  });
 });

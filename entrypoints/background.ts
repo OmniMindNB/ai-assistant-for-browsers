@@ -29,6 +29,8 @@ import {
   type PageScriptInfo,
   type PageStylesheetInfo,
   type PageSelection,
+  type ProbeClickTargetPayload,
+  type ProbeClickTargetResult,
   type QueryDomPayload,
   type QueryDomResult,
   type ScrollPagePayload,
@@ -47,9 +49,10 @@ import { resolveTargetTab } from '@/lib/agent/tab-target';
 import { sendToContentScript } from '@/lib/agent/content-script-messaging';
 import { clearConversationIdForTab } from '@/lib/agent/tab-conversation';
 import { clearPendingAskForTab, setPendingAskForTab } from '@/lib/agent/tab-pending-ask';
-import { applyFormFill, collectFormFields, type ApplyFillItem } from '@/lib/agent/form-dom';
+import { applyFormFill, collectFormFields, probeClickTarget, type ApplyFillItem } from '@/lib/agent/form-dom';
 import { toFieldDescriptor } from '@/lib/agent/form-schema';
 import { getFormFieldsForTab, setFormFieldsForTab, type FormFieldHandle } from '@/lib/agent/tab-form-fields';
+import { decideSubmitIntent } from '@/lib/agent/form-submit';
 
 const DEFAULT_TOOL_MAX_CHARS = 12000;
 const SUPPORTED_MESSAGE_TYPES = [
@@ -66,6 +69,7 @@ const SUPPORTED_MESSAGE_TYPES = [
   'GET_PAGE_META',
   'GET_FORM',
   'FILL_FORM',
+  'PROBE_CLICK_TARGET',
   'CAPTURE_SCREENSHOT',
   'SET_STYLE',
   'MODIFY_DOM',
@@ -216,6 +220,9 @@ async function handleMessage(message: Message, sender?: MessageSender): Promise<
 
     case 'FILL_FORM':
       return fillForm(message.payload as FillFormPayload, requireTabId(message));
+
+    case 'PROBE_CLICK_TARGET':
+      return probeSubmitIntent(message.payload as ProbeClickTargetPayload, requireTabId(message));
 
     case 'CAPTURE_SCREENSHOT':
       return captureScreenshot(message.payload as CaptureScreenshotPayload, requireTabId(message));
@@ -433,6 +440,39 @@ async function fillForm(payload: FillFormPayload, tabId: number): Promise<FillFo
     : applied.submitted;
 
   return { outcomes: ordered, submitted };
+}
+
+async function probeSubmitIntent(payload: ProbeClickTargetPayload, tabId: number): Promise<ProbeClickTargetResult> {
+  const needsTable = Boolean(payload?.submitFieldId || payload?.fieldIds?.length);
+  const table = needsTable ? await getFormFieldsForTab(tabId) : undefined;
+
+  // 卡片要展示的 label 从句柄表来，不从页面重新取——句柄表就是读表单那一刻的真相。
+  const fieldLabels = payload?.fieldIds?.map((fieldId) => ({
+    fieldId,
+    label: table?.fields[fieldId]?.expect.label,
+  }));
+
+  const handle = payload?.submitFieldId ? table?.fields[payload.submitFieldId] : undefined;
+  if (!payload?.selector && !handle) return { isSubmit: false, fieldLabels };
+
+  const probe = await executeInTab(
+    tabId,
+    { selector: payload?.selector, index: payload?.index, path: handle?.path },
+    probeClickTarget,
+  );
+  if (!probe.found) return { isSubmit: false, fieldLabels };
+
+  return {
+    ...decideSubmitIntent({
+      tag: probe.tag,
+      type: probe.type,
+      hasFormOwner: probe.hasFormOwner,
+      formAction: probe.formAction,
+      textContent: probe.textContent,
+      fieldCount: probe.fieldCount,
+    }),
+    fieldLabels,
+  };
 }
 
 async function getHtml(payload: GetHtmlPayload, tabId: number): Promise<GetHtmlResult> {

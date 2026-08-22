@@ -412,3 +412,55 @@ export function applyFormFill(input: ApplyFillInput): ApplyFillOutput {
 
   return { outcomes, submitted };
 }
+
+export interface ProbeClickInput {
+  selector?: string;
+  index?: number;
+  path?: FormFieldPathStep[];
+}
+
+export interface ProbeClickOutput {
+  found: boolean;
+  tag: string;
+  type?: string;
+  hasFormOwner: boolean;
+  formAction?: string;
+  textContent?: string;
+  fieldCount?: number;
+}
+
+// ⚠️ 序列化注入，禁止引用模块作用域绑定。
+export function probeClickTarget(input: ProbeClickInput): ProbeClickOutput {
+  let element: Element | null = null;
+
+  if (input.path) {
+    let scope: ParentNode | null = document;
+    for (const step of input.path) {
+      if (step.kind === 'shadow') {
+        const shadowRoot: ShadowRoot | null = (element as HTMLElement | null)?.shadowRoot ?? null;
+        if (!shadowRoot) { element = null; break; }
+        scope = shadowRoot;
+        continue;
+      }
+      if (!scope) { element = null; break; }
+      element = Array.from(scope.querySelectorAll(`:scope > ${step.selector}`))[step.index] ?? null;
+      if (!element) break;
+      scope = element;
+    }
+  } else if (input.selector) {
+    element = Array.from(document.querySelectorAll(input.selector))[input.index ?? 0] ?? null;
+  }
+
+  if (!element) return { found: false, tag: '', hasFormOwner: false };
+
+  const owner = (element as HTMLInputElement).form ?? null;
+  return {
+    found: true,
+    tag: element.tagName.toLowerCase(),
+    type: element.getAttribute('type') || undefined,
+    hasFormOwner: owner != null,
+    formAction: owner?.getAttribute('action') ? owner.action : undefined,
+    textContent: (element.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60),
+    fieldCount: owner ? owner.elements.length : undefined,
+  };
+}
