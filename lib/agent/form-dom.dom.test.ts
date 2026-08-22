@@ -336,4 +336,60 @@ describe('applyFormFill', () => {
     expect(output.fieldsTableStale).toBe(true);
     expect(output.outcomes).toHaveLength(0);
   });
+
+  it('keeps processing later items when one throws (e.g. writing a value into a file input)', () => {
+    document.body.innerHTML = `<form><input type="file" name="doc" /><input type="text" name="phone" /></form>`;
+    const output = applyFormFill({
+      url: location.href,
+      items: [
+        item({
+          fieldId: 'f1',
+          kind: 'file',
+          expect: { tag: 'input', type: 'file', name: 'doc' },
+          value: 'C:\\fakepath\\resume.pdf',
+        }),
+        item({
+          fieldId: 'f2',
+          path: [
+            { kind: 'selector', selector: 'body', index: 0 },
+            { kind: 'selector', selector: 'form', index: 0 },
+            { kind: 'selector', selector: 'input', index: 1 },
+          ],
+          expect: { tag: 'input', type: 'text', name: 'phone' },
+          value: '13800000000',
+        }),
+      ],
+    });
+    expect(output.outcomes).toHaveLength(2);
+    expect(output.outcomes[0].status).toBe('invalid_value');
+    expect(output.outcomes[1].status).toBe('ok');
+    expect((document.querySelector('input[name=phone]') as HTMLInputElement).value).toBe('13800000000');
+  });
+
+  it('fires contenteditable input events after the DOM mutation so listeners observe the new value', () => {
+    document.body.innerHTML = `<div contenteditable="true"></div>`;
+    const host = document.querySelector('div')!;
+    let seenAtInput: string | null = null;
+    host.addEventListener('input', () => {
+      seenAtInput = host.textContent;
+    });
+
+    const output = applyFormFill({
+      url: location.href,
+      items: [
+        item({
+          kind: 'contenteditable',
+          path: [
+            { kind: 'selector', selector: 'body', index: 0 },
+            { kind: 'selector', selector: 'div', index: 0 },
+          ],
+          expect: { tag: 'div' },
+          value: '新内容',
+        }),
+      ],
+    });
+
+    expect(output.outcomes[0].status).toBe('ok');
+    expect(seenAtInput).toBe('新内容');
+  });
 });
