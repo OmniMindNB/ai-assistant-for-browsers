@@ -30,6 +30,7 @@ export const CONFIRM_TOOL_NAMES = new Set([
   'browser_set_style',
   'browser_modify_dom',
   'browser_click',
+  'browser_fill_form',
   'browser_type',
   'browser_scroll',
   'browser_select',

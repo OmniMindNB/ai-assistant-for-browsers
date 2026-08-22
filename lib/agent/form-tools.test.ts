@@ -51,3 +51,45 @@ describe('browser_get_form', () => {
     await expect(getFormTool().execute('call-1', {})).rejects.toThrow('目标标签页已关闭。');
   });
 });
+
+function fillFormTool() {
+  const tool = createBrowserTools(1).find((candidate) => candidate.name === 'browser_fill_form');
+  if (!tool) throw new Error('browser_fill_form 未注册');
+  return tool;
+}
+
+describe('browser_fill_form', () => {
+  it('is registered as a tool', () => {
+    expect(fillFormTool().name).toBe('browser_fill_form');
+  });
+
+  it('does not report partial failure as overall success', async () => {
+    sendMessage.mockResolvedValueOnce({
+      id: '1',
+      ok: true,
+      data: {
+        outcomes: [
+          { fieldId: 'f1', status: 'ok' },
+          { fieldId: 'f2', status: 'invalid_value', detail: '写入后回读不符。', actualValue: '' },
+          { fieldId: 'f3', status: 'blocked_sensitive', detail: '密码字段不代填。' },
+        ],
+      },
+    });
+    const output = await fillFormTool().execute('call-1', { fields: [] });
+    const text = (output.content[0] as { text: string }).text;
+    expect(text).toContain('1 个成功');
+    expect(text).toContain('2 个失败');
+    expect(text).toContain('f2');
+    expect(text).toContain('f3');
+  });
+
+  it('tells the model to re-read the form when the handle table is stale', async () => {
+    sendMessage.mockResolvedValueOnce({ id: '1', ok: true, data: { outcomes: [], fieldsTableStale: true } });
+    await expect(fillFormTool().execute('call-1', { fields: [] })).rejects.toThrow('browser_get_form');
+  });
+
+  it('rejects more than 50 fields in one call', async () => {
+    const fields = Array.from({ length: 51 }, (_, index) => ({ fieldId: `f${index}`, value: 'x' }));
+    await expect(fillFormTool().execute('call-1', { fields })).rejects.toThrow('50');
+  });
+});

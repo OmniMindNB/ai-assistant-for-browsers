@@ -6,6 +6,8 @@ import {
   type CaptureScreenshotResult,
   type ClickElementPayload,
   type ClickElementResult,
+  type FillFormPayload,
+  type FillFormResult,
   type GetComputedStylePayload,
   type GetComputedStyleResult,
   type GetFormPayload,
@@ -56,6 +58,7 @@ export function createBrowserTools(tabId: number): BrowserAgentTool[] {
     makeSetStyleTool(tabId),
     makeModifyDomTool(tabId),
     makeClickTool(tabId),
+    makeFillFormTool(tabId),
     makeTypeTool(tabId),
     makeSelectTool(tabId),
     makeScrollTool(tabId),
@@ -464,6 +467,63 @@ function makeClickTool(tabId: number): BrowserAgentTool {
         `已点击匹配 "${response.data.selector}" 的第 ${response.data.clickedIndex} 个元素。`,
         response.data as unknown as Record<string, unknown>,
       );
+    },
+  };
+}
+
+const MAX_FILL_FIELDS_PER_CALL = 50;
+
+function makeFillFormTool(tabId: number): BrowserAgentTool {
+  return {
+    name: 'browser_fill_form',
+    label: 'Fill Form',
+    description:
+      'Fill multiple form fields in one call using the fieldIds returned by browser_get_form, optionally clicking a submit button afterwards. Every field is verified before and after writing, so read the per-field outcomes: only "ok" means the value actually landed. Prefer one batched call over many single-field calls.',
+    parameters: Type.Object({
+      fields: Type.Array(
+        Type.Object({
+          fieldId: Type.String({ description: 'Field id from browser_get_form.' }),
+          value: Type.Optional(Type.String({ description: 'Value for text, textarea, select or contenteditable fields. For select, either the option value or its visible label.' })),
+          checked: Type.Optional(Type.Boolean({ description: 'Desired state for checkbox or radio fields.' })),
+        }),
+        { description: 'Fields to fill, at most 50 per call.' },
+      ),
+      submit: Type.Optional(
+        Type.Object({ fieldId: Type.String({ description: 'Field id of the submit button to click after filling.' }) }),
+      ),
+    }),
+    execute: async (_toolCallId, params) => {
+      const payload = params as FillFormPayload;
+      const fieldCount = payload?.fields?.length ?? 0;
+      if (fieldCount > MAX_FILL_FIELDS_PER_CALL) {
+        throw new Error(`一次最多填写 ${MAX_FILL_FIELDS_PER_CALL} 个字段，本次传入了 ${fieldCount} 个，请分批填写。`);
+      }
+
+      const response = (await sendMessage<FillFormPayload, FillFormResult>('FILL_FORM', payload, tabId)) as MessageResponse<FillFormResult>;
+      if (!response.ok || !response.data) throw new Error(response.error ?? '表单填写失败');
+      if (response.data.fieldsTableStale) {
+        throw new Error('字段表已失效（页面已变化或已导航），请重新调用 browser_get_form 获取新的 fieldId 后再填写。');
+      }
+
+      const outcomes = response.data.outcomes;
+      const succeeded = outcomes.filter((outcome) => outcome.status === 'ok');
+      const failed = outcomes.filter((outcome) => outcome.status !== 'ok');
+      const lines = [
+        `表单填写结果：${succeeded.length} 个成功，${failed.length} 个失败。`,
+        ...failed.map((outcome) =>
+          `- ${outcome.fieldId}：${outcome.status}${outcome.detail ? ` —— ${outcome.detail}` : ''}${
+            outcome.actualValue !== undefined ? `（实际值："${outcome.actualValue}"）` : ''
+          }`,
+        ),
+      ];
+      if (response.data.submitted) {
+        lines.push(`提交按钮 ${response.data.submitted.fieldId}：${response.data.submitted.status}`);
+      }
+      if (failed.length > 0) {
+        lines.push('注意：只有 ok 表示值真正写入了页面。mismatch 或 not_found 说明页面已变化，必须重新调用 browser_get_form，不要原样重试。');
+      }
+
+      return textResult(lines.join('\n'), response.data as unknown as Record<string, unknown>);
     },
   };
 }

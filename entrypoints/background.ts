@@ -3,6 +3,9 @@ import {
   type CaptureScreenshotResult,
   type ClickElementPayload,
   type ClickElementResult,
+  type FillFormFieldOutcome,
+  type FillFormPayload,
+  type FillFormResult,
   type FormFieldDescriptor,
   type GetComputedStylePayload,
   type GetComputedStyleResult,
@@ -44,9 +47,9 @@ import { resolveTargetTab } from '@/lib/agent/tab-target';
 import { sendToContentScript } from '@/lib/agent/content-script-messaging';
 import { clearConversationIdForTab } from '@/lib/agent/tab-conversation';
 import { clearPendingAskForTab, setPendingAskForTab } from '@/lib/agent/tab-pending-ask';
-import { collectFormFields } from '@/lib/agent/form-dom';
+import { applyFormFill, collectFormFields, type ApplyFillItem } from '@/lib/agent/form-dom';
 import { toFieldDescriptor } from '@/lib/agent/form-schema';
-import { setFormFieldsForTab, type FormFieldHandle } from '@/lib/agent/tab-form-fields';
+import { getFormFieldsForTab, setFormFieldsForTab, type FormFieldHandle } from '@/lib/agent/tab-form-fields';
 
 const DEFAULT_TOOL_MAX_CHARS = 12000;
 const SUPPORTED_MESSAGE_TYPES = [
@@ -62,6 +65,7 @@ const SUPPORTED_MESSAGE_TYPES = [
   'GET_COMPUTED_STYLE',
   'GET_PAGE_META',
   'GET_FORM',
+  'FILL_FORM',
   'CAPTURE_SCREENSHOT',
   'SET_STYLE',
   'MODIFY_DOM',
@@ -210,6 +214,9 @@ async function handleMessage(message: Message, sender?: MessageSender): Promise<
     case 'GET_FORM':
       return getForm(message.payload as GetFormPayload, requireTabId(message));
 
+    case 'FILL_FORM':
+      return fillForm(message.payload as FillFormPayload, requireTabId(message));
+
     case 'CAPTURE_SCREENSHOT':
       return captureScreenshot(message.payload as CaptureScreenshotPayload, requireTabId(message));
 
@@ -356,6 +363,69 @@ async function getForm(payload: GetFormPayload, tabId: number): Promise<GetFormR
     unreachable: collected.unreachable,
     truncated: collected.truncated,
   };
+}
+
+async function fillForm(payload: FillFormPayload, tabId: number): Promise<FillFormResult> {
+  const table = await getFormFieldsForTab(tabId);
+  if (!table) {
+    return { outcomes: [], fieldsTableStale: true };
+  }
+
+  const outcomes: FillFormFieldOutcome[] = [];
+  const items: ApplyFillItem[] = [];
+
+  for (const field of payload?.fields ?? []) {
+    const handle = table.fields[field.fieldId];
+    if (!handle) {
+      outcomes.push({ fieldId: field.fieldId, status: 'not_found', detail: '未知的 fieldId，请重新调用 browser_get_form。' });
+      continue;
+    }
+    // 敏感字段在离开 background 之前就被丢弃：值不进注入参数、不进确认卡片、不落库
+    // （ref: Spec-0005 §安全与隐私）。
+    if (handle.sensitive) {
+      outcomes.push({
+        fieldId: field.fieldId,
+        status: 'blocked_sensitive',
+        detail: '出于安全考虑，本扩展不代填密码与支付类字段，请提示用户手动输入。',
+      });
+      continue;
+    }
+    items.push({
+      fieldId: field.fieldId,
+      path: handle.path,
+      expect: handle.expect,
+      kind: handle.kind,
+      value: field.value,
+      checked: field.checked,
+    });
+  }
+
+  const submitHandle = payload?.submit ? table.fields[payload.submit.fieldId] : undefined;
+  const applied = await executeInTab(
+    tabId,
+    {
+      url: table.url,
+      items,
+      submit:
+        payload?.submit && submitHandle
+          ? { fieldId: payload.submit.fieldId, path: submitHandle.path, expect: submitHandle.expect }
+          : undefined,
+    },
+    applyFormFill,
+  );
+
+  if (applied.fieldsTableStale) {
+    return { outcomes: [], fieldsTableStale: true };
+  }
+
+  // 保持模型请求里的字段顺序，便于它逐条核对。
+  const byId = new Map(applied.outcomes.map((outcome) => [outcome.fieldId, outcome]));
+  const ordered: FillFormFieldOutcome[] = (payload?.fields ?? []).map((field) => {
+    const blocked = outcomes.find((outcome) => outcome.fieldId === field.fieldId);
+    return blocked ?? byId.get(field.fieldId) ?? { fieldId: field.fieldId, status: 'not_found' };
+  });
+
+  return { outcomes: ordered, submitted: applied.submitted };
 }
 
 async function getHtml(payload: GetHtmlPayload, tabId: number): Promise<GetHtmlResult> {
