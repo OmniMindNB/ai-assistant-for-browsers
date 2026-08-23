@@ -109,7 +109,6 @@ docs/               # 文档（文档驱动开发）
 - [文档体系说明](docs/README.md)
 - [进度看板与变更日志](docs/PROGRESS.md)
 - [架构决策记录 (ADR)](docs/adr/)
-- [功能规格 (Spec)](docs/specs/)
 - [隐私政策](docs/privacy-policy.md)
 
 ## 开发状态

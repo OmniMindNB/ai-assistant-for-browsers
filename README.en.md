@@ -109,7 +109,6 @@ This project follows **docs-driven development**: docs come before code, and doc
 - [Documentation overview](docs/README.md)
 - [Progress board and changelog](docs/PROGRESS.md)
 - [Architecture Decision Records (ADR)](docs/adr/)
-- [Feature specs](docs/specs/)
 - [Privacy policy](docs/privacy-policy.en.md)
 
 ## Development status
