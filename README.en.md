@@ -2,6 +2,8 @@
 
 **English** | [中文](README.md)
 
+[🚀 Install Runi from the Chrome Web Store](https://chromewebstore.google.com/detail/dhdgahnfefoojenfojbcdaohbbdoabcd)
+
 > A trustworthy browser page agent — asks before the first write action in a turn and reuses that decision only for that turn; answers are grounded in page evidence, not generic guesses. Bring your own model and API key. Persistent conversation history stays local; after you initiate a request, the current prompt, recent conversation context, and relevant page-derived results may be sent directly to your configured provider.
 
 > Your page, your way.

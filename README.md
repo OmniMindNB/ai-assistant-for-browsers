@@ -2,6 +2,8 @@
 
 **中文** | [English](README.en.md)
 
+[🚀 从 Chrome Web Store 安装 Runi](https://chromewebstore.google.com/detail/dhdgahnfefoojenfojbcdaohbbdoabcd)
+
 > 值得信赖的浏览器页面 Agent —— 每轮第一次写操作前征求确认，决定仅在该轮内复用；回答基于页面证据而非泛泛而谈。持久化对话历史只留在本地；你发起请求后，当前提示词、近期对话上下文和相关页面结果可能直接发送到你配置的 AI Provider。
 
 > 网页，如你所愿。

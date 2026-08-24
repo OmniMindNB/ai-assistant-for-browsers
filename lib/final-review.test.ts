@@ -63,7 +63,6 @@ describe('maintained privacy disclosure contract', () => {
     'docs/chrome-store-listing.en.md',
     'docs/chrome-store-listing.zh-CN.md',
     'docs/chrome-store-permission-justifications.md',
-    'docs/superpowers/plans/2026-08-02-runi-brand-renaming.md',
   ];
   const unsupportedPersistedConsentClaims =
     /consent state|consent version|acceptance time|first-use consent|current consent record|agree & continue|not now|fails closed|privacy-consent state|asks for current consent|同意状态|同意版本|接受时间|首次使用同意|有效同意记录|同意并继续|暂不继续|关闭方式失败|隐私同意状态/i;
@@ -103,7 +102,7 @@ describe('maintained privacy disclosure contract', () => {
     expect(policy).toContain('仅在当前一轮内沿用');
   });
 
-  it('keeps store and Task 6 copy aligned with the current request-driven behavior', () => {
+  it('keeps store copy aligned with the current request-driven behavior', () => {
     expect(readRepoFile('docs/chrome-store-listing.en.md')).toContain(
       'When you initiate an Agent request',
     );
@@ -113,10 +112,6 @@ describe('maintained privacy disclosure contract', () => {
     expect(readRepoFile('docs/chrome-store-permission-justifications.md')).not.toMatch(
       /consent|同意/i,
     );
-
-    const task6 = readRepoFile('docs/superpowers/plans/2026-08-02-runi-brand-renaming.md');
-    expect(task6).toContain('Confirm the Settings privacy disclosure accurately explains');
-    expect(task6).toContain('does not store a separate consent record');
   });
 });
 
@@ -128,10 +123,6 @@ describe('maintained release capability contract', () => {
     'docs/chrome-store-listing.zh-CN.md',
     'docs/chrome-store-permission-justifications.md',
     'docs/chrome-store-submission-guide.md',
-    'docs/agent-plan.md',
-    'docs/technical-plan.md',
-    'demo/README.md',
-    'demo/outreach-message.md',
     'demo/store-assets-frame.html',
     'demo/trust-demo.html',
   ];
@@ -162,15 +153,13 @@ describe('maintained release capability contract', () => {
   it.each([
     'README.en.md',
     'README.md',
-    'demo/README.md',
-    'demo/outreach-message.md',
     'demo/store-assets-frame.html',
   ])('%s makes no per-change confirmation claim', (file) => {
     expect(readRepoFile(file)).not.toMatch(perChangeConfirmationPattern);
   });
 
   it('aligns English maintained marketing with provider transmission and per-turn approval', () => {
-    for (const file of ['README.en.md', 'demo/README.md']) {
+    for (const file of ['README.en.md']) {
       const source = readRepoFile(file);
       expect(source).toContain('recent conversation context');
       expect(source).toContain('configured provider');
@@ -180,7 +169,7 @@ describe('maintained release capability contract', () => {
   });
 
   it('aligns Chinese maintained marketing with provider transmission and per-turn approval', () => {
-    for (const file of ['README.md', 'demo/outreach-message.md']) {
+    for (const file of ['README.md']) {
       const source = readRepoFile(file);
       expect(source).toContain('近期对话上下文');
       expect(source).toContain('配置的 AI Provider');

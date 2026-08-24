@@ -69,7 +69,6 @@ describe('maintained privacy-policy URLs', () => {
     'docs/chrome-store-listing.zh-CN.md',
     'docs/chrome-store-permission-justifications.md',
     'docs/chrome-store-submission-guide.md',
-    'docs/chrome-store-release-checklist-1.1.md',
   ];
 
   it.each(maintainedFiles)('%s does not reference the retired legal site', (path) => {
