@@ -8,6 +8,19 @@
 
 > Your page, your way.
 
+## Before first use
+
+Runi does not include a hosted model. Before your first conversation, configure your own AI provider and API key. Using DeepSeek as an example:
+
+1. Open the [DeepSeek Platform API Keys page](https://platform.deepseek.com/api_keys), sign in, then create and copy an API key. API usage may incur charges, so also check your balance and DeepSeek's current pricing.
+2. Open the Runi side panel. If no provider is configured, use the banner's **Settings** link; you can also open **Settings** from the top-right menu.
+3. On **Model providers**, select **Add provider**, then choose `DeepSeek` under **Quick preset**.
+4. The preset fills in `OpenAI Chat Completions`, Base URL `https://api.deepseek.com`, and default model `deepseek-v4-pro`. You normally do not need to change them. Do not append `/chat/completions` to the Base URL.
+5. Paste the key into **API Key** and select **Add**. Never put a real API key in an issue, screenshot, or repository commit.
+6. Return to the side panel, confirm that the composer shows `DeepSeek / deepseek-v4-pro`, and send a message. You can switch providers or models from the same control later.
+
+See the [Provider setup guide](docs/provider-setup.en.md) for more detail and troubleshooting. Refer to the [official DeepSeek API documentation](https://api-docs.deepseek.com/) for its currently available models and endpoints.
+
 ## Core features
 
 - 🔒 **Confirm before acting**: a Deny-First permission model sorts every tool into three tiers — read-only runs directly, write/interactive tools need confirmation, unknown tools are always denied. The first write action in a turn raises a confirmation card, and the decision is reused only for that turn. `browser_navigate` is restricted to http(s) independently in both the permission layer and the background worker, and page-resource fetches reject loopback, private, link-local, and IPv4-mapped IPv6 targets

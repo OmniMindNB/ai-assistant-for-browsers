@@ -8,6 +8,19 @@
 
 > 网页，如你所愿。
 
+## 使用前配置
+
+Runi 不提供内置托管模型。首次对话前，需要配置你自己的 AI Provider 和 API Key。以 DeepSeek 为例：
+
+1. 前往 [DeepSeek 开放平台的 API Keys 页面](https://platform.deepseek.com/api_keys)，登录后创建并复制 API Key。API 调用可能产生费用，请同时确认账户余额和 DeepSeek 的计费规则。
+2. 打开 Runi 侧边栏。未配置 Provider 时，顶部会显示提示；点击其中的“设置”，也可以从右上角菜单进入“设置”。
+3. 在“模型 Provider”页面点击“添加 Provider”，然后在“快速预设”中选择 `DeepSeek`。
+4. 预设会自动填写协议 `OpenAI Chat Completions`、Base URL `https://api.deepseek.com` 和默认模型 `deepseek-v4-pro`，通常无需修改。Base URL 不要追加 `/chat/completions`。
+5. 在 `API Key` 字段粘贴刚创建的密钥，点击“添加”。不要把真实 API Key 发到 issue、截图或提交到仓库。
+6. 返回侧边栏，确认输入框下方显示 `DeepSeek / deepseek-v4-pro`，发送一条消息即可开始使用。需要时可从同一位置切换 Provider 或模型。
+
+详细说明和常见问题见 [Provider 配置指南](docs/provider-setup.md)。DeepSeek 当前可用模型与接口以其[官方 API 文档](https://api-docs.deepseek.com/)为准。
+
 ## 核心功能
 
 - 🔒 **确认后才动手**：Deny-First 权限模型把工具分成「只读直接放行 / 写操作需确认 / 未知工具一律拒绝」三档；每轮第一次写操作执行前弹出确认卡片，决定仅在该轮内复用。`browser_navigate` 在权限层和后台双重校验，只允许 http(s)；页面外部资源抓取会拒绝环回、内网、链路本地与 IPv4-mapped IPv6 地址

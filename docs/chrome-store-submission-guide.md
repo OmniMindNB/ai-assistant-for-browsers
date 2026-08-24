@@ -36,6 +36,7 @@ pnpm zip
 英文是默认 Store 语言。
 
 1. 从 [chrome-store-listing.en.md](chrome-store-listing.en.md) 粘贴名称、简短说明、类别、单一用途和详细说明。
+   - 确认详细说明仍包含首次使用前配置 Provider/API Key 的步骤，以及 DeepSeek 预设示例。
 2. 类别选择 `Productivity`。
 3. 上传英文素材目录 `docs/store-assets/en/` 中的文件：
    - `promo-small-440x280.png`
@@ -53,6 +54,7 @@ pnpm zip
 
 1. 在 Store listing 的本地化管理中添加 `zh_CN`。
 2. 从 [chrome-store-listing.zh-CN.md](chrome-store-listing.zh-CN.md) 粘贴名称、简短说明、类别、单一用途和详细说明。
+   - 确认详细说明仍包含首次使用前配置 Provider/API Key 的步骤，以及 DeepSeek 预设示例。
 3. 上传简体中文素材目录 `docs/store-assets/zh-CN/` 中的文件：
    - `promo-small-440x280.png`
    - `screenshot-01-summary.png`
@@ -110,6 +112,7 @@ pnpm zip
 
 - 软件包版本、默认语言、权限和商品 ID 均正确。
 - 英文默认 listing 与 `zh_CN` listing 都已保存。
+- 两种 listing 的详细说明均包含 Provider/API Key 首次配置步骤，且字段名与当前设置页一致。
 - 两套本地化素材均来自对应目录，尺寸和语言正确。
 - 四条截图说明与图片顺序一致。
 - 截图不含 API Key、邮箱、浏览器个人资料、无关标签页或第三方受保护内容。
