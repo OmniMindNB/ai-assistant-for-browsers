@@ -40,6 +40,16 @@ describe('buildSystemPrompt structure', () => {
   it('names uploaded files and images as untrusted data in the instruction-priority rule', () => {
     expect(SYSTEM_PROMPT).toContain('用户上传的文件与图片内容');
   });
+
+  // 划词和附件那一轮没有工具调用，页面文本是直接嵌在 user message 里的：
+  // 这条规则必须自己覆盖到，否则就只能把防注入句写回 user turn。
+  it('covers selection and attachment text embedded in the user message', () => {
+    expect(SYSTEM_PROMPT).toContain('选中文本');
+  });
+
+  it('tells the model not to restate the safety rules back to the user', () => {
+    expect(SYSTEM_PROMPT).toContain('不要向用户复述');
+  });
 });
 
 describe('buildSystemPrompt tool listing', () => {
