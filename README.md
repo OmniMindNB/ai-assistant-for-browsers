@@ -103,19 +103,3 @@ lib/                # 共享库
   page-resource-fetch.ts    # 页面资源抓取的 SSRF 防护
 docs/               # 文档（文档驱动开发）
 ```
-
-## 文档
-
-本项目采用**文档驱动开发**。先文档后代码，文档为单一事实来源。
-
-- [文档体系说明](docs/README.md)
-- [进度看板与变更日志](docs/PROGRESS.md)
-- [架构决策记录 (ADR)](docs/adr/)
-- [隐私政策](docs/privacy-policy.md)
-
-## 开发状态
-
-🚧 开发中（当前版本 1.1.2）—— Phase 0/1/2、Agent Phase A（Agent 循环 + 只读检查工具）与
-Agent Phase B（写入/交互工具 + 权限确认 UI）已完成；Agent Phase C（CDP / 网络嗅探 / 多标签 /
-抓取导出）未开始。历史上的脚本注入能力（`browser_inject_script` / `userScripts` 权限）与整轮撤销
-已分别在 1.1.0 商店审查和 2026-08-01 移除，详见[进度看板](docs/PROGRESS.md)。

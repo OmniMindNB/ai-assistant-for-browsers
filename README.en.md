@@ -103,20 +103,3 @@ lib/                # Shared libraries
   page-resource-fetch.ts    # SSRF protection for page-resource fetches
 docs/               # Documentation (docs-driven development)
 ```
-
-## Documentation
-
-This project follows **docs-driven development**: docs come before code, and docs are the single source of truth.
-
-- [Documentation overview](docs/README.md)
-- [Progress board and changelog](docs/PROGRESS.md)
-- [Architecture Decision Records (ADR)](docs/adr/)
-- [Privacy policy](docs/privacy-policy.en.md)
-
-## Development status
-
-🚧 In development (current version 1.1.2) — Phase 0/1/2, Agent Phase A (agent loop + read-only inspection tools),
-and Agent Phase B (write/interactive tools + permission confirmation UI) are complete; Agent Phase C
-(CDP / network sniffing / multi-tab / scraping export) hasn't started. The former script-injection capability
-(`browser_inject_script` / the `userScripts` permission) and whole-turn undo were removed in the 1.1.0 store
-review and on 2026-08-01 respectively — see the [progress board](docs/PROGRESS.md) for details.
