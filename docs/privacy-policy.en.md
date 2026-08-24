@@ -25,7 +25,7 @@ Provider settings, API keys, interface preferences, and conversation history are
 | Data category | What may be processed | Local handling | External transmission |
 |---|---|---|---|
 | Current-page identity and content | Page title, URL, language, readable text, selected text, HTML, DOM structure and attributes, page metadata, inline or external scripts and stylesheets, and computed styles, depending on the tools used for your request | Held in runtime memory and tool context; page tool results are not added to Runi’s persistent conversation database | Relevant text and tool results are sent directly to your configured AI provider so it can answer or act on your request |
-| Visible-tab screenshot | An image of the visible area of the active target tab, only when the screenshot tool is used | Held transiently as a data URL in tool details and not added to Runi’s persistent conversation database | In version `1.1.2`, the screenshot image bytes are not included in the AI-provider request; the provider receives only a text notice that a screenshot was captured and its data-URL length |
+| Visible-tab screenshot | An image of the visible area of the active target tab, only when the screenshot tool is used | Held transiently as a data URL in tool details and not added to Runi’s persistent conversation database | In version `1.1.3`, the screenshot image bytes are not included in the AI-provider request; the provider receives only a text notice that a screenshot was captured and its data-URL length |
 | User-selected attachments | File name, MIME type, size, and the content of a text file, image, or PDF that you explicitly attach to a request | Text and image attachment content may be stored with browser-local conversation history. PDF text is extracted locally for the current request; only PDF metadata is stored, while extracted PDF text is not persisted | When you send the request, text content, image bytes, or locally extracted PDF text are sent directly to your configured AI provider so it can answer your request |
 | Conversation content | Your prompts, quick-action prompts, recent conversation history, and AI responses; this content may include personal or confidential information that you choose to enter | Conversation messages are stored in browser-local IndexedDB | The current prompt and recent conversation context are sent directly to your configured AI provider |
 | Provider configuration and credentials | Provider name, Base URL, model, protocol, and API key | Stored in `chrome.storage.local` and not synced by Runi | The Base URL selects the destination. The model and request content are sent to that endpoint, and the API key is sent to that endpoint as an authentication header |
@@ -68,7 +68,7 @@ Use an HTTPS Base URL for every remote provider. Runi sends requests to the conf
 
 ## 7. Browser permissions
 
-Runi `1.1.2` uses this permission set:
+Runi `1.1.3` uses this permission set:
 
 | Permission | Purpose |
 |---|---|

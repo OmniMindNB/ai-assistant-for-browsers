@@ -1,8 +1,8 @@
-# Chrome Web Store `1.1.2` 更新操作指南
+# Chrome Web Store `1.1.3` 更新操作指南
 
-最后更新：2026-08-21
+最后更新：2026-08-24
 
-本指南用于更新**现有的 Runi Chrome Web Store 商品**到 `1.1.2`。必须继续使用现有商品 ID，不要新建另一个商品。
+本指南用于更新**现有的 Runi Chrome Web Store 商品**到 `1.1.3`。必须继续使用现有商品 ID，不要新建另一个商品。
 
 ## 1. 准备并核验上传包
 
@@ -17,8 +17,8 @@ pnpm zip
 
 上传前确认：
 
-- 产物为 `.output/runi-1.1.2-chrome.zip`。
-- 产物 `manifest.json` 中 `version` 为 `1.1.2`，`default_locale` 为 `en`。
+- 产物为 `.output/runi-1.1.3-chrome.zip`。
+- 产物 `manifest.json` 中 `version` 为 `1.1.3`，`default_locale` 为 `en`。
 - 权限为 `sidePanel`、`storage`、`scripting`、`activeTab`、`tabs`，主机访问权限为 `<all_urls>`；不包含 `userScripts`。
 - `_locales/en/` 与 `_locales/zh_CN/` 均已包含在 ZIP 中。
 - ZIP 不包含 API Key、个人邮箱截图、测试账号信息或无关文件。
@@ -27,7 +27,7 @@ pnpm zip
 
 1. 登录 Chrome Web Store Developer Dashboard。
 2. 打开现有 Runi 商品，核对现有商品 ID 和当前发布状态。
-3. 在该商品的 Package 页面上传 `.output/runi-1.1.2-chrome.zip`。
+3. 在该商品的 Package 页面上传 `.output/runi-1.1.3-chrome.zip`。
 4. 不要通过任何“新商品”流程重复发布 Runi。
 5. 上传后再次检查 Dashboard 解析出的版本号和权限差异；如果出现计划外的新权限，停止并回到源码核查。
 
