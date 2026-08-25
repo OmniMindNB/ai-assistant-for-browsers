@@ -125,6 +125,15 @@ describe('collectFormFields', () => {
     expect(output.truncated).toBe(true);
   });
 
+  it('reserves headroom for real form fields on a link-heavy page', () => {
+    const links = '<a href="/l">link</a>'.repeat(50);
+    render(`<nav>${links}</nav><form>${'<input name="x" />'.repeat(5)}</form>`);
+    const output = collectFormFields({ ...INPUT, maxFields: 10 });
+    const inputCount = output.raws.filter((raw) => raw.tag === 'input').length;
+    expect(inputCount).toBe(5); // all 5 real form fields survive despite 50 links appearing first in document order
+    expect(output.truncated).toBe(true); // most of the 50 links got dropped by the generic quota
+  });
+
   it('skips hidden fields unless includeHidden is set', () => {
     render(`<form><input name="visible" /><input name="secret" type="hidden" /></form>`);
     expect(collectFormFields(INPUT).raws.some((raw) => raw.name === 'secret')).toBe(false);

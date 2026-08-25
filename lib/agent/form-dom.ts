@@ -31,6 +31,10 @@ export interface CollectFormOutput {
 export function collectFormFields(input: CollectFormInput): CollectFormOutput {
   const maxFields = input.maxFields;
   const maxOptions = input.maxOptions;
+  // 通用可交互元素（链接/role/tabindex）最多只能占用一半预算，避免导航栏密集的页面
+  // 在遍历到真正的 <form> 之前就把配额耗尽——这是纯加性功能，不能让既有的表单采集行为退化。
+  const genericFieldQuota = Math.max(1, Math.floor(maxFields / 2));
+  let genericCollected = 0;
   const includeHidden = input.includeHidden === true;
   const raws: RawFormField[] = [];
   const forms: CollectedFormInfo[] = [];
@@ -65,6 +69,17 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
     if ((element as HTMLElement).isContentEditable === true) return true;
     if (tag === 'a' && element.getAttribute('href')) return true;
     return hasInteractiveRole(element) || hasExplicitTabindex(element);
+  };
+
+  const isStandardFieldTag = (element: Element): boolean => {
+    const tag = element.tagName.toLowerCase();
+    return (
+      tag === 'input' ||
+      tag === 'textarea' ||
+      tag === 'select' ||
+      tag === 'button' ||
+      (element as HTMLElement).isContentEditable === true
+    );
   };
 
   const textOf = (element: Element | null | undefined): string | undefined => {
@@ -199,6 +214,12 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
       }
 
       if (!isFieldTag(element)) continue;
+
+      const isGeneric = !isStandardFieldTag(element);
+      if (isGeneric && genericCollected >= genericFieldQuota) {
+        truncated = true;
+        continue;
+      }
       if (raws.length >= maxFields) {
         truncated = true;
         return;
@@ -207,6 +228,7 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
       const hidden = (raw.type || '').toLowerCase() === 'hidden' || !raw.visible;
       if (hidden && !includeHidden) continue;
       raws.push(raw);
+      if (isGeneric) genericCollected += 1;
     }
   };
 
