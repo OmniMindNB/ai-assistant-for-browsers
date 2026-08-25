@@ -25,6 +25,7 @@ export type MessageType =
   | 'SCROLL_PAGE'
   | 'NAVIGATE_TAB'
   | 'SET_STORAGE'
+  | 'SET_AGENT_OVERLAY'
   | 'CHAT';
 
 export interface Message<T = unknown> {
@@ -313,6 +314,19 @@ export interface SetStoragePayload {
 export interface SetStorageResult {
   area: 'local' | 'session';
   key: string;
+}
+
+/**
+ * 执行期遮罩的开关。label 必须由侧边栏本地化好再传下来——内容脚本跑在每个页面里，
+ * 不能为几句文案把完整 i18n 字典打进产物（同 entrypoints/content.ts 顶部的说明）。
+ */
+export interface SetAgentOverlayPayload {
+  active: boolean;
+  label?: string;
+}
+
+export interface SetAgentOverlayResult {
+  active: boolean;
 }
 
 export type FormFieldKind =
