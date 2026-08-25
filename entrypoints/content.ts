@@ -6,7 +6,10 @@ import {
   type MessageResponse,
   type PageContent,
   type PageSelection,
+  type SetAgentOverlayPayload,
+  type SetAgentOverlayResult,
 } from '@/lib/messaging';
+import { mountOverlay, moveOverlayCursor, unmountOverlay } from '@/lib/agent/agent-overlay';
 import { loadLocale, resolveLocale } from '@/lib/i18n/core';
 import { SELECTION_ASK_BUBBLE_LABEL } from '@/lib/i18n/locales/selection-ask-bubble-label';
 import {
@@ -29,11 +32,24 @@ export default defineContentScript({
           respond(message.id, sendResponse, getSelection);
           return true;
         }
+        if (message.type === 'SET_AGENT_OVERLAY') {
+          const payload = message.payload as SetAgentOverlayPayload;
+          respond(message.id, sendResponse, (): SetAgentOverlayResult => {
+            if (payload.active) {
+              mountOverlay(payload.label ?? '');
+            } else {
+              unmountOverlay();
+            }
+            return { active: payload.active };
+          });
+          return true;
+        }
         return false;
       },
     );
 
     initSelectionAskBubble();
+    initAgentCursorBridge();
   },
 });
 
@@ -193,4 +209,20 @@ function removeBubble(): void {
   bubbleHost?.remove();
   bubbleHost = null;
   bubbleSelectionText = '';
+}
+
+// ---- 模拟光标的跨 world 桥 ----
+// 点击是在 MAIN world 的注入函数里派发的，光标却由这个 ISOLATED world 的内容脚本持有。
+// 让注入函数自己算完 rect 后直接派发事件、再 await 250ms，好处是光标停的位置与事件
+// 派发的位置必然是同一个值；若改成 background 两段式（先探针取 rect、再下发移动、
+// 再注入点击），目标要解析两次，两次之间元素可能已经变了——光标指着 A、实际点了 B，
+// 这个功能就从建立信任变成破坏信任（ref: 2026-08-25-execution-overlay-design.md §3.4）。
+function initAgentCursorBridge(): void {
+  window.addEventListener('runi:cursor-move', (event) => {
+    const detail = (event as CustomEvent<{ x?: unknown; y?: unknown }>).detail;
+    const x = Number(detail?.x);
+    const y = Number(detail?.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    moveOverlayCursor(x, y);
+  });
 }
