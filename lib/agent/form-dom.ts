@@ -453,6 +453,19 @@ export function applyFormFill(input: ApplyFillInput): ApplyFillOutput {
       if (disabled || !hasBox || covered) {
         submitted = { fieldId: input.submit.fieldId, status: 'not_clickable' };
       } else {
+        // ⚠️ 与 clickElementInPage 重复：两处都是被 executeScript 序列化注入页面的独立函数，
+        // 不能引用模块作用域的共享 helper，只能各自内联。
+        const highlight = document.createElement('div');
+        highlight.style.cssText =
+          `position:fixed;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;` +
+          'box-sizing:border-box;border:2px solid #3b82f6;border-radius:4px;box-shadow:0 0 0 4px rgba(59,130,246,0.35);' +
+          'pointer-events:none;z-index:2147483647;transition:opacity 300ms ease;';
+        document.body.appendChild(highlight);
+        setTimeout(() => {
+          highlight.style.opacity = '0';
+          setTimeout(() => highlight.remove(), 300);
+        }, 250);
+
         const pointerOpts = { bubbles: true, cancelable: true, clientX: centerX, clientY: centerY, pointerId: 1, pointerType: 'mouse', isPrimary: true };
         const mouseOpts = { bubbles: true, cancelable: true, clientX: centerX, clientY: centerY, button: 0 };
         button.dispatchEvent(new PointerEvent('pointerover', pointerOpts));
@@ -551,6 +564,19 @@ export function clickElementInPage(input: { selector: string; index: number }): 
     };
   }
 
+  // ⚠️ 与 applyFormFill 的 submit 分支重复：两处都是被 executeScript 序列化注入页面的独立函数，
+  // 不能引用模块作用域的共享 helper，只能各自内联。
+  const highlight = document.createElement('div');
+  highlight.style.cssText =
+    `position:fixed;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;` +
+    'box-sizing:border-box;border:2px solid #3b82f6;border-radius:4px;box-shadow:0 0 0 4px rgba(59,130,246,0.35);' +
+    'pointer-events:none;z-index:2147483647;transition:opacity 300ms ease;';
+  document.body.appendChild(highlight);
+  setTimeout(() => {
+    highlight.style.opacity = '0';
+    setTimeout(() => highlight.remove(), 300);
+  }, 250);
+
   const pointerOpts = { bubbles: true, cancelable: true, clientX: centerX, clientY: centerY, pointerId: 1, pointerType: 'mouse', isPrimary: true };
   const mouseOpts = { bubbles: true, cancelable: true, clientX: centerX, clientY: centerY, button: 0 };
   target.dispatchEvent(new PointerEvent('pointerover', pointerOpts));
@@ -637,6 +663,18 @@ export function selectOptionInPage(input: { selector: string; index: number; val
   if (!option) {
     return { status: 'invalid_value', detail: `没有 value 或文案等于 "${input.value}" 的选项，原值未改动。`, actualValue: select.value };
   }
+
+  const rect = select.getBoundingClientRect();
+  const highlight = document.createElement('div');
+  highlight.style.cssText =
+    `position:fixed;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;` +
+    'box-sizing:border-box;border:2px solid #3b82f6;border-radius:4px;box-shadow:0 0 0 4px rgba(59,130,246,0.35);' +
+    'pointer-events:none;z-index:2147483647;transition:opacity 300ms ease;';
+  document.body.appendChild(highlight);
+  setTimeout(() => {
+    highlight.style.opacity = '0';
+    setTimeout(() => highlight.remove(), 300);
+  }, 250);
 
   select.value = option.value;
   select.dispatchEvent(new Event('input', { bubbles: true }));

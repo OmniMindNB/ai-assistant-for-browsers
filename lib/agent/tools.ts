@@ -51,6 +51,7 @@ export function createBrowserTools(tabId: number, config: BrowserToolsConfig = {
   return [
     browserGetActiveTabTool,
     makeAskUserTool(config.onAskUser),
+    waitTool,
     makeReadPageTool(tabId),
     makeGetPageMetaTool(tabId),
     makeInspectPageImplementationTool(tabId),
@@ -110,6 +111,28 @@ function makeAskUserTool(onAskUser?: BrowserToolsConfig['onAskUser']): BrowserAg
     },
   };
 }
+
+// 不带 browser_ 前缀，理由同 ask_user：不修改页面或浏览器状态。
+const waitTool: BrowserAgentTool = {
+  name: 'wait',
+  label: 'Wait',
+  description: '等待指定秒数，用于页面或数据还没加载完成时的短暂等待。',
+  parameters: Type.Object({
+    seconds: Type.Optional(Type.Number({ description: '等待的秒数，1-15，默认 2。' })),
+  }),
+  execute: async (_toolCallId, params, signal) => {
+    const raw = params && typeof params === 'object' && 'seconds' in params ? (params as { seconds?: unknown }).seconds : undefined;
+    const seconds = Math.min(15, Math.max(1, typeof raw === 'number' && Number.isFinite(raw) ? raw : 2));
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(resolve, seconds * 1000);
+      signal?.addEventListener('abort', () => {
+        clearTimeout(timer);
+        reject(new Error('等待已被中止。'));
+      });
+    });
+    return textResult(`已等待 ${seconds} 秒。`, { seconds });
+  },
+};
 
 function makeReadPageTool(tabId: number): BrowserAgentTool {
   return {

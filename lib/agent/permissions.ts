@@ -27,6 +27,8 @@ export const READ_ONLY_TOOL_NAMES = new Set([
   'browser_get_form',
   // 不修改页面或浏览器状态——它本身就是"停下来问用户"，不需要写确认闸门再问一遍。
   'ask_user',
+  // 同上：纯粹的计时等待，不碰页面或浏览器状态。
+  'wait',
 ]);
 
 export const CONFIRM_TOOL_NAMES = new Set([
@@ -58,6 +60,21 @@ export function decideToolPermission(toolName: string, args: unknown): Permissio
     }
     if (!isHttpUrl) {
       return { level: 'deny', reason: '仅允许跳转到 http/https 地址。' };
+    }
+  }
+
+  // browser_click 的 fieldId 路径走存好的字段句柄表，不经过 CSS selector，天然不受此检查约束。
+  if (toolName === 'browser_click' && !extractStringArg(args, 'fieldId')) {
+    const selector = extractStringArg(args, 'selector');
+    if (isRootContainerSelector(selector)) {
+      return { level: 'deny', reason: 'selector 命中了页面根容器（html/body/#root 等），已阻止。' };
+    }
+  }
+
+  if (toolName === 'browser_modify_dom') {
+    const selector = extractStringArg(args, 'selector');
+    if (isRootContainerSelector(selector)) {
+      return { level: 'deny', reason: 'selector 命中了页面根容器（html/body/#root 等），已阻止。' };
     }
   }
 
@@ -143,4 +160,17 @@ function extractStringArg(args: unknown, key: string): string {
   if (!args || typeof args !== 'object' || !(key in args)) return '';
   const value = (args as Record<string, unknown>)[key];
   return typeof value === 'string' ? value : '';
+}
+
+const ROOT_CONTAINER_SELECTORS = new Set(['html', 'body', ':root', '#root', '#app', '*']);
+
+/**
+ * selector 兜底路径理论上可以命中 html/body/#root 这类页面根容器（例如对 body 做 remove），
+ * 一旦命中就是整页级破坏，值得在 selector 字符串层面直接拦截，不必等到页面里才发现。
+ */
+export function isRootContainerSelector(selector: string): boolean {
+  if (!selector.trim()) return false;
+  return selector
+    .split(',')
+    .some((branch) => ROOT_CONTAINER_SELECTORS.has(branch.trim().toLowerCase()));
 }

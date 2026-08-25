@@ -88,6 +88,23 @@ describe('clickElementInPage', () => {
   it('reports not_found when nothing matches', () => {
     expect(clickElementInPage({ selector: '.missing', index: 0 }).status).toBe('not_found');
   });
+
+  it('flashes a highlight overlay on the clicked element', () => {
+    document.body.innerHTML = `<button>发送</button>`;
+    const before = document.body.children.length;
+    expect(clickElementInPage({ selector: 'button', index: 0 }).status).toBe('ok');
+    expect(document.body.children.length).toBe(before + 1);
+    const highlight = document.body.lastElementChild as HTMLElement;
+    expect(highlight).not.toBe(document.querySelector('button'));
+    expect(highlight.style.position).toBe('fixed');
+  });
+
+  it('does not flash a highlight when the click is refused', () => {
+    document.body.innerHTML = `<button disabled>发送</button>`;
+    const before = document.body.children.length;
+    clickElementInPage({ selector: 'button', index: 0 });
+    expect(document.body.children.length).toBe(before);
+  });
 });
 
 describe('typeTextInPage', () => {
@@ -129,5 +146,15 @@ describe('selectOptionInPage', () => {
     const select = document.querySelector('select')!;
     expect(selectOptionInPage({ selector: 'select', index: 0, value: '广州' }).status).toBe('invalid_value');
     expect(select.value).toBe('bj');
+  });
+
+  it('flashes a highlight overlay on the selected element', () => {
+    document.body.innerHTML = `<select><option value="bj">北京</option><option value="sh">上海</option></select>`;
+    const before = document.body.children.length;
+    expect(selectOptionInPage({ selector: 'select', index: 0, value: 'sh' }).status).toBe('ok');
+    expect(document.body.children.length).toBe(before + 1);
+    const highlight = document.body.lastElementChild as HTMLElement;
+    expect(highlight).not.toBe(document.querySelector('select'));
+    expect(highlight.style.position).toBe('fixed');
   });
 });

@@ -33,6 +33,10 @@ export function describeToolActivity(toolName: string, args: unknown, status: Ac
       return plain(status, 'agentActivity.tool.getActiveTab');
     case 'ask_user':
       return withTarget(status, 'agentActivity.now.askUser', 'agentActivity.done.askUser', 'agentActivity.failed.askUser', str('question'));
+    case 'wait': {
+      const seconds = typeof record.seconds === 'number' && Number.isFinite(record.seconds) ? record.seconds : 2;
+      return withTarget(status, 'agentActivity.now.wait', 'agentActivity.done.wait', 'agentActivity.failed.wait', String(seconds));
+    }
     case 'browser_read_page':
       return plain(status, 'agentActivity.tool.readPage');
     case 'browser_get_page_meta':

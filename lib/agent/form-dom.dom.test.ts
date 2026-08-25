@@ -520,4 +520,22 @@ describe('applyFormFill', () => {
       expect((event as PointerEvent).pointerType).toBe('mouse');
     }
   });
+
+  it('flashes a highlight overlay on the submit target before dispatching the click', () => {
+    render(`<button type="submit">提交</button>`);
+    const buttonRaw = collectFormFields(INPUT).raws.find((raw) => raw.tag === 'button')!;
+    const submitExpect = { tag: 'button', type: 'submit' };
+    const before = document.body.children.length;
+
+    applyFormFill({
+      url: location.href,
+      items: [],
+      submit: { fieldId: 'f1', path: buttonRaw.path, expect: submitExpect },
+    });
+
+    expect(document.body.children.length).toBe(before + 1);
+    const highlight = document.body.lastElementChild as HTMLElement;
+    expect(highlight.style.position).toBe('fixed');
+    expect(highlight.style.pointerEvents).toBe('none');
+  });
 });

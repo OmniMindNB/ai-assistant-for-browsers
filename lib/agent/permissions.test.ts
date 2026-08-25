@@ -21,6 +21,10 @@ describe('decideToolPermission', () => {
     expect(decideToolPermission('ask_user', { question: '你想让我提交这个表单吗？' })).toEqual({ level: 'always_allow' });
   });
 
+  it('always allows wait — it does not mutate page or browser state', () => {
+    expect(decideToolPermission('wait', { seconds: 2 })).toEqual({ level: 'always_allow' });
+  });
+
   it('denies an unknown tool', () => {
     expect(decideToolPermission('browser_made_up', {}).level).toBe('deny');
   });
@@ -56,6 +60,31 @@ describe('decideToolPermission', () => {
       level: 'confirm',
       reason: expect.stringContaining('修改页面'),
     });
+  });
+
+  it('denies browser_click when the selector targets a page-root container', () => {
+    for (const selector of ['body', 'HTML', '#root', '#app', ':root', '*', 'div, body']) {
+      expect(decideToolPermission('browser_click', { selector }).level).toBe('deny');
+    }
+  });
+
+  it('allows browser_click by fieldId even if a stray selector arg looks like a root container', () => {
+    // fieldId 路径走字段句柄表，不经过 CSS selector，selector 字段应被忽略。
+    expect(decideToolPermission('browser_click', { fieldId: 'f1', selector: 'body' }).level).toBe('confirm');
+  });
+
+  it('requires confirmation for browser_click with an ordinary selector', () => {
+    expect(decideToolPermission('browser_click', { selector: '.submit-button' }).level).toBe('confirm');
+  });
+
+  it('denies browser_modify_dom when the selector targets a page-root container', () => {
+    for (const selector of ['body', 'html', '#root', '#app']) {
+      expect(decideToolPermission('browser_modify_dom', { selector, action: 'remove' }).level).toBe('deny');
+    }
+  });
+
+  it('requires confirmation for browser_modify_dom with an ordinary selector', () => {
+    expect(decideToolPermission('browser_modify_dom', { selector: '.ad-banner', action: 'remove' }).level).toBe('confirm');
   });
 });
 
