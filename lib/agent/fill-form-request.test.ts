@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FillFormFieldOutcome, FillFormPayload } from '@/lib/messaging';
-import { mergeFillOutcomes, planFormFill } from './fill-form-request';
+import { mergeFillOutcomes, planFieldClick, planFormFill } from './fill-form-request';
 import type { FormFieldHandle, FormFieldTable } from './tab-form-fields';
 
 function handle(overrides: Partial<FormFieldHandle> = {}): FormFieldHandle {
@@ -151,5 +151,23 @@ describe('mergeFillOutcomes', () => {
 
   it('returns an empty list when no fields were requested', () => {
     expect(mergeFillOutcomes({ fields: [] }, [], [{ fieldId: 'stray', status: 'ok' }])).toEqual([]);
+  });
+});
+
+describe('planFieldClick', () => {
+  it('reports no_table when the tab has no handle table at all', () => {
+    expect(planFieldClick('f1', undefined)).toEqual({ ok: false, reason: 'no_table' });
+  });
+
+  it('reports unknown_field when the fieldId is not in the table', () => {
+    expect(planFieldClick('f9', table({ f1: handle() }))).toEqual({ ok: false, reason: 'unknown_field' });
+  });
+
+  it('resolves a known fieldId to its path and expected fingerprint', () => {
+    const h = handle({ kind: 'link', expect: { tag: 'a', label: '登录' } });
+    expect(planFieldClick('f1', table({ f1: h }))).toEqual({
+      ok: true,
+      submit: { fieldId: 'f1', path: h.path, expect: h.expect },
+    });
   });
 });

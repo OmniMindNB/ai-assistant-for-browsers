@@ -82,3 +82,17 @@ export function mergeFillOutcomes(
     return short ?? byId.get(field.fieldId) ?? { fieldId: field.fieldId, status: 'not_found' };
   });
 }
+
+export interface FieldClickPlan {
+  ok: boolean;
+  reason?: 'no_table' | 'unknown_field';
+  submit?: { fieldId: string; path: FormFieldHandle['path']; expect: FormFieldHandle['expect'] };
+}
+
+/** browser_click(fieldId) 的查表与校验：background 只负责把结果送进页面执行。 */
+export function planFieldClick(fieldId: string, table: FormFieldTable | undefined): FieldClickPlan {
+  if (!table) return { ok: false, reason: 'no_table' };
+  const handle = table.fields[fieldId];
+  if (!handle) return { ok: false, reason: 'unknown_field' };
+  return { ok: true, submit: { fieldId, path: handle.path, expect: handle.expect } };
+}
