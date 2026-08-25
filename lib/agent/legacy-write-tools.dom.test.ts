@@ -44,15 +44,37 @@ Object.defineProperty(HTMLElement.prototype, 'isContentEditable', {
 describe('clickElementInPage', () => {
   beforeEach(() => { document.body.innerHTML = ''; });
 
-  it('dispatches a full pointer/mouse sequence instead of a bare click()', () => {
+  it('dispatches a full hover + pointer/mouse sequence instead of a bare click()', () => {
     document.body.innerHTML = `<button>发送</button>`;
     const button = document.querySelector('button')!;
     const seen: string[] = [];
-    for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+    for (const type of [
+      'pointerover', 'pointerenter', 'mouseover', 'mouseenter',
+      'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click',
+    ]) {
       button.addEventListener(type, () => seen.push(type));
     }
     expect(clickElementInPage({ selector: 'button', index: 0 }).status).toBe('ok');
-    expect(seen).toEqual(['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']);
+    expect(seen).toEqual([
+      'pointerover', 'pointerenter', 'mouseover', 'mouseenter',
+      'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click',
+    ]);
+  });
+
+  it('dispatches pointerdown/pointerup as real PointerEvent instances, not MouseEvent', () => {
+    document.body.innerHTML = `<button>发送</button>`;
+    const button = document.querySelector('button')!;
+    const seenEvents: Event[] = [];
+    for (const type of ['pointerdown', 'pointerup']) {
+      button.addEventListener(type, (event) => seenEvents.push(event));
+    }
+    clickElementInPage({ selector: 'button', index: 0 });
+    expect(seenEvents).toHaveLength(2);
+    for (const event of seenEvents) {
+      expect(event).toBeInstanceOf(PointerEvent);
+      expect((event as PointerEvent).pointerType).toBe('mouse');
+      expect((event as PointerEvent).isPrimary).toBe(true);
+    }
   });
 
   it('refuses to report success for a disabled button', () => {

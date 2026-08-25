@@ -485,4 +485,39 @@ describe('applyFormFill', () => {
     });
     expect(mismatchOutput.submitted?.status).toBe('mismatch');
   });
+
+  it('dispatches a full hover + pointer/mouse sequence for the submit target, with real PointerEvents', () => {
+    render(`<button type="submit">提交</button>`);
+    const buttonRaw = collectFormFields(INPUT).raws.find((raw) => raw.tag === 'button')!;
+    const button = document.querySelector('button')!;
+    const submitExpect = { tag: 'button', type: 'submit' };
+    const seen: string[] = [];
+    const pointerEvents: Event[] = [];
+    for (const type of [
+      'pointerover', 'pointerenter', 'mouseover', 'mouseenter',
+      'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click',
+    ]) {
+      button.addEventListener(type, (event) => {
+        seen.push(type);
+        if (type === 'pointerdown' || type === 'pointerup') pointerEvents.push(event);
+      });
+    }
+
+    const output = applyFormFill({
+      url: location.href,
+      items: [],
+      submit: { fieldId: 'f1', path: buttonRaw.path, expect: submitExpect },
+    });
+
+    expect(output.submitted?.status).toBe('ok');
+    expect(seen).toEqual([
+      'pointerover', 'pointerenter', 'mouseover', 'mouseenter',
+      'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click',
+    ]);
+    expect(pointerEvents).toHaveLength(2);
+    for (const event of pointerEvents) {
+      expect(event).toBeInstanceOf(PointerEvent);
+      expect((event as PointerEvent).pointerType).toBe('mouse');
+    }
+  });
 });

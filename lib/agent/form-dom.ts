@@ -453,13 +453,18 @@ export function applyFormFill(input: ApplyFillInput): ApplyFillOutput {
       if (disabled || !hasBox || covered) {
         submitted = { fieldId: input.submit.fieldId, status: 'not_clickable' };
       } else {
-        for (const type of ['pointerdown', 'mousedown']) {
-          button.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
-        }
+        const pointerOpts = { bubbles: true, cancelable: true, clientX: centerX, clientY: centerY, pointerId: 1, pointerType: 'mouse', isPrimary: true };
+        const mouseOpts = { bubbles: true, cancelable: true, clientX: centerX, clientY: centerY, button: 0 };
+        button.dispatchEvent(new PointerEvent('pointerover', pointerOpts));
+        button.dispatchEvent(new PointerEvent('pointerenter', { ...pointerOpts, bubbles: false }));
+        button.dispatchEvent(new MouseEvent('mouseover', mouseOpts));
+        button.dispatchEvent(new MouseEvent('mouseenter', { ...mouseOpts, bubbles: false }));
+        button.dispatchEvent(new PointerEvent('pointerdown', pointerOpts));
+        button.dispatchEvent(new MouseEvent('mousedown', mouseOpts));
         button.focus();
-        for (const type of ['pointerup', 'mouseup', 'click']) {
-          button.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
-        }
+        button.dispatchEvent(new PointerEvent('pointerup', pointerOpts));
+        button.dispatchEvent(new MouseEvent('mouseup', mouseOpts));
+        button.dispatchEvent(new MouseEvent('click', mouseOpts));
         submitted = { fieldId: input.submit.fieldId, status: 'ok' };
       }
     }
@@ -535,7 +540,9 @@ export function clickElementInPage(input: { selector: string; index: number }): 
   const rect = target.getBoundingClientRect();
   const disabled = (target as HTMLButtonElement).disabled === true;
   const hasBox = rect.width > 0 || rect.height > 0;
-  const topMost = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+  const centerX = rect.left + rect.width / 2;
+  const centerY = rect.top + rect.height / 2;
+  const topMost = document.elementFromPoint(centerX, centerY);
   const covered = topMost != null && topMost !== target && !target.contains(topMost);
   if (disabled || !hasBox || covered) {
     return {
@@ -544,13 +551,18 @@ export function clickElementInPage(input: { selector: string; index: number }): 
     };
   }
 
-  for (const type of ['pointerdown', 'mousedown']) {
-    target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
-  }
+  const pointerOpts = { bubbles: true, cancelable: true, clientX: centerX, clientY: centerY, pointerId: 1, pointerType: 'mouse', isPrimary: true };
+  const mouseOpts = { bubbles: true, cancelable: true, clientX: centerX, clientY: centerY, button: 0 };
+  target.dispatchEvent(new PointerEvent('pointerover', pointerOpts));
+  target.dispatchEvent(new PointerEvent('pointerenter', { ...pointerOpts, bubbles: false }));
+  target.dispatchEvent(new MouseEvent('mouseover', mouseOpts));
+  target.dispatchEvent(new MouseEvent('mouseenter', { ...mouseOpts, bubbles: false }));
+  target.dispatchEvent(new PointerEvent('pointerdown', pointerOpts));
+  target.dispatchEvent(new MouseEvent('mousedown', mouseOpts));
   target.focus();
-  for (const type of ['pointerup', 'mouseup', 'click']) {
-    target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
-  }
+  target.dispatchEvent(new PointerEvent('pointerup', pointerOpts));
+  target.dispatchEvent(new MouseEvent('mouseup', mouseOpts));
+  target.dispatchEvent(new MouseEvent('click', mouseOpts));
   return { status: 'ok' };
 }
 
