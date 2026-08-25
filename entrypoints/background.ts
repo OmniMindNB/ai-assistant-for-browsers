@@ -49,7 +49,7 @@ import { resolveTargetTab } from '@/lib/agent/tab-target';
 import { sendToContentScript } from '@/lib/agent/content-script-messaging';
 import { clearConversationIdForTab } from '@/lib/agent/tab-conversation';
 import { clearPendingAskForTab, setPendingAskForTab } from '@/lib/agent/tab-pending-ask';
-import { mergeFillOutcomes, planFormFill } from '@/lib/agent/fill-form-request';
+import { mergeFillOutcomes, planFieldClick, planFormFill } from '@/lib/agent/fill-form-request';
 import {
   applyFormFill,
   clickElementInPage,
@@ -694,6 +694,9 @@ async function modifyDom(payload: ModifyDomPayload, tabId: number): Promise<Modi
 }
 
 async function clickElement(payload: ClickElementPayload, tabId: number): Promise<ClickElementResult> {
+  if (payload?.fieldId) {
+    return clickElementByFieldId(payload.fieldId, tabId);
+  }
   const selector = payload?.selector || '';
   const index = payload?.index ?? 0;
   const result = await executeInTab(tabId, { selector, index }, clickElementInPage);
@@ -705,6 +708,62 @@ async function clickElement(payload: ClickElementPayload, tabId: number): Promis
     clickedIndex: result.status === 'ok' ? index : null,
     status: result.status,
     detail: result.detail,
+  };
+}
+
+// fieldId 路径复用 applyFormFill 的「解析 path → 比对 expect → 派发点击 → 回读」逻辑，
+// 把这次调用当成「零字段、只点一个提交目标」的 FILL_FORM 请求——不新增任何注入函数，
+// 避免和 applyFormFill 的 submit 分支重复实现同一段点击派发代码。
+async function clickElementByFieldId(fieldId: string, tabId: number): Promise<ClickElementResult> {
+  const table = await getFormFieldsForTab(tabId);
+  const plan = planFieldClick(fieldId, table);
+  if (!plan.ok || !plan.submit) {
+    return {
+      selector: '',
+      matched: 0,
+      clickedIndex: null,
+      status: 'not_found',
+      detail: '未知的 fieldId，请重新调用 browser_get_form。',
+      fieldsTableStale: plan.reason === 'no_table',
+    };
+  }
+
+  const applied = await executeInTab(
+    tabId,
+    { url: table!.url, items: [], submit: plan.submit },
+    applyFormFill,
+  );
+
+  if (applied.fieldsTableStale) {
+    return {
+      selector: '',
+      matched: 0,
+      clickedIndex: null,
+      status: 'not_found',
+      detail: '页面已导航，字段表已失效，请重新调用 browser_get_form。',
+      fieldsTableStale: true,
+    };
+  }
+
+  const submitted = applied.submitted;
+  if (!submitted || submitted.status === 'not_found' || submitted.status === 'mismatch') {
+    return {
+      selector: '',
+      matched: 0,
+      clickedIndex: null,
+      status: 'not_found',
+      detail:
+        submitted?.status === 'mismatch'
+          ? '该位置的元素与读取时不一致，页面可能已变化，请重新调用 browser_get_form。'
+          : '定位路径已解析不到元素，请重新调用 browser_get_form。',
+    };
+  }
+
+  return {
+    selector: '',
+    matched: 1,
+    clickedIndex: submitted.status === 'ok' ? 0 : null,
+    status: submitted.status,
   };
 }
 
