@@ -249,7 +249,7 @@ function makeGetFormTool(tabId: number): BrowserAgentTool {
     name: 'browser_get_form',
     label: 'Get Form',
     description:
-      'Read every form control on the page as structured data: kind, label, current value, checked state, select options, requiredness, visibility and native validation message. Each field gets a stable fieldId — always use these ids with browser_fill_form instead of writing your own CSS selectors. Prefer this over browser_read_page or browser_get_html for any form task; readable-text extraction strips form controls entirely.',
+      "Read every form field and other clickable element on the page as structured data: kind (including link and button for non-form elements), label, current value, checked state, select options, requiredness, visibility and native validation message. Each field gets a stable fieldId — use these ids with browser_fill_form for form fields and with browser_click for any clickable element (buttons, links, form-less custom widgets), instead of writing your own CSS selectors. Prefer this over browser_read_page or browser_get_html for any form or click-target task; readable-text extraction strips these elements' structure entirely.",
     parameters: Type.Object({
       selector: Type.Optional(Type.String({ description: 'Limit collection to this container. Defaults to the whole document.' })),
       includeHidden: Type.Optional(Type.Boolean({ description: 'Include hidden and invisible fields. Defaults to false.' })),
@@ -453,20 +453,28 @@ function makeClickTool(tabId: number): BrowserAgentTool {
   return {
     name: 'browser_click',
     label: 'Click',
-    description: 'Click the first (or nth) element matching a CSS selector. Use this to interact with buttons, links, or other clickable elements.',
+    description:
+      'Click an element. Prefer the fieldId returned by browser_get_form — it now also lists links and other clickable elements, not just form fields. Only fall back to a CSS selector for elements browser_get_form did not return (for example, inside an iframe).',
     parameters: Type.Object({
-      selector: Type.String({ description: 'CSS selector for the element to click.' }),
-      index: Type.Optional(Type.Number({ description: 'Which matched element to click, 0-based. Defaults to 0.' })),
+      fieldId: Type.Optional(Type.String({ description: 'Field id from browser_get_form. Prefer this over selector.' })),
+      selector: Type.Optional(Type.String({ description: 'CSS selector fallback for elements browser_get_form did not return.' })),
+      index: Type.Optional(Type.Number({ description: 'Which matched element to click when using selector, 0-based. Defaults to 0.' })),
     }),
     execute: async (_toolCallId, params) => {
       const payload = params as ClickElementPayload;
+      if (!payload?.fieldId && !payload?.selector) {
+        throw new Error('必须提供 fieldId 或 selector 之一。');
+      }
       const response = (await sendMessage<ClickElementPayload, ClickElementResult>('CLICK_ELEMENT', payload, tabId)) as MessageResponse<ClickElementResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '点击失败');
+      if (response.data.fieldsTableStale) {
+        throw new Error('字段表已失效（页面已变化或已导航），请重新调用 browser_get_form 获取新的 fieldId 后再点击。');
+      }
       if (response.data.status !== 'ok') throw new Error(response.data.detail ?? response.data.status);
-      return textResult(
-        `已点击匹配 "${response.data.selector}" 的第 ${response.data.clickedIndex} 个元素。`,
-        response.data as unknown as Record<string, unknown>,
-      );
+      const target = payload.fieldId
+        ? `字段 ${payload.fieldId}`
+        : `匹配 "${response.data.selector}" 的第 ${response.data.clickedIndex} 个元素`;
+      return textResult(`已点击${target}。`, response.data as unknown as Record<string, unknown>);
     },
   };
 }
