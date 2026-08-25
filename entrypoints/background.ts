@@ -694,7 +694,7 @@ async function captureScreenshot(
 async function executeInTab<TInput, TResult>(
   tabId: number,
   input: TInput,
-  func: (input: TInput) => TResult,
+  func: (input: TInput) => TResult | Promise<TResult>,
 ): Promise<TResult> {
   const tab = await resolveTargetTab(tabId);
   const [frame] = await browser.scripting.executeScript({

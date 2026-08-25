@@ -275,7 +275,7 @@ export interface ApplyFillOutput {
 }
 
 // ⚠️ 同 collectFormFields：本函数会被序列化注入页面，不得引用模块作用域的任何绑定。
-export function applyFormFill(input: ApplyFillInput): ApplyFillOutput {
+export async function applyFormFill(input: ApplyFillInput): Promise<ApplyFillOutput> {
   if (input.url && input.url !== location.href) {
     return { outcomes: [], fieldsTableStale: true };
   }
@@ -482,13 +482,20 @@ export function applyFormFill(input: ApplyFillInput): ApplyFillOutput {
         const highlight = document.createElement('div');
         highlight.style.cssText =
           `position:fixed;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;` +
-          'box-sizing:border-box;border:2px solid #3b82f6;border-radius:4px;box-shadow:0 0 0 4px rgba(59,130,246,0.35);' +
+          'box-sizing:border-box;border:2px solid #4f46e5;border-radius:4px;box-shadow:0 0 0 4px rgba(79,70,229,0.35);' +
           'pointer-events:none;z-index:2147483647;transition:opacity 300ms ease;';
         document.body.appendChild(highlight);
         setTimeout(() => {
           highlight.style.opacity = '0';
           setTimeout(() => highlight.remove(), 300);
         }, 250);
+
+        // 先让模拟光标滑到落点，停稳后再派发点击。
+        // ⚠️ 这里的 250 必须与 lib/agent/agent-overlay.ts 的 CURSOR_MOVE_MS 一致。本函数被
+        // executeScript 序列化注入页面，引用不到那个常量，只能内联——改一处必须同步另一处。
+        // 等得比动画短，就会在光标还没停稳时派发点击，正是这个功能要消除的那种错位。
+        window.dispatchEvent(new CustomEvent('runi:cursor-move', { detail: { x: centerX, y: centerY } }));
+        await new Promise((resolve) => setTimeout(resolve, 250));
 
         const pointerOpts = { bubbles: true, cancelable: true, clientX: centerX, clientY: centerY, pointerId: 1, pointerType: 'mouse', isPrimary: true };
         const mouseOpts = { bubbles: true, cancelable: true, clientX: centerX, clientY: centerY, button: 0 };
@@ -583,7 +590,7 @@ export interface LegacyWriteStatus {
 }
 
 // ⚠️ 序列化注入，禁止引用模块作用域绑定（包括本文件的其它函数）。
-export function clickElementInPage(input: { selector: string; index: number }): LegacyWriteStatus {
+export async function clickElementInPage(input: { selector: string; index: number }): Promise<LegacyWriteStatus> {
   const nodes = Array.from(document.querySelectorAll<HTMLElement>(input.selector));
   const target = nodes[input.index ?? 0];
   if (!target) return { status: 'not_found', detail: `没有匹配 "${input.selector}" 的第 ${input.index ?? 0} 个元素。` };
@@ -612,13 +619,20 @@ export function clickElementInPage(input: { selector: string; index: number }): 
   const highlight = document.createElement('div');
   highlight.style.cssText =
     `position:fixed;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;` +
-    'box-sizing:border-box;border:2px solid #3b82f6;border-radius:4px;box-shadow:0 0 0 4px rgba(59,130,246,0.35);' +
+    'box-sizing:border-box;border:2px solid #4f46e5;border-radius:4px;box-shadow:0 0 0 4px rgba(79,70,229,0.35);' +
     'pointer-events:none;z-index:2147483647;transition:opacity 300ms ease;';
   document.body.appendChild(highlight);
   setTimeout(() => {
     highlight.style.opacity = '0';
     setTimeout(() => highlight.remove(), 300);
   }, 250);
+
+  // 先让模拟光标滑到落点，停稳后再派发点击。
+  // ⚠️ 这里的 250 必须与 lib/agent/agent-overlay.ts 的 CURSOR_MOVE_MS 一致。本函数被
+  // executeScript 序列化注入页面，引用不到那个常量，只能内联——改一处必须同步另一处。
+  // 等得比动画短，就会在光标还没停稳时派发点击，正是这个功能要消除的那种错位。
+  window.dispatchEvent(new CustomEvent('runi:cursor-move', { detail: { x: centerX, y: centerY } }));
+  await new Promise((resolve) => setTimeout(resolve, 250));
 
   const pointerOpts = { bubbles: true, cancelable: true, clientX: centerX, clientY: centerY, pointerId: 1, pointerType: 'mouse', isPrimary: true };
   const mouseOpts = { bubbles: true, cancelable: true, clientX: centerX, clientY: centerY, button: 0 };
@@ -708,7 +722,7 @@ export function typeTextInPage(input: { selector: string; index: number; text: s
     : { status: 'invalid_value', detail: '写入后回读不符，页面组件可能改写或拒绝了这个值。', actualValue: actual };
 }
 
-export function selectOptionInPage(input: { selector: string; index: number; value: string }): LegacyWriteStatus {
+export async function selectOptionInPage(input: { selector: string; index: number; value: string }): Promise<LegacyWriteStatus> {
   const nodes = Array.from(document.querySelectorAll<HTMLElement>(input.selector));
   const target = nodes[input.index ?? 0];
   if (!target) return { status: 'not_found', detail: `没有匹配 "${input.selector}" 的第 ${input.index ?? 0} 个元素。` };
@@ -732,13 +746,23 @@ export function selectOptionInPage(input: { selector: string; index: number; val
   const highlight = document.createElement('div');
   highlight.style.cssText =
     `position:fixed;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;` +
-    'box-sizing:border-box;border:2px solid #3b82f6;border-radius:4px;box-shadow:0 0 0 4px rgba(59,130,246,0.35);' +
+    'box-sizing:border-box;border:2px solid #4f46e5;border-radius:4px;box-shadow:0 0 0 4px rgba(79,70,229,0.35);' +
     'pointer-events:none;z-index:2147483647;transition:opacity 300ms ease;';
   document.body.appendChild(highlight);
   setTimeout(() => {
     highlight.style.opacity = '0';
     setTimeout(() => highlight.remove(), 300);
   }, 250);
+
+  // 先让模拟光标滑到落点，停稳后再写入。
+  // ⚠️ 这里的 250 必须与 lib/agent/agent-overlay.ts 的 CURSOR_MOVE_MS 一致（同上，注入函数
+  // 被序列化，引用不到那个常量，只能内联）。
+  window.dispatchEvent(
+    new CustomEvent('runi:cursor-move', {
+      detail: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
+    }),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 250));
 
   select.value = option.value;
   select.dispatchEvent(new Event('input', { bubbles: true }));

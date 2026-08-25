@@ -241,7 +241,7 @@ describe('applyFormFill', () => {
     document.body.innerHTML = '';
   });
 
-  it('writes a text input and dispatches input/change so frameworks observe it', () => {
+  it('writes a text input and dispatches input/change so frameworks observe it', async () => {
     document.body.innerHTML = `<form><input type="text" name="email" /></form>`;
     const input = document.querySelector('input')!;
     const seen: string[] = [];
@@ -249,59 +249,59 @@ describe('applyFormFill', () => {
       input.addEventListener(type, () => seen.push(type));
     }
 
-    const output = applyFormFill({ url: location.href, items: [item({ value: 'a@b.c' })] });
+    const output = await applyFormFill({ url: location.href, items: [item({ value: 'a@b.c' })] });
 
     expect(output.outcomes[0].status).toBe('ok');
     expect(input.value).toBe('a@b.c');
     expect(seen).toEqual(['focus', 'beforeinput', 'input', 'change', 'blur']);
   });
 
-  it('returns not_found when the path resolves to nothing', () => {
+  it('returns not_found when the path resolves to nothing', async () => {
     document.body.innerHTML = `<form></form>`;
-    const output = applyFormFill({ url: location.href, items: [item({ value: 'x' })] });
+    const output = await applyFormFill({ url: location.href, items: [item({ value: 'x' })] });
     expect(output.outcomes[0].status).toBe('not_found');
   });
 
-  it('returns mismatch and writes nothing when the field changed since it was read', () => {
+  it('returns mismatch and writes nothing when the field changed since it was read', async () => {
     document.body.innerHTML = `<form><input type="text" name="phone" /></form>`;
     const input = document.querySelector('input')!;
-    const output = applyFormFill({ url: location.href, items: [item({ value: 'x' })] });
+    const output = await applyFormFill({ url: location.href, items: [item({ value: 'x' })] });
     expect(output.outcomes[0].status).toBe('mismatch');
     expect(input.value).toBe('');
   });
 
-  it('returns not_writable for disabled and readOnly fields', () => {
+  it('returns not_writable for disabled and readOnly fields', async () => {
     document.body.innerHTML = `<form><input type="text" name="email" disabled /></form>`;
-    expect(applyFormFill({ url: location.href, items: [item({ value: 'x' })] }).outcomes[0].status).toBe('not_writable');
+    expect((await applyFormFill({ url: location.href, items: [item({ value: 'x' })] })).outcomes[0].status).toBe('not_writable');
 
     document.body.innerHTML = `<form><input type="text" name="email" readonly /></form>`;
-    expect(applyFormFill({ url: location.href, items: [item({ value: 'x' })] }).outcomes[0].status).toBe('not_writable');
+    expect((await applyFormFill({ url: location.href, items: [item({ value: 'x' })] })).outcomes[0].status).toBe('not_writable');
   });
 
-  it('returns invalid_value when a checkbox is handed a text value', () => {
+  it('returns invalid_value when a checkbox is handed a text value', async () => {
     document.body.innerHTML = `<form><input type="checkbox" name="agree" /></form>`;
-    const output = applyFormFill({
+    const output = await applyFormFill({
       url: location.href,
       items: [item({ kind: 'checkbox', expect: { tag: 'input', type: 'checkbox', name: 'agree' }, value: 'yes' })],
     });
     expect(output.outcomes[0].status).toBe('invalid_value');
   });
 
-  it('sets checkbox state through the checked property and is idempotent', () => {
+  it('sets checkbox state through the checked property and is idempotent', async () => {
     document.body.innerHTML = `<form><input type="checkbox" name="agree" /></form>`;
     const checkbox = document.querySelector('input')!;
     const base = item({ kind: 'checkbox', expect: { tag: 'input', type: 'checkbox', name: 'agree' }, checked: true });
 
-    expect(applyFormFill({ url: location.href, items: [base] }).outcomes[0].status).toBe('ok');
+    expect((await applyFormFill({ url: location.href, items: [base] })).outcomes[0].status).toBe('ok');
     expect(checkbox.checked).toBe(true);
     // 再写一次 true 不能把它翻回 false
-    expect(applyFormFill({ url: location.href, items: [base] }).outcomes[0].status).toBe('ok');
+    expect((await applyFormFill({ url: location.href, items: [base] })).outcomes[0].status).toBe('ok');
     expect(checkbox.checked).toBe(true);
     // value 属性不能被动过
     expect(checkbox.getAttribute('value')).toBeNull();
   });
 
-  it('selects an option by value and by visible label', () => {
+  it('selects an option by value and by visible label', async () => {
     document.body.innerHTML = `<form><select name="city"><option value="bj">北京</option><option value="sh">上海</option></select></form>`;
     const select = document.querySelector('select')!;
     const base = item({
@@ -314,17 +314,17 @@ describe('applyFormFill', () => {
       expect: { tag: 'select', name: 'city' },
     });
 
-    expect(applyFormFill({ url: location.href, items: [{ ...base, value: 'sh' }] }).outcomes[0].status).toBe('ok');
+    expect((await applyFormFill({ url: location.href, items: [{ ...base, value: 'sh' }] })).outcomes[0].status).toBe('ok');
     expect(select.value).toBe('sh');
 
-    expect(applyFormFill({ url: location.href, items: [{ ...base, value: '北京' }] }).outcomes[0].status).toBe('ok');
+    expect((await applyFormFill({ url: location.href, items: [{ ...base, value: '北京' }] })).outcomes[0].status).toBe('ok');
     expect(select.value).toBe('bj');
   });
 
-  it('refuses an unknown select value before touching the element', () => {
+  it('refuses an unknown select value before touching the element', async () => {
     document.body.innerHTML = `<form><select name="city"><option value="bj">北京</option></select></form>`;
     const select = document.querySelector('select')!;
-    const output = applyFormFill({
+    const output = await applyFormFill({
       url: location.href,
       items: [
         item({
@@ -343,20 +343,20 @@ describe('applyFormFill', () => {
     expect(select.value).toBe('bj'); // 原值没有被清空
   });
 
-  it('reports invalid_value with the actual value when a framework reverts the write', () => {
+  it('reports invalid_value with the actual value when a framework reverts the write', async () => {
     document.body.innerHTML = `<form><input type="text" name="email" /></form>`;
     const input = document.querySelector('input')!;
     input.addEventListener('input', () => {
       input.value = '被组件改写';
     });
-    const output = applyFormFill({ url: location.href, items: [item({ value: 'a@b.c' })] });
+    const output = await applyFormFill({ url: location.href, items: [item({ value: 'a@b.c' })] });
     expect(output.outcomes[0].status).toBe('invalid_value');
     expect(output.outcomes[0].actualValue).toBe('被组件改写');
   });
 
-  it('keeps filling the remaining fields when one of them fails', () => {
+  it('keeps filling the remaining fields when one of them fails', async () => {
     document.body.innerHTML = `<form><input type="text" name="email" /><input type="text" name="phone" /></form>`;
-    const output = applyFormFill({
+    const output = await applyFormFill({
       url: location.href,
       items: [
         item({ fieldId: 'f1', expect: { tag: 'input', type: 'text', name: 'nope' }, value: 'x' }),
@@ -376,11 +376,11 @@ describe('applyFormFill', () => {
     expect((document.querySelector('input[name=phone]') as HTMLInputElement).value).toBe('13800000000');
   });
 
-  it('writes into an element behind an open shadow root', () => {
+  it('writes into an element behind an open shadow root', async () => {
     document.body.innerHTML = `<div></div>`;
     const host = document.querySelector('div')!;
     host.attachShadow({ mode: 'open' }).innerHTML = `<input type="text" name="email" />`;
-    const output = applyFormFill({
+    const output = await applyFormFill({
       url: location.href,
       items: [
         item({
@@ -398,16 +398,16 @@ describe('applyFormFill', () => {
     expect((host.shadowRoot!.querySelector('input') as HTMLInputElement).value).toBe('a@b.c');
   });
 
-  it('reports the page as stale when the url no longer matches', () => {
+  it('reports the page as stale when the url no longer matches', async () => {
     document.body.innerHTML = `<form><input type="text" name="email" /></form>`;
-    const output = applyFormFill({ url: 'https://elsewhere.test/page', items: [item({ value: 'x' })] });
+    const output = await applyFormFill({ url: 'https://elsewhere.test/page', items: [item({ value: 'x' })] });
     expect(output.fieldsTableStale).toBe(true);
     expect(output.outcomes).toHaveLength(0);
   });
 
-  it('keeps processing later items when one throws (e.g. writing a value into a file input)', () => {
+  it('keeps processing later items when one throws (e.g. writing a value into a file input)', async () => {
     document.body.innerHTML = `<form><input type="file" name="doc" /><input type="text" name="phone" /></form>`;
-    const output = applyFormFill({
+    const output = await applyFormFill({
       url: location.href,
       items: [
         item({
@@ -434,7 +434,7 @@ describe('applyFormFill', () => {
     expect((document.querySelector('input[name=phone]') as HTMLInputElement).value).toBe('13800000000');
   });
 
-  it('fires contenteditable input events after the DOM mutation so listeners observe the new value', () => {
+  it('fires contenteditable input events after the DOM mutation so listeners observe the new value', async () => {
     document.body.innerHTML = `<div contenteditable="true"></div>`;
     const host = document.querySelector('div')!;
     let seenAtInput: string | null = null;
@@ -442,7 +442,7 @@ describe('applyFormFill', () => {
       seenAtInput = host.textContent;
     });
 
-    const output = applyFormFill({
+    const output = await applyFormFill({
       url: location.href,
       items: [
         item({
@@ -502,14 +502,14 @@ describe('applyFormFill', () => {
     value: '新内容',
   };
 
-  it('falls back to execCommand when the editor swallows the direct contenteditable write', () => {
+  it('falls back to execCommand when the editor swallows the direct contenteditable write', async () => {
     document.body.innerHTML = `<div contenteditable="true"></div>`;
     const host = document.querySelector('div')! as HTMLElement;
     const swallowed = stubSwallowedContentEditable(host);
     const exec = stubExecCommand(swallowed.write);
 
     try {
-      const output = applyFormFill({ url: location.href, items: [item(CONTENTEDITABLE_ITEM)] });
+      const output = await applyFormFill({ url: location.href, items: [item(CONTENTEDITABLE_ITEM)] });
       expect(exec.calls).toEqual(['delete', 'insertText']);
       expect(output.outcomes[0].status).toBe('ok');
       expect(output.outcomes[0].actualValue).toBe('新内容');
@@ -518,12 +518,12 @@ describe('applyFormFill', () => {
     }
   });
 
-  it('does not reach for execCommand when the direct contenteditable write already landed', () => {
+  it('does not reach for execCommand when the direct contenteditable write already landed', async () => {
     document.body.innerHTML = `<div contenteditable="true"></div>`;
     const exec = stubExecCommand(() => {});
 
     try {
-      const output = applyFormFill({ url: location.href, items: [item(CONTENTEDITABLE_ITEM)] });
+      const output = await applyFormFill({ url: location.href, items: [item(CONTENTEDITABLE_ITEM)] });
       expect(output.outcomes[0].status).toBe('ok');
       expect(exec.calls).toEqual([]);
     } finally {
@@ -531,7 +531,7 @@ describe('applyFormFill', () => {
     }
   });
 
-  it('reports invalid_value when both the direct write and the execCommand fallback fail', () => {
+  it('reports invalid_value when both the direct write and the execCommand fallback fail', async () => {
     document.body.innerHTML = `<div contenteditable="true"></div>`;
     const host = document.querySelector('div')! as HTMLElement;
     const swallowed = stubSwallowedContentEditable(host);
@@ -540,7 +540,7 @@ describe('applyFormFill', () => {
     });
 
     try {
-      const output = applyFormFill({ url: location.href, items: [item(CONTENTEDITABLE_ITEM)] });
+      const output = await applyFormFill({ url: location.href, items: [item(CONTENTEDITABLE_ITEM)] });
       expect(exec.calls).toEqual(['delete', 'insertText']);
       expect(output.outcomes[0].status).toBe('invalid_value');
       expect(swallowed.read()).toBe('');
@@ -549,7 +549,7 @@ describe('applyFormFill', () => {
     }
   });
 
-  it('clicks a link submit target when its href still matches, and mismatches when it changed (fingerprint discriminates links)', () => {
+  it('clicks a link submit target when its href still matches, and mismatches when it changed (fingerprint discriminates links)', async () => {
     render(`<nav><a href="/settings">设置</a></nav>`);
     const linkRaw = collectFormFields(INPUT).raws.find((raw) => raw.tag === 'a')!;
     const clicks: string[] = [];
@@ -558,7 +558,7 @@ describe('applyFormFill', () => {
       clicks.push('clicked');
     });
 
-    const okOutput = applyFormFill({
+    const okOutput = await applyFormFill({
       url: location.href,
       items: [],
       submit: { fieldId: 'f1', path: linkRaw.path, expect: { tag: 'a', href: linkRaw.href } },
@@ -566,7 +566,7 @@ describe('applyFormFill', () => {
     expect(okOutput.submitted?.status).toBe('ok');
     expect(clicks).toEqual(['clicked']);
 
-    const mismatchOutput = applyFormFill({
+    const mismatchOutput = await applyFormFill({
       url: location.href,
       items: [],
       submit: { fieldId: 'f1', path: linkRaw.path, expect: { tag: 'a', href: '/different-page' } },
@@ -574,7 +574,7 @@ describe('applyFormFill', () => {
     expect(mismatchOutput.submitted?.status).toBe('mismatch');
   });
 
-  it('dispatches a full hover + pointer/mouse sequence for the submit target, with real PointerEvents', () => {
+  it('dispatches a full hover + pointer/mouse sequence for the submit target, with real PointerEvents', async () => {
     render(`<button type="submit">提交</button>`);
     const buttonRaw = collectFormFields(INPUT).raws.find((raw) => raw.tag === 'button')!;
     const button = document.querySelector('button')!;
@@ -591,7 +591,7 @@ describe('applyFormFill', () => {
       });
     }
 
-    const output = applyFormFill({
+    const output = await applyFormFill({
       url: location.href,
       items: [],
       submit: { fieldId: 'f1', path: buttonRaw.path, expect: submitExpect },
@@ -609,13 +609,13 @@ describe('applyFormFill', () => {
     }
   });
 
-  it('flashes a highlight overlay on the submit target before dispatching the click', () => {
+  it('flashes a highlight overlay on the submit target before dispatching the click', async () => {
     render(`<button type="submit">提交</button>`);
     const buttonRaw = collectFormFields(INPUT).raws.find((raw) => raw.tag === 'button')!;
     const submitExpect = { tag: 'button', type: 'submit' };
     const before = document.body.children.length;
 
-    applyFormFill({
+    await applyFormFill({
       url: location.href,
       items: [],
       submit: { fieldId: 'f1', path: buttonRaw.path, expect: submitExpect },
@@ -627,11 +627,11 @@ describe('applyFormFill', () => {
     expect(highlight.style.pointerEvents).toBe('none');
   });
 
-  it('reports the submit target label and flags a link that opens in a new tab', () => {
+  it('reports the submit target label and flags a link that opens in a new tab', async () => {
     render(`<nav><a href="#docs" target="_blank" aria-label="打开文档（新窗口）">文档</a></nav>`);
     const linkRaw = collectFormFields(INPUT).raws.find((raw) => raw.tag === 'a')!;
 
-    const output = applyFormFill({
+    const output = await applyFormFill({
       url: location.href,
       items: [],
       submit: { fieldId: 'f1', path: linkRaw.path, expect: { tag: 'a', href: '#docs' } },
@@ -644,7 +644,7 @@ describe('applyFormFill', () => {
 
   // 与 clickElementInPage 同一条理由：视口外的 submit 按钮 rect 是超界坐标，
   // 高亮框会画到屏幕外，且遮挡检测（elementFromPoint）在视口外恒为 null 而失效。
-  it('scrolls the submit target into view and measures its rect afterwards', () => {
+  it('scrolls the submit target into view and measures its rect afterwards', async () => {
     render(`<button type="submit">提交</button>`);
     const buttonRaw = collectFormFields(INPUT).raws.find((raw) => raw.tag === 'button')!;
     const button = document.querySelector('button')!;
@@ -659,7 +659,7 @@ describe('applyFormFill', () => {
     };
     button.addEventListener('pointerdown', () => order.push('pointerdown'));
 
-    const output = applyFormFill({
+    const output = await applyFormFill({
       url: location.href,
       items: [],
       submit: { fieldId: 'f1', path: buttonRaw.path, expect: { tag: 'button', type: 'submit' } },
