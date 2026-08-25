@@ -10,20 +10,34 @@
 export const OVERLAY_HOST_ID = 'runi-agent-overlay';
 export const OVERLAY_WATCHDOG_MS = 15000;
 
+/**
+ * 光标缓动时长。
+ * ⚠️ 同一个数字在 lib/agent/form-dom.ts 的注入函数里还有一份（那里 await 这么久再派发点击）。
+ * 注入函数被 executeScript 序列化，引用不到这里的常量，只能各自内联——改这里必须同步改那边。
+ * 若注入函数等得比动画短，就会在光标还没停稳时派发点击，正是本功能要消除的那种错位。
+ */
+export const CURSOR_MOVE_MS = 250;
+
 const ACCENT = '#4f46e5';
 
 interface OverlayRefs {
   host: HTMLElement;
   shadow: ShadowRoot;
   label: HTMLElement;
+  cursor: HTMLElement;
 }
 
 let refs: OverlayRefs | null = null;
 let currentLabel = '';
 let watchdog: ReturnType<typeof setTimeout> | undefined;
+let cursorPos: { x: number; y: number } | null = null;
 
-export function getOverlayState(): { mounted: boolean; label: string } {
-  return { mounted: refs !== null, label: currentLabel };
+export function getOverlayState(): {
+  mounted: boolean;
+  label: string;
+  cursor: { x: number; y: number } | null;
+} {
+  return { mounted: refs !== null, label: currentLabel, cursor: cursorPos };
 }
 
 export function mountOverlay(label: string): void {
@@ -44,6 +58,7 @@ export function unmountOverlay(): void {
   refs?.host.remove();
   refs = null;
   currentLabel = '';
+  cursorPos = null;
 }
 
 /**
@@ -55,6 +70,27 @@ export function renewOverlayWatchdog(): void {
   if (!refs) return;
   clearTimeout(watchdog);
   watchdog = setTimeout(unmountOverlay, OVERLAY_WATCHDOG_MS);
+}
+
+/** 把坐标钳制在视口内，避免目标贴边时光标画到视口外看不见。 */
+export function clampCursorPosition(
+  x: number,
+  y: number,
+  viewport: { width: number; height: number },
+): { x: number; y: number } {
+  const clamp = (value: number, max: number) => Math.min(Math.max(value, 0), Math.max(max, 0));
+  return { x: clamp(x, viewport.width), y: clamp(y, viewport.height) };
+}
+
+export function moveOverlayCursor(x: number, y: number): void {
+  if (!refs) return;
+  const next = clampCursorPosition(x, y, {
+    width: window.innerWidth,
+    height: window.innerHeight,
+  });
+  cursorPos = next;
+  refs.cursor.style.transform = `translate3d(${next.x}px, ${next.y}px, 0)`;
+  renewOverlayWatchdog();
 }
 
 function setLabel(label: string): void {
@@ -95,6 +131,24 @@ function createOverlay(): OverlayRefs {
   label.style.whiteSpace = 'nowrap';
   shadow.appendChild(label);
 
+  const cursor = document.createElement('div');
+  cursor.style.position = 'absolute';
+  cursor.style.top = '0';
+  cursor.style.left = '0';
+  cursor.style.width = '24px';
+  cursor.style.height = '24px';
+  cursor.style.pointerEvents = 'none';
+  cursor.style.willChange = 'transform';
+  cursor.style.transition = `transform ${CURSOR_MOVE_MS}ms cubic-bezier(.22, 1, .36, 1)`;
+  // 从视口右下角滑入，暗示「来自侧边栏那一侧」。
+  cursor.style.transform = `translate3d(${window.innerWidth}px, ${window.innerHeight}px, 0)`;
+  // 白描边保证在深浅背景上都可辨——因此不做 page-agent 那套页面背景色检测。
+  cursor.innerHTML =
+    '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">' +
+    `<path d="M5 2 L19 12 L12.5 13 L16 20 L13 21.5 L9.5 14.5 L5 18 Z" fill="${ACCENT}" stroke="#ffffff" stroke-width="1.5" stroke-linejoin="round"/>` +
+    '</svg>';
+  shadow.appendChild(cursor);
+
   document.documentElement.appendChild(host);
 
   // 呼吸动画：jsdom 没有 Web Animations API，缺失时静默跳过（测试只断结构与状态）。
@@ -107,5 +161,5 @@ function createOverlay(): OverlayRefs {
     });
   }
 
-  return { host, shadow, label };
+  return { host, shadow, label, cursor };
 }
