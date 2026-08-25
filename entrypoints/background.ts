@@ -59,7 +59,7 @@ import {
   typeTextInPage,
   type ApplyFillItem,
 } from '@/lib/agent/form-dom';
-import { sanitizePageText, toFieldDescriptor } from '@/lib/agent/form-schema';
+import { findNewFieldIds, sanitizePageText, toFieldDescriptor } from '@/lib/agent/form-schema';
 import { getFormFieldsForTab, setFormFieldsForTab, type FormFieldHandle } from '@/lib/agent/tab-form-fields';
 import { decideSubmitIntent } from '@/lib/agent/form-submit';
 
@@ -333,7 +333,23 @@ async function queryDom(payload: QueryDomPayload, tabId: number): Promise<QueryD
 const MAX_FORM_FIELDS = 120;
 const MAX_SELECT_OPTIONS = 50;
 
-async function getForm(payload: GetFormPayload, tabId: number): Promise<GetFormResult> {
+interface FieldSnapshot {
+  collected: Awaited<ReturnType<typeof collectFormFields>>;
+  fields: FormFieldDescriptor[];
+  orphanFieldIds: string[];
+  /** 相对上一次快照新出现的字段；首次读取该页面或页面已换地址时为空。 */
+  newFields: FormFieldDescriptor[];
+}
+
+/**
+ * 采一次字段快照：发放新的 fieldId 句柄表、与上一次快照做差集标出新元素，并存回 session。
+ *
+ * 写操作之后也会调用它——句柄表因此被刷新，模型手上旧的 fieldId 可能指向别的元素。
+ * 这是安全的：applyFormFill / planFieldClick 在动手前都会比对 expect，对不上直接报
+ * mismatch 而不会误点（ref: Spec-0005 §写入校验矩阵）。
+ */
+async function snapshotFields(tabId: number, payload: GetFormPayload = {}): Promise<FieldSnapshot> {
+  const previous = await getFormFieldsForTab(tabId);
   const collected = await executeInTab(
     tabId,
     {
@@ -362,7 +378,24 @@ async function getForm(payload: GetFormPayload, tabId: number): Promise<GetFormR
     if (!descriptor.formId) orphanFieldIds.push(fieldId);
   });
 
-  await setFormFieldsForTab(tabId, { url: collected.url, fields: handles });
+  // 换了地址就不比对：跨页面「全都是新的」没有信息量，只会淹没真正的变化。
+  const comparable = previous && previous.url === collected.url ? previous.fingerprints : undefined;
+  const newFieldIds = findNewFieldIds(fields, comparable);
+  for (const field of fields) {
+    if (newFieldIds.has(field.fieldId)) field.isNew = true;
+  }
+
+  await setFormFieldsForTab(tabId, {
+    url: collected.url,
+    fields: handles,
+    fingerprints: fields.map((field) => field.fingerprint),
+  });
+
+  return { collected, fields, orphanFieldIds, newFields: fields.filter((field) => field.isNew) };
+}
+
+async function getForm(payload: GetFormPayload, tabId: number): Promise<GetFormResult> {
+  const { collected, fields, orphanFieldIds } = await snapshotFields(tabId, payload);
 
   return {
     forms: collected.forms.map((form) => ({
@@ -403,7 +436,24 @@ async function fillForm(payload: FillFormPayload, tabId: number): Promise<FillFo
     submitted: plan.submitFieldMissing
       ? { fieldId: payload!.submit!.fieldId, status: 'not_found' as const }
       : applied.submitted,
+    newFields: await collectNewFieldsAfterWrite(tabId),
   };
+}
+
+/**
+ * 写操作之后重采一次快照，回报「页面新出现了哪些可交互元素」。
+ *
+ * 填完输入框弹出的自动补全、点击后展开的菜单都属此类。此前模型必须自己想起来再调一次
+ * browser_get_form 才能看见它们，等于每次交互都多一轮往返。
+ * 重采失败（页面正在导航、标签页已关闭等）不该把一次成功的写入变成失败，故静默降级为空。
+ */
+async function collectNewFieldsAfterWrite(tabId: number): Promise<FormFieldDescriptor[] | undefined> {
+  try {
+    const snapshot = await snapshotFields(tabId);
+    return snapshot.newFields.length > 0 ? snapshot.newFields : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 async function probeSubmitIntent(payload: ProbeClickTargetPayload, tabId: number): Promise<ProbeClickTargetResult> {
@@ -710,6 +760,7 @@ async function clickElement(payload: ClickElementPayload, tabId: number): Promis
     detail: result.detail,
     label: result.label,
     opensNewTab: result.opensNewTab,
+    newFields: result.status === 'ok' ? await collectNewFieldsAfterWrite(tabId) : undefined,
   };
 }
 
@@ -768,6 +819,7 @@ async function clickElementByFieldId(fieldId: string, tabId: number): Promise<Cl
     status: submitted.status,
     label: submitted.label,
     opensNewTab: submitted.opensNewTab,
+    newFields: submitted.status === 'ok' ? await collectNewFieldsAfterWrite(tabId) : undefined,
   };
 }
 
@@ -786,6 +838,8 @@ async function typeText(payload: TypeTextPayload, tabId: number): Promise<TypeTe
     status: result.status,
     detail: result.detail,
     actualValue: result.actualValue,
+    // 输入触发自动补全下拉是这里最典型的收益场景。
+    newFields: result.status === 'ok' ? await collectNewFieldsAfterWrite(tabId) : undefined,
   };
 }
 

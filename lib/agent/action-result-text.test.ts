@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { ClickElementResult, NavigateTabResult, ScrollPageResult } from '@/lib/messaging';
-import { describeClickResult, describeNavigateResult, describeScrollResult } from './action-result-text';
+import type { ClickElementResult, FormFieldDescriptor, NavigateTabResult, ScrollPageResult } from '@/lib/messaging';
+import { describeClickResult, describeNavigateResult, describeNewFields, describeScrollResult } from './action-result-text';
 
 function scroll(overrides: Partial<ScrollPageResult> = {}): ScrollPageResult {
   return { x: 0, y: 800, scrolledBy: 800, pixelsAbove: 800, pixelsBelow: 2400, viewportHeight: 1200, ...overrides };
@@ -92,5 +92,51 @@ describe('describeNavigateResult', () => {
     expect(describeNavigateResult({ url: 'https://a.com/login', requestedUrl: 'https://a.com/orders', title: '登录' })).toBe(
       '已跳转到 "https://a.com/orders"，经重定向最终停在 "https://a.com/login"，页面标题 "登录"。',
     );
+  });
+});
+
+function fieldDescriptor(fieldId: string, label?: string, kind: FormFieldDescriptor['kind'] = 'button'): FormFieldDescriptor {
+  return {
+    fieldId,
+    kind,
+    label,
+    required: false,
+    disabled: false,
+    readOnly: false,
+    visible: true,
+    valueState: 'empty',
+    sensitive: false,
+    writable: false,
+    clickable: true,
+    fingerprint: `${kind}|${label ?? ''}`,
+  };
+}
+
+// 写完自动回报新元素，省掉模型「再调一次 get_form 才发现下拉建议弹出来了」的一轮往返。
+describe('describeNewFields', () => {
+  it('says nothing when no new field appeared', () => {
+    expect(describeNewFields([])).toBeUndefined();
+  });
+
+  it('lists the new fields with their ids and labels', () => {
+    expect(describeNewFields([fieldDescriptor('f2', '北京'), fieldDescriptor('f3', '北海')])).toBe(
+      '页面新出现 2 个可交互元素：f2「北京」、f3「北海」。可直接用 browser_click 的 fieldId 参数操作它们。',
+    );
+  });
+
+  it('falls back to the field kind when a new field has no label', () => {
+    expect(describeNewFields([fieldDescriptor('f2', undefined, 'checkbox')])).toBe(
+      '页面新出现 1 个可交互元素：f2（checkbox）。可直接用 browser_click 的 fieldId 参数操作它们。',
+    );
+  });
+
+  // 一次展开出几十个选项时全列出来会淹没工具结果。
+  it('caps the enumeration and reports how many were omitted', () => {
+    const fields = Array.from({ length: 12 }, (_, index) => fieldDescriptor(`f${index}`, `选项${index}`));
+    const result = describeNewFields(fields);
+    expect(result).toContain('页面新出现 12 个可交互元素');
+    expect(result).toContain('f7「选项7」');
+    expect(result).not.toContain('f8「选项8」');
+    expect(result).toContain('等，另有 4 个未列出');
   });
 });
