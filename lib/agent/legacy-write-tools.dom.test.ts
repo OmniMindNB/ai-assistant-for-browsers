@@ -106,6 +106,30 @@ describe('clickElementInPage', () => {
     expect(document.body.children.length).toBe(before);
   });
 
+  // 结果文案是模型判断下一步的唯一依据：只说「已点击」它无从确认点中的是不是想点的东西。
+  it('reports the visible label of the element it clicked', () => {
+    document.body.innerHTML = `<button>提交订单</button>`;
+    expect(clickElementInPage({ selector: 'button', index: 0 }).label).toBe('提交订单');
+  });
+
+  it('prefers aria-label over the visible text when both exist', () => {
+    document.body.innerHTML = `<button aria-label="提交并结算">提交</button>`;
+    expect(clickElementInPage({ selector: 'button', index: 0 }).label).toBe('提交并结算');
+  });
+
+  // 点了 target="_blank" 却以为当前页会变，是多步任务里很常见的一次走偏。
+  it('flags a link that opens in a new tab', () => {
+    document.body.innerHTML = `<a href="https://a.com" target="_blank">文档</a>`;
+    const result = clickElementInPage({ selector: 'a', index: 0 });
+    expect(result.opensNewTab).toBe(true);
+  });
+
+  it('does not flag an ordinary link as opening a new tab', () => {
+    // 用片段地址：jsdom 对真实路径跳转会打印 "Not implemented: navigation" 噪声。
+    document.body.innerHTML = `<a href="#docs">文档</a>`;
+    expect(clickElementInPage({ selector: 'a', index: 0 }).opensNewTab).toBeFalsy();
+  });
+
   it('scrolls the target into view before dispatching the pointer sequence', () => {
     document.body.innerHTML = `<button>发送</button>`;
     const button = document.querySelector('button')!;

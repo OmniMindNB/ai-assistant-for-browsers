@@ -263,7 +263,14 @@ export interface ApplyFillInput {
 
 export interface ApplyFillOutput {
   outcomes: ApplyFillOutcome[];
-  submitted?: { fieldId: string; status: 'ok' | 'not_found' | 'mismatch' | 'not_clickable' };
+  submitted?: {
+    fieldId: string;
+    status: 'ok' | 'not_found' | 'mismatch' | 'not_clickable';
+    /** 被点元素的可见文案；页面可控，已压空白并截断。 */
+    label?: string;
+    /** 命中 <a target="_blank">：当前标签页不会变化，必须点破。 */
+    opensNewTab?: boolean;
+  };
   fieldsTableStale?: boolean;
 }
 
@@ -495,7 +502,17 @@ export function applyFormFill(input: ApplyFillInput): ApplyFillOutput {
         button.dispatchEvent(new PointerEvent('pointerup', pointerOpts));
         button.dispatchEvent(new MouseEvent('mouseup', mouseOpts));
         button.dispatchEvent(new MouseEvent('click', mouseOpts));
-        submitted = { fieldId: input.submit.fieldId, status: 'ok' };
+
+        // ⚠️ 与 clickElementInPage 重复：两处都是被序列化注入的独立函数，不能共用 helper。
+        // aria-label 优先：图标按钮的可见文本往往为空或只是一个字形。
+        const rawLabel = button.getAttribute('aria-label') || button.textContent || '';
+        const label = rawLabel.replace(/\s+/g, ' ').trim().slice(0, 60);
+        submitted = {
+          fieldId: input.submit.fieldId,
+          status: 'ok',
+          label: label || undefined,
+          opensNewTab: button.tagName.toLowerCase() === 'a' && button.getAttribute('target') === '_blank',
+        };
       }
     }
   }
@@ -559,6 +576,10 @@ export interface LegacyWriteStatus {
   status: 'ok' | 'not_found' | 'not_clickable' | 'not_writable' | 'invalid_value' | 'blocked_sensitive';
   detail?: string;
   actualValue?: string;
+  /** 被点元素的可见文案，让模型能确认自己点中的是不是想点的东西。页面可控，已压空白并截断。 */
+  label?: string;
+  /** 命中 <a target="_blank">：当前标签页不会变化，必须点破。 */
+  opensNewTab?: boolean;
 }
 
 // ⚠️ 序列化注入，禁止引用模块作用域绑定（包括本文件的其它函数）。
@@ -611,7 +632,15 @@ export function clickElementInPage(input: { selector: string; index: number }): 
   target.dispatchEvent(new PointerEvent('pointerup', pointerOpts));
   target.dispatchEvent(new MouseEvent('mouseup', mouseOpts));
   target.dispatchEvent(new MouseEvent('click', mouseOpts));
-  return { status: 'ok' };
+
+  // aria-label 优先：图标按钮的可见文本往往为空或只是一个字形。
+  const rawLabel = target.getAttribute('aria-label') || target.textContent || '';
+  const label = rawLabel.replace(/\s+/g, ' ').trim().slice(0, 60);
+  return {
+    status: 'ok',
+    label: label || undefined,
+    opensNewTab: target.tagName.toLowerCase() === 'a' && target.getAttribute('target') === '_blank',
+  };
 }
 
 export function typeTextInPage(input: { selector: string; index: number; text: string; replace: boolean }): LegacyWriteStatus {

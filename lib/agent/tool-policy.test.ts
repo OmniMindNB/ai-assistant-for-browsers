@@ -91,3 +91,73 @@ describe('AgentToolPolicy final response', () => {
     expect(failedPolicy.prepareFinalResponse()).toBe(true);
   });
 });
+
+// 修复前预算是「硬阻断」：模型毫无预警地被挡下，只能在最后一轮被动收尾。
+// 这里补一层软提醒，让它自己有机会收尾（对标 alibaba/page-agent 的 <sys> 观察注入）。
+describe('AgentToolPolicy budget warnings', () => {
+  function drain(policy: ReturnType<typeof createAgentToolPolicy>, times: number): void {
+    for (let i = 0; i < times; i += 1) policy.recordExecution('browser_read_page', {}, false);
+  }
+
+  it('reports how many tool calls are left', () => {
+    const policy = createAgentToolPolicy({ readToolCallBudget: 12, writeToolCallBudget: 24 });
+    expect(policy.remaining).toBe(12);
+    drain(policy, 3);
+    expect(policy.remaining).toBe(9);
+  });
+
+  it('stays quiet while the budget is comfortable', () => {
+    const policy = createAgentToolPolicy({ readToolCallBudget: 12, writeToolCallBudget: 24 });
+    drain(policy, 6);
+    expect(policy.budgetWarning()).toBeUndefined();
+  });
+
+  it('warns once when five calls are left', () => {
+    const policy = createAgentToolPolicy({ readToolCallBudget: 12, writeToolCallBudget: 24 });
+    drain(policy, 7);
+    expect(policy.budgetWarning()).toContain('5');
+    expect(policy.budgetWarning()).toBeUndefined();
+  });
+
+  it('escalates when only two calls are left', () => {
+    const policy = createAgentToolPolicy({ readToolCallBudget: 12, writeToolCallBudget: 24 });
+    drain(policy, 7);
+    policy.budgetWarning();
+    drain(policy, 3);
+    expect(policy.budgetWarning()).toContain('2');
+    expect(policy.budgetWarning()).toBeUndefined();
+  });
+
+  // 预算从读档跳到写档会让 remaining 变大，不能因此把已发过的提醒重新解锁。
+  it('does not repeat the five-call warning after the write budget widens it', () => {
+    const policy = createAgentToolPolicy({ readToolCallBudget: 12, writeToolCallBudget: 24 });
+    drain(policy, 7);
+    expect(policy.budgetWarning()).toContain('5');
+    policy.approveWrite();
+    // 预算 12 → 24，remaining 回到 17：不该因为「又跌回 5」而重复提醒。
+    drain(policy, 12);
+    expect(policy.remaining).toBe(5);
+    expect(policy.budgetWarning()).toBeUndefined();
+    // 但更紧的那一档仍然要能触发。
+    drain(policy, 3);
+    expect(policy.budgetWarning()).toContain('2');
+  });
+
+  // 直接掉到 2 以内时只该发最紧的那一条，不该先补发一条已经过时的「还剩 5 次」。
+  it('skips the looser warning when the budget drops straight past both thresholds', () => {
+    const policy = createAgentToolPolicy({ readToolCallBudget: 12, writeToolCallBudget: 24 });
+    drain(policy, 11);
+    expect(policy.budgetWarning()).toContain('1');
+    expect(policy.budgetWarning()).toBeUndefined();
+  });
+});
+
+// 预算归零后由 prepareFinalResponse 的硬指令接管，软提醒再发一条只会与它重复。
+describe('AgentToolPolicy budget warning at exhaustion', () => {
+  it('stays quiet once the budget is fully spent', () => {
+    const policy = createAgentToolPolicy({ readToolCallBudget: 1, writeToolCallBudget: 1 });
+    policy.recordExecution('browser_read_page', {}, false);
+    expect(policy.remaining).toBe(0);
+    expect(policy.budgetWarning()).toBeUndefined();
+  });
+});

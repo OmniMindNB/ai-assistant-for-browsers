@@ -627,6 +627,21 @@ describe('applyFormFill', () => {
     expect(highlight.style.pointerEvents).toBe('none');
   });
 
+  it('reports the submit target label and flags a link that opens in a new tab', () => {
+    render(`<nav><a href="#docs" target="_blank" aria-label="打开文档（新窗口）">文档</a></nav>`);
+    const linkRaw = collectFormFields(INPUT).raws.find((raw) => raw.tag === 'a')!;
+
+    const output = applyFormFill({
+      url: location.href,
+      items: [],
+      submit: { fieldId: 'f1', path: linkRaw.path, expect: { tag: 'a', href: '#docs' } },
+    });
+
+    expect(output.submitted?.status).toBe('ok');
+    expect(output.submitted?.label).toBe('打开文档（新窗口）');
+    expect(output.submitted?.opensNewTab).toBe(true);
+  });
+
   // 与 clickElementInPage 同一条理由：视口外的 submit 按钮 rect 是超界坐标，
   // 高亮框会画到屏幕外，且遮挡检测（elementFromPoint）在视口外恒为 null 而失效。
   it('scrolls the submit target into view and measures its rect afterwards', () => {

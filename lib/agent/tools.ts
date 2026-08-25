@@ -1,5 +1,6 @@
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import { Type } from '@earendil-works/pi-ai';
+import { describeClickResult, describeNavigateResult, describeScrollResult } from './action-result-text';
 import {
   sendMessage,
   type CaptureScreenshotPayload,
@@ -520,10 +521,7 @@ function makeClickTool(tabId: number): BrowserAgentTool {
         throw new Error('字段表已失效（页面已变化或已导航），请重新调用 browser_get_form 获取新的 fieldId 后再点击。');
       }
       if (response.data.status !== 'ok') throw new Error(response.data.detail ?? response.data.status);
-      const target = payload.fieldId
-        ? `字段 ${payload.fieldId}`
-        : `匹配 "${response.data.selector}" 的第 ${response.data.clickedIndex} 个元素`;
-      return textResult(`已点击${target}。`, response.data as unknown as Record<string, unknown>);
+      return textResult(describeClickResult(response.data, payload.fieldId), response.data as unknown as Record<string, unknown>);
     },
   };
 }
@@ -646,7 +644,7 @@ function makeScrollTool(tabId: number): BrowserAgentTool {
       const payload = params as ScrollPagePayload;
       const response = (await sendMessage<ScrollPagePayload, ScrollPageResult>('SCROLL_PAGE', payload, tabId)) as MessageResponse<ScrollPageResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '滚动失败');
-      return textResult(`已滚动到 (${response.data.x}, ${response.data.y})。`, response.data as unknown as Record<string, unknown>);
+      return textResult(describeScrollResult(response.data), response.data as unknown as Record<string, unknown>);
     },
   };
 }
@@ -663,7 +661,7 @@ function makeNavigateTool(tabId: number): BrowserAgentTool {
       const payload = params as NavigateTabPayload;
       const response = (await sendMessage<NavigateTabPayload, NavigateTabResult>('NAVIGATE_TAB', payload, tabId)) as MessageResponse<NavigateTabResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '跳转失败');
-      return textResult(`已跳转到 "${response.data.url}"。`, response.data as unknown as Record<string, unknown>);
+      return textResult(describeNavigateResult(response.data), response.data as unknown as Record<string, unknown>);
     },
   };
 }
