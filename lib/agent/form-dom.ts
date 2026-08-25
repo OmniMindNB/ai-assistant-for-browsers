@@ -47,10 +47,24 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
     });
   });
 
+  const INTERACTIVE_ROLES = new Set(['button', 'link', 'tab', 'menuitem', 'checkbox', 'radio', 'switch']);
+
+  const hasInteractiveRole = (element: Element): boolean =>
+    INTERACTIVE_ROLES.has((element.getAttribute('role') || '').toLowerCase());
+
+  const hasExplicitTabindex = (element: Element): boolean => {
+    const attr = element.getAttribute('tabindex');
+    if (attr === null) return false;
+    const value = Number.parseInt(attr, 10);
+    return Number.isFinite(value) && value >= 0;
+  };
+
   const isFieldTag = (element: Element): boolean => {
     const tag = element.tagName.toLowerCase();
     if (tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'button') return true;
-    return (element as HTMLElement).isContentEditable === true;
+    if ((element as HTMLElement).isContentEditable === true) return true;
+    if (tag === 'a' && element.getAttribute('href')) return true;
+    return hasInteractiveRole(element) || hasExplicitTabindex(element);
   };
 
   const textOf = (element: Element | null | undefined): string | undefined => {
@@ -128,6 +142,17 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
         ? ((element.getAttribute('type') || 'submit').toLowerCase() === 'submit' ? 'submit' : 'button')
         : undefined;
 
+    const href = tag === 'a' ? (element.getAttribute('href') || undefined) : undefined;
+    const isStandardFieldTag =
+      tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'button' || href !== undefined;
+    const interactive =
+      !isStandardFieldTag &&
+      (element as HTMLElement).isContentEditable !== true &&
+      (hasInteractiveRole(element) || hasExplicitTabindex(element))
+        ? true
+        : undefined;
+    const elementText = tag === 'button' || tag === 'a' || interactive ? textOf(element) : undefined;
+
     return {
       path: buildPath(element),
       tag,
@@ -151,6 +176,9 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
       formIndex: asInput.form ? formElements.indexOf(asInput.form) : undefined,
       contentEditable: (element as HTMLElement).isContentEditable === true,
       buttonRole,
+      href,
+      elementText,
+      interactive,
     };
   };
 

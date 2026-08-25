@@ -129,6 +129,38 @@ describe('collectFormFields', () => {
     const output = collectFormFields({ ...INPUT, selector: '#b' });
     expect(output.raws.map((raw) => raw.name)).toEqual(['in-b']);
   });
+
+  it('collects a navigation link outside any form', () => {
+    render(`<nav><a href="/settings">设置</a></nav>`);
+    const field = collectFormFields(INPUT).raws.find((raw) => raw.tag === 'a');
+    expect(field?.href).toBe('/settings');
+    expect(field?.elementText).toBe('设置');
+  });
+
+  it('does not collect an anchor without an href', () => {
+    render(`<a name="top">回到顶部锚点</a>`);
+    const field = collectFormFields(INPUT).raws.find((raw) => raw.tag === 'a');
+    expect(field).toBeUndefined();
+  });
+
+  it('collects a role="button" div as a generic interactive element', () => {
+    render(`<div role="button" tabindex="0">展开菜单</div>`);
+    const field = collectFormFields(INPUT).raws.find((raw) => raw.tag === 'div');
+    expect(field?.interactive).toBe(true);
+    expect(field?.elementText).toBe('展开菜单');
+  });
+
+  it('ignores a div with tabindex="-1" (explicitly not focusable)', () => {
+    render(`<div tabindex="-1">仅用于程序聚焦</div>`);
+    const field = collectFormFields(INPUT).raws.find((raw) => raw.tag === 'div');
+    expect(field).toBeUndefined();
+  });
+
+  it('collects a native button outside any form with its own text as elementText', () => {
+    render(`<button>下单</button>`);
+    const field = collectFormFields(INPUT).raws.find((raw) => raw.tag === 'button');
+    expect(field?.elementText).toBe('下单');
+  });
 });
 
 // jsdom's selector engine (@asamuzakjp/dom-selector, as used by jsdom 30) fails to
