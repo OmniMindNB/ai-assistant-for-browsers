@@ -970,14 +970,14 @@ async function setStorage(payload: SetStoragePayload, tabId: number): Promise<Se
 async function setAgentOverlay(
   payload: SetAgentOverlayPayload,
   tabId: number,
-): Promise<MessageResponse<SetAgentOverlayResult>> {
+): Promise<SetAgentOverlayResult> {
   if (payload.active) {
     await setOverlayForTab(tabId, payload.label ?? '');
   } else {
     await clearOverlayForTab(tabId);
   }
   await pushOverlayToTab(tabId, payload);
-  return { id: '', ok: true, data: { active: payload.active } };
+  return { active: payload.active };
 }
 
 /**
