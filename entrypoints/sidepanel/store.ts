@@ -1081,6 +1081,9 @@ async function runAgent(
     writeToolCallBudget: DEFAULT_WRITE_TOOL_CALL_BUDGET,
     onConfirm,
     onAskUser,
+    onOverlay: (payload) => {
+      void sendMessage('SET_AGENT_OVERLAY', payload, tabId).catch(() => undefined);
+    },
   });
   if (!isCurrentRun(run, get)) return false;
   run.agent = agent;
@@ -1208,6 +1211,9 @@ async function runAgent(
       settleRun(run);
       clearAllSlowActivityTimers();
       set({ busy: false, activitySteps: [] });
+      // 回合结束就撤遮罩。正常完成、模型出错、用户中止三条路径都汇到这个 finally
+      // （见下方注释），所以这一处就够。送不到也不要紧——content script 侧有 15s 看门狗兜底。
+      void sendMessage('SET_AGENT_OVERLAY', { active: false }, tabId).catch(() => undefined);
       await persistConversationSnapshot(run.origin.conversationId, messages);
     }
   }

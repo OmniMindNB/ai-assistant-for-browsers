@@ -7,13 +7,20 @@ import {
 } from '@earendil-works/pi-agent-core';
 import type { Api, Message, Model } from '@earendil-works/pi-ai';
 import { resolveProviderApi, type ProviderConfig } from '@/lib/settings';
-import { sendMessage, type MessageResponse, type ProbeClickTargetPayload, type ProbeClickTargetResult } from '@/lib/messaging';
+import {
+  sendMessage,
+  type MessageResponse,
+  type ProbeClickTargetPayload,
+  type ProbeClickTargetResult,
+  type SetAgentOverlayPayload,
+} from '@/lib/messaging';
 import { browserOpenAIStream } from './openai-stream';
 import { browserAnthropicStream } from './anthropic-stream';
 import { beforeToolCallPermissionGate, CONFIRM_TOOL_NAMES } from './permissions';
 import { createConfirmGateState, type ConfirmFn } from './confirm-gate';
 import { createBrowserTools, type BrowserAgentTool } from './tools';
 import { createAgentToolPolicy } from './tool-policy';
+import { describeToolActivity } from './activity-description';
 import {
   DEFAULT_READ_TOOL_CALL_BUDGET,
   DEFAULT_WRITE_TOOL_CALL_BUDGET,
@@ -44,6 +51,11 @@ export interface BrowserAgentOptions {
   writeToolCallBudget?: number;
   onConfirm?: ConfirmFn;
   onAskUser?: (toolCallId: string, question: string, signal?: AbortSignal) => Promise<string>;
+  /**
+   * 写操作获批时通知外层打开执行期遮罩。回调而非直接 sendMessage：
+   * 与 onConfirm / onAskUser 保持同一形状，也让这条路径在单测里可断言。
+   */
+  onOverlay?: (payload: SetAgentOverlayPayload) => void;
 }
 
 export interface BrowserAgentRuntimeOptions extends BrowserAgentOptions {
@@ -148,7 +160,12 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
       if (isConfirmTool && (confirmGateState.decision === 'approved' || alwaysApproved)) {
         policy.approveWrite();
         const approvedPolicyBlock = policy.preflight(context.toolCall.name, context.args, isConfirmTool);
-        return approvedPolicyBlock ? recordPreExecutionBlock(approvedPolicyBlock) : undefined;
+        if (approvedPolicyBlock) return recordPreExecutionBlock(approvedPolicyBlock);
+        options.onOverlay?.({
+          active: true,
+          label: describeToolActivity(context.toolCall.name, context.toolCall.arguments, 'running'),
+        });
+        return undefined;
       }
       return undefined;
     },

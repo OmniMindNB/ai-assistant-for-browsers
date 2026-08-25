@@ -163,6 +163,46 @@ describe('createBrowserAgentOptions tool policy hooks', () => {
   });
 });
 
+describe('执行期遮罩', () => {
+  const overlayOptions = (onOverlay: () => void, approve: boolean) =>
+    createBrowserAgentOptions({
+      provider: baseProvider,
+      tabId: 1,
+      steer: () => {},
+      onConfirm: async () => approve,
+      onOverlay,
+    });
+
+  it('写工具获批时通知一次遮罩打开', async () => {
+    const onOverlay = vi.fn();
+    const options = overlayOptions(onOverlay, true);
+
+    await options.beforeToolCall!(beforeContext('browser_click', { selector: '#a', index: 0 }), undefined);
+
+    expect(onOverlay).toHaveBeenCalledWith(
+      expect.objectContaining({ active: true, label: expect.any(String) }),
+    );
+  });
+
+  it('只读工具不触发遮罩', async () => {
+    const onOverlay = vi.fn();
+    const options = overlayOptions(onOverlay, true);
+
+    await options.beforeToolCall!(beforeContext('browser_read_page', {}), undefined);
+
+    expect(onOverlay).not.toHaveBeenCalled();
+  });
+
+  it('用户拒绝确认时不打开遮罩', async () => {
+    const onOverlay = vi.fn();
+    const options = overlayOptions(onOverlay, false);
+
+    await options.beforeToolCall!(beforeContext('browser_click', { selector: '#a', index: 0 }), undefined);
+
+    expect(onOverlay).not.toHaveBeenCalled();
+  });
+});
+
 describe('selectStreamFn', () => {
   it('returns browserOpenAIStream when api is undefined (default)', () => {
     expect(selectStreamFn(baseProvider)).toBe(browserOpenAIStream);
