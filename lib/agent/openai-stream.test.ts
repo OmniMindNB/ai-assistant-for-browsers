@@ -24,6 +24,27 @@ async function collectEvents(stream: AsyncIterable<AssistantMessageEvent>): Prom
   return events;
 }
 
+/** 把若干 chunk 拼成一条 SSE 响应，末尾补 [DONE]。 */
+function sseResponse(chunks: unknown[]): Response {
+  const body = [...chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n`), 'data: [DONE]\n'].join('\n');
+  return new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+}
+
+function contextWithTools(toolNames: string[]): Context {
+  return {
+    messages: [{ role: 'user', content: 'hi' }],
+    tools: toolNames.map((name) => ({ name, description: '', parameters: { type: 'object' } })),
+  } as unknown as Context;
+}
+
+async function finalMessage(context: Context): Promise<{ type: string; text?: string; name?: string; arguments?: unknown }[]> {
+  const stream = browserOpenAIStream(makeModel(), context, { apiKey: 'k' }) as AssistantMessageEventStream;
+  const events = await collectEvents(stream);
+  const done = events.at(-1);
+  if (done?.type !== 'done') throw new Error(`expected a done event, got ${done?.type}`);
+  return done.message.content as { type: string; text?: string; name?: string; arguments?: unknown }[];
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -102,5 +123,66 @@ describe('browserOpenAIStream', () => {
     if (errorEvent?.type === 'error') {
       expect(errorEvent.error.errorMessage).not.toMatch(/\(404\s*\)\s*$/);
     }
+  });
+
+  // 弱模型兼容（ref: lib/agent/tool-call-repair.ts）。修复前这两种畸形分别退化成
+  // 「工具收到空参数」和「工具压根不执行、用户看到一坨裸 JSON」。
+  it('repairs double-stringified tool arguments instead of dropping them', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        sseResponse([
+          {
+            choices: [
+              {
+                delta: {
+                  tool_calls: [
+                    { index: 0, id: 'call_1', function: { name: 'browser_click', arguments: JSON.stringify('{"selector":"#ok"}') } },
+                  ],
+                },
+                finish_reason: 'tool_calls',
+              },
+            ],
+          },
+        ]),
+      ),
+    );
+
+    const content = await finalMessage(contextWithTools(['browser_click']));
+    expect(content).toEqual([{ type: 'toolCall', id: 'call_1', name: 'browser_click', arguments: { selector: '#ok' } }]);
+  });
+
+  it('salvages a tool call the model wrote into the message text, keeping the prose', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        sseResponse([
+          { choices: [{ delta: { content: '我先读一下页面。\n' } }] },
+          { choices: [{ delta: { content: '{"name":"browser_read_page","arguments":{}}' } }, ] },
+          { choices: [{ delta: {}, finish_reason: 'stop' }] },
+        ]),
+      ),
+    );
+
+    const content = await finalMessage(contextWithTools(['browser_read_page']));
+    expect(content).toEqual([
+      { type: 'text', text: '我先读一下页面。' },
+      { type: 'toolCall', id: expect.any(String), name: 'browser_read_page', arguments: {} },
+    ]);
+  });
+
+  it('leaves the text alone when it contains no recognizable tool call', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        sseResponse([
+          { choices: [{ delta: { content: '这页讲的是气候变化。' } }] },
+          { choices: [{ delta: {}, finish_reason: 'stop' }] },
+        ]),
+      ),
+    );
+
+    const content = await finalMessage(contextWithTools(['browser_read_page']));
+    expect(content).toEqual([{ type: 'text', text: '这页讲的是气候变化。' }]);
   });
 });

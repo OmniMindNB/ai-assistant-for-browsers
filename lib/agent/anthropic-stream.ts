@@ -57,6 +57,8 @@ async function runAnthropicStream(
   const toolBlockIndexes = new Set<number>();
   const toolDeltaSeen = new Set<number>();
   let anthropicStopReason: string | undefined;
+  // 弱模型兜底：模型没走 tool_use 而把调用写进正文时，finishStream 据此把它捞回来。
+  const toolNames = context.tools?.map((tool) => tool.name) ?? [];
 
   function toolContentIndex(blockIndex: number): number {
     return (text ? 1 : 0) + [...toolCalls.keys()].sort((a, b) => a - b).indexOf(blockIndex);
@@ -186,7 +188,7 @@ async function runAnthropicStream(
           if (textStarted) {
             push({ type: 'text_end', contentIndex: 0, content: text, partial: buildPartial(model, startedAt, text, toolCalls, 'stop') });
           }
-          finishStream(model, push, startedAt, text, toolCalls, mapAnthropicStopReason(anthropicStopReason, toolCalls.size > 0));
+          finishStream(model, push, startedAt, text, toolCalls, mapAnthropicStopReason(anthropicStopReason, toolCalls.size > 0), toolNames);
           return;
         }
       }
@@ -195,7 +197,7 @@ async function runAnthropicStream(
     if (textStarted) {
       push({ type: 'text_end', contentIndex: 0, content: text, partial: buildPartial(model, startedAt, text, toolCalls, 'stop') });
     }
-    finishStream(model, push, startedAt, text, toolCalls, mapAnthropicStopReason(anthropicStopReason, toolCalls.size > 0));
+    finishStream(model, push, startedAt, text, toolCalls, mapAnthropicStopReason(anthropicStopReason, toolCalls.size > 0), toolNames);
   } catch (error) {
     const message = createAssistantMessage(model, startedAt, 'error', error instanceof Error ? error.message : String(error));
     push({ type: 'error', reason: options?.signal?.aborted ? 'aborted' : 'error', error: message });
