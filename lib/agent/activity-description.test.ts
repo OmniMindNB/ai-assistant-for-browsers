@@ -6,6 +6,12 @@ describe('describeToolActivity', () => {
     expect(describeToolActivity('browser_click', { selector: 'button.buy' }, 'running')).toBe('Clicking "button.buy"');
   });
 
+  it('describes asking, having asked, and a failed ask with the question as target', () => {
+    expect(describeToolActivity('ask_user', { question: '要保存这些改动吗？' }, 'running')).toBe('Asking: "要保存这些改动吗？"');
+    expect(describeToolActivity('ask_user', { question: '要保存这些改动吗？' }, 'done')).toBe('Asked: "要保存这些改动吗？"');
+    expect(describeToolActivity('ask_user', { question: '要保存这些改动吗？' }, 'failed')).toBe('Failed to ask "要保存这些改动吗？"');
+  });
+
   it('describes a failed click with the same target', () => {
     expect(describeToolActivity('browser_click', { selector: 'button.buy' }, 'failed')).toBe('Failed to click "button.buy"');
   });

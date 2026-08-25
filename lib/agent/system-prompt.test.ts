@@ -91,6 +91,11 @@ describe('buildSystemPrompt tool strategy', () => {
     expect(SYSTEM_PROMPT).toContain('browser_read_page 读正文');
     expect(SYSTEM_PROMPT).toContain('先调用一次 browser_inspect_page_implementation');
   });
+
+  it('tells the model when to use ask_user and warns against overusing it', () => {
+    expect(SYSTEM_PROMPT).toContain('用 ask_user 向用户提一个具体问题');
+    expect(SYSTEM_PROMPT).toContain('不要用它逃避做合理推断');
+  });
 });
 
 describe('buildSystemPrompt task execution', () => {

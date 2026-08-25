@@ -25,6 +25,8 @@ export const READ_ONLY_TOOL_NAMES = new Set([
   'browser_get_page_meta',
   'browser_screenshot',
   'browser_get_form',
+  // 不修改页面或浏览器状态——它本身就是"停下来问用户"，不需要写确认闸门再问一遍。
+  'ask_user',
 ]);
 
 export const CONFIRM_TOOL_NAMES = new Set([

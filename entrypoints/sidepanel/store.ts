@@ -99,6 +99,11 @@ export interface PendingConfirmation {
   codePreview?: string;
 }
 
+export interface PendingQuestion {
+  toolCallId: string;
+  question: string;
+}
+
 export type PageContextState =
   | { status: 'loading' }
   | { status: 'available'; tabId: number; title: string; url: string }
@@ -118,6 +123,7 @@ interface ChatState {
   busy: boolean;
   error: string | null;
   pendingConfirmation: PendingConfirmation | null;
+  pendingQuestion: PendingQuestion | null;
   provider: ProviderConfig | null;
   /** 全部已配置 Provider（输入框选择器枚举用） */
   providers: ProviderConfig[];
@@ -152,6 +158,7 @@ interface ChatState {
   openConversation: (id: string) => Promise<boolean>;
   removeConversation: (id: string) => Promise<void>;
   respondToConfirmation: (approved: boolean) => void;
+  respondToQuestion: (answer: string) => void;
   restoreTabConversation: () => Promise<void>;
 }
 
@@ -165,6 +172,7 @@ interface ActiveRun {
   origin: ConversationOrigin;
   agent: Agent | null;
   resolveConfirmation: ((approved: boolean) => void) | null;
+  resolveQuestion: ((answer: string) => void) | null;
   pendingToolArgs: Map<string, { toolName: string; args: unknown }>;
   terminatedToolCallIds: Set<string>;
 }
@@ -317,6 +325,7 @@ function isCurrentRun(run: ActiveRun, get: () => ChatState): boolean {
 function settleRun(run: ActiveRun): void {
   if (activeRun?.id !== run.id) return;
   run.resolveConfirmation = null;
+  run.resolveQuestion = null;
   run.agent = null;
   activeRun = null;
 }
@@ -332,10 +341,12 @@ function invalidateActiveRun(
   activeRun = null;
   run.resolveConfirmation?.(false);
   run.resolveConfirmation = null;
+  run.resolveQuestion?.('');
+  run.resolveQuestion = null;
   run.agent?.abort();
   if (isCurrentOrigin(run.origin, get)) {
     clearAllSlowActivityTimers();
-    set({ busy: false, pendingConfirmation: null, activitySteps: [] });
+    set({ busy: false, pendingConfirmation: null, pendingQuestion: null, activitySteps: [] });
   }
   if (persist && messages.length > 0) {
     void persistConversationSnapshot(run.origin.conversationId, messages);
@@ -425,6 +436,7 @@ export const useChat = create<ChatState>((set, get) => ({
   busy: false,
   error: null,
   pendingConfirmation: null,
+  pendingQuestion: null,
   provider: null,
   providers: [],
   selectedProviderId: null,
@@ -714,12 +726,14 @@ export const useChat = create<ChatState>((set, get) => ({
     if (!run || !isCurrentRun(run, get)) return;
     run.resolveConfirmation?.(false);
     run.resolveConfirmation = null;
+    run.resolveQuestion?.('');
+    run.resolveQuestion = null;
     run.agent?.abort();
     for (const step of get().activitySteps) run.terminatedToolCallIds.add(step.id);
-    const pendingId = get().pendingConfirmation?.toolCallId;
+    const pendingId = get().pendingConfirmation?.toolCallId ?? get().pendingQuestion?.toolCallId;
     if (pendingId) run.terminatedToolCallIds.add(pendingId);
     clearAllSlowActivityTimers();
-    set({ pendingConfirmation: null, activitySteps: [] });
+    set({ pendingConfirmation: null, pendingQuestion: null, activitySteps: [] });
   },
 
   respondToConfirmation: (approved) => {
@@ -743,6 +757,14 @@ export const useChat = create<ChatState>((set, get) => ({
     }
   },
 
+  respondToQuestion: (answer) => {
+    const run = activeRun;
+    if (!run || !isCurrentRun(run, get)) return;
+    run.resolveQuestion?.(answer);
+    run.resolveQuestion = null;
+    set({ pendingQuestion: null });
+  },
+
   clear: () => {
     get().disposeAttachments();
     clearAllSlowActivityTimers();
@@ -756,6 +778,7 @@ export const useChat = create<ChatState>((set, get) => ({
       busy: false,
       conversationId: genConversationId(),
       pendingConfirmation: null,
+      pendingQuestion: null,
     });
   },
 
@@ -794,6 +817,7 @@ export const useChat = create<ChatState>((set, get) => ({
       error: null,
       busy: false,
       pendingConfirmation: null,
+      pendingQuestion: null,
     });
     return true;
   },
@@ -844,6 +868,7 @@ export const useChat = create<ChatState>((set, get) => ({
           conversationId: genConversationId(),
           busy: false,
           pendingConfirmation: null,
+          pendingQuestion: null,
         });
       }
     }
@@ -911,6 +936,7 @@ async function runAgent(
     origin,
     agent: null,
     resolveConfirmation: null,
+    resolveQuestion: null,
     pendingToolArgs: new Map(),
     terminatedToolCallIds: new Set(),
   };
@@ -1012,6 +1038,7 @@ async function runAgent(
     busy: true,
     error: null,
     pendingConfirmation: null,
+    pendingQuestion: null,
   });
   if (!isCurrentRun(run, get)) return false;
 
@@ -1022,6 +1049,16 @@ async function runAgent(
     set({ pendingConfirmation: { toolCallId, toolName, summary, codePreview } });
     return new Promise<boolean>((resolve) => {
       run.resolveConfirmation = resolve;
+    });
+  };
+
+  // ask_user 工具自己就是"停下来问用户"，不走 onConfirm 那条批准/拒绝闸门——
+  // 这里只负责把问题投影到 UI、等待 respondToQuestion 把答案送回来。
+  const onAskUser = async (toolCallId: string, question: string, signal?: AbortSignal): Promise<string> => {
+    if (!isCurrentRun(run, get) || signal?.aborted) return '';
+    set({ pendingQuestion: { toolCallId, question } });
+    return new Promise<string>((resolve) => {
+      run.resolveQuestion = resolve;
     });
   };
 
@@ -1043,6 +1080,7 @@ async function runAgent(
     readToolCallBudget: DEFAULT_READ_TOOL_CALL_BUDGET,
     writeToolCallBudget: DEFAULT_WRITE_TOOL_CALL_BUDGET,
     onConfirm,
+    onAskUser,
   });
   if (!isCurrentRun(run, get)) return false;
   run.agent = agent;

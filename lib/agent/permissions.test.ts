@@ -17,6 +17,10 @@ describe('decideToolPermission', () => {
     expect(decideToolPermission('browser_read_page', {})).toEqual({ level: 'always_allow' });
   });
 
+  it('always allows ask_user — it does not mutate page or browser state', () => {
+    expect(decideToolPermission('ask_user', { question: '你想让我提交这个表单吗？' })).toEqual({ level: 'always_allow' });
+  });
+
   it('denies an unknown tool', () => {
     expect(decideToolPermission('browser_made_up', {}).level).toBe('deny');
   });

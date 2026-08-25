@@ -42,9 +42,15 @@ import {
 
 export type BrowserAgentTool = AgentTool<any, Record<string, unknown>>;
 
-export function createBrowserTools(tabId: number): BrowserAgentTool[] {
+export interface BrowserToolsConfig {
+  /** 供 ask_user 工具调用，等待用户在侧边栏里回答；未接入时该工具直接报错。 */
+  onAskUser?: (toolCallId: string, question: string, signal?: AbortSignal) => Promise<string>;
+}
+
+export function createBrowserTools(tabId: number, config: BrowserToolsConfig = {}): BrowserAgentTool[] {
   return [
     browserGetActiveTabTool,
+    makeAskUserTool(config.onAskUser),
     makeReadPageTool(tabId),
     makeGetPageMetaTool(tabId),
     makeInspectPageImplementationTool(tabId),
@@ -84,6 +90,26 @@ const browserGetActiveTabTool: BrowserAgentTool = {
     return textResult(JSON.stringify(response.data, null, 2), response.data);
   },
 };
+
+// 不带 browser_ 前缀：不触碰页面或浏览器状态，是纯粹的"停下来问用户"能力。
+function makeAskUserTool(onAskUser?: BrowserToolsConfig['onAskUser']): BrowserAgentTool {
+  return {
+    name: 'ask_user',
+    label: 'Ask User',
+    description:
+      '当任务存在真正的歧义、缺少必要信息，或有多种合理但后果不同的做法时，向用户提一个具体问题并等待回答。' +
+      '不要用它来逃避做合理推断，也不要用它询问可以从页面内容直接读到的信息。',
+    parameters: Type.Object({
+      question: Type.String({ description: '要问用户的具体问题，一次只问一件事。' }),
+    }),
+    execute: async (toolCallId, params, signal) => {
+      if (!onAskUser) throw new Error('ask_user 不可用：当前环境未接入提问 UI。');
+      const { question } = params as { question: string };
+      const answer = await onAskUser(toolCallId, question, signal);
+      return textResult(`用户回答：${answer}`, { question, answer });
+    },
+  };
+}
 
 function makeReadPageTool(tabId: number): BrowserAgentTool {
   return {

@@ -185,6 +185,9 @@ function buildToolStrategy(options: SystemPromptOptions): string[] {
   lines.push(
     'browser_screenshot 只会返回一句文字说明，截图图像本身不会进入你的上下文——你看不到画面内容。除非用户明确要求截图，否则不要调用它，也不要指望靠它判断页面外观。',
   );
+  lines.push(
+    '任务存在真正的歧义、缺少必要信息，或有多种合理但后果不同的做法时，用 ask_user 向用户提一个具体问题再继续；不要用它逃避做合理推断，也不要问页面内容里已经有答案的问题。',
+  );
   return lines;
 }
 

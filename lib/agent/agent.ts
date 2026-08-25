@@ -43,6 +43,7 @@ export interface BrowserAgentOptions {
   readToolCallBudget?: number;
   writeToolCallBudget?: number;
   onConfirm?: ConfirmFn;
+  onAskUser?: (toolCallId: string, question: string, signal?: AbortSignal) => Promise<string>;
 }
 
 export interface BrowserAgentRuntimeOptions extends BrowserAgentOptions {
@@ -70,7 +71,7 @@ export function buildSubmitIntentProbePayload(toolName: string, args: unknown): 
 }
 
 export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): AgentOptions {
-  const tools = options.tools ?? createBrowserTools(options.tabId);
+  const tools = options.tools ?? createBrowserTools(options.tabId, { onAskUser: options.onAskUser });
   const readToolCallBudget = options.readToolCallBudget ?? DEFAULT_READ_TOOL_CALL_BUDGET;
   const writeToolCallBudget = options.writeToolCallBudget ?? DEFAULT_WRITE_TOOL_CALL_BUDGET;
   const policy = createAgentToolPolicy({ readToolCallBudget, writeToolCallBudget });

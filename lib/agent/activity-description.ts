@@ -31,6 +31,8 @@ export function describeToolActivity(toolName: string, args: unknown, status: Ac
   switch (toolName) {
     case 'browser_get_active_tab':
       return plain(status, 'agentActivity.tool.getActiveTab');
+    case 'ask_user':
+      return withTarget(status, 'agentActivity.now.askUser', 'agentActivity.done.askUser', 'agentActivity.failed.askUser', str('question'));
     case 'browser_read_page':
       return plain(status, 'agentActivity.tool.readPage');
     case 'browser_get_page_meta':

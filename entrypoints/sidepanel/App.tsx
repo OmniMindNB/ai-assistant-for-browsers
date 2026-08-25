@@ -22,7 +22,7 @@ import { WorkbenchHeader } from './components/WorkbenchHeader';
 import { ActivityStepList } from './components/ActivityStepList';
 import { WorkbenchComposer } from './components/WorkbenchComposer';
 import { AttachmentChip } from './components/AttachmentChip';
-import type { PendingConfirmation, UIMessage } from './store';
+import type { PendingConfirmation, PendingQuestion, UIMessage } from './store';
 import { resolvePageAttached, type ResolvedShortcutCommand } from '@/lib/workbench/presentation';
 import {
   IconChevronDown,
@@ -40,6 +40,7 @@ export default function App() {
     busy,
     error,
     pendingConfirmation,
+    pendingQuestion,
     providers,
     selectedProviderId,
     selectedModel,
@@ -67,6 +68,7 @@ export default function App() {
     openConversation,
     removeConversation,
     respondToConfirmation,
+    respondToQuestion,
     restoreTabConversation,
   } = useChat();
 
@@ -264,7 +266,11 @@ export default function App() {
                       busy={busy}
                       requestBlocked={requestBlocked}
                       showThinkingIndicator={
-                        i === messages.length - 1 && busy && !pendingConfirmation && !hasRunningActivityStep
+                        i === messages.length - 1 &&
+                        busy &&
+                        !pendingConfirmation &&
+                        !pendingQuestion &&
+                        !hasRunningActivityStep
                       }
                       editing={editingId === m.id}
                       discardCount={editingId === m.id ? discardedCount(messages, m.id) : 0}
@@ -274,7 +280,7 @@ export default function App() {
                     />
                   ))
                 )}
-                {activitySteps.length > 0 && !pendingConfirmation && (
+                {activitySteps.length > 0 && !pendingConfirmation && !pendingQuestion && (
                   <ActivityStepList steps={activitySteps} />
                 )}
                 {pendingConfirmation && (
@@ -283,6 +289,9 @@ export default function App() {
                     onApprove={() => respondToConfirmation(true)}
                     onDeny={() => respondToConfirmation(false)}
                   />
+                )}
+                {pendingQuestion && (
+                  <QuestionCard question={pendingQuestion} onSubmit={respondToQuestion} />
                 )}
                 {error && (
                   <div
@@ -513,6 +522,53 @@ function ConfirmationCard({
       <p className="mt-2 text-[11px] text-amber-800/70 dark:text-amber-300/60">
         {t('confirm.approveHint')}
       </p>
+    </div>
+  );
+}
+
+function QuestionCard({
+  question,
+  onSubmit,
+}: {
+  question: PendingQuestion;
+  onSubmit: (answer: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [answer, setAnswer] = useState('');
+
+  const submit = () => {
+    const trimmed = answer.trim();
+    if (!trimmed) return;
+    onSubmit(trimmed);
+    setAnswer('');
+  };
+
+  return (
+    <div className="rounded-xl border border-indigo-300 bg-indigo-50 p-3 text-sm dark:border-indigo-900/60 dark:bg-indigo-950/30">
+      <div className="mb-2 flex items-center gap-2 font-medium text-indigo-900 dark:text-indigo-200">
+        {t('askUser.title')}
+      </div>
+      <p className="mb-2 whitespace-pre-line text-indigo-900/90 dark:text-indigo-200/90">{question.question}</p>
+      <div className="flex gap-2">
+        <input
+          autoFocus
+          type="text"
+          value={answer}
+          onChange={(e) => setAnswer(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') submit();
+          }}
+          placeholder={t('askUser.placeholder')}
+          className="min-w-0 flex-1 rounded-lg border border-indigo-200 bg-white px-2.5 py-1.5 text-xs text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-indigo-800 dark:bg-neutral-900 dark:text-neutral-100"
+        />
+        <button
+          onClick={submit}
+          disabled={!answer.trim()}
+          className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+        >
+          {t('askUser.submit')}
+        </button>
+      </div>
     </div>
   );
 }

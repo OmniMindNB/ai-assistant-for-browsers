@@ -747,6 +747,74 @@ describe('chat store page context', () => {
     await send;
   });
 
+  it('projects an ask_user question to pendingQuestion and resolves it with the user answer', async () => {
+    let resolvePrompt!: () => void;
+    const agent = makeAgent();
+    agent.prompt.mockImplementation(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    mocks.sendMessage.mockImplementation((type: string) => {
+      if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: [
+        'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE',
+        'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION',
+        'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
+      ] } });
+      return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    });
+    const send = useChat.getState().send('which account should I use');
+    await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalled());
+    const onAskUser = mocks.createBrowserAgent.mock.calls[0][0].onAskUser as (
+      toolCallId: string,
+      question: string,
+      signal?: AbortSignal,
+    ) => Promise<string>;
+
+    expect(useChat.getState().pendingQuestion).toBeNull();
+    const pending = onAskUser('call-ask-1', '用哪个账号登录？');
+    await vi.waitFor(() => expect(useChat.getState().pendingQuestion).toEqual({
+      toolCallId: 'call-ask-1',
+      question: '用哪个账号登录？',
+    }));
+
+    useChat.getState().respondToQuestion('用工作账号');
+    await expect(pending).resolves.toBe('用工作账号');
+    expect(useChat.getState().pendingQuestion).toBeNull();
+
+    resolvePrompt();
+    await send;
+  });
+
+  it('resolves a pending ask_user question when the run is stopped, instead of leaving it hanging', async () => {
+    let resolvePrompt!: () => void;
+    const agent = makeAgent();
+    agent.prompt.mockImplementation(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    mocks.sendMessage.mockImplementation((type: string) => {
+      if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: [
+        'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE',
+        'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION',
+        'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
+      ] } });
+      return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    });
+    const send = useChat.getState().send('which account should I use');
+    await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalled());
+    const onAskUser = mocks.createBrowserAgent.mock.calls[0][0].onAskUser as (
+      toolCallId: string,
+      question: string,
+      signal?: AbortSignal,
+    ) => Promise<string>;
+
+    const pending = onAskUser('call-ask-2', '用哪个账号登录？');
+    await vi.waitFor(() => expect(useChat.getState().pendingQuestion).not.toBeNull());
+
+    useChat.getState().stop();
+    await expect(pending).resolves.toBe('');
+    expect(useChat.getState().pendingQuestion).toBeNull();
+
+    resolvePrompt();
+    await send;
+  });
+
   it('logs a failed tool call to the console without exposing the raw result in the activity description', async () => {
     let resolvePrompt!: () => void;
     const agent = makeAgent();
