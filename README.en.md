@@ -116,3 +116,7 @@ lib/                # Shared libraries
   page-resource-fetch.ts    # SSRF protection for page-resource fetches
 docs/               # Documentation (docs-driven development)
 ```
+
+## License
+
+This project is open source under the [MIT License](LICENSE).

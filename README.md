@@ -116,3 +116,7 @@ lib/                # 共享库
   page-resource-fetch.ts    # 页面资源抓取的 SSRF 防护
 docs/               # 文档（文档驱动开发）
 ```
+
+## 许可证
+
+本项目基于 [MIT License](LICENSE) 开源。
