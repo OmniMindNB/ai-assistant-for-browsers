@@ -216,8 +216,10 @@ export interface ModifyDomResult {
 }
 
 export interface ClickElementPayload {
-  selector: string;
+  selector?: string;
   index?: number;
+  /** browser_get_form 发放的字段句柄，优先于 selector。 */
+  fieldId?: string;
 }
 
 export interface ClickElementResult {
@@ -226,6 +228,8 @@ export interface ClickElementResult {
   clickedIndex: number | null;
   status: 'ok' | 'not_found' | 'not_clickable' | 'not_writable' | 'invalid_value' | 'blocked_sensitive';
   detail?: string;
+  /** 句柄表已失效（页面已导航或 storage 丢失），模型必须重新调用 browser_get_form。 */
+  fieldsTableStale?: boolean;
 }
 
 export interface TypeTextPayload {
@@ -293,7 +297,7 @@ export interface SetStorageResult {
 
 export type FormFieldKind =
   | 'text' | 'textarea' | 'select' | 'checkbox' | 'radio'
-  | 'contenteditable' | 'file' | 'submit' | 'button' | 'unsupported';
+  | 'contenteditable' | 'file' | 'submit' | 'button' | 'link' | 'unsupported';
 
 export interface FormFieldDescriptor {
   fieldId: string;
@@ -301,6 +305,8 @@ export interface FormFieldDescriptor {
   type?: string;
   name?: string;
   label?: string;
+  /** 仅 kind === 'link' 时有值。 */
+  href?: string;
   placeholder?: string;
   required: boolean;
   disabled: boolean;
