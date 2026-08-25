@@ -6,7 +6,7 @@ import type {
   PrepareNextTurnContext,
 } from '@earendil-works/pi-agent-core';
 import type { ProviderConfig } from '@/lib/settings';
-import { createBrowserAgentOptions, createModel, selectStreamFn } from './agent';
+import { buildSubmitIntentProbePayload, createBrowserAgentOptions, createModel, selectStreamFn } from './agent';
 import { browserOpenAIStream } from './openai-stream';
 import { browserAnthropicStream } from './anthropic-stream';
 
@@ -194,5 +194,30 @@ describe('createModel', () => {
 
   it('declares both text and image input support', () => {
     expect(createModel(baseProvider).input).toEqual(['text', 'image']);
+  });
+});
+
+describe('buildSubmitIntentProbePayload', () => {
+  it('builds a fieldId probe payload for browser_click with a fieldId', () => {
+    expect(buildSubmitIntentProbePayload('browser_click', { fieldId: 'f7' })).toEqual({
+      submitFieldId: 'f7',
+      fieldIds: ['f7'],
+    });
+  });
+
+  it('falls back to selector/index for browser_click without a fieldId', () => {
+    expect(buildSubmitIntentProbePayload('browser_click', { selector: '#save', index: 2 })).toEqual({
+      selector: '#save',
+      index: 2,
+    });
+  });
+
+  it('keeps the existing fill_form payload shape', () => {
+    expect(
+      buildSubmitIntentProbePayload('browser_fill_form', {
+        fields: [{ fieldId: 'f1' }, { fieldId: 'f2' }],
+        submit: { fieldId: 'f9' },
+      }),
+    ).toEqual({ submitFieldId: 'f9', fieldIds: ['f1', 'f2'] });
   });
 });

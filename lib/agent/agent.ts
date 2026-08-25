@@ -49,6 +49,26 @@ export interface BrowserAgentRuntimeOptions extends BrowserAgentOptions {
   steer: (message: AgentMessage) => void;
 }
 
+/**
+ * browser_fill_form 走「句柄表批量查」；browser_click 只在带 fieldId 时走同一条路径
+ * （复用 background 侧已有的 fieldIds → fieldLabels 查表逻辑），否则退回 selector/index。
+ */
+export function buildSubmitIntentProbePayload(toolName: string, args: unknown): ProbeClickTargetPayload {
+  const record = (args ?? {}) as Record<string, unknown>;
+  if (toolName === 'browser_fill_form') {
+    return {
+      submitFieldId: (record.submit as { fieldId?: string } | undefined)?.fieldId,
+      fieldIds: Array.isArray(record.fields)
+        ? (record.fields as { fieldId?: string }[]).map((field) => String(field.fieldId ?? '')).filter(Boolean)
+        : [],
+    };
+  }
+  if (toolName === 'browser_click' && typeof record.fieldId === 'string' && record.fieldId) {
+    return { submitFieldId: record.fieldId, fieldIds: [record.fieldId] };
+  }
+  return { selector: String(record.selector ?? ''), index: Number(record.index ?? 0) };
+}
+
 export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): AgentOptions {
   const tools = options.tools ?? createBrowserTools(options.tabId);
   const readToolCallBudget = options.readToolCallBudget ?? DEFAULT_READ_TOOL_CALL_BUDGET;
@@ -106,16 +126,7 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
         onConfirm: options.onConfirm,
         signal,
         resolveSubmitIntent: async (toolName, args) => {
-          const record = (args ?? {}) as Record<string, unknown>;
-          const payload: ProbeClickTargetPayload =
-            toolName === 'browser_fill_form'
-              ? {
-                  submitFieldId: (record.submit as { fieldId?: string } | undefined)?.fieldId,
-                  fieldIds: Array.isArray(record.fields)
-                    ? (record.fields as { fieldId?: string }[]).map((field) => String(field.fieldId ?? '')).filter(Boolean)
-                    : [],
-                }
-              : { selector: String(record.selector ?? ''), index: Number(record.index ?? 0) };
+          const payload = buildSubmitIntentProbePayload(toolName, args);
           // 探测失败时不阻断，退回普通 confirm 档位——探测只用于「升级」确认强度，
           // 它自己出错（包括消息通道本身没有响应、抛异常）不应该把一次正常的写操作也卡死。
           try {
