@@ -58,7 +58,7 @@ export function describeToolActivity(toolName: string, args: unknown, status: Ac
     case 'browser_modify_dom':
       return withTarget(status, 'agentActivity.now.modifyDom', 'agentActivity.done.modifyDom', 'agentActivity.failed.modifyDom', str('selector'));
     case 'browser_click':
-      return withTarget(status, 'agentActivity.now.click', 'agentActivity.done.click', 'agentActivity.failed.click', str('selector'));
+      return withTarget(status, 'agentActivity.now.click', 'agentActivity.done.click', 'agentActivity.failed.click', str('selector') || str('fieldId'));
     case 'browser_type':
       return withTarget(status, 'agentActivity.now.type', 'agentActivity.done.type', 'agentActivity.failed.type', str('selector'));
     case 'browser_select':

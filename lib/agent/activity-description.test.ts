@@ -10,6 +10,10 @@ describe('describeToolActivity', () => {
     expect(describeToolActivity('browser_click', { selector: 'button.buy' }, 'failed')).toBe('Failed to click "button.buy"');
   });
 
+  it('describes a running click by fieldId when no selector is given', () => {
+    expect(describeToolActivity('browser_click', { fieldId: 'f7' }, 'running')).toBe('Clicking "f7"');
+  });
+
   it('describes running type/select/setStyle/modifyDom/getHtml/getComputedStyle/queryDom by selector', () => {
     expect(describeToolActivity('browser_type', { selector: 'input.name' }, 'running')).toBe('Typing into "input.name"');
     expect(describeToolActivity('browser_select', { selector: 'select.country' }, 'running')).toBe('Selecting an option in "select.country"');
