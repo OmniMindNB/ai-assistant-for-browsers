@@ -2,6 +2,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type {
   AfterToolCallContext,
+  AgentMessage,
   BeforeToolCallContext,
   PrepareNextTurnContext,
 } from '@earendil-works/pi-agent-core';
@@ -219,5 +220,39 @@ describe('buildSubmitIntentProbePayload', () => {
         submit: { fieldId: 'f9' },
       }),
     ).toEqual({ submitFieldId: 'f9', fieldIds: ['f1', 'f2'] });
+  });
+});
+
+// 修复前预算是纯硬阻断：模型毫无预警地被挡下。这里在跌到阈值时先软提醒一次，
+// 给它自己收尾的机会（ref: lib/agent/tool-policy.ts 的 budgetWarning）。
+describe('createBrowserAgentOptions budget warnings', () => {
+  function withBudget(steer: (message: AgentMessage) => void, readToolCallBudget: number) {
+    return createBrowserAgentOptions({
+      provider: baseProvider,
+      tabId: 1,
+      tools: [],
+      readToolCallBudget,
+      writeToolCallBudget: readToolCallBudget,
+      steer,
+    });
+  }
+
+  // 预算 8：第 2 次调用后还剩 6（不提醒），第 3 次后剩 5，命中阈值。
+  it('steers a warning once the remaining budget hits the threshold', async () => {
+    const steer = vi.fn<(message: AgentMessage) => void>();
+    const hooks = withBudget(steer, 8);
+    for (let i = 0; i < 2; i += 1) await hooks.afterToolCall?.(afterContext('browser_read_page', {}, false));
+    expect(steer).not.toHaveBeenCalled();
+
+    await hooks.afterToolCall?.(afterContext('browser_read_page', {}, false));
+    expect(steer).toHaveBeenCalledTimes(1);
+    expect(steer.mock.calls[0][0]).toMatchObject({ role: 'user', content: expect.stringContaining('5 次') });
+  });
+
+  it('does not repeat the same warning on the next tool call', async () => {
+    const steer = vi.fn<(message: AgentMessage) => void>();
+    const hooks = withBudget(steer, 8);
+    for (let i = 0; i < 4; i += 1) await hooks.afterToolCall?.(afterContext('browser_read_page', {}, false));
+    expect(steer).toHaveBeenCalledTimes(1);
   });
 });

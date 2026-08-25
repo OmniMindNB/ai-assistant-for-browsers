@@ -8,10 +8,21 @@ export interface ToolPreflightBlock {
   reason: string;
 }
 
+/**
+ * 软提醒阈值（升序）：剩余调用次数跌到某一档时提醒一次。
+ * 对标 alibaba/page-agent 的 <sys> 观察注入——预算耗尽前先让模型自己有机会收尾，
+ * 而不是像修复前那样毫无预警地被硬阻断。
+ */
+const BUDGET_WARNING_THRESHOLDS = [2, 5] as const;
+
 export interface AgentToolPolicy {
   readonly completedToolCalls: number;
   readonly currentBudget: number;
   readonly exhausted: boolean;
+  /** 当前档位下还剩多少次工具调用。 */
+  readonly remaining: number;
+  /** 跌到提醒阈值时返回一次提示文案；同一阈值不重复提醒，未到阈值返回 undefined。 */
+  budgetWarning(): string | undefined;
   preflight(toolName: string, args: unknown, isConfirmTool: boolean): ToolPreflightBlock | undefined;
   approveWrite(): void;
   recordPreExecutionBlock(): void;
@@ -44,6 +55,7 @@ export function createAgentToolPolicy(options: AgentToolPolicyOptions): AgentToo
   let consecutiveFailure: { signature: string; count: number } | undefined;
   let consecutivePreExecutionBlocks = 0;
   let phase: 'active' | 'final_response_prepared' | 'final_response_running' = 'active';
+  const warnedThresholds = new Set<number>();
 
   return {
     get completedToolCalls() {
@@ -54,6 +66,26 @@ export function createAgentToolPolicy(options: AgentToolPolicyOptions): AgentToo
     },
     get exhausted() {
       return completedToolCalls >= this.currentBudget;
+    },
+    get remaining() {
+      return Math.max(0, this.currentBudget - completedToolCalls);
+    },
+    budgetWarning() {
+      const remaining = this.remaining;
+      // 预算已归零时不再软提醒：此时 prepareFinalResponse 的硬指令会接管，
+      // 多发一条只会和它重复。软提醒的意义是「还有余量时提前收尾」。
+      if (remaining <= 0) return undefined;
+      // 升序找最紧的那一档：直接跌破 2 时只发「还剩 2 次」，不补发已经过时的「还剩 5 次」。
+      const threshold = BUDGET_WARNING_THRESHOLDS.find((limit) => remaining <= limit && !warnedThresholds.has(limit));
+      if (threshold === undefined) return undefined;
+      // 连同所有更宽松的档位一起标记为已提醒，避免下一次调用又补发一条过时提醒；
+      // 也让写入批准把预算抬高后，已发过的提醒不会被重新解锁。
+      for (const limit of BUDGET_WARNING_THRESHOLDS) {
+        if (limit >= threshold) warnedThresholds.add(limit);
+      }
+      return remaining <= BUDGET_WARNING_THRESHOLDS[0]
+        ? `工具调用预算只剩 ${remaining} 次，必须立刻基于现有结果给出最终回答，并说明仍不确定的部分。`
+        : `工具调用预算只剩 ${remaining} 次，请开始收尾：先完成最关键的一两步，然后基于现有证据作答。`;
     },
     preflight(toolName, args, isConfirmTool) {
       const signature = toolSignature(toolName, args);

@@ -263,7 +263,14 @@ export interface ApplyFillInput {
 
 export interface ApplyFillOutput {
   outcomes: ApplyFillOutcome[];
-  submitted?: { fieldId: string; status: 'ok' | 'not_found' | 'mismatch' | 'not_clickable' };
+  submitted?: {
+    fieldId: string;
+    status: 'ok' | 'not_found' | 'mismatch' | 'not_clickable';
+    /** 被点元素的可见文案；页面可控，已压空白并截断。 */
+    label?: string;
+    /** 命中 <a target="_blank">：当前标签页不会变化，必须点破。 */
+    opensNewTab?: boolean;
+  };
   fieldsTableStale?: boolean;
 }
 
@@ -399,6 +406,21 @@ export function applyFormFill(input: ApplyFillInput): ApplyFillOutput {
         host.focus();
         host.textContent = value;
         fireInput(host, value);
+
+        // Slate.js / Quill 一类编辑器把 DOM 当受控视图，直接写 textContent 会被无视或覆盖。
+        // 回读不符时降级到 execCommand：它走浏览器原生的编辑管线，这些编辑器都能收到。
+        // 已弃用但仍被各主流浏览器支持；typeof 守卫是给未实现它的 jsdom 留的。
+        if ((host.textContent ?? '') !== value && typeof document.execCommand === 'function') {
+          host.focus();
+          const selection = window.getSelection();
+          const range = document.createRange();
+          range.selectNodeContents(host);
+          selection?.removeAllRanges();
+          selection?.addRange(range);
+          document.execCommand('delete', false);
+          document.execCommand('insertText', false, value);
+        }
+
         host.dispatchEvent(new Event('change', { bubbles: true }));
         host.blur();
         const actual = host.textContent ?? '';
@@ -443,6 +465,8 @@ export function applyFormFill(input: ApplyFillInput): ApplyFillOutput {
       submitted = { fieldId: input.submit.fieldId, status: 'mismatch' };
     } else {
       const button = element as HTMLElement;
+      // 与 clickElementInPage 同理：先滚进视口再测量（守卫是给未实现该方法的 jsdom 留的）。
+      if (typeof button.scrollIntoView === 'function') button.scrollIntoView({ block: 'center', inline: 'nearest' });
       const rect = button.getBoundingClientRect();
       const disabled = (button as HTMLButtonElement).disabled === true;
       const hasBox = rect.width > 0 || rect.height > 0;
@@ -478,7 +502,17 @@ export function applyFormFill(input: ApplyFillInput): ApplyFillOutput {
         button.dispatchEvent(new PointerEvent('pointerup', pointerOpts));
         button.dispatchEvent(new MouseEvent('mouseup', mouseOpts));
         button.dispatchEvent(new MouseEvent('click', mouseOpts));
-        submitted = { fieldId: input.submit.fieldId, status: 'ok' };
+
+        // ⚠️ 与 clickElementInPage 重复：两处都是被序列化注入的独立函数，不能共用 helper。
+        // aria-label 优先：图标按钮的可见文本往往为空或只是一个字形。
+        const rawLabel = button.getAttribute('aria-label') || button.textContent || '';
+        const label = rawLabel.replace(/\s+/g, ' ').trim().slice(0, 60);
+        submitted = {
+          fieldId: input.submit.fieldId,
+          status: 'ok',
+          label: label || undefined,
+          opensNewTab: button.tagName.toLowerCase() === 'a' && button.getAttribute('target') === '_blank',
+        };
       }
     }
   }
@@ -542,6 +576,10 @@ export interface LegacyWriteStatus {
   status: 'ok' | 'not_found' | 'not_clickable' | 'not_writable' | 'invalid_value' | 'blocked_sensitive';
   detail?: string;
   actualValue?: string;
+  /** 被点元素的可见文案，让模型能确认自己点中的是不是想点的东西。页面可控，已压空白并截断。 */
+  label?: string;
+  /** 命中 <a target="_blank">：当前标签页不会变化，必须点破。 */
+  opensNewTab?: boolean;
 }
 
 // ⚠️ 序列化注入，禁止引用模块作用域绑定（包括本文件的其它函数）。
@@ -549,6 +587,11 @@ export function clickElementInPage(input: { selector: string; index: number }): 
   const nodes = Array.from(document.querySelectorAll<HTMLElement>(input.selector));
   const target = nodes[input.index ?? 0];
   if (!target) return { status: 'not_found', detail: `没有匹配 "${input.selector}" 的第 ${input.index ?? 0} 个元素。` };
+
+  // 先滚进视口再测量：视口外元素的 rect 是超界坐标，高亮框（position:fixed + rect）会画到
+  // 屏幕外，elementFromPoint 也恒为 null 而使遮挡检测形同虚设；懒渲染内容同样需要先滚到才加载。
+  // typeof 守卫是给 jsdom 留的——它没有实现 scrollIntoView。
+  if (typeof target.scrollIntoView === 'function') target.scrollIntoView({ block: 'center', inline: 'nearest' });
 
   const rect = target.getBoundingClientRect();
   const disabled = (target as HTMLButtonElement).disabled === true;
@@ -589,7 +632,15 @@ export function clickElementInPage(input: { selector: string; index: number }): 
   target.dispatchEvent(new PointerEvent('pointerup', pointerOpts));
   target.dispatchEvent(new MouseEvent('mouseup', mouseOpts));
   target.dispatchEvent(new MouseEvent('click', mouseOpts));
-  return { status: 'ok' };
+
+  // aria-label 优先：图标按钮的可见文本往往为空或只是一个字形。
+  const rawLabel = target.getAttribute('aria-label') || target.textContent || '';
+  const label = rawLabel.replace(/\s+/g, ' ').trim().slice(0, 60);
+  return {
+    status: 'ok',
+    label: label || undefined,
+    opensNewTab: target.tagName.toLowerCase() === 'a' && target.getAttribute('target') === '_blank',
+  };
 }
 
 export function typeTextInPage(input: { selector: string; index: number; text: string; replace: boolean }): LegacyWriteStatus {
@@ -627,6 +678,19 @@ export function typeTextInPage(input: { selector: string; index: number; text: s
     target.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, inputType: 'insertText', data: input.text }));
     target.textContent = nextValue;
     target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: input.text }));
+    // 与 applyFormFill 的 contenteditable 分支同一条兜底：Slate.js / Quill 一类编辑器把 DOM
+    // 当受控视图，会无视直接写 textContent；回读不符就降级到走原生编辑管线的 execCommand。
+    // typeof 守卫是给未实现它的 jsdom 留的。
+    if ((target.textContent ?? '') !== nextValue && typeof document.execCommand === 'function') {
+      target.focus();
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(target);
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      document.execCommand('delete', false);
+      document.execCommand('insertText', false, nextValue);
+    }
   } else {
     const prototype = tag === 'textarea' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
     const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;

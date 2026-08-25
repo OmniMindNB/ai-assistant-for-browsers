@@ -230,6 +230,12 @@ export interface ClickElementResult {
   detail?: string;
   /** 句柄表已失效（页面已导航或 storage 丢失），模型必须重新调用 browser_get_form。 */
   fieldsTableStale?: boolean;
+  /** 被点元素的可见文案，供模型确认自己点中的是不是想点的东西。页面可控，已净化截断。 */
+  label?: string;
+  /** 命中 <a target="_blank">：当前标签页不会变化，必须点破，否则模型会一直等它变。 */
+  opensNewTab?: boolean;
+  /** 本次点击之后页面新出现的可交互元素（下拉建议、展开的菜单项等）。句柄表已同步刷新。 */
+  newFields?: FormFieldDescriptor[];
 }
 
 export interface TypeTextPayload {
@@ -246,6 +252,8 @@ export interface TypeTextResult {
   status: 'ok' | 'not_found' | 'not_clickable' | 'not_writable' | 'invalid_value' | 'blocked_sensitive';
   detail?: string;
   actualValue?: string;
+  /** 本次输入之后页面新出现的可交互元素（典型如自动补全下拉）。句柄表已同步刷新。 */
+  newFields?: FormFieldDescriptor[];
 }
 
 export interface SelectOptionPayload {
@@ -274,6 +282,13 @@ export interface ScrollPageResult {
   selector?: string;
   x: number;
   y: number;
+  /** 垂直方向的实际位移，正数向下。滚不动时为 0。 */
+  scrolledBy: number;
+  /** 视口上方 / 下方尚未查看的像素数，用来告诉模型「还剩多少没看」。 */
+  pixelsAbove: number;
+  pixelsBelow: number;
+  /** 换算「约几屏」用；取不到时为 0，文案会省略屏数提示。 */
+  viewportHeight: number;
 }
 
 export interface NavigateTabPayload {
@@ -281,7 +296,12 @@ export interface NavigateTabPayload {
 }
 
 export interface NavigateTabResult {
+  /** 跳转结束后的实际地址；与 requestedUrl 不同即发生过重定向。 */
   url: string;
+  /** 调用方请求的地址，仅在与 url 不同时才有意义。 */
+  requestedUrl?: string;
+  /** 落地页标题，页面可控，已净化截断。 */
+  title?: string;
 }
 
 export interface SetStoragePayload {
@@ -323,6 +343,8 @@ export interface FormFieldDescriptor {
   fingerprint: string;
   formId?: string;
   validationMessage?: string;
+  /** 相对上一次快照新出现的元素（下拉建议、展开的菜单项等）。首次读取该页面时不标记。 */
+  isNew?: boolean;
 }
 
 export interface GetFormPayload {
@@ -358,6 +380,8 @@ export interface FillFormResult {
   submitted?: { fieldId: string; status: 'ok' | 'not_found' | 'mismatch' | 'not_clickable' };
   /** 句柄表已失效（页面导航或 storage 丢失），模型必须重新调用 browser_get_form。 */
   fieldsTableStale?: boolean;
+  /** 本次写入之后页面新出现的可交互元素（下拉建议、展开的菜单项等）。句柄表已同步刷新。 */
+  newFields?: FormFieldDescriptor[];
 }
 
 export interface ProbeClickTargetPayload {

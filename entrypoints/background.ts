@@ -59,7 +59,7 @@ import {
   typeTextInPage,
   type ApplyFillItem,
 } from '@/lib/agent/form-dom';
-import { toFieldDescriptor } from '@/lib/agent/form-schema';
+import { findNewFieldIds, sanitizePageText, toFieldDescriptor } from '@/lib/agent/form-schema';
 import { getFormFieldsForTab, setFormFieldsForTab, type FormFieldHandle } from '@/lib/agent/tab-form-fields';
 import { decideSubmitIntent } from '@/lib/agent/form-submit';
 
@@ -333,7 +333,23 @@ async function queryDom(payload: QueryDomPayload, tabId: number): Promise<QueryD
 const MAX_FORM_FIELDS = 120;
 const MAX_SELECT_OPTIONS = 50;
 
-async function getForm(payload: GetFormPayload, tabId: number): Promise<GetFormResult> {
+interface FieldSnapshot {
+  collected: Awaited<ReturnType<typeof collectFormFields>>;
+  fields: FormFieldDescriptor[];
+  orphanFieldIds: string[];
+  /** 相对上一次快照新出现的字段；首次读取该页面或页面已换地址时为空。 */
+  newFields: FormFieldDescriptor[];
+}
+
+/**
+ * 采一次字段快照：发放新的 fieldId 句柄表、与上一次快照做差集标出新元素，并存回 session。
+ *
+ * 写操作之后也会调用它——句柄表因此被刷新，模型手上旧的 fieldId 可能指向别的元素。
+ * 这是安全的：applyFormFill / planFieldClick 在动手前都会比对 expect，对不上直接报
+ * mismatch 而不会误点（ref: Spec-0005 §写入校验矩阵）。
+ */
+async function snapshotFields(tabId: number, payload: GetFormPayload = {}): Promise<FieldSnapshot> {
+  const previous = await getFormFieldsForTab(tabId);
   const collected = await executeInTab(
     tabId,
     {
@@ -362,7 +378,24 @@ async function getForm(payload: GetFormPayload, tabId: number): Promise<GetFormR
     if (!descriptor.formId) orphanFieldIds.push(fieldId);
   });
 
-  await setFormFieldsForTab(tabId, { url: collected.url, fields: handles });
+  // 换了地址就不比对：跨页面「全都是新的」没有信息量，只会淹没真正的变化。
+  const comparable = previous && previous.url === collected.url ? previous.fingerprints : undefined;
+  const newFieldIds = findNewFieldIds(fields, comparable);
+  for (const field of fields) {
+    if (newFieldIds.has(field.fieldId)) field.isNew = true;
+  }
+
+  await setFormFieldsForTab(tabId, {
+    url: collected.url,
+    fields: handles,
+    fingerprints: fields.map((field) => field.fingerprint),
+  });
+
+  return { collected, fields, orphanFieldIds, newFields: fields.filter((field) => field.isNew) };
+}
+
+async function getForm(payload: GetFormPayload, tabId: number): Promise<GetFormResult> {
+  const { collected, fields, orphanFieldIds } = await snapshotFields(tabId, payload);
 
   return {
     forms: collected.forms.map((form) => ({
@@ -403,7 +436,24 @@ async function fillForm(payload: FillFormPayload, tabId: number): Promise<FillFo
     submitted: plan.submitFieldMissing
       ? { fieldId: payload!.submit!.fieldId, status: 'not_found' as const }
       : applied.submitted,
+    newFields: await collectNewFieldsAfterWrite(tabId),
   };
+}
+
+/**
+ * 写操作之后重采一次快照，回报「页面新出现了哪些可交互元素」。
+ *
+ * 填完输入框弹出的自动补全、点击后展开的菜单都属此类。此前模型必须自己想起来再调一次
+ * browser_get_form 才能看见它们，等于每次交互都多一轮往返。
+ * 重采失败（页面正在导航、标签页已关闭等）不该把一次成功的写入变成失败，故静默降级为空。
+ */
+async function collectNewFieldsAfterWrite(tabId: number): Promise<FormFieldDescriptor[] | undefined> {
+  try {
+    const snapshot = await snapshotFields(tabId);
+    return snapshot.newFields.length > 0 ? snapshot.newFields : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 async function probeSubmitIntent(payload: ProbeClickTargetPayload, tabId: number): Promise<ProbeClickTargetResult> {
@@ -708,6 +758,9 @@ async function clickElement(payload: ClickElementPayload, tabId: number): Promis
     clickedIndex: result.status === 'ok' ? index : null,
     status: result.status,
     detail: result.detail,
+    label: result.label,
+    opensNewTab: result.opensNewTab,
+    newFields: result.status === 'ok' ? await collectNewFieldsAfterWrite(tabId) : undefined,
   };
 }
 
@@ -764,6 +817,9 @@ async function clickElementByFieldId(fieldId: string, tabId: number): Promise<Cl
     matched: 1,
     clickedIndex: submitted.status === 'ok' ? 0 : null,
     status: submitted.status,
+    label: submitted.label,
+    opensNewTab: submitted.opensNewTab,
+    newFields: submitted.status === 'ok' ? await collectNewFieldsAfterWrite(tabId) : undefined,
   };
 }
 
@@ -782,6 +838,8 @@ async function typeText(payload: TypeTextPayload, tabId: number): Promise<TypeTe
     status: result.status,
     detail: result.detail,
     actualValue: result.actualValue,
+    // 输入触发自动补全下拉是这里最典型的收益场景。
+    newFields: result.status === 'ok' ? await collectNewFieldsAfterWrite(tabId) : undefined,
   };
 }
 
@@ -802,13 +860,39 @@ async function selectOption(payload: SelectOptionPayload, tabId: number): Promis
 async function scrollPage(payload: ScrollPagePayload, tabId: number): Promise<ScrollPageResult> {
   return executeInTab(tabId, payload, (input): ScrollPageResult => {
     const behavior = input?.behavior ?? 'auto';
+    const viewportHeight = window.innerHeight || 0;
+    const maxScroll = Math.max(0, document.documentElement.scrollHeight - viewportHeight);
+    const clamp = (value: number): number => Math.min(Math.max(value, 0), maxScroll);
+    const startY = window.scrollY;
+
+    // 终点一律「算」出来而不是滚完再测：behavior: 'smooth' 时滚动是异步的，注入函数同步返回，
+    // 事后读 window.scrollY 只会读到起点，于是把一次正常滚动误报成「页面没有滚动」。
+    let finalY: number;
     if (input?.selector) {
       const target = document.querySelector(input.selector);
-      target?.scrollIntoView({ behavior, block: 'center' });
+      if (target) {
+        const rect = target.getBoundingClientRect();
+        target.scrollIntoView({ behavior, block: 'center' });
+        // block: 'center' 的落点：把元素中心对齐到视口中心。
+        finalY = clamp(startY + rect.top + rect.height / 2 - viewportHeight / 2);
+      } else {
+        finalY = startY;
+      }
     } else {
-      window.scrollTo({ left: input?.x ?? window.scrollX, top: input?.y ?? window.scrollY, behavior });
+      const requestedY = input?.y ?? startY;
+      window.scrollTo({ left: input?.x ?? window.scrollX, top: requestedY, behavior });
+      finalY = clamp(requestedY);
     }
-    return { selector: input?.selector, x: window.scrollX, y: window.scrollY };
+
+    return {
+      selector: input?.selector,
+      x: window.scrollX,
+      y: Math.round(finalY),
+      scrolledBy: Math.round(finalY - startY),
+      pixelsAbove: Math.round(finalY),
+      pixelsBelow: Math.round(Math.max(0, maxScroll - finalY)),
+      viewportHeight,
+    };
   });
 }
 
@@ -823,14 +907,47 @@ function isNavigableUrl(rawUrl: string): boolean {
   }
 }
 
+/** 等待跳转落地的上限。超时不算失败——照常回报当时读到的地址，由模型自己判断。 */
+const NAVIGATE_SETTLE_TIMEOUT_MS = 10_000;
+const MAX_PAGE_TITLE_CHARS = 120;
+
+/** 等标签页加载完成；超时或标签页消失都静默返回，调用方随后自己读一次当前状态。 */
+async function waitForTabLoad(tabId: number): Promise<void> {
+  await new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = (): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      browser.tabs.onUpdated.removeListener(onUpdated);
+      resolve();
+    };
+    const onUpdated = (updatedTabId: number, changeInfo: { status?: string }): void => {
+      if (updatedTabId === tabId && changeInfo.status === 'complete') finish();
+    };
+    const timer = setTimeout(finish, NAVIGATE_SETTLE_TIMEOUT_MS);
+    browser.tabs.onUpdated.addListener(onUpdated);
+  });
+}
+
 async function navigateTab(payload: NavigateTabPayload, tabId: number): Promise<NavigateTabResult> {
-  const url = payload?.url ?? '';
-  if (!isNavigableUrl(url)) throw new Error('仅允许跳转到 http/https 地址。');
+  const requestedUrl = payload?.url ?? '';
+  if (!isNavigableUrl(requestedUrl)) throw new Error('仅允许跳转到 http/https 地址。');
 
   const tab = await resolveTargetTab(tabId);
 
-  await browser.tabs.update(tab.id, { url });
-  return { url };
+  await browser.tabs.update(tab.id, { url: requestedUrl });
+  // 等落地再回读：不等的话最终地址永远等于请求地址，重定向（典型如被踢到登录页）
+  // 对模型完全不可见，它会以为自己已经站在目标页上。
+  await waitForTabLoad(tab.id!);
+
+  const settled = await browser.tabs.get(tab.id!).catch(() => undefined);
+  return {
+    url: settled?.url || requestedUrl,
+    requestedUrl,
+    // 标题由网页控制，属于不可信数据，按纯文本净化并截断后才交给模型。
+    title: settled?.title ? sanitizePageText(settled.title, MAX_PAGE_TITLE_CHARS) : undefined,
+  };
 }
 
 async function setStorage(payload: SetStoragePayload, tabId: number): Promise<SetStorageResult> {

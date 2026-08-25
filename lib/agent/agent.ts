@@ -167,6 +167,12 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
       } else if (implementationDossierCollected) {
         postDossierFollowUps += 1;
       }
+
+      // 预算软提醒：修复前模型是被硬阻断的，事先没有任何预警，只能在最后一轮被动收尾。
+      const budgetWarning = policy.budgetWarning();
+      if (budgetWarning) {
+        options.steer({ role: 'user', content: budgetWarning, timestamp: Date.now() });
+      }
       return undefined;
     },
     prepareNextTurnWithContext: async (context) => {

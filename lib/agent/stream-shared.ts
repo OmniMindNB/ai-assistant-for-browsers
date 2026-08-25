@@ -1,6 +1,7 @@
 // lib/agent/stream-shared.ts
 // 协议无关的流式响应内部状态与事件构建工具，供 openai-stream.ts / anthropic-stream.ts 共用。
 import type { AssistantMessage, AssistantMessageEvent, Api, ImageContent, Model, ToolCall, Usage } from '@earendil-works/pi-ai';
+import { repairToolArguments, salvageToolCallFromText } from './tool-call-repair';
 
 export interface ToolCallAccumulator {
   id: string;
@@ -56,6 +57,10 @@ export function buildPartial(
   return { ...createAssistantMessage(model, timestamp, stopReason), content };
 }
 
+/**
+ * `toolNames` 是弱模型兜底用的：模型没走 tool_calls 而把调用写进正文时，据此把它捞回来
+ * （ref: lib/agent/tool-call-repair.ts）。传空数组即关闭兜底。
+ */
 export function finishStream(
   model: Model<Api>,
   push: (event: AssistantMessageEvent) => void,
@@ -63,10 +68,24 @@ export function finishStream(
   text: string,
   toolCalls: Map<number, ToolCallAccumulator>,
   fallbackReason: 'stop' | 'toolUse' | 'length',
+  toolNames: string[] = [],
 ): void {
-  const reason = toolCalls.size > 0 ? 'toolUse' : fallbackReason;
-  const message = buildPartial(model, timestamp, text, toolCalls, reason);
-  let contentIndex = text ? 1 : 0;
+  let finalText = text;
+  let finalCalls = toolCalls;
+
+  if (toolCalls.size === 0 && toolNames.length > 0) {
+    const salvaged = salvageToolCallFromText(text, toolNames);
+    if (salvaged) {
+      finalText = salvaged.strippedText;
+      finalCalls = new Map([
+        [0, { id: `salvaged-${timestamp}`, name: salvaged.name, argumentsText: JSON.stringify(salvaged.arguments) }],
+      ]);
+    }
+  }
+
+  const reason = finalCalls.size > 0 ? 'toolUse' : fallbackReason;
+  const message = buildPartial(model, timestamp, finalText, finalCalls, reason);
+  let contentIndex = finalText ? 1 : 0;
   for (const toolCall of message.content) {
     if (toolCall.type !== 'toolCall') continue;
     push({ type: 'toolcall_end', contentIndex, toolCall, partial: message });
@@ -76,13 +95,7 @@ export function finishStream(
 }
 
 export function parseToolArguments(value: string): Record<string, unknown> {
-  if (!value.trim()) return {};
-  try {
-    const parsed = JSON.parse(value);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
-  } catch {
-    return {};
-  }
+  return repairToolArguments(value);
 }
 
 /**

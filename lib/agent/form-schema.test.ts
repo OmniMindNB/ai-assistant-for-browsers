@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import type { FormFieldDescriptor } from '@/lib/messaging';
 import {
+  findNewFieldIds,
   isSensitiveField,
   pickFieldLabel,
   resolveFieldKind,
@@ -179,5 +181,53 @@ describe('sanitizePageText', () => {
 
   it('returns an empty string for undefined-ish input', () => {
     expect(sanitizePageText('', 10)).toBe('');
+  });
+});
+
+// 「上一步之后新出现了哪些可交互元素」——填完输入框弹出的下拉建议、点开的菜单项，
+// 都靠这个差集识别（对标 alibaba/page-agent 的 *[n] 新元素标记）。
+describe('findNewFieldIds', () => {
+  function field(fieldId: string, fingerprint: string): FormFieldDescriptor {
+    return {
+      fieldId,
+      kind: 'button',
+      required: false,
+      disabled: false,
+      readOnly: false,
+      visible: true,
+      valueState: 'empty',
+      sensitive: false,
+      writable: false,
+      clickable: true,
+      fingerprint,
+    };
+  }
+
+  // 首次读取该页面时「全都是新的」，这个信号没有信息量，只会淹没真正的变化。
+  it('marks nothing as new when there is no previous snapshot', () => {
+    expect(findNewFieldIds([field('f1', 'a'), field('f2', 'b')], undefined)).toEqual(new Set());
+  });
+
+  it('marks nothing as new when the snapshot is unchanged', () => {
+    expect(findNewFieldIds([field('f1', 'a'), field('f2', 'b')], ['a', 'b'])).toEqual(new Set());
+  });
+
+  it('marks a newly appeared field', () => {
+    expect(findNewFieldIds([field('f1', 'a'), field('f2', 'b')], ['a'])).toEqual(new Set(['f2']));
+  });
+
+  // 一页上五个一模一样的「删除」按钮共享同一个指纹，所以要按多重集比较个数，
+  // 不能只看指纹「存不存在」。
+  it('counts duplicates and marks only the surplus, latest-first in document order', () => {
+    const fields = [field('f1', 'x'), field('f2', 'x'), field('f3', 'x'), field('f4', 'x')];
+    expect(findNewFieldIds(fields, ['x', 'x'])).toEqual(new Set(['f3', 'f4']));
+  });
+
+  it('marks only the addition when one field is replaced by another', () => {
+    expect(findNewFieldIds([field('f1', 'a'), field('f2', 'c')], ['a', 'b'])).toEqual(new Set(['f2']));
+  });
+
+  it('marks nothing when fields only disappeared', () => {
+    expect(findNewFieldIds([field('f1', 'a')], ['a', 'b'])).toEqual(new Set());
   });
 });

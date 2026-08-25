@@ -17,6 +17,12 @@ export interface FormFieldTable {
   /** 发放句柄时页面的 URL，写入时比对，用于识别「表已过期」。 */
   url: string;
   fields: Record<string, FormFieldHandle>;
+  /**
+   * 上一次快照里全部字段的指纹（按文档序）。下一次采集时与它做多重集差集，
+   * 就能认出「这一步之后新出现」的可交互元素（ref: form-schema.ts 的 findNewFieldIds）。
+   * 旧版本存下的表没有这个字段，读到 undefined 即视为「首次读取」，不标记新元素。
+   */
+  fingerprints?: string[];
 }
 
 function storageKey(tabId: number): string {

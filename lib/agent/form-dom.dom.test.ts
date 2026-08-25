@@ -461,6 +461,94 @@ describe('applyFormFill', () => {
     expect(seenAtInput).toBe('新内容');
   });
 
+  // Slate.js / Quill 一类编辑器把 DOM 当受控视图，直接写 textContent 会被它们无视或覆盖。
+  // 竞品（alibaba/page-agent）的做法是回读校验后降级到 execCommand，这里对齐。
+  function stubSwallowedContentEditable(host: HTMLElement): { read: () => string; write: (text: string) => void } {
+    let stored = '';
+    Object.defineProperty(host, 'textContent', {
+      configurable: true,
+      get: () => stored,
+      set: () => {
+        /* 编辑器吞掉直接写入 */
+      },
+    });
+    return {
+      read: () => stored,
+      write: (text) => {
+        stored = text;
+      },
+    };
+  }
+
+  function stubExecCommand(onInsert: (text: string) => void): { calls: string[]; restore: () => void } {
+    const calls: string[] = [];
+    const target = document as unknown as { execCommand?: unknown };
+    const original = target.execCommand;
+    target.execCommand = (command: string, _ui?: boolean, argument?: string) => {
+      calls.push(command);
+      if (command === 'insertText') onInsert(argument ?? '');
+      return true;
+    };
+    return { calls, restore: () => { target.execCommand = original; } };
+  }
+
+  const CONTENTEDITABLE_ITEM = {
+    kind: 'contenteditable' as const,
+    path: [
+      { kind: 'selector' as const, selector: 'body', index: 0 },
+      { kind: 'selector' as const, selector: 'div', index: 0 },
+    ],
+    expect: { tag: 'div' },
+    value: '新内容',
+  };
+
+  it('falls back to execCommand when the editor swallows the direct contenteditable write', () => {
+    document.body.innerHTML = `<div contenteditable="true"></div>`;
+    const host = document.querySelector('div')! as HTMLElement;
+    const swallowed = stubSwallowedContentEditable(host);
+    const exec = stubExecCommand(swallowed.write);
+
+    try {
+      const output = applyFormFill({ url: location.href, items: [item(CONTENTEDITABLE_ITEM)] });
+      expect(exec.calls).toEqual(['delete', 'insertText']);
+      expect(output.outcomes[0].status).toBe('ok');
+      expect(output.outcomes[0].actualValue).toBe('新内容');
+    } finally {
+      exec.restore();
+    }
+  });
+
+  it('does not reach for execCommand when the direct contenteditable write already landed', () => {
+    document.body.innerHTML = `<div contenteditable="true"></div>`;
+    const exec = stubExecCommand(() => {});
+
+    try {
+      const output = applyFormFill({ url: location.href, items: [item(CONTENTEDITABLE_ITEM)] });
+      expect(output.outcomes[0].status).toBe('ok');
+      expect(exec.calls).toEqual([]);
+    } finally {
+      exec.restore();
+    }
+  });
+
+  it('reports invalid_value when both the direct write and the execCommand fallback fail', () => {
+    document.body.innerHTML = `<div contenteditable="true"></div>`;
+    const host = document.querySelector('div')! as HTMLElement;
+    const swallowed = stubSwallowedContentEditable(host);
+    const exec = stubExecCommand(() => {
+      /* 连 execCommand 也写不进去 */
+    });
+
+    try {
+      const output = applyFormFill({ url: location.href, items: [item(CONTENTEDITABLE_ITEM)] });
+      expect(exec.calls).toEqual(['delete', 'insertText']);
+      expect(output.outcomes[0].status).toBe('invalid_value');
+      expect(swallowed.read()).toBe('');
+    } finally {
+      exec.restore();
+    }
+  });
+
   it('clicks a link submit target when its href still matches, and mismatches when it changed (fingerprint discriminates links)', () => {
     render(`<nav><a href="/settings">设置</a></nav>`);
     const linkRaw = collectFormFields(INPUT).raws.find((raw) => raw.tag === 'a')!;
@@ -537,5 +625,48 @@ describe('applyFormFill', () => {
     const highlight = document.body.lastElementChild as HTMLElement;
     expect(highlight.style.position).toBe('fixed');
     expect(highlight.style.pointerEvents).toBe('none');
+  });
+
+  it('reports the submit target label and flags a link that opens in a new tab', () => {
+    render(`<nav><a href="#docs" target="_blank" aria-label="打开文档（新窗口）">文档</a></nav>`);
+    const linkRaw = collectFormFields(INPUT).raws.find((raw) => raw.tag === 'a')!;
+
+    const output = applyFormFill({
+      url: location.href,
+      items: [],
+      submit: { fieldId: 'f1', path: linkRaw.path, expect: { tag: 'a', href: '#docs' } },
+    });
+
+    expect(output.submitted?.status).toBe('ok');
+    expect(output.submitted?.label).toBe('打开文档（新窗口）');
+    expect(output.submitted?.opensNewTab).toBe(true);
+  });
+
+  // 与 clickElementInPage 同一条理由：视口外的 submit 按钮 rect 是超界坐标，
+  // 高亮框会画到屏幕外，且遮挡检测（elementFromPoint）在视口外恒为 null 而失效。
+  it('scrolls the submit target into view and measures its rect afterwards', () => {
+    render(`<button type="submit">提交</button>`);
+    const buttonRaw = collectFormFields(INPUT).raws.find((raw) => raw.tag === 'button')!;
+    const button = document.querySelector('button')!;
+    const offScreen = { ...NON_ZERO_RECT, top: 4000, bottom: 4020, y: 4000 } as DOMRect;
+    const onScreen = { ...NON_ZERO_RECT, top: 120, bottom: 140, y: 120 } as DOMRect;
+    let current = offScreen;
+    const order: string[] = [];
+    button.getBoundingClientRect = () => current;
+    (button as unknown as { scrollIntoView: (options?: ScrollIntoViewOptions) => void }).scrollIntoView = (options) => {
+      order.push(`scrollIntoView:${options?.block}`);
+      current = onScreen;
+    };
+    button.addEventListener('pointerdown', () => order.push('pointerdown'));
+
+    const output = applyFormFill({
+      url: location.href,
+      items: [],
+      submit: { fieldId: 'f1', path: buttonRaw.path, expect: { tag: 'button', type: 'submit' } },
+    });
+
+    expect(output.submitted?.status).toBe('ok');
+    expect(order).toEqual(['scrollIntoView:center', 'pointerdown']);
+    expect((document.body.lastElementChild as HTMLElement).style.top).toBe('120px');
   });
 });
