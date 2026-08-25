@@ -79,6 +79,10 @@ export function describeToolActivity(toolName: string, args: unknown, status: Ac
       return withTarget(status, 'agentActivity.now.navigate', 'agentActivity.done.navigate', 'agentActivity.failed.navigate', str('url'));
     case 'browser_set_storage':
       return withTarget(status, 'agentActivity.now.setStorage', 'agentActivity.done.setStorage', 'agentActivity.failed.setStorage', str('key'));
+    case 'browser_fill_form': {
+      const fields = Array.isArray(record.fields) ? record.fields.length : 0;
+      return withTarget(status, 'agentActivity.now.fillForm', 'agentActivity.done.fillForm', 'agentActivity.failed.fillForm', String(fields));
+    }
     default:
       return plain(status, 'agentActivity.tool.unknown');
   }

@@ -39,6 +39,18 @@ describe('describeToolActivity', () => {
     expect(describeToolActivity('browser_set_storage', { key: 'token' }, 'running')).toBe('Writing storage key "token"');
   });
 
+  it('describes fill_form by field count', () => {
+    expect(
+      describeToolActivity(
+        'browser_fill_form',
+        { fields: [{ fieldId: 'f1' }, { fieldId: 'f2' }, { fieldId: 'f3' }] },
+        'running',
+      ),
+    ).toBe('Filling 3 fields');
+    expect(describeToolActivity('browser_fill_form', { fields: [{ fieldId: 'f1' }] }, 'done')).toBe('Filled 1 fields');
+    expect(describeToolActivity('browser_fill_form', {}, 'failed')).toBe('Failed to fill 0 fields');
+  });
+
   it('describes scroll with and without a target selector', () => {
     expect(describeToolActivity('browser_scroll', { selector: '#footer' }, 'running')).toBe('Scrolling to "#footer"');
     expect(describeToolActivity('browser_scroll', {}, 'running')).toBe('Scroll');

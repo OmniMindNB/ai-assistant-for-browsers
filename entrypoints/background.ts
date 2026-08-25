@@ -68,6 +68,7 @@ import { getFormFieldsForTab, setFormFieldsForTab, type FormFieldHandle } from '
 import { decideSubmitIntent } from '@/lib/agent/form-submit';
 
 const DEFAULT_TOOL_MAX_CHARS = 12000;
+// 以下为模型可见/可调用的消息类型；内部专用消息（如 SET_AGENT_OVERLAY）有意不在此列，以免暴露给模型。
 const SUPPORTED_MESSAGE_TYPES = [
   'PING',
   'EXTRACT_PAGE',
