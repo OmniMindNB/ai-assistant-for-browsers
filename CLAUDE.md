@@ -73,7 +73,7 @@ When adding a new write tool: register it in `tools.ts` and add it to `CONFIRM_T
 
 ## Documentation-driven development
 
-This project follows **docs-first development** (see `docs/README.md`): new features get a spec in `docs/specs/` and, for architectural decisions, an ADR in `docs/adr/` — reviewed before implementation. `docs/PROGRESS.md` is the living status board and changelog; update it when landing a phase of work. Numbered specs/ADRs are immutable once accepted — superseding one adds a new numbered doc rather than editing history.
+This project follows **docs-first development** (see `docs/README.md`): new features get a dated design doc under `docs/superpowers/specs/` and an implementation plan under `docs/superpowers/plans/`, reviewed before implementation. The numbered spec/ADR/`docs/PROGRESS.md` system used earlier in the project has been retired and removed.
 
 ## Skill routing
 
