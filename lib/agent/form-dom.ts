@@ -219,7 +219,7 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
 export interface ApplyFillItem {
   fieldId: string;
   path: FormFieldPathStep[];
-  expect: { tag: string; type?: string; name?: string; label?: string };
+  expect: { tag: string; type?: string; name?: string; label?: string; href?: string };
   kind: string;
   value?: string;
   checked?: boolean;
@@ -275,7 +275,12 @@ export function applyFormFill(input: ApplyFillInput): ApplyFillOutput {
     const actualType = element.getAttribute('type') || undefined;
     if ((expected.type || undefined) !== actualType) return false;
     const actualName = element.getAttribute('name') || undefined;
-    return (expected.name || undefined) === actualName;
+    if ((expected.name || undefined) !== actualName) return false;
+    if (expected.href !== undefined) {
+      const actualHref = element.getAttribute('href') || undefined;
+      if (actualHref !== expected.href) return false;
+    }
+    return true;
   };
 
   const fireInput = (element: HTMLElement, data: string): void => {

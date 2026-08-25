@@ -8,7 +8,7 @@ import type { FormFieldPathStep } from './form-schema';
 export interface FormFieldHandle {
   path: FormFieldPathStep[];
   /** 写入前用来做字面比对的期望结构，不符即 mismatch（ref: Spec-0005 §写入校验矩阵）。 */
-  expect: { tag: string; type?: string; name?: string; label?: string };
+  expect: { tag: string; type?: string; name?: string; label?: string; href?: string };
   sensitive: boolean;
   kind: FormFieldKind;
 }

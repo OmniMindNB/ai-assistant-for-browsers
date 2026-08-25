@@ -29,6 +29,13 @@ const NON_ZERO_RECT: DOMRect = {
 };
 Element.prototype.getBoundingClientRect = () => NON_ZERO_RECT;
 
+// jsdom does not implement document.elementFromPoint at all (it's undefined, not just
+// inaccurate). applyFormFill's submit branch uses it to detect whether the target is
+// covered by another element; none of the tests below exercise a covered target, so
+// stubbing it to always report "nothing on top" is enough (see the identical stub and
+// rationale in legacy-write-tools.dom.test.ts).
+(document as unknown as { elementFromPoint: () => Element | null }).elementFromPoint = () => null;
+
 describe('collectFormFields', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
@@ -185,6 +192,26 @@ ShadowRoot.prototype.querySelectorAll = function (this: ShadowRoot, selectors: s
   }
   return originalShadowRootQuerySelectorAll.call(this, selectors);
 } as typeof originalShadowRootQuerySelectorAll;
+
+// Same jsdom `:scope` root-resolution bug as above, but for Document, and narrower:
+// this engine resolves a Document's `:scope` to its documentElement (<html>) rather
+// than the document itself (`document.querySelectorAll(':scope > *')` returns HEAD/BODY,
+// not HTML — verified directly). buildPath's walk to the real page root always ends in
+// a step matching "html" against `document` (every path collectFormFields produces
+// starts with an {selector:'html'} step), so `document.querySelectorAll(':scope > html')`
+// spuriously returns empty even though `<html>` genuinely is `document`'s only child.
+// Patch *only* that exact "html" case for Document — every other `:scope > tag` query
+// on Document (notably `:scope > body`, which this file's hand-built `item()` paths
+// start from, and which happens to already resolve correctly under this engine's
+// documentElement-as-scope quirk) must keep going through the original, unpatched
+// behavior, or the many existing hand-built-path tests below would break.
+const originalDocumentQuerySelectorAll = Document.prototype.querySelectorAll;
+Document.prototype.querySelectorAll = function (this: Document, selectors: string) {
+  if (/^:scope\s*>\s*html$/.exec(selectors.trim())) {
+    return Array.from(this.children).filter((el) => el.tagName.toLowerCase() === 'html') as unknown as NodeListOf<Element>;
+  }
+  return originalDocumentQuerySelectorAll.call(this, selectors);
+} as typeof originalDocumentQuerySelectorAll;
 
 function item(overrides: Partial<ApplyFillItem> = {}): ApplyFillItem {
   return {
@@ -423,5 +450,30 @@ describe('applyFormFill', () => {
 
     expect(output.outcomes[0].status).toBe('ok');
     expect(seenAtInput).toBe('新内容');
+  });
+
+  it('clicks a link submit target when its href still matches, and mismatches when it changed (fingerprint discriminates links)', () => {
+    render(`<nav><a href="/settings">设置</a></nav>`);
+    const linkRaw = collectFormFields(INPUT).raws.find((raw) => raw.tag === 'a')!;
+    const clicks: string[] = [];
+    document.querySelector('a')!.addEventListener('click', (event) => {
+      event.preventDefault();
+      clicks.push('clicked');
+    });
+
+    const okOutput = applyFormFill({
+      url: location.href,
+      items: [],
+      submit: { fieldId: 'f1', path: linkRaw.path, expect: { tag: 'a', href: linkRaw.href } },
+    });
+    expect(okOutput.submitted?.status).toBe('ok');
+    expect(clicks).toEqual(['clicked']);
+
+    const mismatchOutput = applyFormFill({
+      url: location.href,
+      items: [],
+      submit: { fieldId: 'f1', path: linkRaw.path, expect: { tag: 'a', href: '/different-page' } },
+    });
+    expect(mismatchOutput.submitted?.status).toBe('mismatch');
   });
 });

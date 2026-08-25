@@ -355,7 +355,7 @@ async function getForm(payload: GetFormPayload, tabId: number): Promise<GetFormR
     fields.push(descriptor);
     handles[fieldId] = {
       path: raw.path,
-      expect: { tag: raw.tag, type: raw.type, name: raw.name, label: descriptor.label },
+      expect: { tag: raw.tag, type: raw.type, name: raw.name, label: descriptor.label, href: raw.href },
       sensitive: descriptor.sensitive,
       kind: descriptor.kind,
     };
