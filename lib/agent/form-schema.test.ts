@@ -50,6 +50,16 @@ describe('pickFieldLabel', () => {
   it('ignores an empty-after-trim label and moves to the next source', () => {
     expect(pickFieldLabel(raw({ forLabelText: '   ', ariaLabel: 'aria' }))).toBe('aria');
   });
+
+  it("falls back to the element's own text for buttons, links and generic interactive elements", () => {
+    expect(pickFieldLabel(raw({ tag: 'button', elementText: '下单' }))).toBe('下单');
+    expect(pickFieldLabel(raw({ tag: 'a', href: '/x', elementText: '登录' }))).toBe('登录');
+    expect(pickFieldLabel(raw({ tag: 'div', interactive: true, elementText: '展开菜单' }))).toBe('展开菜单');
+  });
+
+  it('does not fall back to element text for a plain text input', () => {
+    expect(pickFieldLabel(raw({ tag: 'input', type: 'text', elementText: '一些无关文本' }))).toBeUndefined();
+  });
 });
 
 describe('isSensitiveField', () => {
@@ -97,6 +107,18 @@ describe('resolveFieldKind', () => {
   it('falls back to unsupported for anything else', () => {
     expect(resolveFieldKind(raw({ tag: 'div' }))).toBe('unsupported');
   });
+
+  it('maps a hyperlink with an href to link', () => {
+    expect(resolveFieldKind(raw({ tag: 'a', href: 'https://example.com' }))).toBe('link');
+  });
+
+  it('does not treat an anchor without href as a link', () => {
+    expect(resolveFieldKind(raw({ tag: 'a' }))).toBe('unsupported');
+  });
+
+  it('maps a generic interactive element (role/tabindex) to button', () => {
+    expect(resolveFieldKind(raw({ tag: 'div', interactive: true }))).toBe('button');
+  });
 });
 
 describe('toFieldDescriptor', () => {
@@ -133,6 +155,16 @@ describe('toFieldDescriptor', () => {
     const c = toFieldDescriptor(raw({ type: 'text', name: 'phone', forLabelText: '邮箱' }), 'f10');
     expect(a.fingerprint).toBe(b.fingerprint);
     expect(a.fingerprint).not.toBe(c.fingerprint);
+  });
+
+  it('marks links clickable and passes href through', () => {
+    const descriptor = toFieldDescriptor(raw({ tag: 'a', href: '/settings' }), 'f11');
+    expect(descriptor.clickable).toBe(true);
+    expect(descriptor.href).toBe('/settings');
+  });
+
+  it('does not set href for a non-link field', () => {
+    expect(toFieldDescriptor(raw({ type: 'text', name: 'email' }), 'f12').href).toBeUndefined();
   });
 });
 

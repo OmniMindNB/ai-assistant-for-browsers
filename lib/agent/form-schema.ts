@@ -34,6 +34,12 @@ export interface RawFormField {
   formIndex?: number;
   contentEditable: boolean;
   buttonRole?: 'submit' | 'button';
+  /** 仅 <a> 标签有值：非空即视为链接。 */
+  href?: string;
+  /** 元素自身可见文本，裁剪空白后的结果；只用作 button/link/interactive 的标签兜底来源。 */
+  elementText?: string;
+  /** 通过 role/tabindex 启发式识别出的通用可交互元素（非标准表单标签）。 */
+  interactive?: boolean;
 }
 
 /**
@@ -43,6 +49,8 @@ export interface RawFormField {
 const SENSITIVE_TOKEN = /(^|[^a-z])(otp|totp|cvv|cvc|csc|ssn|passcode)([^a-z]|$)/i;
 
 export function pickFieldLabel(raw: RawFormField): string | undefined {
+  const tag = raw.tag.toLowerCase();
+  const isClickableTag = tag === 'button' || tag === 'a' || raw.interactive === true;
   const candidates = [
     raw.forLabelText,
     raw.ancestorLabelText,
@@ -50,6 +58,7 @@ export function pickFieldLabel(raw: RawFormField): string | undefined {
     raw.labelledByText,
     raw.placeholder,
     raw.name,
+    isClickableTag ? raw.elementText : undefined,
   ];
   for (const candidate of candidates) {
     const normalized = (candidate ?? '').replace(/\s+/g, ' ').trim();
@@ -67,6 +76,7 @@ export function isSensitiveField(raw: RawFormField): boolean {
 
 export function resolveFieldKind(raw: RawFormField): FormFieldKind {
   const tag = raw.tag.toLowerCase();
+  if (tag === 'a' && raw.href !== undefined) return 'link';
   if (tag === 'textarea') return 'textarea';
   if (tag === 'select') return 'select';
   if (tag === 'button') return raw.buttonRole === 'submit' ? 'submit' : 'button';
@@ -81,11 +91,12 @@ export function resolveFieldKind(raw: RawFormField): FormFieldKind {
     return 'text';
   }
   if (raw.contentEditable) return 'contenteditable';
+  if (raw.interactive) return 'button';
   return 'unsupported';
 }
 
 const WRITABLE_KINDS = new Set<FormFieldKind>(['text', 'textarea', 'select', 'checkbox', 'radio', 'contenteditable']);
-const CLICKABLE_KINDS = new Set<FormFieldKind>(['submit', 'button', 'checkbox', 'radio']);
+const CLICKABLE_KINDS = new Set<FormFieldKind>(['submit', 'button', 'link', 'checkbox', 'radio']);
 
 /** 指纹只取稳定属性：无害的 DOM 变化（class、样式、位置）不应触发 mismatch。 */
 export function fieldFingerprint(raw: RawFormField): string {
@@ -102,6 +113,7 @@ export function toFieldDescriptor(raw: RawFormField, fieldId: string): FormField
     type: raw.type,
     name: raw.name,
     label: pickFieldLabel(raw),
+    href: raw.href,
     placeholder: raw.placeholder,
     required: raw.required,
     disabled: raw.disabled,
