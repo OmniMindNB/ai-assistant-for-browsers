@@ -140,4 +140,21 @@ describe('submit intent escalation', () => {
     expect((onConfirm.mock.calls[0][2] as any).fields[0].label).toBe('邮箱');
     expect((args.fields[0] as any).label).toBeUndefined();
   });
+
+  it('enriches a browser_click(fieldId) confirmation with the field label, without touching the model args', async () => {
+    const args = { fieldId: 'f7' };
+    const onConfirm = vi.fn().mockResolvedValue(true);
+
+    await beforeToolCallPermissionGate(
+      { toolCall: { id: 'call-1', name: 'browser_click' }, args } as any,
+      {
+        gateState: createConfirmGateState(),
+        onConfirm,
+        resolveSubmitIntent: async () => ({ isSubmit: false, fieldLabels: [{ fieldId: 'f7', label: '登录' }] }),
+      },
+    );
+
+    expect((onConfirm.mock.calls[0][2] as any).label).toBe('登录');
+    expect((args as any).label).toBeUndefined();
+  });
 });
