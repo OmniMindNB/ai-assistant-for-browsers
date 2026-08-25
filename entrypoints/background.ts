@@ -37,16 +37,20 @@ import {
   type ScrollPageResult,
   type SelectOptionPayload,
   type SelectOptionResult,
+  type SetAgentOverlayPayload,
+  type SetAgentOverlayResult,
   type SetStoragePayload,
   type SetStorageResult,
   type SetStylePayload,
   type SetStyleResult,
   type TypeTextPayload,
   type TypeTextResult,
+  newMessageId,
 } from '@/lib/messaging';
 import { fetchPageResourceText } from '@/lib/page-resource-fetch';
 import { resolveTargetTab } from '@/lib/agent/tab-target';
 import { sendToContentScript } from '@/lib/agent/content-script-messaging';
+import { clearOverlayForTab, getOverlayForTab, setOverlayForTab } from '@/lib/agent/tab-overlay-state';
 import { clearConversationIdForTab } from '@/lib/agent/tab-conversation';
 import { clearPendingAskForTab, setPendingAskForTab } from '@/lib/agent/tab-pending-ask';
 import { mergeFillOutcomes, planFieldClick, planFormFill } from '@/lib/agent/fill-form-request';
@@ -234,7 +238,7 @@ async function handleMessage(message: Message, sender?: MessageSender): Promise<
       return probeSubmitIntent(message.payload as ProbeClickTargetPayload, requireTabId(message));
 
     case 'CAPTURE_SCREENSHOT':
-      return captureScreenshot(message.payload as CaptureScreenshotPayload, requireTabId(message));
+      return captureScreenshotWithoutOverlay(message.payload as CaptureScreenshotPayload, requireTabId(message));
 
     case 'SET_STYLE':
       return setStyle(message.payload as SetStylePayload, requireTabId(message));
@@ -259,6 +263,9 @@ async function handleMessage(message: Message, sender?: MessageSender): Promise<
 
     case 'SET_STORAGE':
       return setStorage(message.payload as SetStoragePayload, requireTabId(message));
+
+    case 'SET_AGENT_OVERLAY':
+      return setAgentOverlay(message.payload as SetAgentOverlayPayload, requireTabId(message));
 
     default:
       throw new Error(`未处理的消息类型: ${message.type}`);
@@ -958,4 +965,70 @@ async function setStorage(payload: SetStoragePayload, tabId: number): Promise<Se
     else store.setItem(key, input.value);
     return { area: input?.area ?? 'local', key };
   });
+}
+
+async function setAgentOverlay(
+  payload: SetAgentOverlayPayload,
+  tabId: number,
+): Promise<MessageResponse<SetAgentOverlayResult>> {
+  if (payload.active) {
+    await setOverlayForTab(tabId, payload.label ?? '');
+  } else {
+    await clearOverlayForTab(tabId);
+  }
+  await pushOverlayToTab(tabId, payload);
+  return { id: '', ok: true, data: { active: payload.active } };
+}
+
+/**
+ * 下发失败一律吞掉：页面可能是 chrome:// 这类注入不进去的地址，也可能正在卸载。
+ * 遮罩是纯视觉功能，绝不能让它的失败把一次真正的写操作变成失败。
+ */
+async function pushOverlayToTab(tabId: number, payload: SetAgentOverlayPayload): Promise<void> {
+  try {
+    await sendToContentScript(tabId, {
+      id: newMessageId(),
+      type: 'SET_AGENT_OVERLAY',
+      payload,
+    });
+  } catch {
+    // 忽略
+  }
+}
+
+// 跳转后重建遮罩。
+// 注意这里由 background 而非 content script 自查：storage.session 默认只对扩展内可信
+// 上下文开放，content script 读不到，放宽访问级别等于把会话态暴露给每个页面的隔离世界。
+browser.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.status !== 'complete') return;
+  void (async () => {
+    const state = await getOverlayForTab(tabId);
+    if (!state) return;
+    await pushOverlayToTab(tabId, { active: true, label: state.label });
+  })();
+});
+
+// 标签页关掉后清掉它的遮罩状态，避免 tabId 被复用时错误重建。
+browser.tabs.onRemoved.addListener((tabId) => {
+  void clearOverlayForTab(tabId);
+});
+
+/**
+ * 截图前先撤遮罩、拍完再恢复。
+ * browser_screenshot 是只读工具，但遮罩起来之后模型照样能截图，会把光晕和光标一起
+ * 拍进去当成页面内容——模型会据此推断页面上有个它没见过的紫色边框和箭头。
+ */
+async function captureScreenshotWithoutOverlay(
+  payload: CaptureScreenshotPayload,
+  tabId: number,
+): Promise<CaptureScreenshotResult> {
+  const state = await getOverlayForTab(tabId);
+  if (!state) return captureScreenshot(payload, tabId);
+
+  await pushOverlayToTab(tabId, { active: false });
+  try {
+    return await captureScreenshot(payload, tabId);
+  } finally {
+    await pushOverlayToTab(tabId, { active: true, label: state.label });
+  }
 }
