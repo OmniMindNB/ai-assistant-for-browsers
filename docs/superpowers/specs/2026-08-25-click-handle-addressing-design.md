@@ -78,7 +78,7 @@ parameters: Type.Object({
 - **有 `fieldId`**：查 `getFormFieldsForTab(tabId)`；表不存在或 URL 不匹配 → 返回 `fieldsTableStale: true`（复用 `FILL_FORM` 已有的语义与提示文案："字段表已失效，请重新调用 browser_get_form"）；命中则比对 `expect` 结构指纹，不符 → `mismatch`。这段查表/校验的分支逻辑写成纯函数放进 `fill-form-request.ts`（仿 `planFormFill`的既有模式），保持 `background.ts` 只做 I/O 编排，不在 handler 里内联判断分支。
 - **有 `selector`**：走现有逻辑，不变。
 
-`applyFormFill` 里给 submit 按钮做的"解析 path → 比对 expect → 派发点击"这段注入函数逻辑，抽成一个独立导出的自包含函数 `applyElementClick(path, expect)`（`form-dom.ts`），`FILL_FORM` 的 submit 步骤和新的 `fieldId` 路径 `CLICK_ELEMENT` 都调用它，避免两处维护同一段点击派发代码（disabled/不可见/被遮挡判断、点击后回读）。
+`applyFormFill` 已经支持"只点提交目标、不填任何字段"（`items: []`，只传 `submit`）。`fieldId` 路径的 `CLICK_ELEMENT` 直接复用这条既有路径——把点击请求包装成一次 `items: []` 的 `FILL_FORM` 式调用（`{ url, items: [], submit: { fieldId, path, expect } }`）送进 `applyFormFill`，而不是像最初设想的那样另外抽一个 `applyElementClick` 函数。这样零新增注入函数、零重复的点击派发代码（disabled/不可见/被遮挡判断、点击后回读），也天然复用了 `applyFormFill` 已有的 `fieldsTableStale` 判定。`background.ts` 侧只需要一个纯函数 `planFieldClick(fieldId, table)`（放在 `fill-form-request.ts`，仿 `planFormFill`）查表、决定 `no_table`/`unknown_field`/可执行三种结果。
 
 ### 确认闸门（`permissions.ts`）
 
