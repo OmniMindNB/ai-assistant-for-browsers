@@ -82,6 +82,17 @@ describe('summarizeToolCallForConfirmation', () => {
     expect(summarizeToolCallForConfirmation('browser_set_storage', { area: 'local', key: 'k' }).summary).toContain('k');
   });
 
+  it('summarizes a fieldId-based click using the enriched label', () => {
+    const result = summarizeToolCallForConfirmation('browser_click', { fieldId: 'f7', label: '登录' });
+    expect(result.summary).toContain('登录');
+    expect(result.summary).not.toContain('f7');
+  });
+
+  it('falls back to the fieldId when no label was enriched', () => {
+    const result = summarizeToolCallForConfirmation('browser_click', { fieldId: 'f7' });
+    expect(result.summary).toContain('f7');
+  });
+
   it('summarizes type with the text being typed', () => {
     const result = summarizeToolCallForConfirmation('browser_type', { selector: 'input.name', text: 'Alice Smith' });
     expect(result.summary).toContain('input.name');

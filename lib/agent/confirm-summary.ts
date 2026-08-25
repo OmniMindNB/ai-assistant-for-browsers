@@ -38,8 +38,14 @@ export function summarizeToolCallForConfirmation(toolName: string, args: unknown
       }
       return { summary: `AI 想要对匹配 "${selector}" 的元素执行 "${action}"${detail}。` };
     }
-    case 'browser_click':
+    case 'browser_click': {
+      const fieldId = str('fieldId');
+      if (fieldId) {
+        const label = sanitizePageText(str('label') || fieldId, 40);
+        return { summary: `AI 想要点击「${label}」。` };
+      }
       return { summary: `AI 想要点击 "${str('selector')}"。` };
+    }
     case 'browser_fill_form': {
       const rawFields = Array.isArray(record.fields) ? (record.fields as Record<string, unknown>[]) : [];
       const shown = rawFields.slice(0, MAX_CONFIRM_FIELDS).map((field) => {
