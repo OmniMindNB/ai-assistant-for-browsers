@@ -371,4 +371,73 @@ describe('多标签页：session 可选，且遮罩跟随当前操作目标', ()
       2,
     );
   });
+
+  it('确认门跟随当前操作 tab：批准 tab 1 的写操作后，目标切到 tab 2 会重新弹出确认（最终审查 Important #2）', async () => {
+    const session = createTabSession(1);
+    const onConfirm = vi.fn().mockResolvedValue(true);
+    const hooks = createBrowserAgentOptions({
+      provider: baseProvider,
+      tabId: 1,
+      session,
+      tools: [],
+      readToolCallBudget: 12,
+      writeToolCallBudget: 24,
+      steer: vi.fn(),
+      onConfirm,
+    });
+
+    // 在 tab 1 上批准一次写操作。
+    await hooks.beforeToolCall?.(beforeContext('browser_click', { selector: '#a' }));
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+
+    // browser_open_tab 把当前操作目标切到 tab 2（模拟工具执行后的效果）。
+    session.openAndSwitch({ id: 2, title: 'Example' });
+
+    // 同一轮里对 tab 2 的写操作必须重新弹出确认，不能复用 tab 1 的缓存批准。
+    await hooks.beforeToolCall?.(beforeContext('browser_fill_form', { fields: [] }));
+    expect(onConfirm).toHaveBeenCalledTimes(2);
+
+    // 切回 tab 1 后，tab 1 的旧决定已经在第二次调用时被重置，所以 tab 1 也要重新问一次
+    // ——这是 tab 级缓存失效的正确副作用，不是 bug：缓存记的是"最近一次决定针对哪个 tab"。
+    session.switchTo(1);
+    await hooks.beforeToolCall?.(beforeContext('browser_type', { selector: '#c', text: 'x' }));
+    expect(onConfirm).toHaveBeenCalledTimes(3);
+  });
+
+  it('onSessionChange 在 open/switch/close 成功后立即触发，不等回合结束才存（最终审查 Important #4）', async () => {
+    const session = createTabSession(1);
+    const onSessionChange = vi.fn();
+    const hooks = createBrowserAgentOptions({
+      provider: baseProvider,
+      tabId: 1,
+      session,
+      tools: [],
+      readToolCallBudget: 12,
+      writeToolCallBudget: 24,
+      steer: vi.fn(),
+      onConfirm: async () => true,
+      onSessionChange,
+    });
+
+    // browser_open_tab 成功执行后（工具自己会调用 session.openAndSwitch；这里手动模拟）。
+    session.openAndSwitch({ id: 2, title: 'Example' });
+    await hooks.afterToolCall?.(afterContext('browser_open_tab', { url: 'https://example.com' }, false));
+    expect(onSessionChange).toHaveBeenCalledTimes(1);
+    expect(onSessionChange).toHaveBeenLastCalledWith(session);
+
+    // 关掉一个非当前 tracked tab：currentTabId 不变，但 trackedTabs 变了，也要通知。
+    session.openAndSwitch({ id: 3, title: 'Other' });
+    session.switchTo(2); // 2 是当前目标，3 不是
+    await hooks.afterToolCall?.(afterContext('browser_open_tab', { url: 'https://other.example.com' }, false));
+    onSessionChange.mockClear();
+    session.close(3);
+    await hooks.afterToolCall?.(afterContext('browser_close_tab', { tabId: 3 }, false));
+    expect(onSessionChange).toHaveBeenCalledTimes(1);
+    expect(onSessionChange).toHaveBeenLastCalledWith(session);
+
+    // 失败的调用不触发。
+    onSessionChange.mockClear();
+    await hooks.afterToolCall?.(afterContext('browser_switch_tab', { tabId: 2 }, true));
+    expect(onSessionChange).not.toHaveBeenCalled();
+  });
 });

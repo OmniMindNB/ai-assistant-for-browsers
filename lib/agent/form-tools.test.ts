@@ -152,4 +152,113 @@ describe('多标签页：工具目标随 session.currentTabId 变化', () => {
     await navigateTool.execute('call-2', { url: 'https://c.example.com' });
     expect(sendMessage).toHaveBeenLastCalledWith('NAVIGATE_TAB', { url: 'https://c.example.com' }, 2);
   });
+
+  it('browser_navigate 成功后刷新 tracked 列表里该 tab 的标题/URL，不留旧值（最终审查 Important #7）', async () => {
+    const session = createTabSession(1);
+    session.openAndSwitch({ id: 2, title: 'Stale Title', url: 'https://stale.example.com' });
+    const navigateTool = createBrowserTools(session).find((c) => c.name === 'browser_navigate')!;
+
+    sendMessage.mockResolvedValueOnce({
+      id: '1',
+      ok: true,
+      data: { url: 'https://fresh.example.com', title: 'Fresh Title' },
+    });
+    await navigateTool.execute('call-1', { url: 'https://fresh.example.com' });
+
+    expect(session.currentTabId).toBe(2); // 没有切换目标，还是同一个 tab
+    expect(session.trackedTabs).toContainEqual({ id: 2, title: 'Fresh Title', url: 'https://fresh.example.com' });
+  });
+});
+
+describe('多标签页编排工具：browser_open_tab / browser_switch_tab / browser_close_tab', () => {
+  function toolFor(session: ReturnType<typeof createTabSession>, name: string) {
+    const tool = createBrowserTools(session).find((candidate) => candidate.name === name);
+    if (!tool) throw new Error(`${name} 未注册`);
+    return tool;
+  }
+
+  it('browser_open_tab 把 OPEN_NEW_TAB 发给 session.panelTabId（不是 currentTabId），成功后调用 session.openAndSwitch', async () => {
+    const session = createTabSession(1);
+    session.openAndSwitch({ id: 2 }); // currentTabId 变成 2，panelTabId 仍是 1
+    const tool = toolFor(session, 'browser_open_tab');
+
+    sendMessage.mockClear();
+    sendMessage.mockResolvedValueOnce({
+      id: '1',
+      ok: true,
+      data: { id: 3, url: 'https://example.com', title: 'Example' },
+    });
+    await tool.execute('call-1', { url: 'https://example.com' });
+
+    expect(sendMessage).toHaveBeenCalledWith('OPEN_NEW_TAB', { url: 'https://example.com' }, 1);
+    expect(session.currentTabId).toBe(3);
+    expect(session.trackedTabs).toContainEqual({ id: 3, url: 'https://example.com', title: 'Example' });
+  });
+
+  it('browser_close_tab: 关闭面板自己的 tab 时本地校验直接短路，never 调用 sendMessage', async () => {
+    const session = createTabSession(1);
+    const tool = toolFor(session, 'browser_close_tab');
+    sendMessage.mockClear();
+
+    await expect(tool.execute('call-1', { tabId: 1 })).rejects.toThrow();
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('browser_close_tab: 关闭一个未追踪的 tab 时本地校验直接短路，never 调用 sendMessage', async () => {
+    const session = createTabSession(1);
+    const tool = toolFor(session, 'browser_close_tab');
+    sendMessage.mockClear();
+
+    await expect(tool.execute('call-1', { tabId: 999 })).rejects.toThrow();
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('browser_close_tab: 关闭一个已追踪的 tab 会调用 CLOSE_TAB，成功后目标从 trackedTabs 移除', async () => {
+    const session = createTabSession(1);
+    session.openAndSwitch({ id: 2 });
+    const tool = toolFor(session, 'browser_close_tab');
+
+    sendMessage.mockClear();
+    sendMessage.mockResolvedValueOnce({ id: '1', ok: true, data: { closed: true, tabId: 2 } });
+    await tool.execute('call-1', { tabId: 2 });
+
+    expect(sendMessage).toHaveBeenCalledWith('CLOSE_TAB', undefined, 2);
+    expect(session.isTracked(2)).toBe(false);
+    expect(session.currentTabId).toBe(1); // 关掉的正好是 current，自动回退面板 tab
+  });
+
+  it('browser_switch_tab: 切到未追踪的 tab 直接抛错，不发送任何消息', async () => {
+    const session = createTabSession(1);
+    const tool = toolFor(session, 'browser_switch_tab');
+    sendMessage.mockClear();
+
+    await expect(tool.execute('call-1', { tabId: 999 })).rejects.toThrow();
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('browser_switch_tab: 切到已追踪的 tab 成功，且从不发送任何消息（纯内存操作）', async () => {
+    const session = createTabSession(1);
+    session.openAndSwitch({ id: 2 });
+    const tool = toolFor(session, 'browser_switch_tab');
+    sendMessage.mockClear();
+
+    await tool.execute('call-1', { tabId: 1 });
+
+    expect(session.currentTabId).toBe(1);
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('browser_list_tabs：只读返回 tracked 列表快照', async () => {
+    const session = createTabSession(1);
+    session.openAndSwitch({ id: 2, title: 'B' });
+    const tool = toolFor(session, 'browser_list_tabs');
+    sendMessage.mockClear();
+
+    const output = await tool.execute('call-1', {});
+
+    const text = (output.content[0] as { text: string }).text;
+    expect(text).toContain('2');
+    expect(text).toContain('B');
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
 });

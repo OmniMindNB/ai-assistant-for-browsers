@@ -183,6 +183,11 @@ let runEpoch = 0;
 let conversationEpoch = 0;
 /** 侧边栏面板自己绑定的 tabId；挂载时解析一次并缓存，用于把 conversationId 变化写回对应 tab 的映射。 */
 let panelTabId: number | null = null;
+/** true 只在 restoreTabConversation() 内部恢复已保存对话期间。
+ * 这段时间 conversationId 的变化是"面板文档重建后重新挂载同一个对话"，
+ * 不是真正的对话切换/清空——useChat.subscribe 靠这个标志跳过 clearTabSession，
+ * 否则每次面板因为浏览器切走 tab 焦点而被销毁重建，追踪的标签页列表都会被清空。 */
+let restoringSavedConversation = false;
 /** 只允许最近一次页面上下文刷新更新 UI，避免慢响应覆盖用户主动重试。 */
 let pageContextRequestId = 0;
 let providerRequestId = 0;
@@ -831,7 +836,12 @@ export const useChat = create<ChatState>((set, get) => ({
     panelTabId = tabId;
     const savedId = await getConversationIdForTab(tabId);
     if (savedId) {
-      await get().openConversation(savedId);
+      restoringSavedConversation = true;
+      try {
+        await get().openConversation(savedId);
+      } finally {
+        restoringSavedConversation = false;
+      }
     } else {
       await setConversationIdForTab(tabId, get().conversationId);
     }
@@ -883,6 +893,7 @@ useChat.subscribe((state, prevState) => {
   if (state.conversationId === prevState.conversationId) return;
   if (panelTabId === null) return;
   setConversationIdForTab(panelTabId, state.conversationId).catch(() => undefined);
+  if (restoringSavedConversation) return;
   clearTabSession(panelTabId).catch(() => undefined);
 });
 
@@ -1093,6 +1104,7 @@ async function runAgent(
     onOverlay: (payload, targetTabId) => {
       void sendMessage('SET_AGENT_OVERLAY', payload, targetTabId).catch(() => undefined);
     },
+    onSessionChange: (session) => { void saveTabSession(session).catch(() => undefined); },
   });
   if (!isCurrentRun(run, get)) return false;
   run.agent = agent;

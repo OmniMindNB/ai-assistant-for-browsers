@@ -676,6 +676,11 @@ function makeNavigateTool(session: TabSessionController): BrowserAgentTool {
       const payload = params as NavigateTabPayload;
       const response = (await sendMessage<NavigateTabPayload, NavigateTabResult>('NAVIGATE_TAB', payload, session.currentTabId)) as MessageResponse<NavigateTabResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '跳转失败');
+      // 跳转没有切换"当前操作 tab"（还是同一个 tab），但它的标题/URL 变了——复用
+      // openAndSwitch 只是为了刷新 tracked 列表里这条记录，不是真的切换目标
+      // （session.currentTabId 本来就已经是这个 tab，这里是有意的、有文档说明的复用，
+      // 不是误用；ref: 最终审查 Important #7）。
+      session.openAndSwitch({ id: session.currentTabId, title: response.data.title, url: response.data.url });
       return textResult(describeNavigateResult(response.data), response.data as unknown as Record<string, unknown>);
     },
   };

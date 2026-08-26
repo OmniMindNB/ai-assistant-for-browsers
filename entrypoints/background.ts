@@ -56,6 +56,7 @@ import { sendToContentScript } from '@/lib/agent/content-script-messaging';
 import { clearOverlayForTab, getOverlayForTab, setOverlayForTab } from '@/lib/agent/tab-overlay-state';
 import { clearConversationIdForTab } from '@/lib/agent/tab-conversation';
 import { clearPendingAskForTab, setPendingAskForTab } from '@/lib/agent/tab-pending-ask';
+import { clearTabSession } from '@/lib/agent/tab-session-storage';
 import { mergeFillOutcomes, planFieldClick, planFormFill } from '@/lib/agent/fill-form-request';
 import {
   applyFormFill,
@@ -159,6 +160,9 @@ export default defineBackground(() => {
     );
     clearPendingAskForTab(tabId).catch((err: unknown) =>
       console.error('[Runi] clearPendingAskForTab on tab close:', err),
+    );
+    clearTabSession(tabId).catch((err: unknown) =>
+      console.error('[Runi] clearTabSession on tab close:', err),
     );
   });
 });

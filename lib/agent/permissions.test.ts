@@ -97,6 +97,25 @@ describe('decideToolPermission', () => {
       expect(decideToolPermission('browser_open_tab', { url: 'https://example.com' }).level).toBe('confirm');
       expect(decideToolPermission('browser_close_tab', { tabId: 2 }).level).toBe('confirm');
     });
+
+    it('denies browser_open_tab to a javascript: URL', () => {
+      expect(decideToolPermission('browser_open_tab', { url: 'javascript:alert(1)' }).level).toBe('deny');
+    });
+
+    it('denies browser_open_tab to a file: URL', () => {
+      expect(decideToolPermission('browser_open_tab', { url: 'file:///etc/passwd' }).level).toBe('deny');
+    });
+
+    it('denies browser_open_tab to a malformed URL', () => {
+      expect(decideToolPermission('browser_open_tab', { url: 'not a url' }).level).toBe('deny');
+    });
+
+    it('requires confirmation for browser_open_tab to an https URL', () => {
+      expect(decideToolPermission('browser_open_tab', { url: 'https://example.com' })).toEqual({
+        level: 'confirm',
+        reason: expect.stringContaining('修改页面'),
+      });
+    });
   });
 });
 
@@ -106,6 +125,7 @@ describe('beforeToolCallPermissionGate', () => {
     const result = await beforeToolCallPermissionGate(makeContext('browser_read_page', {}), {
       gateState: createConfirmGateState(),
       onConfirm,
+      targetTabId: 1,
     });
     expect(result).toBeUndefined();
     expect(onConfirm).not.toHaveBeenCalled();
@@ -116,6 +136,7 @@ describe('beforeToolCallPermissionGate', () => {
     const result = await beforeToolCallPermissionGate(makeContext('browser_eval_raw', {}), {
       gateState: createConfirmGateState(),
       onConfirm,
+      targetTabId: 1,
     });
     expect(result?.block).toBe(true);
     expect(onConfirm).not.toHaveBeenCalled();
@@ -126,9 +147,51 @@ describe('beforeToolCallPermissionGate', () => {
     const result = await beforeToolCallPermissionGate(makeContext('browser_click', { selector: 'button' }), {
       gateState: createConfirmGateState(),
       onConfirm,
+      targetTabId: 1,
     });
     expect(result).toBeUndefined();
     expect(onConfirm).toHaveBeenCalledWith('call-1', 'browser_click', { selector: 'button' }, expect.any(String));
+  });
+
+  describe('目标 tab 变化时重新确认（最终审查 Important #2）', () => {
+    it('approving a write on tab 1 does not silently approve a call targeting tab 2', async () => {
+      const state = createConfirmGateState();
+      const onConfirm = vi.fn().mockResolvedValue(true);
+
+      const first = await beforeToolCallPermissionGate(makeContext('browser_click', { selector: '#a' }), {
+        gateState: state,
+        onConfirm,
+        targetTabId: 1,
+      });
+      expect(first).toBeUndefined();
+      expect(onConfirm).toHaveBeenCalledTimes(1);
+
+      const second = await beforeToolCallPermissionGate(makeContext('browser_fill_form', { fields: [] }), {
+        gateState: state,
+        onConfirm,
+        targetTabId: 2,
+      });
+      expect(second).toBeUndefined();
+      expect(onConfirm).toHaveBeenCalledTimes(2); // 目标 tab 变了，重新问了一次
+    });
+
+    it('two confirm-tier calls targeting the same tab still only prompt once', async () => {
+      const state = createConfirmGateState();
+      const onConfirm = vi.fn().mockResolvedValue(true);
+
+      await beforeToolCallPermissionGate(makeContext('browser_click', { selector: '#a' }), {
+        gateState: state,
+        onConfirm,
+        targetTabId: 1,
+      });
+      await beforeToolCallPermissionGate(makeContext('browser_type', { selector: '#b', text: 'x' }), {
+        gateState: state,
+        onConfirm,
+        targetTabId: 1,
+      });
+
+      expect(onConfirm).toHaveBeenCalledTimes(1);
+    });
   });
 });
 
@@ -147,6 +210,7 @@ describe('submit intent escalation', () => {
       {
         gateState: state,
         onConfirm,
+        targetTabId: 1,
         resolveSubmitIntent: async () => ({ isSubmit: true, formAction: 'https://example.com/checkout', fieldCount: 12 }),
       },
     );
@@ -162,7 +226,7 @@ describe('submit intent escalation', () => {
 
     const result = await beforeToolCallPermissionGate(
       { toolCall: { id: 'call-2', name: 'browser_click' }, args: { selector: 'a' } } as any,
-      { gateState: state, onConfirm, resolveSubmitIntent: async () => ({ isSubmit: false }) },
+      { gateState: state, onConfirm, targetTabId: 1, resolveSubmitIntent: async () => ({ isSubmit: false }) },
     );
 
     expect(result).toBeUndefined();
@@ -178,6 +242,7 @@ describe('submit intent escalation', () => {
       {
         gateState: createConfirmGateState(),
         onConfirm,
+        targetTabId: 1,
         resolveSubmitIntent: async () => ({ isSubmit: false, fieldLabels: [{ fieldId: 'f1', label: '邮箱' }] }),
       },
     );
@@ -195,6 +260,7 @@ describe('submit intent escalation', () => {
       {
         gateState: createConfirmGateState(),
         onConfirm,
+        targetTabId: 1,
         resolveSubmitIntent: async () => ({ isSubmit: false, fieldLabels: [{ fieldId: 'f7', label: '登录' }] }),
       },
     );

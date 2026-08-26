@@ -63,6 +63,11 @@ export interface BrowserAgentOptions {
    * （ref: 设计文档 §3.4）。
    */
   onOverlay?: (payload: SetAgentOverlayPayload, targetTabId: number) => void;
+  /** 标签页追踪状态发生变化（open/switch/close 成功执行）时通知外层立即持久化，
+   * 不要只等到回合结束才存——面板文档可能在回合结束前就被销毁，或者这次回合被
+   * 新一轮请求取代，两种情况都不会走到 store.ts 的 finally 里那次保存
+   * （ref: 最终审查 Important #4）。 */
+  onSessionChange?: (session: TabSessionController) => void;
 }
 
 export interface BrowserAgentRuntimeOptions extends BrowserAgentOptions {
@@ -147,6 +152,7 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
       const permissionBlock = await beforeToolCallPermissionGate(context, {
         gateState: confirmGateState,
         onConfirm: options.onConfirm,
+        targetTabId: session.currentTabId,
         signal,
         resolveSubmitIntent: async (toolName, args) => {
           const payload = buildSubmitIntentProbePayload(toolName, args);
@@ -195,6 +201,12 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
           { active: true, label: describeToolActivity(toolName, context.toolCall.arguments, 'running') },
           overlayTabId,
         );
+      }
+
+      // 标签页追踪状态本身发生了变化（不只是 currentTabId——关掉一个非当前的 tracked tab
+      // 也算），立即通知外层持久化，不要等回合结束（ref: 最终审查 Important #4）。
+      if (!context.isError && TAB_SESSION_MUTATING_TOOLS.has(toolName)) {
+        options.onSessionChange?.(session);
       }
 
       if (toolName === IMPLEMENTATION_DOSSIER_TOOL && !context.isError) {

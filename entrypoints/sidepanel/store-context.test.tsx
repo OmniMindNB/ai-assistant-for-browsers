@@ -1067,6 +1067,45 @@ describe('chat store page context', () => {
     });
   });
 
+  describe('restoreTabConversation does not wipe tab session on panel remount', () => {
+    beforeEach(() => {
+      (globalThis as any).browser.tabs = { query: vi.fn().mockResolvedValue([{ id: 42 }]) };
+      (globalThis as any).browser.storage.session = {
+        get: vi.fn().mockResolvedValue({}),
+        set: vi.fn().mockResolvedValue(undefined),
+        remove: vi.fn().mockResolvedValue(undefined),
+      };
+    });
+
+    function removedKeys(): string[] {
+      return (globalThis as any).browser.storage.session.remove.mock.calls.map((args: unknown[]) => args[0]);
+    }
+
+    it('restoring the already-saved conversation for this tab does NOT clear the tab session', async () => {
+      const convKey = 'runi:tab-conversation:42';
+      (globalThis as any).browser.storage.session.get = vi.fn().mockImplementation((key: string) => {
+        if (key === convKey) return Promise.resolve({ [convKey]: 'saved-convo' });
+        return Promise.resolve({});
+      });
+
+      await useChat.getState().restoreTabConversation();
+
+      expect(useChat.getState().conversationId).toBe('saved-convo');
+      expect(removedKeys().some((key) => key.startsWith('runi:tab-session:'))).toBe(false);
+    });
+
+    it('an actual conversation switch after restore DOES clear the tab session', async () => {
+      // First restore with nothing saved for this tab yet — just establishes panelTabId.
+      await useChat.getState().restoreTabConversation();
+
+      // A real conversation change (e.g. user picked a different one in the history drawer).
+      await useChat.getState().openConversation('other-convo');
+
+      expect(useChat.getState().conversationId).toBe('other-convo');
+      expect(removedKeys()).toContain('runi:tab-session:42');
+    });
+  });
+
   describe('quoted selection composition on send', () => {
     beforeEach(() => {
       mocks.createBrowserAgent.mockReturnValue(makeAgent());

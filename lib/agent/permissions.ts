@@ -54,7 +54,7 @@ export function decideToolPermission(toolName: string, args: unknown): Permissio
     return { level: 'deny', reason: `工具 ${toolName} 被全局禁止。` };
   }
 
-  if (toolName === 'browser_navigate') {
+  if (toolName === 'browser_navigate' || toolName === 'browser_open_tab') {
     const url = extractStringArg(args, 'url');
     let isHttpUrl = false;
     try {
@@ -98,6 +98,12 @@ export interface ToolWriteIntent extends SubmitIntent {
 export interface PermissionGateOptions {
   gateState: ConfirmGateState;
   onConfirm?: ConfirmFn;
+  /**
+   * 这次工具调用真正落地的目标 tab（多标签页编排下是 session.currentTabId，而不总是面板
+   * 绑定的那个 tab）。confirm 缓存按这个值判断是否过期——目标 tab 变了就重新问一次
+   * （ref: 最终审查 Important #2）。
+   */
+  targetTabId: number;
   signal?: AbortSignal;
   /**
    * 「这次点击会不会提交表单」必须看页面实况，而 decideToolPermission 是只看 args 的纯函数。
@@ -155,6 +161,7 @@ export async function beforeToolCallPermissionGate(
     confirmArgs,
     reason,
     options.onConfirm,
+    options.targetTabId,
     options.signal,
     always,
   );
