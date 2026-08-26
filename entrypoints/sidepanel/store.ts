@@ -40,6 +40,7 @@ import { describeToolActivity } from '@/lib/agent/activity-description';
 import { finishActivityStep, markActivityStepSlow, upsertActivityStep, type ActivityStep } from '@/lib/agent/activity-steps';
 import { getConversationIdForTab, setConversationIdForTab } from '@/lib/agent/tab-conversation';
 import { clearTabSession, loadTabSession, saveTabSession } from '@/lib/agent/tab-session-storage';
+import { createTabSession } from '@/lib/agent/tab-session';
 import { clearPendingAskForTab, getPendingAskForTab, pendingAskStorageKey } from '@/lib/agent/tab-pending-ask';
 import { buildSelectionAskTemplate, truncateSelectionText } from '@/lib/selection-ask';
 import {
@@ -975,7 +976,7 @@ async function runAgent(
   }
   if (!isCurrentRun(run, get)) return false;
   const tabId = tab.id;
-  const tabSession = await loadTabSession(tabId);
+  const tabSession = await loadTabSession(tabId).catch(() => createTabSession(tabId));
 
   // 截断必须放在 Provider 校验与 resolveActiveTabId 之后：那两处失败会 set({ error }) 直接 return，
   // 若此时历史已被截断，用户的消息就被不可恢复地丢弃了，而这是用户完全没有预期的失败路径
