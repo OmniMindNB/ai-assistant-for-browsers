@@ -177,6 +177,88 @@ describe('collectFormFields', () => {
     const field = collectFormFields(INPUT).raws.find((raw) => raw.tag === 'button');
     expect(field?.elementText).toBe('下单');
   });
+
+  it('does not compute precedingText/trailingText when includeText is not set', () => {
+    render(`<form><p>提示文字</p><input name="email" type="text" /></form>`);
+    const output = collectFormFields(INPUT);
+    expect(output.raws.find((raw) => raw.name === 'email')?.precedingText).toBeUndefined();
+    expect(output.trailingText).toBeUndefined();
+  });
+
+  it('interleaves preceding and trailing text by document order when includeText is set', () => {
+    render(`
+      <form>
+        <p>欢迎回来，请登录以继续。</p>
+        <input name="email" type="text" />
+        <p>忘记密码？点此重置。</p>
+        <button type="submit">登录</button>
+        <p>登录即代表同意服务条款。</p>
+      </form>
+    `);
+    const output = collectFormFields({ ...INPUT, includeText: true });
+    expect(output.raws.find((raw) => raw.name === 'email')?.precedingText).toBe('欢迎回来，请登录以继续。');
+    expect(output.raws.find((raw) => raw.tag === 'button')?.precedingText).toBe('忘记密码？点此重置。');
+    expect(output.trailingText).toBe('登录即代表同意服务条款。');
+  });
+
+  it('excludes text inside script, style, and option tags from precedingText', () => {
+    render(`
+      <form>
+        <style>.x { color: red; }</style>
+        <script>var shouldNotLeak = 1;</script>
+        <select name="city"><option value="bj">北京</option></select>
+        <p>选择城市</p>
+        <input name="email" type="text" />
+      </form>
+    `);
+    const output = collectFormFields({ ...INPUT, includeText: true });
+    const emailPreceding = output.raws.find((raw) => raw.name === 'email')?.precedingText;
+    expect(emailPreceding).not.toContain('color: red');
+    expect(emailPreceding).not.toContain('shouldNotLeak');
+    expect(emailPreceding).not.toContain('北京');
+    expect(emailPreceding).toContain('选择城市');
+  });
+
+  it("does not duplicate a field element's own visible text into the next field's precedingText", () => {
+    render(`
+      <form>
+        <button type="button">展开更多</button>
+        <input name="query" type="text" />
+      </form>
+    `);
+    const output = collectFormFields({ ...INPUT, includeText: true });
+    expect(output.raws.find((raw) => raw.name === 'query')?.precedingText).toBeUndefined();
+  });
+
+  it('caps raw precedingText at a defensive 2000 characters (product-level 300-char cap happens downstream)', () => {
+    const longText = 'a'.repeat(2500);
+    render(`<form><p>${longText}</p><input name="email" type="text" /></form>`);
+    const output = collectFormFields({ ...INPUT, includeText: true });
+    expect(output.raws.find((raw) => raw.name === 'email')?.precedingText?.length).toBe(2000);
+  });
+
+  it('excludes invisible text unless includeHidden is set', () => {
+    render(`
+      <form>
+        <p style="display:none">隐藏提示</p>
+        <input name="email" type="text" />
+      </form>
+    `);
+    const shown = collectFormFields({ ...INPUT, includeText: true });
+    expect(shown.raws.find((raw) => raw.name === 'email')?.precedingText).toBeUndefined();
+
+    const withHidden = collectFormFields({ ...INPUT, includeText: true, includeHidden: true });
+    expect(withHidden.raws.find((raw) => raw.name === 'email')?.precedingText).toBe('隐藏提示');
+  });
+
+  it('does not attribute text inside an open shadow root to any field (known limitation)', () => {
+    render(`<div id="host"></div><input name="outer" type="text" />`);
+    const host = document.getElementById('host')!;
+    host.attachShadow({ mode: 'open' }).innerHTML = `<p>内部说明</p><input name="inner" type="text" />`;
+    const output = collectFormFields({ ...INPUT, includeText: true });
+    expect(output.raws.find((raw) => raw.name === 'inner')?.precedingText).toBeUndefined();
+    expect(output.trailingText).toBeUndefined();
+  });
 });
 
 // jsdom's selector engine (@asamuzakjp/dom-selector, as used by jsdom 30) fails to

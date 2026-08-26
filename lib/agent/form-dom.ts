@@ -9,6 +9,7 @@ import type { FormFieldPathStep, RawFormField } from './form-schema';
 export interface CollectFormInput {
   selector?: string;
   includeHidden?: boolean;
+  includeText?: boolean;
   maxFields: number;
   maxOptions: number;
 }
@@ -26,6 +27,8 @@ export interface CollectFormOutput {
   forms: CollectedFormInfo[];
   unreachable: { iframes: number; closedShadowRoots: number };
   truncated: boolean;
+  /** 未净化的正文，排在最后一个字段之后。仅 includeText 时可能有值。 */
+  trailingText?: string;
 }
 
 export function collectFormFields(input: CollectFormInput): CollectFormOutput {
@@ -36,7 +39,9 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
   const genericFieldQuota = Math.max(1, Math.floor(maxFields / 2));
   let genericCollected = 0;
   const includeHidden = input.includeHidden === true;
+  const includeText = input.includeText === true;
   const raws: RawFormField[] = [];
+  const fieldElements: Element[] = [];
   const forms: CollectedFormInfo[] = [];
   const unreachable = { iframes: 0, closedShadowRoots: 0 };
   let truncated = false;
@@ -228,6 +233,7 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
       const hidden = (raw.type || '').toLowerCase() === 'hidden' || !raw.visible;
       if (hidden && !includeHidden) continue;
       raws.push(raw);
+      fieldElements.push(element);
       if (isGeneric) genericCollected += 1;
     }
   };
@@ -235,7 +241,69 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
   const scope = input.selector ? document.querySelector(input.selector) : document.body;
   if (scope) walk(scope);
 
-  return { url: location.href, raws, forms, unreachable, truncated };
+  let trailingText: string | undefined;
+  if (includeText && scope) {
+    const RAW_TEXT_SAFETY_CAP = 2000;
+    const SKIP_TEXT_ANCESTOR_TAGS = new Set(['script', 'style', 'noscript', 'template', 'option']);
+    const buffers: string[][] = raws.map(() => []);
+    const trailingBuffer: string[] = [];
+
+    const isInsideSkippedTag = (parent: Element | null): boolean => {
+      let el = parent;
+      while (el) {
+        if (SKIP_TEXT_ANCESTOR_TAGS.has(el.tagName.toLowerCase())) return true;
+        el = el.parentElement;
+      }
+      return false;
+    };
+
+    const isInsideAnyField = (parent: Element | null): boolean => {
+      if (!parent) return false;
+      return fieldElements.some((el) => el.contains(parent));
+    };
+
+    const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        if (!(node.textContent ?? '').trim()) return NodeFilter.FILTER_REJECT;
+        const parent = (node as Text).parentElement;
+        if (isInsideSkippedTag(parent)) return NodeFilter.FILTER_REJECT;
+        if (isInsideAnyField(parent)) return NodeFilter.FILTER_REJECT;
+        if (!includeHidden && parent && !isVisible(parent)) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+
+    // 找「排在这段文本之后的第一个字段」：跨 shadow 边界比较不连通，compareDocumentPosition 仍会
+    // 任意但一致地带上 PRECEDING/FOLLOWING 位，必须先排除 DISCONNECTED 候选再看 FOLLOWING，
+    // 否则 light DOM 的文本会被错误地归到 shadow root 内的字段上（ref: 设计文档 §3.3）。
+    let textNode: Node | null = walker.nextNode();
+    while (textNode) {
+      const text = (textNode.textContent ?? '').replace(/\s+/g, ' ').trim();
+      if (text) {
+        const slot = fieldElements.findIndex((el) => {
+          const position = textNode!.compareDocumentPosition(el);
+          if (position & Node.DOCUMENT_POSITION_DISCONNECTED) return false;
+          return (position & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+        });
+        (slot === -1 ? trailingBuffer : buffers[slot]).push(text);
+      }
+      textNode = walker.nextNode();
+    }
+
+    const finalize = (parts: string[]): string | undefined => {
+      if (parts.length === 0) return undefined;
+      const joined = parts.join(' ').replace(/\s+/g, ' ').trim();
+      if (!joined) return undefined;
+      return joined.length > RAW_TEXT_SAFETY_CAP ? joined.slice(0, RAW_TEXT_SAFETY_CAP) : joined;
+    };
+
+    raws.forEach((rawField, index) => {
+      rawField.precedingText = finalize(buffers[index]);
+    });
+    trailingText = finalize(trailingBuffer);
+  }
+
+  return { url: location.href, raws, forms, unreachable, truncated, trailingText };
 }
 
 export interface ApplyFillItem {
