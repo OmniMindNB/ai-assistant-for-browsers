@@ -280,6 +280,7 @@ git commit -m "feat: 新增 TabSessionController 管理多标签页操作目标"
 - Produces:
   - `function loadTabSession(panelTabId: number): Promise<TabSessionController>`
   - `function saveTabSession(session: TabSessionController): Promise<void>`
+  - `function clearTabSession(panelTabId: number): Promise<void>`（追加于 Task 2 审查后——见 ledger "Task 2" 条目的 Ruling：设计文档 §3.3 要求状态在"对话清空"时终止，Task 8 需要一个可调用的清除入口，仿 `tab-form-fields.ts` 的 `clearFormFieldsForTab`）
 
 - [ ] **Step 1: 写失败的测试**
 
@@ -288,7 +289,7 @@ git commit -m "feat: 新增 TabSessionController 管理多标签页操作目标"
 ```ts
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing';
-import { loadTabSession, saveTabSession } from './tab-session-storage';
+import { clearTabSession, loadTabSession, saveTabSession } from './tab-session-storage';
 
 (globalThis as any).browser = fakeBrowser;
 
@@ -333,6 +334,22 @@ describe('tab-session-storage', () => {
     const restored = await loadTabSession(PANEL_TAB_ID);
     expect(restored.currentTabId).toBe(PANEL_TAB_ID);
   });
+
+  it('clears a persisted session back to a fresh single-tab state', async () => {
+    const session = await loadTabSession(PANEL_TAB_ID);
+    session.openAndSwitch({ id: 2, title: 'Example' });
+    await saveTabSession(session);
+
+    await clearTabSession(PANEL_TAB_ID);
+
+    const restored = await loadTabSession(PANEL_TAB_ID);
+    expect(restored.currentTabId).toBe(PANEL_TAB_ID);
+    expect(restored.trackedTabs).toEqual([{ id: PANEL_TAB_ID }]);
+  });
+
+  it('does not throw when clearing a session that was never saved', async () => {
+    await expect(clearTabSession(PANEL_TAB_ID)).resolves.toBeUndefined();
+  });
 });
 ```
 
@@ -369,6 +386,15 @@ export async function saveTabSession(session: TabSessionController): Promise<voi
   } catch {
     // 静默降级，见上方注释
   }
+}
+
+/**
+ * 对话清空/切换（包括切到另一个已保存对话）时调用，终止这个面板 tab 当前的标签页追踪状态。
+ * 不需要连同已打开的浏览器标签页一起关掉——只是不再把它们算作"这个对话正在用的工作区"，
+ * 用户手动开着的标签页不该被这里的清理连带影响。
+ */
+export async function clearTabSession(panelTabId: number): Promise<void> {
+  await browser.storage.session.remove(storageKey(panelTabId));
 }
 ```
 
@@ -1881,7 +1907,7 @@ git commit -m "feat: BrowserAgentOptions 接入可选 TabSessionController，遮
 - Modify: `entrypoints/sidepanel/store.ts`
 
 **Interfaces:**
-- Consumes: `loadTabSession`/`saveTabSession`（Task 2）；`createBrowserAgent` 的 `session`/`onOverlay(payload, targetTabId)`（Task 7）；`summarizeToolCallForConfirmation(toolName, args, targetTab?)`（Task 6）
+- Consumes: `loadTabSession`/`saveTabSession`/`clearTabSession`（Task 2，`clearTabSession` 是审查 Task 2 时发现的追加项，见 ledger "Task 2" 条目的 Ruling）；`createBrowserAgent` 的 `session`/`onOverlay(payload, targetTabId)`（Task 7）；`summarizeToolCallForConfirmation(toolName, args, targetTab?)`（Task 6）
 
 - [ ] **Step 1: 定位改动点**
 
@@ -1900,7 +1926,7 @@ git commit -m "feat: BrowserAgentOptions 接入可选 TabSessionController，遮
 顶部 import 区加：
 
 ```ts
-import { loadTabSession, saveTabSession } from '@/lib/agent/tab-session-storage';
+import { clearTabSession, loadTabSession, saveTabSession } from '@/lib/agent/tab-session-storage';
 ```
 
 - [ ] **Step 3: `onConfirm` 标注跨 tab 目标**
@@ -1966,12 +1992,29 @@ import { loadTabSession, saveTabSession } from '@/lib/agent/tab-session-storage'
   void sendMessage('SET_AGENT_OVERLAY', { active: false }, tabSession.currentTabId).catch(() => undefined);
 ```
 
-- [ ] **Step 6: 类型检查确认无误**
+- [ ] **Step 6: 对话清空/切换时清除标签页追踪状态**
+
+设计文档 §3.3 要求追踪状态"跨轮持续，直到面板关闭或对话清空"——目前没有任何路径在"对话清空"这个边界上调用 `clearTabSession`。`entrypoints/sidepanel/store.ts:880-884` 已经有一个通用钩子，在 `conversationId` 发生任何变化时触发（覆盖 `clear()` 新建空对话、`removeConversation()` 兜底新建、`openConversation()` 切到另一个已保存对话——见该处注释"conversationId 的每次变化...都通过这里统一写回...不需要在各个 action 里分别插入持久化代码"）。把标签页追踪状态的清理接到同一个钩子上，语义是"追踪状态属于当前激活的这个对话，一旦不再是这个对话在用，就终止"：
+
+把 `entrypoints/sidepanel/store.ts:880-884` 的 `useChat.subscribe(...)` 改为：
+
+```ts
+useChat.subscribe((state, prevState) => {
+  if (state.conversationId === prevState.conversationId) return;
+  if (panelTabId === null) return;
+  setConversationIdForTab(panelTabId, state.conversationId).catch(() => undefined);
+  clearTabSession(panelTabId).catch(() => undefined);
+});
+```
+
+（不需要连带关闭用户已经打开的浏览器标签页——`clearTabSession` 只清追踪记录，不碰真实标签页，见 Task 2 里 `clearTabSession` 的函数注释。）
+
+- [ ] **Step 7: 类型检查确认无误**
 
 Run: `pnpm compile`
 Expected: 无 TypeScript 报错
 
-- [ ] **Step 7: 手动冒烟验证**
+- [ ] **Step 8: 手动冒烟验证**
 
 `pnpm dev`，加载扩展，走一遍完整多标签页流程：
 
@@ -1980,10 +2023,11 @@ Expected: 无 TypeScript 报错
 3. 让 agent "切回原来的标签页，然后关闭刚才打开的那个"——确认 `browser_close_tab` 成功后遮罩从被关闭的 tab 上消失，工具返回文本里出现"已自动切回原标签页"（如果关闭的正好是当前目标）。
 4. 发送第二条消息（新的一轮，同一个对话）——确认 agent 仍然知道之前打开过哪些标签页（如果还没关掉的话），即 `browser_list_tabs` 能看到跨轮存活的记录。
 5. 关闭侧边栏面板重新打开——确认 `runi:tab-session:*` 状态按面板 tab 隔离，不会跟别的面板窗口串。
+6. 点击"清空对话"（`clear()`）——确认 `runi:tab-session:${panelTabId}` 被清除；同一个面板 tab 上发起新任务时，标签页追踪从只有面板自己这一个 tab 重新开始，不再带着上一个对话遗留的 tracked 列表。
 
 Expected: 以上全部符合设计文档 §2 的目标描述。
 
-- [ ] **Step 8: 提交**
+- [ ] **Step 9: 提交**
 
 ```bash
 git add entrypoints/sidepanel/store.ts
