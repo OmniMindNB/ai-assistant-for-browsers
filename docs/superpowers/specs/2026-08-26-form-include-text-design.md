@@ -48,7 +48,9 @@ Runi 现在 `browser_read_page`（Readability 正文）与 `browser_get_form`（
 
 ### 3.3 文本归属：compareDocumentPosition 找「后面第一个字段」
 
-对每个通过过滤的文本节点，用 `node.compareDocumentPosition(fieldElements[i])` 找到排在它后面的第一个字段元素，文本进该字段的缓冲区；找不到（文本排在所有字段之后）进 `trailingText` 缓冲区；无法比较（`compareDocumentPosition` 返回 0，通常是跨 shadow 边界或不同 document）则丢弃这段文本——不报错、不计入 `unreachable`，因为字段本身仍然采集到了，只是这段文本关联不上，属于 §2 已声明的已知限制。
+对每个通过过滤的文本节点，用 `node.compareDocumentPosition(fieldElements[i])` 找到排在它后面的第一个字段元素，文本进该字段的缓冲区；扫描到底都没有命中（文本排在所有字段之后）进 `trailingText` 缓冲区。
+
+**跨 shadow 边界的候选要显式跳过，不能只看 FOLLOWING 位**：`compareDocumentPosition` 在两个节点不在同一棵树时（典型如一个在 light DOM、一个在 shadow root 内）不会返回 0——按 DOM 规范，返回值会带上 `DOCUMENT_POSITION_DISCONNECTED` 位，且仍然会*任意但一致地*附带 `PRECEDING`/`FOLLOWING`其中一位。如果只检查 `& DOCUMENT_POSITION_FOLLOWING`，会把这个规范规定的「任意」结果当真，导致 light DOM 的文本被错误地归到某个 shadow root 内的字段上。正确判断必须先排除带 `DOCUMENT_POSITION_DISCONNECTED` 位的候选（视为不可比较，跳过，继续向后扫描下一个字段），再看 `FOLLOWING` 位。这样 shadow 内的字段天然不会收到任何 `precedingText`（§2 已声明的已知限制），而它前后的 light DOM 字段仍能正确关联到各自的文本。
 
 `fieldElements` 的顺序等价于 `raws`/`fields` 的顺序（documented order，见 `walk()` 现有实现），因此可以用线性扫描按顺序找第一个「在文本节点之后」的字段，不需要排序。
 
