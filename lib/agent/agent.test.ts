@@ -1,4 +1,10 @@
 // lib/agent/agent.test.ts
+const sendMessageSpy = vi.fn();
+vi.mock('@/lib/messaging', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/messaging')>('@/lib/messaging');
+  return { ...actual, sendMessage: (...args: unknown[]) => sendMessageSpy(...args) };
+});
+
 import { describe, expect, it, vi } from 'vitest';
 import type {
   AfterToolCallContext,
@@ -10,6 +16,7 @@ import type { ProviderConfig } from '@/lib/settings';
 import { buildSubmitIntentProbePayload, createBrowserAgentOptions, createModel, selectStreamFn } from './agent';
 import { browserOpenAIStream } from './openai-stream';
 import { browserAnthropicStream } from './anthropic-stream';
+import { createTabSession } from './tab-session';
 
 const baseProvider: ProviderConfig = {
   id: 'p-1',
@@ -181,6 +188,7 @@ describe('执行期遮罩', () => {
 
     expect(onOverlay).toHaveBeenCalledWith(
       expect.objectContaining({ active: true, label: expect.any(String) }),
+      1,
     );
   });
 
@@ -294,5 +302,73 @@ describe('createBrowserAgentOptions budget warnings', () => {
     const hooks = withBudget(steer, 8);
     for (let i = 0; i < 4; i += 1) await hooks.afterToolCall?.(afterContext('browser_read_page', {}, false));
     expect(steer).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('多标签页：session 可选，且遮罩跟随当前操作目标', () => {
+  it('未传 session 时退化为单 tab，行为与改动前一致', async () => {
+    const hooks = createBrowserAgentOptions({
+      provider: baseProvider,
+      tabId: 1,
+      tools: [],
+      readToolCallBudget: 12,
+      writeToolCallBudget: 24,
+      steer: vi.fn(),
+      onConfirm: async () => true,
+    });
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_click', { selector: '#a' }))).toBeUndefined();
+  });
+
+  it('切换当前操作 tab 后，遮罩先关旧目标再开新目标', async () => {
+    const session = createTabSession(1);
+    const onOverlay = vi.fn();
+    const hooks = createBrowserAgentOptions({
+      provider: baseProvider,
+      tabId: 1,
+      session,
+      tools: [],
+      readToolCallBudget: 12,
+      writeToolCallBudget: 24,
+      steer: vi.fn(),
+      onConfirm: async () => true,
+      onOverlay,
+    });
+
+    // 先批准一次写操作，遮罩在 tab 1 上打开
+    await hooks.beforeToolCall?.(beforeContext('browser_click', { selector: '#a' }));
+    await hooks.afterToolCall?.(afterContext('browser_click', { selector: '#a' }, false));
+    expect(onOverlay).toHaveBeenLastCalledWith(expect.objectContaining({ active: true }), 1);
+
+    // browser_open_tab 执行后 session.currentTabId 变成 2（工具自己会调用 session.openAndSwitch；
+    // 这里手动模拟工具执行完成后的状态，因为 tools 数组是空的 [] ）
+    session.openAndSwitch({ id: 2, title: 'Example' });
+    await hooks.afterToolCall?.(afterContext('browser_open_tab', { url: 'https://example.com' }, false));
+
+    expect(onOverlay).toHaveBeenCalledWith(expect.objectContaining({ active: false }), 1);
+    expect(onOverlay).toHaveBeenLastCalledWith(expect.objectContaining({ active: true }), 2);
+  });
+
+  it('PROBE_CLICK_TARGET 探测使用 session.currentTabId，不是面板绑定的 tabId', async () => {
+    sendMessageSpy.mockClear();
+    const session = createTabSession(1);
+    session.openAndSwitch({ id: 2 });
+    const hooks = createBrowserAgentOptions({
+      provider: baseProvider,
+      tabId: 1,
+      session,
+      tools: [],
+      readToolCallBudget: 12,
+      writeToolCallBudget: 24,
+      steer: vi.fn(),
+      onConfirm: async () => true,
+    });
+
+    await hooks.beforeToolCall?.(beforeContext('browser_click', { fieldId: 'f1' }), undefined);
+
+    expect(sendMessageSpy).toHaveBeenCalledWith(
+      'PROBE_CLICK_TARGET',
+      expect.objectContaining({ submitFieldId: 'f1' }),
+      2,
+    );
   });
 });

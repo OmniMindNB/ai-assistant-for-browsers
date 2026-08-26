@@ -19,6 +19,7 @@ import { browserAnthropicStream } from './anthropic-stream';
 import { beforeToolCallPermissionGate, CONFIRM_TOOL_NAMES } from './permissions';
 import { createConfirmGateState, type ConfirmFn } from './confirm-gate';
 import { createBrowserTools, type BrowserAgentTool } from './tools';
+import { createTabSession, type TabSessionController } from './tab-session';
 import { createAgentToolPolicy } from './tool-policy';
 import { describeToolActivity } from './activity-description';
 import {
@@ -42,8 +43,13 @@ const POST_DOSSIER_BLOCKED_TOOLS = new Set(['browser_get_page_meta', 'browser_re
 
 export interface BrowserAgentOptions {
   provider: ProviderConfig;
-  /** 本回合固定的目标标签页 ID（ref: turn-tabid-pinning 设计文档）。 */
+  /** 本回合固定的面板绑定标签页 ID（ref: turn-tabid-pinning 设计文档）。 */
   tabId: number;
+  /**
+   * 多标签页会话状态；省略时退化为"只有面板自己这一个 tab"的单 tab session，
+   * 行为与未接入多标签页编排前完全一致（ref: 2026-08-26-multi-tab-orchestration-design.md）。
+   */
+  session?: TabSessionController;
   systemPrompt?: string;
   tools?: BrowserAgentTool[];
   messages?: AgentMessage[];
@@ -52,10 +58,11 @@ export interface BrowserAgentOptions {
   onConfirm?: ConfirmFn;
   onAskUser?: (toolCallId: string, question: string, signal?: AbortSignal) => Promise<string>;
   /**
-   * 写操作获批时通知外层打开执行期遮罩。回调而非直接 sendMessage：
-   * 与 onConfirm / onAskUser 保持同一形状，也让这条路径在单测里可断言。
+   * 写操作获批、或当前操作目标切换时通知外层同步执行期遮罩。第二个参数是这次遮罩状态
+   * 要作用的 tabId——遮罩必须跟随当前实际被操作的 tab，不再总是面板自己绑定的那个
+   * （ref: 设计文档 §3.4）。
    */
-  onOverlay?: (payload: SetAgentOverlayPayload) => void;
+  onOverlay?: (payload: SetAgentOverlayPayload, targetTabId: number) => void;
 }
 
 export interface BrowserAgentRuntimeOptions extends BrowserAgentOptions {
@@ -83,7 +90,8 @@ export function buildSubmitIntentProbePayload(toolName: string, args: unknown): 
 }
 
 export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): AgentOptions {
-  const tools = options.tools ?? createBrowserTools(options.tabId, { onAskUser: options.onAskUser });
+  const session = options.session ?? createTabSession(options.tabId);
+  const tools = options.tools ?? createBrowserTools(session, { onAskUser: options.onAskUser });
   const readToolCallBudget = options.readToolCallBudget ?? DEFAULT_READ_TOOL_CALL_BUDGET;
   const writeToolCallBudget = options.writeToolCallBudget ?? DEFAULT_WRITE_TOOL_CALL_BUDGET;
   const policy = createAgentToolPolicy({ readToolCallBudget, writeToolCallBudget });
@@ -91,6 +99,8 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
   let postDossierFollowUps = 0;
   const toolCallCounts = new Map<string, number>();
   const confirmGateState = createConfirmGateState();
+  let overlayTabId = options.tabId;
+  const TAB_SESSION_MUTATING_TOOLS = new Set(['browser_open_tab', 'browser_switch_tab', 'browser_close_tab']);
   const recordPreExecutionBlock = (block: BeforeToolCallResult): BeforeToolCallResult => {
     policy.recordPreExecutionBlock();
     return block;
@@ -146,7 +156,7 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
             const response = (await sendMessage<ProbeClickTargetPayload, ProbeClickTargetResult>(
               'PROBE_CLICK_TARGET',
               payload,
-              options.tabId,
+              session.currentTabId,
             )) as MessageResponse<ProbeClickTargetResult> | undefined;
             return response?.ok && response.data ? response.data : { isSubmit: false };
           } catch {
@@ -161,10 +171,11 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
         policy.approveWrite();
         const approvedPolicyBlock = policy.preflight(context.toolCall.name, context.args, isConfirmTool);
         if (approvedPolicyBlock) return recordPreExecutionBlock(approvedPolicyBlock);
-        options.onOverlay?.({
-          active: true,
-          label: describeToolActivity(context.toolCall.name, context.toolCall.arguments, 'running'),
-        });
+        options.onOverlay?.(
+          { active: true, label: describeToolActivity(context.toolCall.name, context.toolCall.arguments, 'running') },
+          session.currentTabId,
+        );
+        overlayTabId = session.currentTabId;
         return undefined;
       }
       return undefined;
@@ -173,6 +184,19 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
       const toolName = context.toolCall.name;
       policy.recordExecution(toolName, context.args, context.isError);
       toolCallCounts.set(toolName, (toolCallCounts.get(toolName) ?? 0) + 1);
+
+      // 切换/开新/关闭标签页导致当前操作目标变化时，遮罩要跟过去：
+      // 先关旧目标（如果它还是遮罩最后一次开在的那个 tab），再开新目标。
+      if (!context.isError && TAB_SESSION_MUTATING_TOOLS.has(toolName) && session.currentTabId !== overlayTabId) {
+        const previousTabId = overlayTabId;
+        overlayTabId = session.currentTabId;
+        options.onOverlay?.({ active: false }, previousTabId);
+        options.onOverlay?.(
+          { active: true, label: describeToolActivity(toolName, context.toolCall.arguments, 'running') },
+          overlayTabId,
+        );
+      }
+
       if (toolName === IMPLEMENTATION_DOSSIER_TOOL && !context.isError) {
         implementationDossierCollected = true;
         options.steer({
