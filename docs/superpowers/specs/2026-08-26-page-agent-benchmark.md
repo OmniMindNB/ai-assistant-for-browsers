@@ -44,7 +44,7 @@
 
 - [ ] 未开始
 
-### [ ] P0 — 多标签页编排
+### [x] P0 — 多标签页编排
 
 **是什么**：`packages/extension/src/agent/tabTools.ts`（`open_new_tab` / `switch_to_tab` / `close_tab`）+ `TabsController.ts`（`summarizeTabs()` 每步在浏览器状态头部注入一张 Tab ID/URL/Title/Status/当前✅ 的 markdown 表，`syncTabs()` + `waitUntilTabLoaded()`，agent 开的标签页收进独立 tab group 做视觉隔离）。
 
@@ -52,7 +52,7 @@
 
 **怎么做**：复用现有的 `tab-target.ts` / `tab-conversation.ts` 按 tab 隔离基础设施。新开/关闭标签页是写操作，需要进 `permissions.ts` 的 `CONFIRM_TOOL_NAMES`。
 
-- [ ] 未开始
+- [x] 已完成 — 设计：`docs/superpowers/specs/2026-08-26-multi-tab-orchestration-design.md`，实施计划：`docs/superpowers/plans/2026-08-26-multi-tab-orchestration.md`（8 个任务全部落地，`pnpm compile`/`pnpm test`/`pnpm build` 均通过；手动浏览器多标签页冒烟测试未在本次实施会话中执行，需要在实际加载扩展后人工验证一遍）
 
 ### [ ] P1 — 按站点的持久指令 + `llms.txt`
 
