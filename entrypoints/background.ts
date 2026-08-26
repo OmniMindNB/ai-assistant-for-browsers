@@ -970,15 +970,21 @@ async function navigateTab(payload: NavigateTabPayload, tabId: number): Promise<
 }
 
 /**
- * 在面板绑定 tab 所在的同一窗口里开一个新 tab 并前台聚焦——遮罩会跟着切过去，
- * 聚焦是让用户视觉上也能跟上 agent 正在操作哪个页面（ref: 设计文档 §3.4）。
+ * 在面板绑定 tab 所在的同一窗口里开一个新 tab，但不抢前台焦点（active: false）。
+ *
+ * @important 不能设 active: true。侧边栏在「按 tab 单独启用」模式下，浏览器切换活动 tab 到
+ * 面板未绑定的 tab 时会整个销毁面板文档（ref: lib/agent/tab-conversation.ts 顶部注释）——
+ * 如果这里把新 tab 设为前台，会在 browser_open_tab 执行的瞬间销毁正在运行这次回合的
+ * 面板文档本身，直接杀死整个 agent 回合。遮罩依然会正确显示在后台 tab 上（后台 tab
+ * 照常渲染，只是不是当前可见的那个），用户手动切过去就能看到，不需要靠抢焦点来实现
+ * §3.4 的"遮罩跟随"目标。（Task 8 review 发现，2026-08-26。）
  */
 async function openNewTab(payload: OpenNewTabPayload, panelTabId: number): Promise<OpenNewTabResult> {
   const requestedUrl = payload?.url ?? '';
   if (!isNavigableUrl(requestedUrl)) throw new Error('仅允许打开 http/https 地址。');
 
   const panelTab = await resolveTargetTab(panelTabId);
-  const created = await browser.tabs.create({ windowId: panelTab.windowId, url: requestedUrl, active: true });
+  const created = await browser.tabs.create({ windowId: panelTab.windowId, url: requestedUrl, active: false });
   if (typeof created.id !== 'number') throw new Error('新标签页创建失败。');
 
   await waitForTabLoad(created.id);
