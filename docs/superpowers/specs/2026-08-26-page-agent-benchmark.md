@@ -74,7 +74,7 @@
 
 - [ ] 未开始
 
-### [ ] P2 — 统一的页面快照工具
+### [x] P2 — 统一的页面快照工具（小范围验证已完成，暂不上完整树表示）
 
 **是什么**：一次调用拿到「带缩进的树 + `[n]` 序号可交互元素 + 穿插纯文本」，模型一眼看出页面长什么样、能点什么、层级关系如何。
 
@@ -82,7 +82,7 @@
 
 **怎么做**：改造量大，先做小范围验证：给 `browser_get_form` 加一个 `includeText: true` 选项，把正文按 DOM 顺序穿插进字段列表，验证收益后再决定要不要上完整的树表示。
 
-- [ ] 小范围验证的代码已落地——设计：`docs/superpowers/specs/2026-08-26-form-include-text-design.md`，实施计划：`docs/superpowers/plans/2026-08-26-form-include-text.md`（4 个任务全部落地并通过 `pnpm compile`/`pnpm test`/`pnpm build`，已合并到 main，commit 范围 `468c8fd..0ee13a0`）。**本条尚未打勾**：这一步只是「先做小范围验证」的前半句——代码能力已具备，但「验证收益后再决定要不要上完整的树表示」这半句还没做，需要在实际加载扩展、对着真实页面跑几轮 `includeText: true` 后再回来决定。
+- [x] 已完成——设计：`docs/superpowers/specs/2026-08-26-form-include-text-design.md`，实施计划：`docs/superpowers/plans/2026-08-26-form-include-text.md`（4 个任务全部落地并通过 `pnpm compile`/`pnpm test`/`pnpm build`，已合并到 main，commit 范围 `468c8fd..0ee13a0`）。人工验证结论：`precedingText` 确实有用——先不急着投入完整的 `[n]` 序号 + 缩进树表示，等后续再有明确信号时再开新的待办跟进。
 
 ### [ ] P2 — 用户接管检测
 
