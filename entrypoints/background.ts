@@ -57,6 +57,14 @@ import { clearOverlayForTab, getOverlayForTab, setOverlayForTab } from '@/lib/ag
 import { clearConversationIdForTab } from '@/lib/agent/tab-conversation';
 import { clearPendingAskForTab, setPendingAskForTab } from '@/lib/agent/tab-pending-ask';
 import { clearTabSession } from '@/lib/agent/tab-session-storage';
+import {
+  SIDE_PANEL_PATH,
+  clearPanelOpenedForTab,
+  decideTabPanelOptions,
+  isPanelOpenedForTab,
+  listPanelOpenedTabs,
+  markPanelOpenedForTab,
+} from '@/lib/tab-panel-scope';
 import { mergeFillOutcomes, planFieldClick, planFormFill } from '@/lib/agent/fill-form-request';
 import {
   applyFormFill,
@@ -104,37 +112,38 @@ const SUPPORTED_MESSAGE_TYPES = [
 
 // Service Worker：消息路由中心（ref: technical-plan.md §3.2）
 export default defineBackground(() => {
-  // 全局侧边栏默认禁用；面板改为按 tab 单独启用（见下方 action.onClicked 监听器），
-  // 切到未启用过面板的 tab 时 Chrome 会自动关闭面板文档，不再像全局模式那样
-  // 跟着当前激活 tab 到处显示同一个面板实例。
-  //
-  // openPanelOnActionClick 这个行为设置由 Chrome 按扩展持久化保存，旧版本装过之后
-  // 仅仅"这次代码不再调用"不会自动清掉它——老用户升级（onInstalled 的 reason: 'update'）
-  // 时若残留 true，点击图标会被 Chrome 直接消费掉去开全局（已禁用的）面板，
-  // action.onClicked 根本不会触发。这里显式重置为 false，避免升级路径上图标点击失效。
-  browser.runtime.onInstalled.addListener(() => {
-    browser.sidePanel
-      ?.setPanelBehavior?.({ openPanelOnActionClick: false })
-      .catch((err: unknown) => console.error('[Runi] sidePanel setPanelBehavior:', err));
-    browser.sidePanel
-      ?.setOptions?.({ enabled: false })
-      .catch((err: unknown) => console.error('[Runi] sidePanel:', err));
+  // 每次 Service Worker 启动都重新确立"面板按 tab 绑定"这条约束（见 lib/tab-panel-scope.ts）。
+  // 不能只挂在 runtime.onInstalled 上：那只在安装/更新时触发一次，浏览器重启、扩展重新启用
+  // 都不会再触发，而 manifest 的 side_panel.default_path 会让全局默认悄悄恢复成"所有 tab 都开"，
+  // 于是在 A 标签页打开的面板会跟着切换显示到 B 标签页上。
+  syncSidePanelScope().catch((err: unknown) => console.error('[Runi] sidePanel scope sync:', err));
+
+  // 切换标签页时按记录逐个下发 enabled：没在这个 tab 打开过面板就显式 enabled:false，
+  // Chrome 会把跟过来的面板关掉（ref: chrome.sidePanel 文档的 per-tab 示例）。
+  browser.tabs.onActivated.addListener(({ tabId }) => {
+    applyPanelScopeToTab(tabId).catch((err: unknown) =>
+      console.error('[Runi] sidePanel setOptions on tab activate:', err),
+    );
   });
 
   // 点击工具栏图标时，只为当前这个 tab 启用并打开侧边栏——面板与这个 tab 强绑定。
   // sidePanel.open() 必须在用户手势的同一个事件循环内同步调用；链在 setOptions()
   // 的 .then() 里会跨过一次 Promise resolve，Chrome 就不再把它算作用户手势触发，
   // 抛出 "sidePanel.open() may only be called in response to a user gesture."
-  // 因此这里两个调用都在监听器函数体内同步发起，不互相等待。
+  // 因此这里两个调用都在监听器函数体内同步发起，不互相等待；记录写入排在它们之后，
+  // 同样不 await，避免插到手势与 open() 之间。
   browser.action.onClicked.addListener((tab) => {
     if (typeof tab.id !== 'number') return;
     const tabId = tab.id;
     browser.sidePanel
-      ?.setOptions?.({ tabId, path: 'sidepanel.html', enabled: true })
+      ?.setOptions?.({ tabId, path: SIDE_PANEL_PATH, enabled: true })
       .catch((err: unknown) => console.error('[Runi] sidePanel setOptions:', err));
     browser.sidePanel
       ?.open?.({ tabId })
       .catch((err: unknown) => console.error('[Runi] sidePanel open:', err));
+    markPanelOpenedForTab(tabId).catch((err: unknown) =>
+      console.error('[Runi] markPanelOpenedForTab:', err),
+    );
   });
 
   browser.runtime.onMessage.addListener(
@@ -164,8 +173,45 @@ export default defineBackground(() => {
     clearTabSession(tabId).catch((err: unknown) =>
       console.error('[Runi] clearTabSession on tab close:', err),
     );
+    clearPanelOpenedForTab(tabId).catch((err: unknown) =>
+      console.error('[Runi] clearPanelOpenedForTab on tab close:', err),
+    );
   });
 });
+
+/**
+ * 把全局默认关掉，再按记录恢复真正该启用面板的标签页。
+ *
+ * openPanelOnActionClick 这个行为设置由 Chrome 按扩展持久化保存，旧版本装过之后
+ * 仅仅"这次代码不再调用"不会自动清掉它——若残留 true，点击图标会被 Chrome 直接消费掉
+ * 去开全局（已禁用的）面板，action.onClicked 根本不会触发。这里每次启动都显式重置为 false。
+ */
+async function syncSidePanelScope(): Promise<void> {
+  try {
+    await browser.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: false });
+  } catch (err: unknown) {
+    console.error('[Runi] sidePanel setPanelBehavior:', err);
+  }
+  try {
+    await browser.sidePanel?.setOptions?.({ enabled: false });
+  } catch (err: unknown) {
+    console.error('[Runi] sidePanel global disable:', err);
+  }
+
+  // 全局默认关掉之后再逐个恢复：Service Worker 被回收重启时，用户已经打开过面板的
+  // 标签页不该因为这次同步被误关。单个 tab 失败（例如它已经关掉了）不影响其余 tab。
+  for (const tabId of await listPanelOpenedTabs()) {
+    await applyPanelScopeToTab(tabId).catch((err: unknown) =>
+      console.error('[Runi] sidePanel setOptions on scope sync:', err),
+    );
+  }
+}
+
+/** 单个标签页的面板启用状态：以 lib/tab-panel-scope.ts 的记录为准。 */
+async function applyPanelScopeToTab(tabId: number): Promise<void> {
+  const opened = await isPanelOpenedForTab(tabId);
+  await browser.sidePanel?.setOptions?.(decideTabPanelOptions(tabId, opened));
+}
 
 // 回合开始时由侧边栏解析一次并透传的目标标签页 ID；GET_ACTIVE_TAB 之外的每条消息都要带。
 function requireTabId(message: Message): number {
@@ -194,12 +240,14 @@ async function handleAskSelection(sender: MessageSender | undefined, payload: As
   // "sidePanel.open() may only be called in response to a user gesture."
   // ——与上方 action.onClicked 监听器（第 91-100 行）的写法保持一致。
   browser.sidePanel
-    ?.setOptions?.({ tabId, path: 'sidepanel.html', enabled: true })
+    ?.setOptions?.({ tabId, path: SIDE_PANEL_PATH, enabled: true })
     .catch((err: unknown) => console.error('[Runi] sidePanel setOptions (ask-selection):', err));
   browser.sidePanel
     ?.open?.({ tabId })
     .catch((err: unknown) => console.error('[Runi] sidePanel open (ask-selection):', err));
 
+  // 划词提问同样算"用户在这个 tab 打开了面板"，否则切走再切回来会被当成未打开过而关掉。
+  await markPanelOpenedForTab(tabId);
   await setPendingAskForTab(tabId, text);
 }
 
