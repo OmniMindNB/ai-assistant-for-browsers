@@ -93,8 +93,8 @@ export interface GetFormResult {
   // ...现有字段不变
   /** 最后一个字段之后出现的正文；已净化截断。仅 includeText 时有值。 */
   trailingText?: string; // 新增
-  /** precedingText/trailingText 中是否发生了截断。 */
-  textTruncated?: boolean; // 新增
+  /** precedingText/trailingText 中是否发生了截断。与相邻的 truncated 字段同款：始终是具体的 true/false，不用 undefined 表示「没截断」。 */
+  textTruncated: boolean; // 新增
 }
 ```
 
