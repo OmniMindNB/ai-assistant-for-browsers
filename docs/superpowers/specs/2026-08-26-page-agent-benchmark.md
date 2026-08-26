@@ -82,7 +82,7 @@
 
 **怎么做**：改造量大，先做小范围验证：给 `browser_get_form` 加一个 `includeText: true` 选项，把正文按 DOM 顺序穿插进字段列表，验证收益后再决定要不要上完整的树表示。
 
-- [ ] 未开始
+- [ ] 小范围验证的代码已落地——设计：`docs/superpowers/specs/2026-08-26-form-include-text-design.md`，实施计划：`docs/superpowers/plans/2026-08-26-form-include-text.md`（4 个任务全部落地并通过 `pnpm compile`/`pnpm test`/`pnpm build`，已合并到 main，commit 范围 `468c8fd..0ee13a0`）。**本条尚未打勾**：这一步只是「先做小范围验证」的前半句——代码能力已具备，但「验证收益后再决定要不要上完整的树表示」这半句还没做，需要在实际加载扩展、对着真实页面跑几轮 `includeText: true` 后再回来决定。
 
 ### [ ] P2 — 用户接管检测
 
