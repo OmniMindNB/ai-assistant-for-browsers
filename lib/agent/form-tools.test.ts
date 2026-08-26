@@ -28,6 +28,7 @@ const RESULT: GetFormResult = {
   orphanFieldIds: [],
   unreachable: { iframes: 2, closedShadowRoots: 0 },
   truncated: false,
+  textTruncated: false,
 };
 
 describe('browser_get_form', () => {

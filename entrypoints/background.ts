@@ -75,7 +75,7 @@ import {
   typeTextInPage,
   type ApplyFillItem,
 } from '@/lib/agent/form-dom';
-import { findNewFieldIds, sanitizePageText, toFieldDescriptor } from '@/lib/agent/form-schema';
+import { findNewFieldIds, sanitizeFieldText, sanitizePageText, toFieldDescriptor } from '@/lib/agent/form-schema';
 import { getFormFieldsForTab, setFormFieldsForTab, type FormFieldHandle } from '@/lib/agent/tab-form-fields';
 import { decideSubmitIntent } from '@/lib/agent/form-submit';
 
@@ -410,6 +410,10 @@ interface FieldSnapshot {
   orphanFieldIds: string[];
   /** 相对上一次快照新出现的字段；首次读取该页面或页面已换地址时为空。 */
   newFields: FormFieldDescriptor[];
+  /** collected.trailingText 净化后的结果；未开 includeText 或没有尾部正文时为 undefined。 */
+  trailingText: string | undefined;
+  /** 任一字段的 precedingText 或 trailingText 是否被截断到 MAX_FIELD_TEXT_CHARS。 */
+  textTruncated: boolean;
 }
 
 /**
@@ -426,6 +430,7 @@ async function snapshotFields(tabId: number, payload: GetFormPayload = {}): Prom
     {
       selector: payload?.selector,
       includeHidden: payload?.includeHidden,
+      includeText: payload?.includeText,
       maxFields: MAX_FORM_FIELDS,
       maxOptions: MAX_SELECT_OPTIONS,
     },
@@ -435,6 +440,7 @@ async function snapshotFields(tabId: number, payload: GetFormPayload = {}): Prom
   const fields: FormFieldDescriptor[] = [];
   const handles: Record<string, FormFieldHandle> = {};
   const orphanFieldIds: string[] = [];
+  let textTruncated = false;
 
   collected.raws.forEach((raw, index) => {
     const fieldId = `f${index + 1}`;
@@ -447,7 +453,11 @@ async function snapshotFields(tabId: number, payload: GetFormPayload = {}): Prom
       kind: descriptor.kind,
     };
     if (!descriptor.formId) orphanFieldIds.push(fieldId);
+    if (sanitizeFieldText(raw.precedingText).truncated) textTruncated = true;
   });
+
+  const trailingSanitized = sanitizeFieldText(collected.trailingText);
+  if (trailingSanitized.truncated) textTruncated = true;
 
   // 换了地址就不比对：跨页面「全都是新的」没有信息量，只会淹没真正的变化。
   const comparable = previous && previous.url === collected.url ? previous.fingerprints : undefined;
@@ -462,11 +472,18 @@ async function snapshotFields(tabId: number, payload: GetFormPayload = {}): Prom
     fingerprints: fields.map((field) => field.fingerprint),
   });
 
-  return { collected, fields, orphanFieldIds, newFields: fields.filter((field) => field.isNew) };
+  return {
+    collected,
+    fields,
+    orphanFieldIds,
+    newFields: fields.filter((field) => field.isNew),
+    trailingText: trailingSanitized.text,
+    textTruncated,
+  };
 }
 
 async function getForm(payload: GetFormPayload, tabId: number): Promise<GetFormResult> {
-  const { collected, fields, orphanFieldIds } = await snapshotFields(tabId, payload);
+  const { collected, fields, orphanFieldIds, trailingText, textTruncated } = await snapshotFields(tabId, payload);
 
   return {
     forms: collected.forms.map((form) => ({
@@ -482,6 +499,8 @@ async function getForm(payload: GetFormPayload, tabId: number): Promise<GetFormR
     orphanFieldIds,
     unreachable: collected.unreachable,
     truncated: collected.truncated,
+    trailingText,
+    textTruncated,
   };
 }
 

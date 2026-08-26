@@ -378,11 +378,15 @@ export interface FormFieldDescriptor {
   validationMessage?: string;
   /** 相对上一次快照新出现的元素（下拉建议、展开的菜单项等）。首次读取该页面时不标记。 */
   isNew?: boolean;
+  /** 排在这个字段之前、上一个字段之后出现的正文；已净化截断。仅 GetFormPayload.includeText 时有值。 */
+  precedingText?: string;
 }
 
 export interface GetFormPayload {
   selector?: string;
   includeHidden?: boolean;
+  /** 把正文按 DOM 序穿插进 fields（每个字段的 precedingText）与顶层 trailingText。默认 false。 */
+  includeText?: boolean;
 }
 
 export interface GetFormResult {
@@ -392,6 +396,10 @@ export interface GetFormResult {
   /** 如实上报「这里有内容但我看不见」，避免模型在主框架里反复试探。 */
   unreachable: { iframes: number; closedShadowRoots: number };
   truncated: boolean;
+  /** 最后一个字段之后出现的正文；已净化截断。仅 includeText 时可能有值。 */
+  trailingText?: string;
+  /** precedingText/trailingText 中是否发生了截断。includeText 为 false 时恒为 false。 */
+  textTruncated: boolean;
 }
 
 export interface FillFormPayload {
