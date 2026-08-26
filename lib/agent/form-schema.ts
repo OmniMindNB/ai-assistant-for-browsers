@@ -109,12 +109,18 @@ export function toFieldDescriptor(raw: RawFormField, fieldId: string): FormField
   const kind = resolveFieldKind(raw);
   const sensitive = isSensitiveField(raw);
   const hasValue = Boolean((raw.value ?? '').length) || raw.checked === true;
+  const label = pickFieldLabel(raw);
+  // precedingText 靠尾部截断（见 sanitizeFieldText 的 keepEnd）；这里再排除它和 label 完全相同的
+  // 情况——<label for>/祖先 <label> 场景下，文本采集会把同一段 label 文案也当正文收进来，
+  // 那对模型是纯重复，不是新信息（ref: 2026-08-26 review Fix 2，仅做精确匹配，不做后缀匹配）。
+  const sanitizedPrecedingText = sanitizeFieldText(raw.precedingText, 'tail').text;
+  const precedingText = sanitizedPrecedingText && sanitizedPrecedingText !== label ? sanitizedPrecedingText : undefined;
   return {
     fieldId,
     kind,
     type: raw.type,
     name: raw.name,
-    label: pickFieldLabel(raw),
+    label,
     href: raw.href,
     placeholder: raw.placeholder,
     required: raw.required,
@@ -131,7 +137,7 @@ export function toFieldDescriptor(raw: RawFormField, fieldId: string): FormField
     fingerprint: fieldFingerprint(raw),
     formId: typeof raw.formIndex === 'number' ? `form${raw.formIndex}` : undefined,
     validationMessage: raw.validationMessage || undefined,
-    precedingText: sanitizeFieldText(raw.precedingText).text,
+    precedingText,
   };
 }
 
@@ -167,6 +173,7 @@ export function findNewFieldIds(
   return newIds;
 }
 
+// sanitizePageText 和 sanitizeFieldText 共用这一个归一化实现；改动它时要同时确认两个调用方的需求都还满足。
 function normalizePageText(text: string): string {
   return (text ?? '')
     .replace(/\s+/g, ' ')
@@ -192,11 +199,23 @@ export const MAX_FIELD_TEXT_CHARS = 300;
  * 净化 browser_get_form 的 includeText 正文，并如实报告是否发生了截断——sanitizePageText 本身只返回
  * 净化后的文本，不报告这个信息，而 GetFormResult.textTruncated 需要它
  * （ref: docs/superpowers/specs/2026-08-26-form-include-text-design.md §3.4）。
+ *
+ * keepEnd 决定截断时保留哪一端：trailingText 的缓冲区离字段最近的内容在头部，头部截断
+ * （保留头、省略号在尾）是对的；但 precedingText 的缓冲区是「自上一个字段以来的全部正文」，
+ * 离当前字段最近、最相关的提示文字恰恰在尾部——头部截断会把这段最有信息量的文字砍掉，
+ * 留下的反而是较远、较不相关的内容，所以 precedingText 必须保留尾部
+ * （ref: 2026-08-26 review Fix 1）。
  */
-export function sanitizeFieldText(text: string | undefined): { text?: string; truncated: boolean } {
+export function sanitizeFieldText(
+  text: string | undefined,
+  keepEnd: 'head' | 'tail' = 'head',
+): { text?: string; truncated: boolean } {
   if (!text) return { truncated: false };
   const normalized = normalizePageText(text);
   if (!normalized) return { truncated: false };
   const truncated = normalized.length > MAX_FIELD_TEXT_CHARS;
-  return { text: truncated ? `${normalized.slice(0, MAX_FIELD_TEXT_CHARS)}…` : normalized, truncated };
+  if (!truncated) return { text: normalized, truncated: false };
+  return keepEnd === 'tail'
+    ? { text: `…${normalized.slice(-MAX_FIELD_TEXT_CHARS)}`, truncated: true }
+    : { text: `${normalized.slice(0, MAX_FIELD_TEXT_CHARS)}…`, truncated: true };
 }

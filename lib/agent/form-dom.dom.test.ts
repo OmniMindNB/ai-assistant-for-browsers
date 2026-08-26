@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { collectFormFields } from './form-dom';
 import { applyFormFill, type ApplyFillItem } from './form-dom';
+import { MAX_FIELD_TEXT_CHARS, sanitizeFieldText, toFieldDescriptor } from './form-schema';
 
 const INPUT = { maxFields: 120, maxOptions: 50 };
 
@@ -235,6 +236,31 @@ describe('collectFormFields', () => {
     render(`<form><p>${longText}</p><input name="email" type="text" /></form>`);
     const output = collectFormFields({ ...INPUT, includeText: true });
     expect(output.raws.find((raw) => raw.name === 'email')?.precedingText?.length).toBe(2000);
+  });
+
+  it('does not truncate raw precedingText whose joined length is exactly the 2000-char safety cap (> vs >= boundary)', () => {
+    const exactText = 'a'.repeat(2000);
+    render(`<form><p>${exactText}</p><input name="email" type="text" /></form>`);
+    const output = collectFormFields({ ...INPUT, includeText: true });
+    const precedingText = output.raws.find((raw) => raw.name === 'email')?.precedingText;
+    expect(precedingText?.length).toBe(2000);
+    expect(precedingText).toBe(exactText);
+  });
+
+  it('the raw-to-sanitized pipeline correctly caps and truncates real DOM-derived precedingText (seam test)', () => {
+    const longText = '字'.repeat(400);
+    render(`<form><p>${longText}</p><input name="email" type="text" /></form>`);
+    const raw = collectFormFields({ ...INPUT, includeText: true }).raws.find((r) => r.name === 'email')!;
+    // 未越过 2000 字的原始安全上限，raw 层原样透传，不做任何截断。
+    expect(raw.precedingText?.length).toBe(400);
+    expect(raw.precedingText).toBe(longText);
+
+    const descriptor = toFieldDescriptor(raw, 'f1');
+    // 产品级 300 字符上限在这里生效：保留尾部、前缀省略号。
+    expect(descriptor.precedingText?.length).toBe(MAX_FIELD_TEXT_CHARS + 1);
+    expect(descriptor.precedingText?.startsWith('…')).toBe(true);
+    expect(descriptor.precedingText).toBe(`…${longText.slice(-MAX_FIELD_TEXT_CHARS)}`);
+    expect(sanitizeFieldText(raw.precedingText, 'tail').truncated).toBe(true);
   });
 
   it('excludes invisible text unless includeHidden is set', () => {

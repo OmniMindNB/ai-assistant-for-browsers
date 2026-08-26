@@ -179,6 +179,32 @@ describe('toFieldDescriptor', () => {
   it('leaves precedingText undefined when the raw field has none', () => {
     expect(toFieldDescriptor(raw({ type: 'text', name: 'email' }), 'f14').precedingText).toBeUndefined();
   });
+
+  it('drops precedingText when it exactly matches the resolved label (pure restatement of <label>)', () => {
+    const descriptor = toFieldDescriptor(
+      raw({ type: 'text', name: 'email', forLabelText: '邮箱', precedingText: '邮箱' }),
+      'f15',
+    );
+    expect(descriptor.label).toBe('邮箱');
+    expect(descriptor.precedingText).toBeUndefined();
+  });
+
+  it('keeps precedingText that merely ends with the label, since that is not an exact match (Fix 2 ruling: exact-match only)', () => {
+    const descriptor = toFieldDescriptor(
+      raw({ type: 'text', name: 'email', forLabelText: '邮箱', precedingText: '一些说明 邮箱' }),
+      'f16',
+    );
+    expect(descriptor.label).toBe('邮箱');
+    expect(descriptor.precedingText).toBe('一些说明 邮箱');
+  });
+
+  it('keeps precedingText that differs from the label even after sanitization normalizes whitespace', () => {
+    const descriptor = toFieldDescriptor(
+      raw({ type: 'text', name: 'email', forLabelText: '邮箱', precedingText: '请填写您的常用邮箱地址' }),
+      'f17',
+    );
+    expect(descriptor.precedingText).toBe('请填写您的常用邮箱地址');
+  });
 });
 
 describe('sanitizePageText', () => {
@@ -204,7 +230,7 @@ describe('sanitizeFieldText', () => {
     expect(sanitizeFieldText('a\u0000b\n\nc')).toEqual({ text: 'ab c', truncated: false });
   });
 
-  it('truncates and reports truncated: true when normalized text exceeds MAX_FIELD_TEXT_CHARS', () => {
+  it('truncates and reports truncated: true when normalized text exceeds MAX_FIELD_TEXT_CHARS (defaults to keeping the head)', () => {
     const long = 'x'.repeat(MAX_FIELD_TEXT_CHARS + 50);
     const result = sanitizeFieldText(long);
     expect(result.truncated).toBe(true);
@@ -213,6 +239,28 @@ describe('sanitizeFieldText', () => {
 
   it('returns truncated: false for a string that normalizes to empty', () => {
     expect(sanitizeFieldText('   \n\t  ')).toEqual({ truncated: false });
+  });
+
+  it('does not truncate text whose normalized length is exactly MAX_FIELD_TEXT_CHARS (> vs >= boundary)', () => {
+    const exact = 'x'.repeat(MAX_FIELD_TEXT_CHARS);
+    const result = sanitizeFieldText(exact);
+    expect(result.truncated).toBe(false);
+    expect(result.text).toBe(exact);
+  });
+
+  it("keeps the tail (with a leading ellipsis) when keepEnd is 'tail', for precedingText", () => {
+    const long = `head-part-lost${'x'.repeat(MAX_FIELD_TEXT_CHARS)}`;
+    const result = sanitizeFieldText(long, 'tail');
+    expect(result.truncated).toBe(true);
+    expect(result.text).toBe(`…${'x'.repeat(MAX_FIELD_TEXT_CHARS)}`);
+    expect(result.text?.startsWith('…')).toBe(true);
+  });
+
+  it("keeps the head (with a trailing ellipsis) when keepEnd is 'head' (explicit), for trailingText", () => {
+    const long = `${'x'.repeat(MAX_FIELD_TEXT_CHARS)}tail-part-lost`;
+    const result = sanitizeFieldText(long, 'head');
+    expect(result.truncated).toBe(true);
+    expect(result.text).toBe(`${'x'.repeat(MAX_FIELD_TEXT_CHARS)}…`);
   });
 });
 

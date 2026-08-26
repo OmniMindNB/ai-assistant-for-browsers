@@ -290,17 +290,21 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
       textNode = walker.nextNode();
     }
 
-    const finalize = (parts: string[]): string | undefined => {
+    // precedingText 保留尾部（离当前字段最近的一段），trailingText 保留头部（离上一个字段最近
+    // 的一段）——这里不加省略号，省略号只在下游 sanitizeFieldText（产品级 300 字符层）加
+    // （ref: 2026-08-26 review Fix 1）。
+    const finalize = (parts: string[], keepEnd: 'head' | 'tail'): string | undefined => {
       if (parts.length === 0) return undefined;
       const joined = parts.join(' ').replace(/\s+/g, ' ').trim();
       if (!joined) return undefined;
-      return joined.length > RAW_TEXT_SAFETY_CAP ? joined.slice(0, RAW_TEXT_SAFETY_CAP) : joined;
+      if (joined.length <= RAW_TEXT_SAFETY_CAP) return joined;
+      return keepEnd === 'tail' ? joined.slice(-RAW_TEXT_SAFETY_CAP) : joined.slice(0, RAW_TEXT_SAFETY_CAP);
     };
 
     raws.forEach((rawField, index) => {
-      rawField.precedingText = finalize(buffers[index]);
+      rawField.precedingText = finalize(buffers[index], 'tail');
     });
-    trailingText = finalize(trailingBuffer);
+    trailingText = finalize(trailingBuffer, 'head');
   }
 
   return { url: location.href, raws, forms, unreachable, truncated, trailingText };

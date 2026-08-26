@@ -453,7 +453,7 @@ async function snapshotFields(tabId: number, payload: GetFormPayload = {}): Prom
       kind: descriptor.kind,
     };
     if (!descriptor.formId) orphanFieldIds.push(fieldId);
-    if (sanitizeFieldText(raw.precedingText).truncated) textTruncated = true;
+    if (sanitizeFieldText(raw.precedingText, 'tail').truncated) textTruncated = true;
   });
 
   const trailingSanitized = sanitizeFieldText(collected.trailingText);
