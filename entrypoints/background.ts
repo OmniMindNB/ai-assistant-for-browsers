@@ -23,6 +23,9 @@ import {
   type ModifyDomResult,
   type NavigateTabPayload,
   type NavigateTabResult,
+  type OpenNewTabPayload,
+  type OpenNewTabResult,
+  type CloseTabResult,
   type AskSelectionPayload,
   type PageContent,
   type PageMetaResult,
@@ -92,6 +95,8 @@ const SUPPORTED_MESSAGE_TYPES = [
   'SELECT_OPTION',
   'SCROLL_PAGE',
   'NAVIGATE_TAB',
+  'OPEN_NEW_TAB',
+  'CLOSE_TAB',
   'SET_STORAGE',
   'CHAT',
 ] as const;
@@ -261,6 +266,12 @@ async function handleMessage(message: Message, sender?: MessageSender): Promise<
 
     case 'NAVIGATE_TAB':
       return navigateTab(message.payload as NavigateTabPayload, requireTabId(message));
+
+    case 'OPEN_NEW_TAB':
+      return openNewTab(message.payload as OpenNewTabPayload, requireTabId(message));
+
+    case 'CLOSE_TAB':
+      return closeTab(requireTabId(message));
 
     case 'SET_STORAGE':
       return setStorage(message.payload as SetStoragePayload, requireTabId(message));
@@ -956,6 +967,39 @@ async function navigateTab(payload: NavigateTabPayload, tabId: number): Promise<
     // 标题由网页控制，属于不可信数据，按纯文本净化并截断后才交给模型。
     title: settled?.title ? sanitizePageText(settled.title, MAX_PAGE_TITLE_CHARS) : undefined,
   };
+}
+
+/**
+ * 在面板绑定 tab 所在的同一窗口里开一个新 tab 并前台聚焦——遮罩会跟着切过去，
+ * 聚焦是让用户视觉上也能跟上 agent 正在操作哪个页面（ref: 设计文档 §3.4）。
+ */
+async function openNewTab(payload: OpenNewTabPayload, panelTabId: number): Promise<OpenNewTabResult> {
+  const requestedUrl = payload?.url ?? '';
+  if (!isNavigableUrl(requestedUrl)) throw new Error('仅允许打开 http/https 地址。');
+
+  const panelTab = await resolveTargetTab(panelTabId);
+  const created = await browser.tabs.create({ windowId: panelTab.windowId, url: requestedUrl, active: true });
+  if (typeof created.id !== 'number') throw new Error('新标签页创建失败。');
+
+  await waitForTabLoad(created.id);
+
+  const settled = await browser.tabs.get(created.id).catch(() => undefined);
+  return {
+    id: created.id,
+    url: settled?.url || requestedUrl,
+    title: settled?.title ? sanitizePageText(settled.title, MAX_PAGE_TITLE_CHARS) : undefined,
+  };
+}
+
+/**
+ * 关闭一个 tab。是否允许关闭（不能关面板自己绑定的 tab、只能关 tracked 列表里的）
+ * 在工具层的 TabSessionController.close() 里已经把关，这里是纯 I/O，不重复校验——
+ * 协议里 tabId 是单值字段，background 这一层拿不到"哪个是面板 tab"这个上下文
+ * （ref: 设计文档 §3.6 的取舍说明）。
+ */
+async function closeTab(tabId: number): Promise<CloseTabResult> {
+  await browser.tabs.remove(tabId);
+  return { closed: true, tabId };
 }
 
 async function setStorage(payload: SetStoragePayload, tabId: number): Promise<SetStorageResult> {

@@ -24,6 +24,8 @@ export type MessageType =
   | 'SELECT_OPTION'
   | 'SCROLL_PAGE'
   | 'NAVIGATE_TAB'
+  | 'OPEN_NEW_TAB'
+  | 'CLOSE_TAB'
   | 'SET_STORAGE'
   | 'SET_AGENT_OVERLAY'
   | 'CHAT';
@@ -303,6 +305,23 @@ export interface NavigateTabResult {
   requestedUrl?: string;
   /** 落地页标题，页面可控，已净化截断。 */
   title?: string;
+}
+
+export interface OpenNewTabPayload {
+  url: string;
+}
+
+export interface OpenNewTabResult {
+  id: number;
+  /** 落地页地址；跳转过程中可能发生重定向。 */
+  url: string;
+  /** 落地页标题，页面可控，已净化截断。 */
+  title?: string;
+}
+
+export interface CloseTabResult {
+  closed: true;
+  tabId: number;
 }
 
 export interface SetStoragePayload {
