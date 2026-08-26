@@ -86,6 +86,18 @@ describe('decideToolPermission', () => {
   it('requires confirmation for browser_modify_dom with an ordinary selector', () => {
     expect(decideToolPermission('browser_modify_dom', { selector: '.ad-banner', action: 'remove' }).level).toBe('confirm');
   });
+
+  describe('多标签页编排工具的权限分级', () => {
+    it('browser_switch_tab 与 browser_list_tabs 无需确认', () => {
+      expect(decideToolPermission('browser_switch_tab', { tabId: 2 })).toEqual({ level: 'always_allow' });
+      expect(decideToolPermission('browser_list_tabs', {})).toEqual({ level: 'always_allow' });
+    });
+
+    it('browser_open_tab 与 browser_close_tab 需要确认', () => {
+      expect(decideToolPermission('browser_open_tab', { url: 'https://example.com' }).level).toBe('confirm');
+      expect(decideToolPermission('browser_close_tab', { tabId: 2 }).level).toBe('confirm');
+    });
+  });
 });
 
 describe('beforeToolCallPermissionGate', () => {
