@@ -39,6 +39,7 @@ import { summarizeToolCallForConfirmation } from '@/lib/agent/confirm-summary';
 import { describeToolActivity } from '@/lib/agent/activity-description';
 import { finishActivityStep, markActivityStepSlow, upsertActivityStep, type ActivityStep } from '@/lib/agent/activity-steps';
 import { getConversationIdForTab, setConversationIdForTab } from '@/lib/agent/tab-conversation';
+import { clearTabSession, loadTabSession, saveTabSession } from '@/lib/agent/tab-session-storage';
 import { clearPendingAskForTab, getPendingAskForTab, pendingAskStorageKey } from '@/lib/agent/tab-pending-ask';
 import { buildSelectionAskTemplate, truncateSelectionText } from '@/lib/selection-ask';
 import {
@@ -881,6 +882,7 @@ useChat.subscribe((state, prevState) => {
   if (state.conversationId === prevState.conversationId) return;
   if (panelTabId === null) return;
   setConversationIdForTab(panelTabId, state.conversationId).catch(() => undefined);
+  clearTabSession(panelTabId).catch(() => undefined);
 });
 
 // 面板已经打开时（sidePanel.open() 对已打开的面板是 no-op，不会重新触发挂载时的
@@ -973,6 +975,7 @@ async function runAgent(
   }
   if (!isCurrentRun(run, get)) return false;
   const tabId = tab.id;
+  const tabSession = await loadTabSession(tabId);
 
   // 截断必须放在 Provider 校验与 resolveActiveTabId 之后：那两处失败会 set({ error }) 直接 return，
   // 若此时历史已被截断，用户的消息就被不可恢复地丢弃了，而这是用户完全没有预期的失败路径
@@ -1044,7 +1047,11 @@ async function runAgent(
 
   const onConfirm = async (toolCallId: string, toolName: string, args: unknown, _reason: string): Promise<boolean> => {
     if (!isCurrentRun(run, get)) return false;
-    const { summary, codePreview } = summarizeToolCallForConfirmation(toolName, args);
+    const targetTab =
+      tabSession.currentTabId !== tabId
+        ? tabSession.trackedTabs.find((t) => t.id === tabSession.currentTabId)
+        : undefined;
+    const { summary, codePreview } = summarizeToolCallForConfirmation(toolName, args, targetTab);
     run.pendingToolArgs.set(toolCallId, { toolName, args });
     set({ pendingConfirmation: { toolCallId, toolName, summary, codePreview } });
     return new Promise<boolean>((resolve) => {
@@ -1065,6 +1072,7 @@ async function runAgent(
   const agent = createBrowserAgent({
     provider: agentProvider,
     tabId,
+    session: tabSession,
     systemPrompt: buildSystemPrompt({
       locale: getCurrentLocale(),
       readToolCallBudget: DEFAULT_READ_TOOL_CALL_BUDGET,
@@ -1081,8 +1089,8 @@ async function runAgent(
     writeToolCallBudget: DEFAULT_WRITE_TOOL_CALL_BUDGET,
     onConfirm,
     onAskUser,
-    onOverlay: (payload) => {
-      void sendMessage('SET_AGENT_OVERLAY', payload, tabId).catch(() => undefined);
+    onOverlay: (payload, targetTabId) => {
+      void sendMessage('SET_AGENT_OVERLAY', payload, targetTabId).catch(() => undefined);
     },
   });
   if (!isCurrentRun(run, get)) return false;
@@ -1213,7 +1221,10 @@ async function runAgent(
       set({ busy: false, activitySteps: [] });
       // 回合结束就撤遮罩。正常完成、模型出错、用户中止三条路径都汇到这个 finally
       // （见下方注释），所以这一处就够。送不到也不要紧——content script 侧有 15s 看门狗兜底。
-      void sendMessage('SET_AGENT_OVERLAY', { active: false }, tabId).catch(() => undefined);
+      // 遮罩此时实际所在的 tab 是 tabSession.currentTabId（轮次里可能已经切换过），不一定是
+      // 面板绑定的 tabId。
+      void sendMessage('SET_AGENT_OVERLAY', { active: false }, tabSession.currentTabId).catch(() => undefined);
+      void saveTabSession(tabSession).catch(() => undefined);
       await persistConversationSnapshot(run.origin.conversationId, messages);
     }
   }
