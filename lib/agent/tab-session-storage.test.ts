@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing';
-import { loadTabSession, saveTabSession } from './tab-session-storage';
+import { clearTabSession, loadTabSession, saveTabSession } from './tab-session-storage';
 
 (globalThis as any).browser = fakeBrowser;
 
@@ -44,5 +44,21 @@ describe('tab-session-storage', () => {
     await expect(saveTabSession(session)).resolves.toBeUndefined();
     const restored = await loadTabSession(PANEL_TAB_ID);
     expect(restored.currentTabId).toBe(PANEL_TAB_ID);
+  });
+
+  it('clears a persisted session back to a fresh single-tab state', async () => {
+    const session = await loadTabSession(PANEL_TAB_ID);
+    session.openAndSwitch({ id: 2, title: 'Example' });
+    await saveTabSession(session);
+
+    await clearTabSession(PANEL_TAB_ID);
+
+    const restored = await loadTabSession(PANEL_TAB_ID);
+    expect(restored.currentTabId).toBe(PANEL_TAB_ID);
+    expect(restored.trackedTabs).toEqual([{ id: PANEL_TAB_ID }]);
+  });
+
+  it('does not throw when clearing a session that was never saved', async () => {
+    await expect(clearTabSession(PANEL_TAB_ID)).resolves.toBeUndefined();
   });
 });
