@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import storeConfig from '../wxt.config';
 import { createBrowserTools } from './agent/tools';
+import { createTabSession } from './agent/tab-session';
 import { en } from './i18n/locales/en';
 import { zh } from './i18n/locales/zh';
 
@@ -12,7 +13,7 @@ describe('Chrome Web Store release surface', () => {
   it('does not request userScripts or expose AI-generated script execution', () => {
     const manifest = storeConfig.manifest as { permissions?: string[] };
     expect(manifest.permissions).not.toContain('userScripts');
-    expect(createBrowserTools(7).map((tool) => tool.name)).not.toContain('browser_inject_script');
+    expect(createBrowserTools(createTabSession(7)).map((tool) => tool.name)).not.toContain('browser_inject_script');
   });
 });
 

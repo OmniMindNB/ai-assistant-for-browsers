@@ -1,12 +1,14 @@
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import { Type } from '@earendil-works/pi-ai';
 import { describeClickResult, describeNavigateResult, describeNewFields, describeScrollResult } from './action-result-text';
+import { formatTabList, type TabSessionController } from './tab-session';
 import {
   sendMessage,
   type CaptureScreenshotPayload,
   type CaptureScreenshotResult,
   type ClickElementPayload,
   type ClickElementResult,
+  type CloseTabResult,
   type FillFormPayload,
   type FillFormResult,
   type GetComputedStylePayload,
@@ -25,6 +27,8 @@ import {
   type ModifyDomResult,
   type NavigateTabPayload,
   type NavigateTabResult,
+  type OpenNewTabPayload,
+  type OpenNewTabResult,
   type PageContent,
   type PageMetaResult,
   type QueryDomPayload,
@@ -48,34 +52,38 @@ export interface BrowserToolsConfig {
   onAskUser?: (toolCallId: string, question: string, signal?: AbortSignal) => Promise<string>;
 }
 
-export function createBrowserTools(tabId: number, config: BrowserToolsConfig = {}): BrowserAgentTool[] {
+export function createBrowserTools(session: TabSessionController, config: BrowserToolsConfig = {}): BrowserAgentTool[] {
   return [
     browserGetActiveTabTool,
     makeAskUserTool(config.onAskUser),
     waitTool,
-    makeReadPageTool(tabId),
-    makeGetPageMetaTool(tabId),
-    makeInspectPageImplementationTool(tabId),
-    makeGetFormTool(tabId),
-    makeQueryDomTool(tabId),
-    makeGetHtmlTool(tabId),
-    makeGetScriptsTool(tabId),
-    makeGetStylesheetsTool(tabId),
-    makeGetComputedStyleTool(tabId),
-    makeScreenshotTool(tabId),
-    makeSetStyleTool(tabId),
-    makeModifyDomTool(tabId),
-    makeClickTool(tabId),
-    makeFillFormTool(tabId),
-    makeTypeTool(tabId),
-    makeSelectTool(tabId),
-    makeScrollTool(tabId),
-    makeNavigateTool(tabId),
-    makeSetStorageTool(tabId),
+    makeReadPageTool(session),
+    makeGetPageMetaTool(session),
+    makeInspectPageImplementationTool(session),
+    makeGetFormTool(session),
+    makeQueryDomTool(session),
+    makeGetHtmlTool(session),
+    makeGetScriptsTool(session),
+    makeGetStylesheetsTool(session),
+    makeGetComputedStyleTool(session),
+    makeScreenshotTool(session),
+    makeSetStyleTool(session),
+    makeModifyDomTool(session),
+    makeClickTool(session),
+    makeFillFormTool(session),
+    makeTypeTool(session),
+    makeSelectTool(session),
+    makeScrollTool(session),
+    makeNavigateTool(session),
+    makeSetStorageTool(session),
+    makeOpenTabTool(session),
+    makeSwitchTabTool(session),
+    makeCloseTabTool(session),
+    makeListTabsTool(session),
   ];
 }
 
-// 例外：不参与"回合固定 tabId"——它的用途是让模型知道"用户现在焦点在哪"，
+// 例外：不参与"当前操作目标"——它的用途是让模型知道"用户现在焦点在哪"，
 // 这是和"本回合操作目标"正交的问题，见设计文档决策 1。
 const browserGetActiveTabTool: BrowserAgentTool = {
   name: 'browser_get_active_tab',
@@ -135,7 +143,7 @@ const waitTool: BrowserAgentTool = {
   },
 };
 
-function makeReadPageTool(tabId: number): BrowserAgentTool {
+function makeReadPageTool(session: TabSessionController): BrowserAgentTool {
   return {
     name: 'browser_read_page',
     label: 'Read Page',
@@ -147,7 +155,7 @@ function makeReadPageTool(tabId: number): BrowserAgentTool {
       ),
     }),
     execute: async (_toolCallId, params) => {
-      const response = (await sendMessage('EXTRACT_PAGE', undefined, tabId)) as MessageResponse<PageContent>;
+      const response = (await sendMessage('EXTRACT_PAGE', undefined, session.currentTabId)) as MessageResponse<PageContent>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '页面读取失败');
 
       const rawMaxChars =
@@ -176,7 +184,7 @@ function makeReadPageTool(tabId: number): BrowserAgentTool {
   };
 }
 
-function makeGetPageMetaTool(tabId: number): BrowserAgentTool {
+function makeGetPageMetaTool(session: TabSessionController): BrowserAgentTool {
   return {
     name: 'browser_get_page_meta',
     label: 'Get Page Meta',
@@ -184,14 +192,14 @@ function makeGetPageMetaTool(tabId: number): BrowserAgentTool {
       'Read current page metadata, script/style counts, and lightweight framework hints. Use this early for technical page analysis.',
     parameters: Type.Object({}),
     execute: async () => {
-      const response = (await sendMessage('GET_PAGE_META', undefined, tabId)) as MessageResponse<PageMetaResult>;
+      const response = (await sendMessage('GET_PAGE_META', undefined, session.currentTabId)) as MessageResponse<PageMetaResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '页面元信息读取失败');
       return textResult(formatJson('页面元信息', response.data), { ...response.data });
     },
   };
 }
 
-function makeInspectPageImplementationTool(tabId: number): BrowserAgentTool {
+function makeInspectPageImplementationTool(session: TabSessionController): BrowserAgentTool {
   return {
     name: 'browser_inspect_page_implementation',
     label: 'Inspect Page Implementation',
@@ -206,6 +214,7 @@ function makeInspectPageImplementationTool(tabId: number): BrowserAgentTool {
       stylesheetMaxChars: Type.Optional(Type.Number({ description: 'Stylesheet source budget. Defaults to 30000.' })),
     }),
     execute: async (_toolCallId, params) => {
+      const tabId = session.currentTabId;
       const options = parseImplementationInspectionParams(params);
       const domSelectors = options.selectors;
       const computedProps = [
@@ -294,7 +303,7 @@ function makeInspectPageImplementationTool(tabId: number): BrowserAgentTool {
   };
 }
 
-function makeGetFormTool(tabId: number): BrowserAgentTool {
+function makeGetFormTool(session: TabSessionController): BrowserAgentTool {
   return {
     name: 'browser_get_form',
     label: 'Get Form',
@@ -306,7 +315,7 @@ function makeGetFormTool(tabId: number): BrowserAgentTool {
     }),
     execute: async (_toolCallId, params) => {
       const payload = params as GetFormPayload;
-      const response = (await sendMessage<GetFormPayload, GetFormResult>('GET_FORM', payload, tabId)) as MessageResponse<GetFormResult>;
+      const response = (await sendMessage<GetFormPayload, GetFormResult>('GET_FORM', payload, session.currentTabId)) as MessageResponse<GetFormResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '表单读取失败');
 
       const data = response.data;
@@ -324,7 +333,7 @@ function makeGetFormTool(tabId: number): BrowserAgentTool {
   };
 }
 
-function makeQueryDomTool(tabId: number): BrowserAgentTool {
+function makeQueryDomTool(session: TabSessionController): BrowserAgentTool {
   return {
     name: 'browser_query_dom',
     label: 'Query DOM',
@@ -337,14 +346,14 @@ function makeQueryDomTool(tabId: number): BrowserAgentTool {
     }),
     execute: async (_toolCallId, params) => {
       const payload = params as QueryDomPayload;
-      const response = (await sendMessage<QueryDomPayload, QueryDomResult>('QUERY_DOM', payload, tabId)) as MessageResponse<QueryDomResult>;
+      const response = (await sendMessage<QueryDomPayload, QueryDomResult>('QUERY_DOM', payload, session.currentTabId)) as MessageResponse<QueryDomResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? 'DOM 查询失败');
       return textResult(formatJson('DOM 查询结果（untrusted page content）', response.data), response.data as unknown as Record<string, unknown>);
     },
   };
 }
 
-function makeGetHtmlTool(tabId: number): BrowserAgentTool {
+function makeGetHtmlTool(session: TabSessionController): BrowserAgentTool {
   return {
     name: 'browser_get_html',
     label: 'Get HTML',
@@ -356,14 +365,14 @@ function makeGetHtmlTool(tabId: number): BrowserAgentTool {
     }),
     execute: async (_toolCallId, params) => {
       const payload = params as GetHtmlPayload;
-      const response = (await sendMessage<GetHtmlPayload, GetHtmlResult>('GET_HTML', payload, tabId)) as MessageResponse<GetHtmlResult>;
+      const response = (await sendMessage<GetHtmlPayload, GetHtmlResult>('GET_HTML', payload, session.currentTabId)) as MessageResponse<GetHtmlResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? 'HTML 读取失败');
       return textResult(formatJson('HTML 片段（untrusted page content）', response.data), response.data as unknown as Record<string, unknown>);
     },
   };
 }
 
-function makeGetScriptsTool(tabId: number): BrowserAgentTool {
+function makeGetScriptsTool(session: TabSessionController): BrowserAgentTool {
   return {
     name: 'browser_get_scripts',
     label: 'Get Scripts',
@@ -376,14 +385,14 @@ function makeGetScriptsTool(tabId: number): BrowserAgentTool {
     }),
     execute: async (_toolCallId, params) => {
       const payload = params as GetScriptsPayload;
-      const response = (await sendMessage<GetScriptsPayload, GetScriptsResult>('GET_SCRIPTS', payload, tabId)) as MessageResponse<GetScriptsResult>;
+      const response = (await sendMessage<GetScriptsPayload, GetScriptsResult>('GET_SCRIPTS', payload, session.currentTabId)) as MessageResponse<GetScriptsResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '脚本读取失败');
       return textResult(formatJson('页面脚本（untrusted page content）', response.data), response.data as unknown as Record<string, unknown>);
     },
   };
 }
 
-function makeGetStylesheetsTool(tabId: number): BrowserAgentTool {
+function makeGetStylesheetsTool(session: TabSessionController): BrowserAgentTool {
   return {
     name: 'browser_get_stylesheets',
     label: 'Get Stylesheets',
@@ -396,14 +405,14 @@ function makeGetStylesheetsTool(tabId: number): BrowserAgentTool {
     }),
     execute: async (_toolCallId, params) => {
       const payload = params as GetStylesheetsPayload;
-      const response = (await sendMessage<GetStylesheetsPayload, GetStylesheetsResult>('GET_STYLESHEETS', payload, tabId)) as MessageResponse<GetStylesheetsResult>;
+      const response = (await sendMessage<GetStylesheetsPayload, GetStylesheetsResult>('GET_STYLESHEETS', payload, session.currentTabId)) as MessageResponse<GetStylesheetsResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '样式表读取失败');
       return textResult(formatJson('页面样式表（untrusted page content）', response.data), response.data as unknown as Record<string, unknown>);
     },
   };
 }
 
-function makeGetComputedStyleTool(tabId: number): BrowserAgentTool {
+function makeGetComputedStyleTool(session: TabSessionController): BrowserAgentTool {
   return {
     name: 'browser_get_computed_style',
     label: 'Get Computed Style',
@@ -415,14 +424,14 @@ function makeGetComputedStyleTool(tabId: number): BrowserAgentTool {
     }),
     execute: async (_toolCallId, params) => {
       const payload = params as GetComputedStylePayload;
-      const response = (await sendMessage<GetComputedStylePayload, GetComputedStyleResult>('GET_COMPUTED_STYLE', payload, tabId)) as MessageResponse<GetComputedStyleResult>;
+      const response = (await sendMessage<GetComputedStylePayload, GetComputedStyleResult>('GET_COMPUTED_STYLE', payload, session.currentTabId)) as MessageResponse<GetComputedStyleResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '计算样式读取失败');
       return textResult(formatJson('计算样式', response.data), response.data as unknown as Record<string, unknown>);
     },
   };
 }
 
-function makeScreenshotTool(tabId: number): BrowserAgentTool {
+function makeScreenshotTool(session: TabSessionController): BrowserAgentTool {
   return {
     name: 'browser_screenshot',
     label: 'Screenshot',
@@ -434,7 +443,7 @@ function makeScreenshotTool(tabId: number): BrowserAgentTool {
     }),
     execute: async (_toolCallId, params) => {
       const payload = params as CaptureScreenshotPayload;
-      const response = (await sendMessage<CaptureScreenshotPayload, CaptureScreenshotResult>('CAPTURE_SCREENSHOT', payload, tabId)) as MessageResponse<CaptureScreenshotResult>;
+      const response = (await sendMessage<CaptureScreenshotPayload, CaptureScreenshotResult>('CAPTURE_SCREENSHOT', payload, session.currentTabId)) as MessageResponse<CaptureScreenshotResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '截图失败');
       return textResult(
         `已截取当前可见标签页截图。dataUrl 长度：${response.data.dataUrl.length}。`,
@@ -444,7 +453,7 @@ function makeScreenshotTool(tabId: number): BrowserAgentTool {
   };
 }
 
-function makeSetStyleTool(tabId: number): BrowserAgentTool {
+function makeSetStyleTool(session: TabSessionController): BrowserAgentTool {
   return {
     name: 'browser_set_style',
     label: 'Set Style',
@@ -458,7 +467,7 @@ function makeSetStyleTool(tabId: number): BrowserAgentTool {
     }),
     execute: async (_toolCallId, params) => {
       const payload = params as SetStylePayload;
-      const response = (await sendMessage<SetStylePayload, SetStyleResult>('SET_STYLE', payload, tabId)) as MessageResponse<SetStyleResult>;
+      const response = (await sendMessage<SetStylePayload, SetStyleResult>('SET_STYLE', payload, session.currentTabId)) as MessageResponse<SetStyleResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '样式修改失败');
       return textResult(
         `已对匹配 "${response.data.selector}" 的 ${response.data.matched} 个元素应用样式。`,
@@ -468,7 +477,7 @@ function makeSetStyleTool(tabId: number): BrowserAgentTool {
   };
 }
 
-function makeModifyDomTool(tabId: number): BrowserAgentTool {
+function makeModifyDomTool(session: TabSessionController): BrowserAgentTool {
   return {
     name: 'browser_modify_dom',
     label: 'Modify DOM',
@@ -489,7 +498,7 @@ function makeModifyDomTool(tabId: number): BrowserAgentTool {
     }),
     execute: async (_toolCallId, params) => {
       const payload = params as ModifyDomPayload;
-      const response = (await sendMessage<ModifyDomPayload, ModifyDomResult>('MODIFY_DOM', payload, tabId)) as MessageResponse<ModifyDomResult>;
+      const response = (await sendMessage<ModifyDomPayload, ModifyDomResult>('MODIFY_DOM', payload, session.currentTabId)) as MessageResponse<ModifyDomResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? 'DOM 修改失败');
       return textResult(
         `已对匹配 "${response.data.selector}" 的 ${response.data.matched} 个元素执行 "${response.data.action}"。`,
@@ -499,7 +508,7 @@ function makeModifyDomTool(tabId: number): BrowserAgentTool {
   };
 }
 
-function makeClickTool(tabId: number): BrowserAgentTool {
+function makeClickTool(session: TabSessionController): BrowserAgentTool {
   return {
     name: 'browser_click',
     label: 'Click',
@@ -515,7 +524,7 @@ function makeClickTool(tabId: number): BrowserAgentTool {
       if (!payload?.fieldId && !payload?.selector) {
         throw new Error('必须提供 fieldId 或 selector 之一。');
       }
-      const response = (await sendMessage<ClickElementPayload, ClickElementResult>('CLICK_ELEMENT', payload, tabId)) as MessageResponse<ClickElementResult>;
+      const response = (await sendMessage<ClickElementPayload, ClickElementResult>('CLICK_ELEMENT', payload, session.currentTabId)) as MessageResponse<ClickElementResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '点击失败');
       if (response.data.fieldsTableStale) {
         throw new Error('字段表已失效（页面已变化或已导航），请重新调用 browser_get_form 获取新的 fieldId 后再点击。');
@@ -530,7 +539,7 @@ function makeClickTool(tabId: number): BrowserAgentTool {
 
 const MAX_FILL_FIELDS_PER_CALL = 50;
 
-function makeFillFormTool(tabId: number): BrowserAgentTool {
+function makeFillFormTool(session: TabSessionController): BrowserAgentTool {
   return {
     name: 'browser_fill_form',
     label: 'Fill Form',
@@ -556,7 +565,7 @@ function makeFillFormTool(tabId: number): BrowserAgentTool {
         throw new Error(`一次最多填写 ${MAX_FILL_FIELDS_PER_CALL} 个字段，本次传入了 ${fieldCount} 个，请分批填写。`);
       }
 
-      const response = (await sendMessage<FillFormPayload, FillFormResult>('FILL_FORM', payload, tabId)) as MessageResponse<FillFormResult>;
+      const response = (await sendMessage<FillFormPayload, FillFormResult>('FILL_FORM', payload, session.currentTabId)) as MessageResponse<FillFormResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '表单填写失败');
       if (response.data.fieldsTableStale) {
         throw new Error('字段表已失效（页面已变化或已导航），请重新调用 browser_get_form 获取新的 fieldId 后再填写。');
@@ -587,7 +596,7 @@ function makeFillFormTool(tabId: number): BrowserAgentTool {
   };
 }
 
-function makeTypeTool(tabId: number): BrowserAgentTool {
+function makeTypeTool(session: TabSessionController): BrowserAgentTool {
   return {
     name: 'browser_type',
     label: 'Type',
@@ -601,7 +610,7 @@ function makeTypeTool(tabId: number): BrowserAgentTool {
     }),
     execute: async (_toolCallId, params) => {
       const payload = params as TypeTextPayload;
-      const response = (await sendMessage<TypeTextPayload, TypeTextResult>('TYPE_TEXT', payload, tabId)) as MessageResponse<TypeTextResult>;
+      const response = (await sendMessage<TypeTextPayload, TypeTextResult>('TYPE_TEXT', payload, session.currentTabId)) as MessageResponse<TypeTextResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '输入失败');
       if (response.data.status !== 'ok') throw new Error(response.data.detail ?? response.data.status);
       const typed = `已在匹配 "${response.data.selector}" 的元素中输入文本。`;
@@ -611,7 +620,7 @@ function makeTypeTool(tabId: number): BrowserAgentTool {
   };
 }
 
-function makeSelectTool(tabId: number): BrowserAgentTool {
+function makeSelectTool(session: TabSessionController): BrowserAgentTool {
   return {
     name: 'browser_select',
     label: 'Select',
@@ -624,7 +633,7 @@ function makeSelectTool(tabId: number): BrowserAgentTool {
     }),
     execute: async (_toolCallId, params) => {
       const payload = params as SelectOptionPayload;
-      const response = (await sendMessage<SelectOptionPayload, SelectOptionResult>('SELECT_OPTION', payload, tabId)) as MessageResponse<SelectOptionResult>;
+      const response = (await sendMessage<SelectOptionPayload, SelectOptionResult>('SELECT_OPTION', payload, session.currentTabId)) as MessageResponse<SelectOptionResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '选择失败');
       if (response.data.status !== 'ok') throw new Error(response.data.detail ?? response.data.status);
       return textResult(
@@ -635,7 +644,7 @@ function makeSelectTool(tabId: number): BrowserAgentTool {
   };
 }
 
-function makeScrollTool(tabId: number): BrowserAgentTool {
+function makeScrollTool(session: TabSessionController): BrowserAgentTool {
   return {
     name: 'browser_scroll',
     label: 'Scroll',
@@ -648,14 +657,14 @@ function makeScrollTool(tabId: number): BrowserAgentTool {
     }),
     execute: async (_toolCallId, params) => {
       const payload = params as ScrollPagePayload;
-      const response = (await sendMessage<ScrollPagePayload, ScrollPageResult>('SCROLL_PAGE', payload, tabId)) as MessageResponse<ScrollPageResult>;
+      const response = (await sendMessage<ScrollPagePayload, ScrollPageResult>('SCROLL_PAGE', payload, session.currentTabId)) as MessageResponse<ScrollPageResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '滚动失败');
       return textResult(describeScrollResult(response.data), response.data as unknown as Record<string, unknown>);
     },
   };
 }
 
-function makeNavigateTool(tabId: number): BrowserAgentTool {
+function makeNavigateTool(session: TabSessionController): BrowserAgentTool {
   return {
     name: 'browser_navigate',
     label: 'Navigate',
@@ -665,14 +674,14 @@ function makeNavigateTool(tabId: number): BrowserAgentTool {
     }),
     execute: async (_toolCallId, params) => {
       const payload = params as NavigateTabPayload;
-      const response = (await sendMessage<NavigateTabPayload, NavigateTabResult>('NAVIGATE_TAB', payload, tabId)) as MessageResponse<NavigateTabResult>;
+      const response = (await sendMessage<NavigateTabPayload, NavigateTabResult>('NAVIGATE_TAB', payload, session.currentTabId)) as MessageResponse<NavigateTabResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '跳转失败');
       return textResult(describeNavigateResult(response.data), response.data as unknown as Record<string, unknown>);
     },
   };
 }
 
-function makeSetStorageTool(tabId: number): BrowserAgentTool {
+function makeSetStorageTool(session: TabSessionController): BrowserAgentTool {
   return {
     name: 'browser_set_storage',
     label: 'Set Storage',
@@ -684,12 +693,85 @@ function makeSetStorageTool(tabId: number): BrowserAgentTool {
     }),
     execute: async (_toolCallId, params) => {
       const payload = params as SetStoragePayload;
-      const response = (await sendMessage<SetStoragePayload, SetStorageResult>('SET_STORAGE', payload, tabId)) as MessageResponse<SetStorageResult>;
+      const response = (await sendMessage<SetStoragePayload, SetStorageResult>('SET_STORAGE', payload, session.currentTabId)) as MessageResponse<SetStorageResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '写入存储失败');
       return textResult(
         `已写入 ${response.data.area}Storage 的 "${response.data.key}"。`,
         response.data as unknown as Record<string, unknown>,
       );
+    },
+  };
+}
+
+function makeOpenTabTool(session: TabSessionController): BrowserAgentTool {
+  return {
+    name: 'browser_open_tab',
+    label: 'Open Tab',
+    description:
+      'Open a new browser tab with the given http/https URL and make it the current operating target — subsequent page tools (click, fill, read, etc.) act on this new tab until you switch again. Only tabs opened this way can later be targeted with browser_switch_tab or browser_close_tab.',
+    parameters: Type.Object({
+      url: Type.String({ description: 'URL to open, must be http or https.' }),
+    }),
+    execute: async (_toolCallId, params) => {
+      const payload = params as OpenNewTabPayload;
+      const response = (await sendMessage<OpenNewTabPayload, OpenNewTabResult>('OPEN_NEW_TAB', payload, session.panelTabId)) as MessageResponse<OpenNewTabResult>;
+      if (!response.ok || !response.data) throw new Error(response.error ?? '打开新标签页失败');
+      session.openAndSwitch({ id: response.data.id, title: response.data.title, url: response.data.url });
+      return textResult(
+        `已打开新标签页并切换为当前操作目标。\n${formatTabList(session)}`,
+        response.data as unknown as Record<string, unknown>,
+      );
+    },
+  };
+}
+
+function makeSwitchTabTool(session: TabSessionController): BrowserAgentTool {
+  return {
+    name: 'browser_switch_tab',
+    label: 'Switch Tab',
+    description:
+      'Switch the current operating target to a tab previously opened with browser_open_tab. You can only switch to tabs already in the tracked list — call browser_list_tabs to see it.',
+    parameters: Type.Object({
+      tabId: Type.Number({ description: 'Target tab id, from browser_open_tab or browser_list_tabs.' }),
+    }),
+    execute: async (_toolCallId, params) => {
+      const { tabId } = params as { tabId: number };
+      const result = session.switchTo(tabId);
+      if (!result.ok) throw new Error(result.error);
+      return textResult(`已切换当前操作目标。\n${formatTabList(session)}`, { tabId, ...session.snapshot() });
+    },
+  };
+}
+
+function makeCloseTabTool(session: TabSessionController): BrowserAgentTool {
+  return {
+    name: 'browser_close_tab',
+    label: 'Close Tab',
+    description:
+      'Close a tab previously opened with browser_open_tab. Cannot close the tab the side panel itself is attached to. If you close the current operating target, it falls back to the panel tab.',
+    parameters: Type.Object({
+      tabId: Type.Number({ description: 'Tab id to close, from browser_open_tab or browser_list_tabs.' }),
+    }),
+    execute: async (_toolCallId, params) => {
+      const { tabId } = params as { tabId: number };
+      const result = session.close(tabId);
+      if (!result.ok) throw new Error(result.error);
+      const response = (await sendMessage<undefined, CloseTabResult>('CLOSE_TAB', undefined, tabId)) as MessageResponse<CloseTabResult>;
+      if (!response.ok) throw new Error(response.error ?? '关闭标签页失败');
+      const fallbackNote = result.fellBackToPanelTab ? '已自动切回原标签页。' : '';
+      return textResult(`已关闭标签页 ${tabId}。${fallbackNote}\n${formatTabList(session)}`, { tabId, ...session.snapshot() });
+    },
+  };
+}
+
+function makeListTabsTool(session: TabSessionController): BrowserAgentTool {
+  return {
+    name: 'browser_list_tabs',
+    label: 'List Tabs',
+    description: 'List the tabs currently tracked in this conversation (the panel tab plus any tabs opened via browser_open_tab), and which one is the current operating target.',
+    parameters: Type.Object({}),
+    execute: async () => {
+      return textResult(formatTabList(session), session.snapshot() as unknown as Record<string, unknown>);
     },
   };
 }

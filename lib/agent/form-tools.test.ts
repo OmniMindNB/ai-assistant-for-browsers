@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { GetFormResult } from '@/lib/messaging';
+import { createTabSession } from './tab-session';
 
 const sendMessage = vi.fn();
 vi.mock('@/lib/messaging', async () => {
@@ -10,7 +11,7 @@ vi.mock('@/lib/messaging', async () => {
 const { createBrowserTools } = await import('./tools');
 
 function getFormTool() {
-  const tool = createBrowserTools(1).find((candidate) => candidate.name === 'browser_get_form');
+  const tool = createBrowserTools(createTabSession(1)).find((candidate) => candidate.name === 'browser_get_form');
   if (!tool) throw new Error('browser_get_form 未注册');
   return tool;
 }
@@ -53,7 +54,7 @@ describe('browser_get_form', () => {
 });
 
 function fillFormTool() {
-  const tool = createBrowserTools(1).find((candidate) => candidate.name === 'browser_fill_form');
+  const tool = createBrowserTools(createTabSession(1)).find((candidate) => candidate.name === 'browser_fill_form');
   if (!tool) throw new Error('browser_fill_form 未注册');
   return tool;
 }
@@ -110,5 +111,45 @@ describe('browser_fill_form', () => {
     expect(text).toContain('提交按钮');
     expect(text).toContain('f9');
     expect(text).toContain('not_found');
+  });
+});
+
+describe('多标签页：工具目标随 session.currentTabId 变化', () => {
+  it('browser_read_page 使用调用时刻的 session.currentTabId，而不是创建工具集时的值', async () => {
+    const session = createTabSession(1);
+    const tool = createBrowserTools(session).find((candidate) => candidate.name === 'browser_read_page')!;
+
+    sendMessage.mockResolvedValueOnce({
+      id: '1',
+      ok: true,
+      data: { title: 'A', url: 'https://a.example.com', lang: 'en', length: 1, text: 'a' },
+    });
+    await tool.execute('call-1', {});
+    expect(sendMessage).toHaveBeenLastCalledWith('EXTRACT_PAGE', undefined, 1);
+
+    session.openAndSwitch({ id: 2 });
+
+    sendMessage.mockResolvedValueOnce({
+      id: '2',
+      ok: true,
+      data: { title: 'B', url: 'https://b.example.com', lang: 'en', length: 1, text: 'b' },
+    });
+    await tool.execute('call-2', {});
+    expect(sendMessage).toHaveBeenLastCalledWith('EXTRACT_PAGE', undefined, 2);
+  });
+
+  it('browser_click 与 browser_navigate 同样跟随 currentTabId', async () => {
+    const session = createTabSession(1);
+    session.openAndSwitch({ id: 2 });
+    const clickTool = createBrowserTools(session).find((c) => c.name === 'browser_click')!;
+    const navigateTool = createBrowserTools(session).find((c) => c.name === 'browser_navigate')!;
+
+    sendMessage.mockResolvedValueOnce({ id: '1', ok: true, data: { status: 'ok' } });
+    await clickTool.execute('call-1', { fieldId: 'f1' });
+    expect(sendMessage).toHaveBeenLastCalledWith('CLICK_ELEMENT', { fieldId: 'f1' }, 2);
+
+    sendMessage.mockResolvedValueOnce({ id: '2', ok: true, data: { url: 'https://c.example.com' } });
+    await navigateTool.execute('call-2', { url: 'https://c.example.com' });
+    expect(sendMessage).toHaveBeenLastCalledWith('NAVIGATE_TAB', { url: 'https://c.example.com' }, 2);
   });
 });

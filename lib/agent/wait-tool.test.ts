@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createBrowserTools } from './tools';
+import { createTabSession } from './tab-session';
 
 function getWaitTool() {
-  const tool = createBrowserTools(1).find((candidate) => candidate.name === 'wait');
+  const tool = createBrowserTools(createTabSession(1)).find((candidate) => candidate.name === 'wait');
   if (!tool) throw new Error('wait 未注册');
   return tool;
 }
