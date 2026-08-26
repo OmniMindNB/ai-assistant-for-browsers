@@ -16,7 +16,7 @@ import {
 } from '@/lib/messaging';
 import { browserOpenAIStream } from './openai-stream';
 import { browserAnthropicStream } from './anthropic-stream';
-import { beforeToolCallPermissionGate, CONFIRM_TOOL_NAMES } from './permissions';
+import { beforeToolCallPermissionGate, WRITE_TOOL_NAMES } from './permissions';
 import { createConfirmGateState, type ConfirmFn } from './confirm-gate';
 import { createBrowserTools, type BrowserAgentTool } from './tools';
 import { createTabSession, type TabSessionController } from './tab-session';
@@ -145,8 +145,8 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
         }
       }
 
-      const isConfirmTool = CONFIRM_TOOL_NAMES.has(context.toolCall.name);
-      const policyBlock = policy.preflight(context.toolCall.name, context.args, isConfirmTool);
+      const isWriteTool = WRITE_TOOL_NAMES.has(context.toolCall.name);
+      const policyBlock = policy.preflight(context.toolCall.name, context.args, isWriteTool);
       if (policyBlock) return recordPreExecutionBlock(policyBlock);
 
       const permissionBlock = await beforeToolCallPermissionGate(context, {
@@ -156,8 +156,8 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
         signal,
         resolveSubmitIntent: async (toolName, args) => {
           const payload = buildSubmitIntentProbePayload(toolName, args);
-          // 探测失败时不阻断，退回普通 confirm 档位——探测只用于「升级」确认强度，
-          // 它自己出错（包括消息通道本身没有响应、抛异常）不应该把一次正常的写操作也卡死。
+          // 只有结构探测明确识别出的提交才确认；无响应或异常不属于“已检测到提交”，
+          // 按普通已知操作自动执行。
           try {
             const response = (await sendMessage<ProbeClickTargetPayload, ProbeClickTargetResult>(
               'PROBE_CLICK_TARGET',
@@ -172,10 +172,9 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
       });
       if (permissionBlock) return recordPreExecutionBlock(permissionBlock);
 
-      const alwaysApproved = confirmGateState.alwaysApprovedCallIds.has(context.toolCall.id);
-      if (isConfirmTool && (confirmGateState.decision === 'approved' || alwaysApproved)) {
+      if (isWriteTool) {
         policy.approveWrite();
-        const approvedPolicyBlock = policy.preflight(context.toolCall.name, context.args, isConfirmTool);
+        const approvedPolicyBlock = policy.preflight(context.toolCall.name, context.args, isWriteTool);
         if (approvedPolicyBlock) return recordPreExecutionBlock(approvedPolicyBlock);
         options.onOverlay?.(
           { active: true, label: describeToolActivity(context.toolCall.name, context.toolCall.arguments, 'running') },

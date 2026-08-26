@@ -59,11 +59,24 @@ function runtimeOptions(overrides: { onConfirm?: () => Promise<boolean> } = {}) 
 }
 
 describe('createBrowserAgentOptions tool policy hooks', () => {
+  it('expands to the write budget when an auto-allowed write starts', async () => {
+    sendMessageSpy.mockResolvedValueOnce({ ok: true, data: { isSubmit: false } });
+    const hooks = runtimeOptions();
+    await hooks.afterToolCall?.(afterContext('browser_read_page', {}, false));
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_click', { selector: '#menu' }))).toBeUndefined();
+    await hooks.afterToolCall?.(afterContext('browser_click', { selector: '#menu' }, false));
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_read_page', {}))).toMatchObject({
+      block: true,
+      reason: expect.stringContaining('2'),
+    });
+  });
+
   it('expands to the write budget only after confirmation succeeds', async () => {
+    sendMessageSpy.mockResolvedValueOnce({ ok: true, data: { isSubmit: true } });
     const hooks = runtimeOptions({ onConfirm: async () => true });
     await hooks.afterToolCall?.(afterContext('browser_read_page', {}, false));
-    expect(await hooks.beforeToolCall?.(beforeContext('browser_click', { selector: '#save' }))).toBeUndefined();
-    await hooks.afterToolCall?.(afterContext('browser_click', { selector: '#save' }, false));
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_click', { selector: '#submit' }))).toBeUndefined();
+    await hooks.afterToolCall?.(afterContext('browser_click', { selector: '#submit' }, false));
     expect(await hooks.beforeToolCall?.(beforeContext('browser_read_page', {}))).toMatchObject({
       block: true,
       reason: expect.stringContaining('2'),
@@ -71,9 +84,10 @@ describe('createBrowserAgentOptions tool policy hooks', () => {
   });
 
   it('keeps the read budget when confirmation is denied', async () => {
+    sendMessageSpy.mockResolvedValueOnce({ ok: true, data: { isSubmit: true } });
     const hooks = runtimeOptions({ onConfirm: async () => false });
     await hooks.afterToolCall?.(afterContext('browser_read_page', {}, false));
-    expect(await hooks.beforeToolCall?.(beforeContext('browser_click', { selector: '#save' }))).toMatchObject({
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_click', { selector: '#submit' }))).toMatchObject({
       block: true,
     });
     expect(await hooks.beforeToolCall?.(beforeContext('browser_read_page', {}))).toMatchObject({
@@ -125,7 +139,10 @@ describe('createBrowserAgentOptions tool policy hooks', () => {
     });
   });
 
-  it('counts an initial and cached permission denial toward bounded block termination', async () => {
+  it('counts two detected-submit denials toward bounded block termination', async () => {
+    sendMessageSpy
+      .mockResolvedValueOnce({ ok: true, data: { isSubmit: true } })
+      .mockResolvedValueOnce({ ok: true, data: { isSubmit: true } });
     const hooks = createBrowserAgentOptions({
       provider: baseProvider,
       tabId: 1,
@@ -135,13 +152,13 @@ describe('createBrowserAgentOptions tool policy hooks', () => {
       steer: vi.fn(),
       onConfirm: async () => false,
     });
-    expect(await hooks.beforeToolCall?.(beforeContext('browser_click', { selector: '#save' }))).toMatchObject({
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_click', { selector: '#submit-a' }))).toMatchObject({
       block: true,
     });
     expect(
       await hooks.prepareNextTurnWithContext?.({ context: { messages: [], tools: [] } } as unknown as PrepareNextTurnContext),
     ).toBeUndefined();
-    expect(await hooks.beforeToolCall?.(beforeContext('browser_type', { selector: '#name', text: 'Ada' }))).toMatchObject({
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_click', { selector: '#submit-b' }))).toMatchObject({
       block: true,
     });
     expect(
@@ -180,16 +197,34 @@ describe('执行期遮罩', () => {
       onOverlay,
     });
 
-  it('写工具获批时通知一次遮罩打开', async () => {
+  it('自动导航会通知一次遮罩打开', async () => {
     const onOverlay = vi.fn();
     const options = overlayOptions(onOverlay, true);
 
-    await options.beforeToolCall!(beforeContext('browser_click', { selector: '#a', index: 0 }), undefined);
+    await options.beforeToolCall!(beforeContext('browser_navigate', { url: 'https://example.com/next' }), undefined);
 
     expect(onOverlay).toHaveBeenCalledWith(
       expect.objectContaining({ active: true, label: expect.any(String) }),
       1,
     );
+  });
+
+  it('非提交自动点击不弹确认并打开遮罩', async () => {
+    sendMessageSpy.mockResolvedValueOnce({ ok: true, data: { isSubmit: false } });
+    const onConfirm = vi.fn();
+    const onOverlay = vi.fn();
+    const options = createBrowserAgentOptions({
+      provider: baseProvider,
+      tabId: 1,
+      steer: () => {},
+      onConfirm,
+      onOverlay,
+    });
+
+    await options.beforeToolCall!(beforeContext('browser_click', { selector: '#menu', index: 0 }), undefined);
+
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(onOverlay).toHaveBeenCalledWith(expect.objectContaining({ active: true }), 1);
   });
 
   it('只读工具不触发遮罩', async () => {
@@ -202,10 +237,11 @@ describe('执行期遮罩', () => {
   });
 
   it('用户拒绝确认时不打开遮罩', async () => {
+    sendMessageSpy.mockResolvedValueOnce({ ok: true, data: { isSubmit: true } });
     const onOverlay = vi.fn();
     const options = overlayOptions(onOverlay, false);
 
-    await options.beforeToolCall!(beforeContext('browser_click', { selector: '#a', index: 0 }), undefined);
+    await options.beforeToolCall!(beforeContext('browser_click', { selector: '#submit', index: 0 }), undefined);
 
     expect(onOverlay).not.toHaveBeenCalled();
   });
@@ -335,7 +371,7 @@ describe('多标签页：session 可选，且遮罩跟随当前操作目标', ()
     });
 
     // 先批准一次写操作，遮罩在 tab 1 上打开
-    await hooks.beforeToolCall?.(beforeContext('browser_click', { selector: '#a' }));
+    await hooks.beforeToolCall?.(beforeContext('browser_navigate', { url: 'https://example.com/a' }));
     await hooks.afterToolCall?.(afterContext('browser_click', { selector: '#a' }, false));
     expect(onOverlay).toHaveBeenLastCalledWith(expect.objectContaining({ active: true }), 1);
 
@@ -372,7 +408,28 @@ describe('多标签页：session 可选，且遮罩跟随当前操作目标', ()
     );
   });
 
-  it('确认门跟随当前操作 tab：批准 tab 1 的写操作后，目标切到 tab 2 会重新弹出确认（最终审查 Important #2）', async () => {
+  it('表单提交意图探测失败时按普通已知操作自动执行', async () => {
+    sendMessageSpy.mockRejectedValueOnce(new Error('message channel unavailable'));
+    const onConfirm = vi.fn().mockResolvedValue(true);
+    const hooks = createBrowserAgentOptions({
+      provider: baseProvider,
+      tabId: 1,
+      tools: [],
+      readToolCallBudget: 12,
+      writeToolCallBudget: 24,
+      steer: vi.fn(),
+      onConfirm,
+    });
+
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_click', { selector: '#continue' }))).toBeUndefined();
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it('检测到的表单提交每次确认，不受目标 tab 或既有批准影响', async () => {
+    sendMessageSpy
+      .mockResolvedValueOnce({ ok: true, data: { isSubmit: true } })
+      .mockResolvedValueOnce({ ok: true, data: { isSubmit: true } })
+      .mockResolvedValueOnce({ ok: true, data: { isSubmit: true } });
     const session = createTabSession(1);
     const onConfirm = vi.fn().mockResolvedValue(true);
     const hooks = createBrowserAgentOptions({
@@ -386,21 +443,20 @@ describe('多标签页：session 可选，且遮罩跟随当前操作目标', ()
       onConfirm,
     });
 
-    // 在 tab 1 上批准一次写操作。
-    await hooks.beforeToolCall?.(beforeContext('browser_click', { selector: '#a' }));
+    // 在 tab 1 上批准一次检测到的提交。
+    await hooks.beforeToolCall?.(beforeContext('browser_click', { selector: '#submit-a' }));
     expect(onConfirm).toHaveBeenCalledTimes(1);
 
     // browser_open_tab 把当前操作目标切到 tab 2（模拟工具执行后的效果）。
     session.openAndSwitch({ id: 2, title: 'Example' });
 
-    // 同一轮里对 tab 2 的写操作必须重新弹出确认，不能复用 tab 1 的缓存批准。
-    await hooks.beforeToolCall?.(beforeContext('browser_fill_form', { fields: [] }));
+    // 同一轮里对 tab 2 的提交仍然必须确认。
+    await hooks.beforeToolCall?.(beforeContext('browser_click', { selector: '#submit-b' }));
     expect(onConfirm).toHaveBeenCalledTimes(2);
 
-    // 切回 tab 1 后，tab 1 的旧决定已经在第二次调用时被重置，所以 tab 1 也要重新问一次
-    // ——这是 tab 级缓存失效的正确副作用，不是 bug：缓存记的是"最近一次决定针对哪个 tab"。
+    // 切回 tab 1 后再次提交也必须确认；confirm_always 从不复用决定。
     session.switchTo(1);
-    await hooks.beforeToolCall?.(beforeContext('browser_type', { selector: '#c', text: 'x' }));
+    await hooks.beforeToolCall?.(beforeContext('browser_click', { selector: '#submit-c' }));
     expect(onConfirm).toHaveBeenCalledTimes(3);
   });
 

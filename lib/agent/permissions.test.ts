@@ -33,18 +33,28 @@ describe('decideToolPermission', () => {
     expect(decideToolPermission('browser_eval_raw', {}).level).toBe('deny');
   });
 
-  it('requires confirmation for the write/interaction tools', () => {
+  it('automatically allows low-risk write and interaction tools', () => {
     for (const tool of [
       'browser_set_style',
       'browser_modify_dom',
       'browser_click',
+      'browser_fill_form',
       'browser_type',
       'browser_scroll',
       'browser_select',
+      'browser_open_tab',
+      'browser_navigate',
       'browser_set_storage',
+      'browser_close_tab',
     ]) {
-      expect(decideToolPermission(tool, { code: 'void 0' }).level).toBe('confirm');
+      expect(decideToolPermission(tool, { code: 'void 0', url: 'https://example.com' }).level).toBe('auto_allow');
     }
+  });
+
+  it('automatically allows navigation, tab closing, and website storage writes', () => {
+    expect(decideToolPermission('browser_navigate', { url: 'https://example.com' }).level).toBe('auto_allow');
+    expect(decideToolPermission('browser_close_tab', { tabId: 2 }).level).toBe('auto_allow');
+    expect(decideToolPermission('browser_set_storage', { area: 'local', key: 'theme', value: 'dark' }).level).toBe('auto_allow');
   });
 
   it('denies navigate to a javascript: URL', () => {
@@ -55,10 +65,9 @@ describe('decideToolPermission', () => {
     expect(decideToolPermission('browser_navigate', { url: 'not a url' }).level).toBe('deny');
   });
 
-  it('requires confirmation for navigate to an https URL', () => {
+  it('automatically allows navigate to an https URL', () => {
     expect(decideToolPermission('browser_navigate', { url: 'https://example.com' })).toEqual({
-      level: 'confirm',
-      reason: expect.stringContaining('修改页面'),
+      level: 'auto_allow',
     });
   });
 
@@ -70,11 +79,11 @@ describe('decideToolPermission', () => {
 
   it('allows browser_click by fieldId even if a stray selector arg looks like a root container', () => {
     // fieldId 路径走字段句柄表，不经过 CSS selector，selector 字段应被忽略。
-    expect(decideToolPermission('browser_click', { fieldId: 'f1', selector: 'body' }).level).toBe('confirm');
+    expect(decideToolPermission('browser_click', { fieldId: 'f1', selector: 'body' }).level).toBe('auto_allow');
   });
 
-  it('requires confirmation for browser_click with an ordinary selector', () => {
-    expect(decideToolPermission('browser_click', { selector: '.submit-button' }).level).toBe('confirm');
+  it('automatically allows browser_click with an ordinary selector', () => {
+    expect(decideToolPermission('browser_click', { selector: '.submit-button' }).level).toBe('auto_allow');
   });
 
   it('denies browser_modify_dom when the selector targets a page-root container', () => {
@@ -83,8 +92,8 @@ describe('decideToolPermission', () => {
     }
   });
 
-  it('requires confirmation for browser_modify_dom with an ordinary selector', () => {
-    expect(decideToolPermission('browser_modify_dom', { selector: '.ad-banner', action: 'remove' }).level).toBe('confirm');
+  it('automatically allows browser_modify_dom with an ordinary selector', () => {
+    expect(decideToolPermission('browser_modify_dom', { selector: '.ad-banner', action: 'remove' }).level).toBe('auto_allow');
   });
 
   describe('多标签页编排工具的权限分级', () => {
@@ -93,9 +102,9 @@ describe('decideToolPermission', () => {
       expect(decideToolPermission('browser_list_tabs', {})).toEqual({ level: 'always_allow' });
     });
 
-    it('browser_open_tab 与 browser_close_tab 需要确认', () => {
-      expect(decideToolPermission('browser_open_tab', { url: 'https://example.com' }).level).toBe('confirm');
-      expect(decideToolPermission('browser_close_tab', { tabId: 2 }).level).toBe('confirm');
+    it('browser_open_tab 与 browser_close_tab 都自动放行', () => {
+      expect(decideToolPermission('browser_open_tab', { url: 'https://example.com' }).level).toBe('auto_allow');
+      expect(decideToolPermission('browser_close_tab', { tabId: 2 }).level).toBe('auto_allow');
     });
 
     it('denies browser_open_tab to a javascript: URL', () => {
@@ -110,10 +119,9 @@ describe('decideToolPermission', () => {
       expect(decideToolPermission('browser_open_tab', { url: 'not a url' }).level).toBe('deny');
     });
 
-    it('requires confirmation for browser_open_tab to an https URL', () => {
+    it('automatically allows browser_open_tab to an https URL', () => {
       expect(decideToolPermission('browser_open_tab', { url: 'https://example.com' })).toEqual({
-        level: 'confirm',
-        reason: expect.stringContaining('修改页面'),
+        level: 'auto_allow',
       });
     });
   });
@@ -142,62 +150,38 @@ describe('beforeToolCallPermissionGate', () => {
     expect(onConfirm).not.toHaveBeenCalled();
   });
 
-  it('awaits onConfirm for a confirm-tier tool and allows once approved', async () => {
-    const onConfirm = vi.fn().mockResolvedValue(true);
+  it('does not call onConfirm for an auto-allowed write tool', async () => {
+    const onConfirm = vi.fn();
     const result = await beforeToolCallPermissionGate(makeContext('browser_click', { selector: 'button' }), {
       gateState: createConfirmGateState(),
       onConfirm,
       targetTabId: 1,
+      resolveSubmitIntent: async () => ({ isSubmit: false }),
     });
     expect(result).toBeUndefined();
-    expect(onConfirm).toHaveBeenCalledWith('call-1', 'browser_click', { selector: 'button' }, expect.any(String));
+    expect(onConfirm).not.toHaveBeenCalled();
   });
 
-  describe('目标 tab 变化时重新确认（最终审查 Important #2）', () => {
-    it('approving a write on tab 1 does not silently approve a call targeting tab 2', async () => {
-      const state = createConfirmGateState();
-      const onConfirm = vi.fn().mockResolvedValue(true);
-
-      const first = await beforeToolCallPermissionGate(makeContext('browser_click', { selector: '#a' }), {
-        gateState: state,
+  it('does not call onConfirm for navigation, tab closing, or storage writes', async () => {
+    const onConfirm = vi.fn();
+    for (const [toolName, args] of [
+      ['browser_navigate', { url: 'https://example.com' }],
+      ['browser_close_tab', { tabId: 2 }],
+      ['browser_set_storage', { area: 'local', key: 'a', value: 'b' }],
+    ] as const) {
+      expect(await beforeToolCallPermissionGate(makeContext(toolName, args), {
+        gateState: createConfirmGateState(),
         onConfirm,
         targetTabId: 1,
-      });
-      expect(first).toBeUndefined();
-      expect(onConfirm).toHaveBeenCalledTimes(1);
-
-      const second = await beforeToolCallPermissionGate(makeContext('browser_fill_form', { fields: [] }), {
-        gateState: state,
-        onConfirm,
-        targetTabId: 2,
-      });
-      expect(second).toBeUndefined();
-      expect(onConfirm).toHaveBeenCalledTimes(2); // 目标 tab 变了，重新问了一次
-    });
-
-    it('two confirm-tier calls targeting the same tab still only prompt once', async () => {
-      const state = createConfirmGateState();
-      const onConfirm = vi.fn().mockResolvedValue(true);
-
-      await beforeToolCallPermissionGate(makeContext('browser_click', { selector: '#a' }), {
-        gateState: state,
-        onConfirm,
-        targetTabId: 1,
-      });
-      await beforeToolCallPermissionGate(makeContext('browser_type', { selector: '#b', text: 'x' }), {
-        gateState: state,
-        onConfirm,
-        targetTabId: 1,
-      });
-
-      expect(onConfirm).toHaveBeenCalledTimes(1);
-    });
+      })).toBeUndefined();
+    }
+    expect(onConfirm).not.toHaveBeenCalled();
   });
 });
 
 describe('submit intent escalation', () => {
   it('keeps decideToolPermission pure — it never denies on sensitive fields', () => {
-    expect(decideToolPermission('browser_fill_form', { fields: [{ fieldId: 'f1', value: 'x' }] }).level).toBe('confirm');
+    expect(decideToolPermission('browser_fill_form', { fields: [{ fieldId: 'f1', value: 'x' }] }).level).toBe('auto_allow');
   });
 
   it('escalates a click that submits a form to confirm_always', async () => {
@@ -219,7 +203,7 @@ describe('submit intent escalation', () => {
     expect(onConfirm).toHaveBeenCalledTimes(1); // 尽管本轮已批准，仍然又问了一次
   });
 
-  it('leaves a non-submitting click on the once-per-turn path', async () => {
+  it('automatically allows a non-submitting click', async () => {
     const state = createConfirmGateState();
     state.decision = 'approved';
     const onConfirm = vi.fn().mockResolvedValue(true);
@@ -243,7 +227,7 @@ describe('submit intent escalation', () => {
         gateState: createConfirmGateState(),
         onConfirm,
         targetTabId: 1,
-        resolveSubmitIntent: async () => ({ isSubmit: false, fieldLabels: [{ fieldId: 'f1', label: '邮箱' }] }),
+        resolveSubmitIntent: async () => ({ isSubmit: true, fieldLabels: [{ fieldId: 'f1', label: '邮箱' }] }),
       },
     );
 
@@ -261,7 +245,7 @@ describe('submit intent escalation', () => {
         gateState: createConfirmGateState(),
         onConfirm,
         targetTabId: 1,
-        resolveSubmitIntent: async () => ({ isSubmit: false, fieldLabels: [{ fieldId: 'f7', label: '登录' }] }),
+        resolveSubmitIntent: async () => ({ isSubmit: true, fieldLabels: [{ fieldId: 'f7', label: '登录' }] }),
       },
     );
 

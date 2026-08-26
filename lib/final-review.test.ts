@@ -85,22 +85,22 @@ describe('maintained privacy disclosure contract', () => {
     expect(readRepoFile(file)).not.toMatch(unsupportedPersistedConsentClaims);
   });
 
-  it('describes disclosure, user-directed provider transmission, and per-turn write approval in English', () => {
+  it('describes disclosure, user-directed provider transmission, and submission-only approval in English', () => {
     const policy = readRepoFile('docs/privacy-policy.en.md');
     expect(policy).toContain('The Settings page provides privacy disclosures');
     expect(policy).toContain('When you initiate an Agent request, you direct Runi to send');
     expect(policy).toContain('Runi does not store a separate consent record.');
-    expect(policy).toContain('Before the first write action in a turn');
-    expect(policy).toContain('remembered only for the current turn');
+    expect(policy).toContain('Known page actions run automatically');
+    expect(policy).toContain('detected form submissions require confirmation every time');
   });
 
-  it('describes disclosure, user-directed provider transmission, and per-turn write approval in Simplified Chinese', () => {
+  it('describes disclosure, user-directed provider transmission, and submission-only approval in Simplified Chinese', () => {
     const policy = readRepoFile('docs/privacy-policy.md');
     expect(policy).toContain('设置页会提供隐私说明');
     expect(policy).toContain('当你发起 Agent 请求时，即表示你指示 Runi');
     expect(policy).toContain('Runi 不会另行保存同意记录。');
-    expect(policy).toContain('每轮第一次写操作执行前');
-    expect(policy).toContain('仅在当前一轮内沿用');
+    expect(policy).toContain('已知页面操作会自动执行');
+    expect(policy).toContain('检测到的表单提交每次都需要确认');
   });
 
   it('keeps store copy aligned with the current request-driven behavior', () => {
@@ -159,23 +159,23 @@ describe('maintained release capability contract', () => {
     expect(readRepoFile(file)).not.toMatch(perChangeConfirmationPattern);
   });
 
-  it('aligns English maintained marketing with provider transmission and per-turn approval', () => {
+  it('aligns English maintained marketing with provider transmission and submission-only approval', () => {
     for (const file of ['README.en.md']) {
       const source = readRepoFile(file);
       expect(source).toContain('recent conversation context');
       expect(source).toContain('configured provider');
-      expect(source).toContain('first write action in a turn');
-      expect(source).toContain('only for that turn');
+      expect(source).toContain('known page actions run automatically');
+      expect(source).toContain('detected form submissions ask for confirmation each time');
     }
   });
 
-  it('aligns Chinese maintained marketing with provider transmission and per-turn approval', () => {
+  it('aligns Chinese maintained marketing with provider transmission and submission-only approval', () => {
     for (const file of ['README.md']) {
       const source = readRepoFile(file);
       expect(source).toContain('近期对话上下文');
       expect(source).toContain('配置的 AI Provider');
-      expect(source).toContain('每轮第一次写操作');
-      expect(source).toContain('仅在该轮内复用');
+      expect(source).toContain('已知页面操作自动执行');
+      expect(source).toContain('只有检测到的表单提交会逐次请求确认');
     }
   });
 

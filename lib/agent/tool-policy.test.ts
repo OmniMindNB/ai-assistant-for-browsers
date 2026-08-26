@@ -9,7 +9,7 @@ describe('AgentToolPolicy budgets', () => {
     expect(policy.preflight('browser_get_html', {}, false)).toMatchObject({ block: true, reason: expect.stringContaining('2') });
   });
 
-  it('allows a first confirm tool at the read boundary and expands only after approval', () => {
+  it('allows a first write tool at the read boundary and expands the budget when writing starts', () => {
     const policy = createAgentToolPolicy({ readToolCallBudget: 2, writeToolCallBudget: 4 });
     policy.recordExecution('browser_read_page', {}, false);
     policy.recordExecution('browser_query_dom', {}, false);
@@ -27,7 +27,7 @@ describe('AgentToolPolicy budgets', () => {
     expect(policy.preflight('browser_get_html', {}, false)?.block).toBe(true);
   });
 
-  it('allows only one unapproved confirm tool at the read boundary', () => {
+  it('allows only one pending write tool at the read boundary', () => {
     const policy = createAgentToolPolicy({ readToolCallBudget: 2, writeToolCallBudget: 4 });
     policy.recordExecution('browser_read_page', {}, false);
     policy.recordExecution('browser_query_dom', {}, false);

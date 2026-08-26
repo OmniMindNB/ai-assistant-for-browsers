@@ -23,7 +23,7 @@ export interface AgentToolPolicy {
   readonly remaining: number;
   /** 跌到提醒阈值时返回一次提示文案；同一阈值不重复提醒，未到阈值返回 undefined。 */
   budgetWarning(): string | undefined;
-  preflight(toolName: string, args: unknown, isConfirmTool: boolean): ToolPreflightBlock | undefined;
+  preflight(toolName: string, args: unknown, isWriteTool: boolean): ToolPreflightBlock | undefined;
   approveWrite(): void;
   recordPreExecutionBlock(): void;
   recordExecution(toolName: string, args: unknown, isError: boolean): void;
@@ -51,7 +51,7 @@ export function createAgentToolPolicy(options: AgentToolPolicyOptions): AgentToo
   const writeToolCallBudget = Math.max(options.readToolCallBudget, options.writeToolCallBudget);
   let completedToolCalls = 0;
   let writeApproved = false;
-  let boundaryConfirmReserved = false;
+  let boundaryWriteReserved = false;
   let consecutiveFailure: { signature: string; count: number } | undefined;
   let consecutivePreExecutionBlocks = 0;
   let phase: 'active' | 'final_response_prepared' | 'final_response_running' = 'active';
@@ -87,14 +87,14 @@ export function createAgentToolPolicy(options: AgentToolPolicyOptions): AgentToo
         ? `工具调用预算只剩 ${remaining} 次，必须立刻基于现有结果给出最终回答，并说明仍不确定的部分。`
         : `工具调用预算只剩 ${remaining} 次，请开始收尾：先完成最关键的一两步，然后基于现有证据作答。`;
     },
-    preflight(toolName, args, isConfirmTool) {
+    preflight(toolName, args, isWriteTool) {
       const signature = toolSignature(toolName, args);
       if (consecutiveFailure?.signature === signature && consecutiveFailure.count >= 2) {
         return { block: true, reason: '相同工具调用连续失败两次，已停止重复尝试。' };
       }
       if (completedToolCalls >= this.currentBudget) {
-        if (isConfirmTool && !writeApproved && !boundaryConfirmReserved) {
-          boundaryConfirmReserved = true;
+        if (isWriteTool && !writeApproved && !boundaryWriteReserved) {
+          boundaryWriteReserved = true;
           return undefined;
         }
         return { block: true, reason: `工具调用次数已达到预算上限 ${this.currentBudget}。` };

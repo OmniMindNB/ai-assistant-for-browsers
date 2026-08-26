@@ -1,14 +1,13 @@
 import type { ResolvedLocale } from '@/lib/i18n';
-import { CONFIRM_TOOL_NAMES } from './permissions';
+import { WRITE_TOOL_NAMES } from './permissions';
 
 export const DEFAULT_READ_TOOL_CALL_BUDGET = 12;
 export const DEFAULT_WRITE_TOOL_CALL_BUDGET = 24;
 
 /**
- * 提示词里列举的写入/交互工具名，直接由权限表推导，避免新增工具时提示词漏改
- * （ref: permissions.ts 的 CONFIRM_TOOL_NAMES）。
+ * 提示词里列举的写入/交互工具名，直接由权限表推导，避免新增工具时提示词漏改。
  */
-const WRITE_TOOL_LIST = [...CONFIRM_TOOL_NAMES].join('、');
+const WRITE_TOOL_LIST = [...WRITE_TOOL_NAMES].join('、');
 
 /**
  * 回答语言指令，按界面语言选取。提示词正文本身保持中文撰写，只有这一段随 UI locale 切换——
@@ -143,7 +142,7 @@ export function buildSystemPrompt(options: SystemPromptOptions = {}): string {
     section('form_workflow', FORM_WORKFLOW),
     section(
       'page_actions',
-      '当用户要求修改或操作当前页面（例如去广告、切换阅读模式、改样式、移除元素、填写表单、点击、跳转等）时，请直接调用对应的写工具去完成，不需要先做完整的实现巡检；只有在必须先定位具体元素或选择器时，才用 browser_query_dom / browser_get_html 做少量确认。写工具首次调用会触发一次性用户确认——这些操作会逐一向用户展示并需要确认，因此可以放心直接调用，用户批准后本轮内的同类调用会自动执行，不要因为担心权限而绕过工具去建议用户手动操作。',
+      '当用户要求修改或操作当前页面（例如去广告、切换阅读模式、改样式、移除元素、填写表单、点击、跳转等）时，请直接调用对应的写工具去完成，不需要先做完整的实现巡检；只有在必须先定位具体元素或选择器时，才用 browser_query_dom / browser_get_html 做少量确认。只有检测到的表单提交会触发用户确认，其余已知操作会自动执行；不要因为担心权限而绕过工具去建议用户手动操作。',
     ),
     section('tool_strategy', buildToolStrategy(options).join('\n')),
     section(
@@ -153,8 +152,8 @@ export function buildSystemPrompt(options: SystemPromptOptions = {}): string {
     section(
       'task_execution',
       [
-        `多步任务要一次做完，不要做到一半就把剩下的步骤交回给用户。工具预算：读取和分析最多 ${readToolCallBudget} 次；用户批准写入或交互后，本轮总预算最多 ${writeToolCallBudget} 次。这些是上限而不是目标，够用就停。预算耗尽或工具被拒绝时，立即基于已有证据回答，并标出仍不确定的部分。`,
-        '需要连续做多个写操作时，先用一两句话说明打算改哪几处再开始调用工具，让用户在第一次确认时就知道这一轮的整体范围。执行过程中保持简短，全部完成后再给一次完整说明。',
+        `多步任务要一次做完，不要做到一半就把剩下的步骤交回给用户。工具预算：读取和分析最多 ${readToolCallBudget} 次；开始写入或交互后，本轮总预算最多 ${writeToolCallBudget} 次。这些是上限而不是目标，够用就停。预算耗尽或工具被拒绝时，立即基于已有证据回答，并标出仍不确定的部分。`,
+        '需要连续做多个写操作时，先用一两句话说明打算改哪几处再开始调用工具。执行过程中保持简短，全部完成后再给一次完整说明。',
         '同一个工具用同样的参数连续失败两次，就换思路：换选择器、换工具，或先读一次 DOM 结构再试，不要第三次重复同样的调用。选择器匹配到 0 个元素时，先用 browser_query_dom 确认真实结构，不要连续盲猜。如果连续几次调用都没带来新信息，停下来向用户说明卡在哪里，而不是继续消耗预算。',
       ].join('\n'),
     ),

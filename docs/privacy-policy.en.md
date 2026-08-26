@@ -36,7 +36,7 @@ For Chrome Web Store disclosure purposes, Runi treats `Website content` and the 
 
 ## 3. How data is used
 
-Runi processes data only to provide the user-requested core feature: understand the current page and user-selected files, answer grounded questions, analyze page implementation, and perform approved page actions. Write tools show a confirmation before they run; one decision is remembered for the current turn.
+Runi processes data only to provide the user-requested core feature: understand the current page and user-selected files, answer grounded questions, analyze page implementation, and perform page actions. Known page actions run automatically; detected form submissions require confirmation every time.
 
 Runi does not use data for advertising, profiling, credit or eligibility decisions, unrelated product development, or sale to third parties. The configured AI provider may have its own processing, retention, or model-training terms, which you must review separately.
 
@@ -44,7 +44,7 @@ Runi does not use data for advertising, profiling, credit or eligibility decisio
 
 The Settings page provides privacy disclosures explaining which data stays in your browser and which data may be sent to your configured AI provider. The same disclosures are maintained in this policy. Runi does not store a separate consent record.
 
-When you initiate an Agent request, you direct Runi to send your current prompt, recent conversation context, API key, any relevant page-derived results, and content from files you selected for that request to your configured AI provider as needed to fulfill that request. Read-only page tools may run after you initiate the request. Before the first write action in a turn, Runi asks for confirmation; the decision is remembered only for the current turn.
+When you initiate an Agent request, you direct Runi to send your current prompt, recent conversation context, API key, any relevant page-derived results, and content from files you selected for that request to your configured AI provider as needed to fulfill that request. Read-only tools and known page actions may run after you initiate the request. Runi asks before executing a detected form submission, every time.
 
 ## 5. Local storage and deletion
 
@@ -79,7 +79,7 @@ Runi `1.1.3` uses this permission set:
 | `sidePanel` | Hosts Runi’s primary interface |
 | Host access: `<all_urls>` | Lets the same current-page Agent work on user-selected HTTP and HTTPS sites and fetch page-referenced resources |
 
-Read-only page tools may run after you initiate an Agent request. Page-changing tools require confirmation before the first write action in a turn. Runi does not passively build a browsing-history profile.
+Read-only tools and known page actions may run after you initiate an Agent request. Detected form submissions require approval every time. Runi does not passively build a browsing-history profile.
 
 ## 8. External resources and SSRF protection
 

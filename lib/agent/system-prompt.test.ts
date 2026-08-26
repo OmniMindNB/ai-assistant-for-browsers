@@ -6,15 +6,11 @@ import {
   DEFAULT_WRITE_TOOL_CALL_BUDGET,
   SYSTEM_PROMPT,
 } from './system-prompt';
-import {
-  CONFIRM_TOOL_NAMES,
-  DENY_TOOL_NAMES,
-  READ_ONLY_TOOL_NAMES,
-} from './permissions';
+import { DENY_TOOL_NAMES, READ_ONLY_TOOL_NAMES, WRITE_TOOL_NAMES } from './permissions';
 
 const KNOWN_TOOL_NAMES = new Set([
   ...READ_ONLY_TOOL_NAMES,
-  ...CONFIRM_TOOL_NAMES,
+  ...WRITE_TOOL_NAMES,
 ]);
 
 describe('buildSystemPrompt structure', () => {
@@ -53,8 +49,8 @@ describe('buildSystemPrompt structure', () => {
 });
 
 describe('buildSystemPrompt tool listing', () => {
-  it('lists every confirm-level tool', () => {
-    for (const name of CONFIRM_TOOL_NAMES) {
+  it('lists every write and interaction tool', () => {
+    for (const name of WRITE_TOOL_NAMES) {
       expect(SYSTEM_PROMPT).toContain(name);
     }
   });
@@ -68,6 +64,13 @@ describe('buildSystemPrompt tool listing', () => {
     for (const name of DENY_TOOL_NAMES) {
       expect(SYSTEM_PROMPT).not.toContain(name);
     }
+  });
+
+  it('explains that only detected form submissions ask for approval', () => {
+    expect(SYSTEM_PROMPT).toContain('只有检测到的表单提交');
+    expect(SYSTEM_PROMPT).toContain('其余已知操作会自动执行');
+    expect(SYSTEM_PROMPT).not.toContain('高风险操作（browser_navigate');
+    expect(SYSTEM_PROMPT).not.toContain('写工具首次调用会触发一次性用户确认');
   });
 });
 
@@ -258,15 +261,15 @@ describe('buildSystemPrompt runtime context', () => {
 });
 
 describe('buildSystemPrompt options', () => {
-  it('states the default read and approved-write tool budgets', () => {
+  it('states the default read and write tool budgets', () => {
     expect(SYSTEM_PROMPT).toContain(`读取和分析最多 ${DEFAULT_READ_TOOL_CALL_BUDGET} 次`);
-    expect(SYSTEM_PROMPT).toContain(`批准写入或交互后，本轮总预算最多 ${DEFAULT_WRITE_TOOL_CALL_BUDGET} 次`);
+    expect(SYSTEM_PROMPT).toContain(`开始写入或交互后，本轮总预算最多 ${DEFAULT_WRITE_TOOL_CALL_BUDGET} 次`);
   });
 
-  it('states custom read and approved-write tool budgets', () => {
+  it('states custom read and write tool budgets', () => {
     const prompt = buildSystemPrompt({ readToolCallBudget: 3, writeToolCallBudget: 7 });
     expect(prompt).toContain('读取和分析最多 3 次');
-    expect(prompt).toContain('批准写入或交互后，本轮总预算最多 7 次');
+    expect(prompt).toContain('开始写入或交互后，本轮总预算最多 7 次');
   });
 
   it('omits session_constraints when no constraint is given', () => {
@@ -294,7 +297,7 @@ describe('表单作业流程', () => {
     expect(SYSTEM_PROMPT).toContain('mismatch');
   });
 
-  it('lists the two new tools in the write-tool section derived from CONFIRM_TOOL_NAMES', () => {
+  it('lists the batch form tool in the write-tool section', () => {
     expect(SYSTEM_PROMPT).toContain('browser_fill_form');
   });
 });

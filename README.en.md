@@ -4,7 +4,7 @@
 
 [🚀 Install Runi from the Chrome Web Store](https://chromewebstore.google.com/detail/dhdgahnfefoojenfojbcdaohbbdoabcd)
 
-> A trustworthy browser page agent — asks before the first write action in a turn and reuses that decision only for that turn; answers are grounded in page evidence, not generic guesses. Bring your own model and API key. Persistent conversation history stays local; after you initiate a request, the current prompt, recent conversation context, and relevant page-derived results may be sent directly to your configured provider.
+> A trustworthy browser page agent — known page actions run automatically, with confirmation only for detected form submissions; answers are grounded in page evidence, not generic guesses. Bring your own model and API key. Persistent conversation history stays local; after you initiate a request, the current prompt, recent conversation context, and relevant page-derived results may be sent directly to your configured provider.
 
 > Your page, your way.
 
@@ -23,9 +23,9 @@ See the [Provider setup guide](docs/provider-setup.en.md) for more detail and tr
 
 ## Core features
 
-- 🔒 **Confirm before acting**: a Deny-First permission model sorts every tool into three tiers — read-only runs directly, write/interactive tools need confirmation, unknown tools are always denied. The first write action in a turn raises a confirmation card, and the decision is reused only for that turn. `browser_navigate` is restricted to http(s) independently in both the permission layer and the background worker, and page-resource fetches reject loopback, private, link-local, and IPv4-mapped IPv6 targets
+- 🔒 **Confirm submissions only**: a Deny-First permission model automatically executes all known page actions. Only detected form submissions ask for confirmation each time; unknown tools are always denied. `browser_navigate` is restricted to http(s) independently in both the permission layer and the background worker, and page-resource fetches reject loopback, private, link-local, and IPv4-mapped IPv6 targets
 - 🔍 **Evidence-driven analysis**: reads page text / DOM / HTML / scripts / stylesheets / computed styles / screenshots. `browser_inspect_page_implementation` gathers all of that in a single call plus a keyword-matched `evidenceSummary`, so "how is this implemented" gets an answer citing specific code instead of a generic description
-- 🖐️ **Page actions**: once approved, Runi can set styles, modify the DOM, click, type, pick from selects, scroll, navigate, and write storage. Tool calls are budgeted (12 read/analysis calls by default, raised to 24 after you approve a write); when the budget runs out the model gets exactly one more turn to produce a final answer
+- 🖐️ **Page actions**: Runi can set styles, modify the DOM, click, type, pick from selects, scroll, navigate, write storage, and open or close tabs. These known actions run automatically; only detected form submissions pause for approval. Tool calls are budgeted (12 read/analysis calls by default, raised to 24 when writing starts); when the budget runs out the model gets exactly one more turn to produce a final answer
 - 🔑 **Bring your own model**: supports both OpenAI-compatible Chat Completions and the Anthropic Messages protocol, with presets for DeepSeek / OpenAI / Qwen / Zhipu GLM / Moonshot / local Ollama and a fully custom endpoint option. Configure multiple providers and models, and switch between them straight from the composer
 - 🗂️ **Local-first**: conversation history lives in local IndexedDB, provider configs and UI preferences in `chrome.storage.local` — never synced to any cloud. There is no developer backend and no analytics or ad SDK
 - 📎 **Local file context**: attach up to 5 files per message — text (up to 30,000 characters), images (≤ 5 MB), and PDFs (≤ 20 MB, up to 60,000 characters extracted locally, no OCR). PDFs are parsed locally in a Worker with progress feedback and drag-and-drop support; extracted PDF text is used for one turn only, and history keeps just the file metadata
@@ -98,8 +98,8 @@ lib/                # Shared libraries
   agent/            # Agent loop and tool calls
     agent.ts        # Agent wiring (model / tools / lifecycle hooks / context compaction)
     tools.ts        # browser_* tool definitions (10 read-only + 8 write/interactive)
-    permissions.ts  # Deny-First permission tiers (always_allow / confirm / deny)
-    confirm-gate.ts # First write in a turn prompts for confirmation; reused for the rest of the turn
+    permissions.ts  # Deny-First tiers (always_allow / auto_allow / confirm_always / deny)
+    confirm-gate.ts # Detected form submissions prompt every time
     tool-policy.ts  # Tool-call budgets, repeated-failure circuit breaker, forced convergence
     system-prompt.ts        # System prompt (the write-tool list is derived from the permission tables)
     stream-shared.ts        # Protocol-agnostic streaming helpers

@@ -14,13 +14,13 @@ The source of truth is `wxt.config.ts`. Re-check the generated manifest before u
 **English**
 
 ```text
-Runi is one controllable AI sidebar agent that helps the user understand and work with the current web page and user-selected files, including making user-requested page changes after approval.
+Runi is one controllable AI sidebar agent that helps the user understand and work with the current web page and user-selected files, automatically performs known page actions, and confirms detected form submissions.
 ```
 
 **简体中文**
 
 ```text
-Runi 是一个可控的 AI 侧边栏 Agent，帮助用户理解和处理当前网页及其主动选择的文件，并在用户批准后执行其请求的页面修改。
+Runi 是一个可控的 AI 侧边栏 Agent，帮助用户理解和处理当前网页及其主动选择的文件，自动执行已知页面操作，并在检测到表单提交时请求确认。
 ```
 
 ## `activeTab`
@@ -56,13 +56,13 @@ Used to identify and validate the user-selected target tab, read its title and U
 **English**
 
 ```text
-Used to run packaged page-reading and structured page-write functions in the target tab. Before the first page write in a turn, Runi shows the planned action and asks for approval; that decision is reused only for that turn. Runi does not execute AI-generated JavaScript.
+Used to run packaged page-reading and structured page-write functions in the target tab. Known page actions run automatically; detected form submissions show the planned submission and ask for approval every time. Runi does not execute AI-generated JavaScript.
 ```
 
 **简体中文**
 
 ```text
-用于在目标标签页中运行随扩展打包的页面读取与结构化写入函数。每轮第一次页面写操作执行前，Runi 会展示计划内容并请求批准；该决定仅在该轮内复用。Runi 不执行 AI 生成的 JavaScript。
+用于在目标标签页中运行随扩展打包的页面读取与结构化写入函数。已知页面操作会自动执行；检测到的表单提交会展示计划提交内容并逐次请求批准。Runi 不执行 AI 生成的 JavaScript。
 ```
 
 ## `storage`

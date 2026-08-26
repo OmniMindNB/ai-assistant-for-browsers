@@ -903,8 +903,8 @@ describe('activity step list', () => {
     );
 
     expect(screen.queryByText('Clicking "button.buy"')).toBeNull();
-    expect(screen.getByText(/Please confirm before modifying the page/)).toBeVisible();
-    await user.click(screen.getByRole('button', { name: 'Approve this turn' }));
+    expect(screen.getByText(/Confirm form submission/)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Submit form' }));
     expect(chatStore.respondToConfirmation).toHaveBeenCalledWith(true);
   });
 

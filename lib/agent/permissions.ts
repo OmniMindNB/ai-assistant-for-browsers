@@ -2,7 +2,7 @@ import type { BeforeToolCallContext, BeforeToolCallResult } from '@earendil-work
 import { resolveConfirmGate, type ConfirmFn, type ConfirmGateState } from './confirm-gate';
 import type { SubmitIntent } from './form-submit';
 
-export type PermissionLevel = 'always_allow' | 'confirm' | 'confirm_always' | 'deny';
+export type PermissionLevel = 'always_allow' | 'auto_allow' | 'confirm_always' | 'deny';
 
 export interface PermissionDecision {
   level: PermissionLevel;
@@ -33,7 +33,8 @@ export const READ_ONLY_TOOL_NAMES = new Set([
   'wait',
 ]);
 
-export const CONFIRM_TOOL_NAMES = new Set([
+/** 用户明确要求的低风险自动执行名单；仍属于写工具，只是不经过确认卡片。 */
+export const AUTO_APPROVE_TOOL_NAMES = new Set([
   'browser_set_style',
   'browser_modify_dom',
   'browser_click',
@@ -41,11 +42,14 @@ export const CONFIRM_TOOL_NAMES = new Set([
   'browser_type',
   'browser_scroll',
   'browser_select',
+  'browser_open_tab',
   'browser_navigate',
   'browser_set_storage',
-  'browser_open_tab',
   'browser_close_tab',
 ]);
+
+/** 所有会改变页面或浏览器状态的已知工具；用于提示词、工具预算和执行遮罩。 */
+export const WRITE_TOOL_NAMES = new Set(AUTO_APPROVE_TOOL_NAMES);
 
 export const DENY_TOOL_NAMES = new Set(['browser_eval_raw']);
 
@@ -83,9 +87,7 @@ export function decideToolPermission(toolName: string, args: unknown): Permissio
   }
 
   if (READ_ONLY_TOOL_NAMES.has(toolName)) return { level: 'always_allow' };
-  if (CONFIRM_TOOL_NAMES.has(toolName)) {
-    return { level: 'confirm', reason: `工具 ${toolName} 会修改页面或浏览器状态，需要用户确认。` };
-  }
+  if (AUTO_APPROVE_TOOL_NAMES.has(toolName)) return { level: 'auto_allow' };
 
   return { level: 'deny', reason: `未知工具 ${toolName}，已按 Deny-First 策略阻止。` };
 }
@@ -100,8 +102,7 @@ export interface PermissionGateOptions {
   onConfirm?: ConfirmFn;
   /**
    * 这次工具调用真正落地的目标 tab（多标签页编排下是 session.currentTabId，而不总是面板
-   * 绑定的那个 tab）。confirm 缓存按这个值判断是否过期——目标 tab 变了就重新问一次
-   * （ref: 最终审查 Important #2）。
+   * 绑定的那个 tab）。用于把检测到的表单提交确认关联到实际操作页面。
    */
   targetTabId: number;
   signal?: AbortSignal;
@@ -153,6 +154,8 @@ export async function beforeToolCallPermissionGate(
       confirmArgs = { ...record, label: labels.find((entry) => entry.fieldId === record.fieldId)?.label };
     }
   }
+
+  if (decision.level === 'auto_allow' && !always) return undefined;
 
   return resolveConfirmGate(
     options.gateState,

@@ -703,7 +703,7 @@
           ],
           confirm: [
             "You stay in control",
-            "The first write each turn asks for approval",
+            "Detected form submissions always ask",
             "03-confirm.png",
           ],
           attachments: [
@@ -724,8 +724,8 @@
             "02-evidence.png",
           ],
           confirm: [
-            "修改前由你确认",
-            "每轮第一次写操作先展示内容，再等待批准",
+            "表单提交由你确认",
+            "检测到的表单提交每次都问",
             "03-confirm.png",
           ],
           attachments: [
@@ -770,12 +770,12 @@
             code: ".progress-track::after {\n  width: 72%;\n  background: linear-gradient(90deg, #22d3ee, #8b5cf6);\n}",
           },
           confirm: {
-            user: "Hide the announcement banner",
-            title: "🔒 Please confirm before modifying the page",
-            body: "Set .announcement to display: none.",
-            approve: "Approve this turn",
+            user: "Submit the checkout form",
+            title: "🔒 Confirm form submission",
+            body: "Submit 3 fields to shop.example/checkout.",
+            approve: "Submit form",
             deny: "Deny",
-            hint: "Once approved, further write actions this turn run automatically without asking again.",
+            hint: "Known actions run automatically. Every detected submission asks separately.",
           },
           attachments: {
             user: "Summarize the attached launch brief",
@@ -815,12 +815,12 @@
             code: ".progress-track::after {\n  width: 72%;\n  background: linear-gradient(90deg, #22d3ee, #8b5cf6);\n}",
           },
           confirm: {
-            user: "隐藏公告横幅",
-            title: "🔒 修改网页前请确认",
-            body: "把 .announcement 设置为 display: none。",
-            approve: "批准本轮操作",
+            user: "提交结账表单",
+            title: "🔒 请确认表单提交",
+            body: "向 shop.example/checkout 提交 3 个字段。",
+            approve: "确认提交",
             deny: "拒绝",
-            hint: "批准后，本轮内后续的写操作会自动执行，无需逐条确认。",
+            hint: "已知操作会自动执行。检测到的提交会逐次确认。",
           },
           attachments: {
             user: "总结附件中的发布简报",
