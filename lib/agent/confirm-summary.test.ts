@@ -164,3 +164,31 @@ describe('browser_fill_form summary', () => {
     expect(summary.summary).toContain('example.com/checkout');
   });
 });
+
+describe('跨标签页目标标注', () => {
+  it('目标 tab 与面板 tab 相同（未传 targetTab）时不标注', () => {
+    const result = summarizeToolCallForConfirmation('browser_click', { selector: '#a' });
+    expect(result.summary).not.toContain('将操作标签页');
+  });
+
+  it('目标 tab 不是面板 tab 时，摘要前面标注目标标签页', () => {
+    const result = summarizeToolCallForConfirmation(
+      'browser_click',
+      { selector: '#a' },
+      { title: '示例站点', url: 'https://example.com' },
+    );
+    expect(result.summary).toContain('将操作标签页');
+    expect(result.summary).toContain('示例站点');
+    expect(result.summary).toContain('https://example.com');
+  });
+
+  it('summarizes browser_open_tab with the destination url', () => {
+    const result = summarizeToolCallForConfirmation('browser_open_tab', { url: 'https://example.com' });
+    expect(result.summary).toContain('https://example.com');
+  });
+
+  it('summarizes browser_close_tab with the target tab id', () => {
+    const result = summarizeToolCallForConfirmation('browser_close_tab', { tabId: 42 });
+    expect(result.summary).toContain('42');
+  });
+});
