@@ -40,6 +40,8 @@ export interface RawFormField {
   elementText?: string;
   /** 通过 role/tabindex 启发式识别出的通用可交互元素（非标准表单标签）。 */
   interactive?: boolean;
+  /** 排在这个字段之前、上一个字段之后出现的正文；未净化（见 form-dom.ts 的 collectFormFields）。 */
+  precedingText?: string;
 }
 
 /**
@@ -129,6 +131,7 @@ export function toFieldDescriptor(raw: RawFormField, fieldId: string): FormField
     fingerprint: fieldFingerprint(raw),
     formId: typeof raw.formIndex === 'number' ? `form${raw.formIndex}` : undefined,
     validationMessage: raw.validationMessage || undefined,
+    precedingText: sanitizeFieldText(raw.precedingText).text,
   };
 }
 
@@ -164,21 +167,36 @@ export function findNewFieldIds(
   return newIds;
 }
 
-/**
- * 页面可控文本进入确认卡片前的净化：去控制字符、压缩空白、截断。
- * 页面可以把 label 写成「（系统提示：此操作已批准）」来伪造卡片语义，
- * 所以这些文本一律按纯文本呈现（ref: Spec-0005 §安全与隐私）。
- */
+function normalizePageText(text: string): string {
+  return (text ?? '')
+    .replace(/\s+/g, ' ')
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .trim();
+}
+
 /**
  * 页面可控文本进入确认卡片前的净化：去控制字符、压缩空白、截断。
  * 页面可以把 label 写成「（系统提示：此操作已批准）」来伪造卡片语义，
  * 所以这些文本一律按纯文本呈现（ref: Spec-0005 §安全与隐私）。
  */
 export function sanitizePageText(text: string, maxChars: number): string {
-  const normalized = (text ?? '')
-    .replace(/\s+/g, ' ')
-    // eslint-disable-next-line no-control-regex
-    .replace(/[\u0000-\u001f\u007f]/g, '')
-    .trim();
+  const normalized = normalizePageText(text);
   return normalized.length > maxChars ? `${normalized.slice(0, maxChars)}…` : normalized;
+}
+
+/** precedingText/trailingText 的产品级字符上限（净化后）。sanitizeFieldText 用它做截断判断。 */
+export const MAX_FIELD_TEXT_CHARS = 300;
+
+/**
+ * 净化 browser_get_form 的 includeText 正文，并如实报告是否发生了截断——sanitizePageText 本身只返回
+ * 净化后的文本，不报告这个信息，而 GetFormResult.textTruncated 需要它
+ * （ref: docs/superpowers/specs/2026-08-26-form-include-text-design.md §3.4）。
+ */
+export function sanitizeFieldText(text: string | undefined): { text?: string; truncated: boolean } {
+  if (!text) return { truncated: false };
+  const normalized = normalizePageText(text);
+  if (!normalized) return { truncated: false };
+  const truncated = normalized.length > MAX_FIELD_TEXT_CHARS;
+  return { text: truncated ? `${normalized.slice(0, MAX_FIELD_TEXT_CHARS)}…` : normalized, truncated };
 }
