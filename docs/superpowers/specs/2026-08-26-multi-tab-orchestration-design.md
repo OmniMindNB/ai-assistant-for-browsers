@@ -53,6 +53,8 @@ page-agent 的 `MultiPageAgent` 通过 `TabsController.currentTabId`（可变）
 
 `lib/agent/agent.ts` 里 `onOverlay` 回调目前无条件把 `SET_AGENT_OVERLAY` 发给闭包住的 `tabId`。改为发给 `session.currentTabId`；`currentTabId` 变化的那一刻（`browser_open_tab` 或 `browser_switch_tab` 生效时），先给旧目标 tab 发一次 `{active:false}`（如果它还存在），再给新目标发 `{active:true}`。面板自己绑定的 tab 在不是当前操作目标期间，遮罩应处于未挂载状态。
 
+**实现约束（实施阶段发现，2026-08-26）：** `browser_open_tab` 新开的标签页绝不能设为浏览器前台活动 tab（`chrome.tabs.create` 不能传 `active: true`）。原因：侧边栏按 tab 单独启用，浏览器活动 tab 切到面板未绑定的 tab 时会整个销毁面板文档（同一份持久化机制、同一个约束，参见 `lib/agent/tab-conversation.ts` 顶部注释）——如果新 tab 抢了前台焦点，会在 `browser_open_tab` 执行的瞬间销毁正在跑这次回合的面板文档本身，直接杀死整个 agent 回合。遮罩依然能正确显示在后台 tab 上（后台 tab 照常渲染，只是不是当前可见窗口），不需要靠抢焦点来实现"遮罩跟随"。
+
 ### 3.5 确认卡片必须标注跨 tab 目标
 
 这是唯一一处"不改就有体验/安全隐患"而非纯粹锦上添花的关联改动。`beforeToolCallPermissionGate`（`lib/agent/permissions.ts`）弹确认卡片时，如果本次写操作的目标 tab 不是面板自己绑定的那个，卡片摘要必须显式标出目标标签页的标题/URL，否则用户会误以为自己在批准操作当前正看着的页面。`confirm-summary.ts` 需要新增一个可选的 targetTab 展示字段。

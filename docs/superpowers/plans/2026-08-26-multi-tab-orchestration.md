@@ -482,15 +482,21 @@ export interface CloseTabResult {
 
 ```ts
 /**
- * 在面板绑定 tab 所在的同一窗口里开一个新 tab 并前台聚焦——遮罩会跟着切过去，
- * 聚焦是让用户视觉上也能跟上 agent 正在操作哪个页面（ref: 设计文档 §3.4）。
+ * 在面板绑定 tab 所在的同一窗口里开一个新 tab，但不抢前台焦点（active: false）。
+ *
+ * @important 不能设 active: true。侧边栏在「按 tab 单独启用」模式下，浏览器切换活动 tab 到
+ * 面板未绑定的 tab 时会整个销毁面板文档（ref: lib/agent/tab-conversation.ts 顶部注释）——
+ * 如果这里把新 tab 设为前台，会在 browser_open_tab 执行的瞬间销毁正在运行这次回合的
+ * 面板文档本身，直接杀死整个 agent 回合。遮罩依然会正确显示在后台 tab 上（后台 tab
+ * 照常渲染，只是不是当前可见的那个），用户手动切过去就能看到，不需要靠抢焦点来实现
+ * §3.4 的"遮罩跟随"目标。（Task 8 review 发现，2026-08-26。）
  */
 async function openNewTab(payload: OpenNewTabPayload, panelTabId: number): Promise<OpenNewTabResult> {
   const requestedUrl = payload?.url ?? '';
   if (!isNavigableUrl(requestedUrl)) throw new Error('仅允许打开 http/https 地址。');
 
   const panelTab = await resolveTargetTab(panelTabId);
-  const created = await browser.tabs.create({ windowId: panelTab.windowId, url: requestedUrl, active: true });
+  const created = await browser.tabs.create({ windowId: panelTab.windowId, url: requestedUrl, active: false });
   if (typeof created.id !== 'number') throw new Error('新标签页创建失败。');
 
   await waitForTabLoad(created.id);
@@ -530,7 +536,7 @@ Expected: 无 TypeScript 报错
 chrome.runtime.sendMessage({ id: 't1', type: 'OPEN_NEW_TAB', payload: { url: 'https://example.com' }, tabId: <当前面板绑定的 tabId> })
 ```
 
-Expected: 返回 `{ id, url, title }`，浏览器里真的开出一个新 tab 并前台聚焦。
+Expected: 返回 `{ id, url, title }`，浏览器里真的开出一个新 tab，但不会抢占前台焦点（当前活动 tab 仍是面板绑定的那个）。
 
 - [ ] **Step 5: 提交**
 
@@ -1917,10 +1923,16 @@ git commit -m "feat: BrowserAgentOptions 接入可选 TabSessionController，遮
 
 - [ ] **Step 2: 加载 session**
 
-在 `runAgent` 函数里，靠近函数开头（拿到 `tabId` 之后、还没构造 `onConfirm` 之前）加：
+在 `runAgent` 函数里，靠近函数开头（拿到 `tabId` 之后、还没构造 `onConfirm` 之前）加。读取失败时退化为一个全新的单 tab session，而不是让异常直接抛出 `runAgent`——`saveTabSession`/`clearTabSession` 都已经是"静默降级"的错误处理风格，这里跟着统一，不做特殊处理（Task 8 review 发现，2026-08-26：原稿这里没有 try/catch，是一处不一致）：
 
 ```ts
-  const tabSession = await loadTabSession(tabId);
+  const tabSession = await loadTabSession(tabId).catch(() => createTabSession(tabId));
+```
+
+顶部 import 区同时加上 `createTabSession`：
+
+```ts
+import { createTabSession } from '@/lib/agent/tab-session';
 ```
 
 顶部 import 区加：
@@ -2018,7 +2030,7 @@ Expected: 无 TypeScript 报错
 
 `pnpm dev`，加载扩展，走一遍完整多标签页流程：
 
-1. 在任意页面打开侧边栏，让 agent 执行"打开 example.com，然后总结这个页面"——确认弹出确认卡片（`browser_open_tab` 是 confirm 级），批准后新标签页打开且前台聚焦，遮罩出现在新标签页上（不是面板绑定的那个 tab）。
+1. 在任意页面打开侧边栏，让 agent 执行"打开 example.com，然后总结这个页面"——确认弹出确认卡片（`browser_open_tab` 是 confirm 级），批准后新标签页在后台打开（不抢前台焦点，面板绑定的 tab 仍是活动 tab，侧边栏本身不会因为焦点切换被销毁），手动切到新标签页能看到遮罩已经出现在上面。
 2. 继续让 agent 在新标签页上点击一个元素——确认卡片摘要里出现"将操作标签页：《...》(https://example.com)"这行标注。
 3. 让 agent "切回原来的标签页，然后关闭刚才打开的那个"——确认 `browser_close_tab` 成功后遮罩从被关闭的 tab 上消失，工具返回文本里出现"已自动切回原标签页"（如果关闭的正好是当前目标）。
 4. 发送第二条消息（新的一轮，同一个对话）——确认 agent 仍然知道之前打开过哪些标签页（如果还没关掉的话），即 `browser_list_tabs` 能看到跨轮存活的记录。
