@@ -259,6 +259,15 @@ describe('collectFormFields', () => {
     expect(output.raws.find((raw) => raw.name === 'inner')?.precedingText).toBeUndefined();
     expect(output.trailingText).toBeUndefined();
   });
+
+  it('does not misattribute light-DOM text to a field inside an open shadow root', () => {
+    render(`<div id="host"></div><p>可见提示</p><input name="outer" type="text" />`);
+    const host = document.getElementById('host')!;
+    host.attachShadow({ mode: 'open' }).innerHTML = `<input name="inner" type="text" />`;
+    const output = collectFormFields({ ...INPUT, includeText: true });
+    expect(output.raws.find((raw) => raw.name === 'inner')?.precedingText).toBeUndefined();
+    expect(output.raws.find((raw) => raw.name === 'outer')?.precedingText).toBe('可见提示');
+  });
 });
 
 // jsdom's selector engine (@asamuzakjp/dom-selector, as used by jsdom 30) fails to
