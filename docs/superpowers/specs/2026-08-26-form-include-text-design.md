@@ -52,11 +52,20 @@ Runi 现在 `browser_read_page`（Readability 正文）与 `browser_get_form`（
 
 `fieldElements` 的顺序等价于 `raws`/`fields` 的顺序（documented order，见 `walk()` 现有实现），因此可以用线性扫描按顺序找第一个「在文本节点之后」的字段，不需要排序。
 
-### 3.4 净化与截断：复用 sanitizePageText
+### 3.4 净化与截断：复用 sanitizePageText，但只能在 background.ts 侧调用
 
-每个字段的文本缓冲区最终 `join(' ')`，交给 `lib/agent/form-schema.ts` 现有的 `sanitizePageText(text, maxChars)`（压缩空白、去控制字符、截断加省略号）——这个函数就是为「页面可控文本进入模型上下文前必须净化」这个场景写的（`ref: Spec-0005 §安全与隐私`），语义完全吻合，不需要新写一遍。
+每个字段的文本缓冲区最终净化用 `lib/agent/form-schema.ts` 现有的 `sanitizePageText(text, maxChars)`（压缩空白、去控制字符、截断加省略号）——这个函数就是为「页面可控文本进入模型上下文前必须净化」这个场景写的（`ref: Spec-0005 §安全与隐私`），语义完全吻合，不需要新写一遍。
 
-预算：单字段 `precedingText` 上限 300 字符，`trailingText` 同样上限 300 字符。任一处发生截断，结果里 `textTruncated: true`。不设跨字段的全局总预算——字段数本身已被 `MAX_FORM_FIELDS`（120）和 `genericFieldQuota` 约束，300×120 是理论上限，实际页面远低于此；不为了防一个几乎不会发生的极端场景多加一层预算逻辑。
+**但调用位置有硬约束**：`collectFormFields` 会被 `executeScript` 序列化后注入页面执行（`form-dom.ts` 文件顶部注释：函数体内不得引用任何模块作用域的绑定，类型导入除外）。`sanitizePageText` 是从 `form-schema.ts` 导入的值而非类型，在注入函数内部调用会在页面里直接抛 `ReferenceError`——`toFieldDescriptor`/`pickFieldLabel` 之所以能用 `form-schema.ts` 的辅助函数，是因为它们本来就只在 background.ts 的 service worker context 里被调用，从没被注入过页面。
+
+因此拆成两层：
+
+1. **注入函数内（`collectFormFields`，页面里跑）**：只做空白压缩（`replace(/\s+/g, ' ').trim()`，纯字面量正则，不依赖任何导入），外加一个宽松的原始长度安全上限（每槽位 2000 字符，防极端页面产出过大字符串跨 `executeScript` 序列化边界）。这一步产出的 `RawFormField.precedingText` / `CollectFormOutput.trailingText` 是**未净化的原始文本**，尚未做控制字符剥离，也不是最终的 300 字符产品级上限。
+2. **background.ts 侧（不被注入，可以自由 import）**：`form-schema.ts` 新增一个纯函数 `sanitizeFieldText(text: string | undefined): { text?: string; truncated: boolean }`——净化文本（复用 `sanitizePageText` 内部的正规化逻辑，抽出一个私有 `normalizePageText` 辅助避免重复正则）并如实报告是否发生了截断，因为 `sanitizePageText` 本身只返回净化后的文本，不报告「有没有被剪」这件事，而 `GetFormResult.textTruncated` 需要这个信息。`toFieldDescriptor` 用它得到 `FormFieldDescriptor.precedingText`；`entrypoints/background.ts` 的 `getForm` 对 `collected.trailingText` 调用同一个函数得到 `GetFormResult.trailingText`。`textTruncated` = 任一字段的 `truncated` 或 `trailingText` 的 `truncated` 为真——这一步只是布尔 OR，留在 `getForm`/`snapshotFields` 里就行，不需要额外抽函数（真正有逻辑、值得测试的部分是 `sanitizeFieldText` 本身，已经在 `form-schema.ts`，走 `unit` test project）。
+
+预算：`MAX_FIELD_TEXT_CHARS = 300`（在 `form-schema.ts` 导出，`toFieldDescriptor` 与 `getForm` 共用）。不设跨字段的全局总预算——字段数本身已被 `MAX_FORM_FIELDS`（120）和 `genericFieldQuota` 约束，300×120 是理论上限，实际页面远低于此；不为了防一个几乎不会发生的极端场景多加一层预算逻辑。
+
+**已知边界情况**：如果一次采集因达到 `MAX_FORM_FIELDS` 而被截断（`walk()` 提前 `return`，见 `form-dom.ts:223-226`），正文采集是独立的一遍完整遍历，不知道字段侧在哪里截断的——被截断点之后的正文仍会被扫描，可能挂到 `trailingText` 上而不是「本该属于但被丢弃的那个字段」。这是本次验证阶段接受的已知限制，不额外处理（真实页面很少触达 120 字段上限）。
 
 ### 3.5 untrusted-content 声明补齐
 
@@ -96,43 +105,66 @@ export interface CollectFormInput {
 
 export interface RawFormField {
   // ...现有字段不变
-  precedingText?: string; // 新增，已净化截断
+  /** 未净化的原始正文（只做过空白压缩 + 2000 字符安全上限）。净化在 background.ts 侧做，见 §3.4。 */
+  precedingText?: string; // 新增
 }
 
 export interface CollectFormOutput {
   // ...现有字段不变
+  /** 未净化的原始正文，语义同上。 */
   trailingText?: string; // 新增
-  textTruncated?: boolean; // 新增
 }
 ```
 
-`form-schema.ts` 的 `toFieldDescriptor` 把 `raw.precedingText` 原样透传到 `FormFieldDescriptor.precedingText`（已经过 `sanitizePageText`，不需要二次处理）。
+```ts
+// lib/agent/form-schema.ts
+/** precedingText/trailingText 的产品级字符上限（净化后）。sanitizeFieldText 内部使用。 */
+export const MAX_FIELD_TEXT_CHARS = 300;
+
+/**
+ * 净化一段可能来自页面的正文，并如实报告是否发生了截断。
+ * sanitizePageText 本身只返回净化后的文本，不报告这个信息，而 GetFormResult.textTruncated 需要它。
+ */
+export function sanitizeFieldText(text: string | undefined): { text?: string; truncated: boolean } { /* ... */ }
+```
+
+`toFieldDescriptor` 用 `sanitizeFieldText(raw.precedingText)` 得到 `FormFieldDescriptor.precedingText`（这一步在 background.ts 的 service worker context 里跑，不是注入函数，可以自由调用 `form-schema.ts` 的任何导出）；`entrypoints/background.ts` 的 `getForm` 对 `collected.trailingText` 调用同一个函数得到 `GetFormResult.trailingText`。
+
+```ts
+// lib/messaging.ts —— 补充：GetFormResult.textTruncated 由 background.ts 的 snapshotFields 聚合计算，
+// 不是 CollectFormOutput 自带的字段（注入函数不知道 MAX_FIELD_TEXT_CHARS 这个产品级上限）。
+```
 
 ## 5. 影响面
 
 | 文件 | 改动 |
 |------|------|
 | `lib/messaging.ts` | `GetFormPayload.includeText`、`FormFieldDescriptor.precedingText`、`GetFormResult.trailingText`/`textTruncated` |
-| `lib/agent/form-dom.ts` | `walk()` 加平行 `fieldElements` 记录（纯加性）；新增 `includeText` 分支的 TreeWalker 文本采集与归属逻辑 |
-| `lib/agent/form-schema.ts` | `toFieldDescriptor` 透传 `precedingText` |
+| `lib/agent/form-dom.ts` | `walk()` 加平行 `fieldElements` 记录（纯加性）；新增 `includeText` 分支的 TreeWalker 文本采集与归属逻辑，产出未净化的 `precedingText`/`trailingText` |
+| `lib/agent/form-schema.ts` | 新增导出常量 `MAX_FIELD_TEXT_CHARS`、新增导出函数 `sanitizeFieldText`（内部抽出私有 `normalizePageText` 给 `sanitizePageText` 复用）；`toFieldDescriptor` 用 `sanitizeFieldText` 净化 `raw.precedingText` 进 `FormFieldDescriptor.precedingText` |
 | `lib/agent/tools.ts` | `browser_get_form` 的 `parameters` 加 `includeText` 描述；`includeText: true` 时输出前加 untrusted-content 声明 |
-| `entrypoints/background.ts` | `getForm`/`snapshotFields` 把 payload 的 `includeText` 透传到 `collectFormFields` 的 `CollectFormInput` |
-| `lib/agent/form-dom.dom.test.ts` | 新增用例（见下） |
-| `lib/agent/form-schema.test.ts` | 视现有 `sanitizePageText` 覆盖情况补充 |
+| `entrypoints/background.ts` | `getForm`/`snapshotFields` 把 payload 的 `includeText` 透传到 `collectFormFields`；`snapshotFields` 用 `sanitizeFieldText` 净化 `collected.trailingText`，并对每个字段与 `trailingText` 的 `truncated` 做布尔 OR 得到 `textTruncated` |
+| `lib/agent/form-dom.dom.test.ts` | 新增用例（见下），覆盖到未净化的 `raw.precedingText`/`trailingText` |
+| `lib/agent/form-schema.test.ts` | 新增 `sanitizeFieldText` 净化与截断上报的用例；`toFieldDescriptor` 透传 `precedingText` 的用例 |
 
 ## 6. 测试
 
 `lib/agent/form-dom.dom.test.ts`（jsdom，`vitest.config.ts` 的 `dom` project）新增：
 
-1. `includeText` 缺省/`false` 时，`raws` 不含 `precedingText`，行为与改动前一致（回归保护）
-2. 简单页面（一段说明文字 + 一个输入框 + 一段说明 + 一个提交按钮）：正文正确挂到紧随其后的字段上，末尾文字进 `trailingText`
+1. `includeText` 缺省/`false` 时，`raws` 不含 `precedingText`，`trailingText` 为 `undefined`，行为与改动前一致（回归保护）
+2. 简单页面（一段说明文字 + 一个输入框 + 一段说明 + 一个提交按钮）：正文正确挂到紧随其后的字段上，末尾文字进 `trailingText`（都是未净化的原始形态，只做了空白压缩）
 3. `script`/`style`/`option` 标签内的文本不出现在任何 `precedingText`
 4. 字段自身的可见文案（按钮文字）不重复出现在 `precedingText` 里
-5. 超过 300 字符的正文被截断，`textTruncated: true`
+5. 超过 2000 字符安全上限的正文在注入函数内被截断（防御性验证，不是产品级 300 字符截断）
 6. `includeHidden: false` 时不可见文本不被采集；`includeHidden: true` 时采集
 7. open shadow root 内部的正文不出现在任何 `precedingText`（记录为已知限制的验证，不是失败用例）
 
-消息协议的类型收敛由 `pnpm compile` 保证。
+`lib/agent/form-schema.test.ts`（node env，`unit` project）新增：
+
+8. `sanitizeFieldText`：净化控制字符/空白，超过 `MAX_FIELD_TEXT_CHARS`（300）时截断并报告 `truncated: true`，未超过时 `truncated: false`，`undefined`/空字符串输入返回 `{ truncated: false }`
+9. `toFieldDescriptor`：`raw.precedingText` 有值时，`descriptor.precedingText` 是净化后的结果；`raw.precedingText` 为 `undefined` 时，`descriptor.precedingText` 也是 `undefined`
+
+消息协议的类型收敛由 `pnpm compile` 保证。`textTruncated` 的聚合逻辑（对每个字段与 `trailingText` 的 `truncated` 做布尔 OR）留在 `entrypoints/background.ts`，按项目既有惯例（`entrypoints/` 下没有 vitest project 覆盖，参见 `lib/agent/fill-form-request.ts` 的抽取理由）不单独测试——真正有逻辑的部分（`sanitizeFieldText` 本身）已经在 `form-schema.ts` 里被覆盖。
 
 **自动测不了、需手动验证的清单：**
 
