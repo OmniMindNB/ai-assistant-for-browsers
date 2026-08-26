@@ -52,6 +52,12 @@ describe('browser_get_form', () => {
     sendMessage.mockResolvedValueOnce({ id: '1', ok: false, error: '目标标签页已关闭。' });
     await expect(getFormTool().execute('call-1', {})).rejects.toThrow('目标标签页已关闭。');
   });
+
+  it('passes includeText through to the GET_FORM payload', async () => {
+    sendMessage.mockResolvedValueOnce({ id: '1', ok: true, data: RESULT });
+    await getFormTool().execute('call-1', { includeText: true });
+    expect(sendMessage).toHaveBeenCalledWith('GET_FORM', { includeText: true }, 1);
+  });
 });
 
 function fillFormTool() {

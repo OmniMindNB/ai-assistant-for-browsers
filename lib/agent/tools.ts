@@ -312,6 +312,12 @@ function makeGetFormTool(session: TabSessionController): BrowserAgentTool {
     parameters: Type.Object({
       selector: Type.Optional(Type.String({ description: 'Limit collection to this container. Defaults to the whole document.' })),
       includeHidden: Type.Optional(Type.Boolean({ description: 'Include hidden and invisible fields. Defaults to false.' })),
+      includeText: Type.Optional(
+        Type.Boolean({
+          description:
+            "Interleave the page's readable text into the field list: each field gets a precedingText with the text that appeared right before it (after the previous field), and the result gets a trailingText for anything after the last field. Use this to understand what a field is for from its surrounding context (a hint or disclaimer next to it) without a separate browser_read_page call. Defaults to false.",
+        }),
+      ),
     }),
     execute: async (_toolCallId, params) => {
       const payload = params as GetFormPayload;
