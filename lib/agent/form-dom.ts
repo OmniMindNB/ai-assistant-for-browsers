@@ -783,6 +783,140 @@ export function scrollContainerInPage(input: ScrollContainerInput): ScrollContai
   };
 }
 
+export interface ScrollPageInPageInput {
+  selector?: string;
+  x?: number;
+  y?: number;
+  behavior?: 'auto' | 'smooth';
+}
+
+export interface ScrollPageInPageOutput {
+  selector?: string;
+  x: number;
+  y: number;
+  /** 垂直方向的实际位移，正数向下。滚不动时为 0。 */
+  scrolledBy: number;
+  pixelsAbove: number;
+  pixelsBelow: number;
+  viewportHeight: number;
+  /** 实际发生滚动的是内层容器而非整个窗口时才有值。 */
+  container?: { tag: string; label?: string };
+}
+
+// ⚠️ 序列化注入，禁止引用模块作用域绑定。isScrollableContainer 与 collectFormFields 内部
+// 的同名判定各自独立内联——两处逻辑必须保持一致，改一处要同步改另一处。
+export function scrollPageInPage(input: ScrollPageInPageInput): ScrollPageInPageOutput {
+  const behavior = input?.behavior ?? 'auto';
+
+  const isScrollableContainer = (element: Element): boolean => {
+    if (element === document.documentElement || element === document.body) return false;
+    if (element.scrollHeight <= element.clientHeight) return false;
+    const style = element.ownerDocument.defaultView?.getComputedStyle(element);
+    const overflowY = style?.overflowY;
+    return overflowY === 'auto' || overflowY === 'scroll';
+  };
+
+  const findScrollableAncestor = (start: Element | null): Element | null => {
+    let node: Element | null = start;
+    while (node) {
+      if (isScrollableContainer(node)) return node;
+      if (node.parentElement) {
+        node = node.parentElement;
+        continue;
+      }
+      const root = node.getRootNode();
+      node = root instanceof ShadowRoot ? root.host : null;
+    }
+    return null;
+  };
+
+  // 与 collectFormFields/scrollContainerInPage 的同名 label 逻辑不同：这里只认 aria-label，
+  // 不回退到 id——id 多半是开发者取的技术性标识（如 "panel"），当噪声呈现给模型不如干脆没有。
+  const describeContainer = (element: Element): { tag: string; label?: string } => {
+    const rawLabel = element.getAttribute('aria-label') || '';
+    return {
+      tag: element.tagName.toLowerCase(),
+      label: rawLabel ? rawLabel.replace(/\s+/g, ' ').trim().slice(0, 80) || undefined : undefined,
+    };
+  };
+
+  const windowMetrics = () => {
+    const viewportHeight = window.innerHeight || 0;
+    const maxScroll = Math.max(0, document.documentElement.scrollHeight - viewportHeight);
+    return { viewportHeight, maxScroll, clamp: (value: number) => Math.min(Math.max(value, 0), maxScroll) };
+  };
+
+  if (input?.selector) {
+    const target = document.querySelector(input.selector);
+    if (!target) {
+      const { viewportHeight, maxScroll } = windowMetrics();
+      return {
+        selector: input.selector,
+        x: window.scrollX,
+        y: Math.round(window.scrollY),
+        scrolledBy: 0,
+        pixelsAbove: Math.round(window.scrollY),
+        pixelsBelow: Math.round(Math.max(0, maxScroll - window.scrollY)),
+        viewportHeight,
+      };
+    }
+
+    const ancestor = findScrollableAncestor(target.parentElement);
+    if (!ancestor) {
+      const { viewportHeight, maxScroll, clamp } = windowMetrics();
+      const startY = window.scrollY;
+      // ⚠️ rect 必须在 scrollIntoView 之前读：behavior:'auto' 在大多数浏览器里是同步完成的，
+      // 滚完再读 rect 会读到"已经居中"之后的新位置，把终点算错（与 entrypoints/background.ts
+      // 里被搬迁前的 scrollPage 顺序一致，byte-for-byte 不能改）。
+      const rect = target.getBoundingClientRect();
+      if (typeof target.scrollIntoView === 'function') target.scrollIntoView({ behavior, block: 'center' });
+      const finalY = clamp(startY + rect.top + rect.height / 2 - viewportHeight / 2);
+      return {
+        selector: input.selector,
+        x: window.scrollX,
+        y: Math.round(finalY),
+        scrolledBy: Math.round(finalY - startY),
+        pixelsAbove: Math.round(finalY),
+        pixelsBelow: Math.round(Math.max(0, maxScroll - finalY)),
+        viewportHeight,
+      };
+    }
+
+    const containerClientHeight = ancestor.clientHeight;
+    const containerMaxScroll = Math.max(0, ancestor.scrollHeight - containerClientHeight);
+    const startTop = ancestor.scrollTop;
+    // 强制 auto：滚完要立即同步读回 ancestor.scrollTop，behavior:'smooth' 会让这一步读到
+    // 动画中途的值。窗口分支不受影响，仍然按调用方要求的 behavior 走。
+    if (typeof target.scrollIntoView === 'function') target.scrollIntoView({ behavior: 'auto', block: 'center' });
+    const finalTop = Math.min(Math.max(ancestor.scrollTop, 0), containerMaxScroll);
+    return {
+      selector: input.selector,
+      x: window.scrollX,
+      y: Math.round(finalTop),
+      scrolledBy: Math.round(finalTop - startTop),
+      pixelsAbove: Math.round(finalTop),
+      pixelsBelow: Math.round(Math.max(0, containerMaxScroll - finalTop)),
+      viewportHeight: containerClientHeight,
+      container: describeContainer(ancestor),
+    };
+  }
+
+  const { viewportHeight, maxScroll, clamp } = windowMetrics();
+  const startY = window.scrollY;
+  const requestedY = input?.y ?? startY;
+  window.scrollTo({ left: input?.x ?? window.scrollX, top: requestedY, behavior });
+  const finalY = clamp(requestedY);
+
+  return {
+    x: window.scrollX,
+    y: Math.round(finalY),
+    scrolledBy: Math.round(finalY - startY),
+    pixelsAbove: Math.round(finalY),
+    pixelsBelow: Math.round(Math.max(0, maxScroll - finalY)),
+    viewportHeight,
+  };
+}
+
 export interface LegacyWriteStatus {
   status: 'ok' | 'not_found' | 'not_clickable' | 'not_writable' | 'invalid_value' | 'blocked_sensitive';
   detail?: string;

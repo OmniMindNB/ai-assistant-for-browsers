@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { collectFormFields } from './form-dom';
 import { applyFormFill, type ApplyFillItem } from './form-dom';
-import { scrollContainerInPage } from './form-dom';
+import { scrollContainerInPage, scrollPageInPage } from './form-dom';
 import { MAX_FIELD_TEXT_CHARS, sanitizeFieldText, toFieldDescriptor } from './form-schema';
 
 const INPUT = { maxFields: 120, maxOptions: 50 };
@@ -37,6 +37,15 @@ Element.prototype.getBoundingClientRect = () => NON_ZERO_RECT;
 // stubbing it to always report "nothing on top" is enough (see the identical stub and
 // rationale in legacy-write-tools.dom.test.ts).
 (document as unknown as { elementFromPoint: () => Element | null }).elementFromPoint = () => null;
+
+// jsdom does not implement window.scrollTo (it logs "Not implemented: Window's scrollTo()
+// method" and is otherwise a no-op). scrollPageInPage's window-only branches never read
+// window.scrollX/scrollY back after calling it — they compute the reported position
+// analytically, precisely so a real async smooth-scroll animation can't be read mid-flight
+// — so the call's actual (non-)effect is irrelevant to what's under test here. Stub it to
+// silence the console noise, same rationale as the elementFromPoint/getBoundingClientRect
+// stubs above.
+window.scrollTo = () => {};
 
 describe('collectFormFields', () => {
   beforeEach(() => {
@@ -954,5 +963,93 @@ describe('scrollContainerInPage', () => {
     Object.defineProperty(el, 'clientHeight', { value: 400, configurable: true });
     const output = scrollContainerInPage({ url: location.href, path: PATH, expect: { tag: 'div' }, y: 100 });
     expect(output.label).toBe('聊天记录');
+  });
+});
+
+describe('scrollPageInPage', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    window.scrollTo(0, 0);
+  });
+
+  it('scrolls the window to explicit x/y coordinates (unchanged from before)', () => {
+    Object.defineProperty(document.documentElement, 'scrollHeight', { value: 3000, configurable: true });
+    Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
+    const output = scrollPageInPage({ y: 500 });
+    expect(output.y).toBe(500);
+    expect(output.scrolledBy).toBe(500);
+    expect(output.pixelsAbove).toBe(500);
+    expect(output.pixelsBelow).toBe(1700);
+    expect(output.container).toBeUndefined();
+  });
+
+  it('falls back to window-only reporting when the selector target has no scrollable ancestor', () => {
+    render(`<button id="target">目标</button>`);
+    Object.defineProperty(document.documentElement, 'scrollHeight', { value: 3000, configurable: true });
+    Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
+    const target = document.getElementById('target')!;
+    // 窗口分支按 rect 解析终点，不读滚动后的 window.scrollY（异步 smooth 滚动读不到最终值），
+    // 所以这里要给一个非零 rect，而不是靠 scrollIntoView 的 stub 去移动 window.scrollY。
+    target.getBoundingClientRect = () => ({ ...NON_ZERO_RECT, top: 1000, height: 20, bottom: 1020 } as DOMRect);
+    (target as unknown as { scrollIntoView: () => void }).scrollIntoView = () => {};
+    const output = scrollPageInPage({ selector: '#target' });
+    expect(output.container).toBeUndefined();
+    // finalY = clamp(startY(0) + rect.top(1000) + rect.height/2(10) - viewportHeight/2(400)) = 610
+    expect(output.scrolledBy).toBe(610);
+    expect(output.pixelsAbove).toBe(610);
+    expect(output.pixelsBelow).toBe(1590); // maxScroll = 3000-800 = 2200; 2200-610 = 1590
+  });
+
+  it('reports the inner scrollable container that actually moved instead of the unchanged window', () => {
+    render(`<div id="panel" style="overflow-y:auto"><button id="target">目标</button></div>`);
+    const panel = document.getElementById('panel')!;
+    Object.defineProperty(panel, 'scrollHeight', { value: 900, configurable: true });
+    Object.defineProperty(panel, 'clientHeight', { value: 300, configurable: true });
+    const target = document.getElementById('target')!;
+    (target as unknown as { scrollIntoView: () => void }).scrollIntoView = () => {
+      panel.scrollTop = 250; // 模拟真实浏览器把内层容器滚到位，窗口本身没动
+    };
+
+    const output = scrollPageInPage({ selector: '#target' });
+
+    expect(output.container).toEqual({ tag: 'div', label: undefined });
+    expect(output.scrolledBy).toBe(250);
+    expect(output.pixelsAbove).toBe(250);
+    expect(output.pixelsBelow).toBe(350); // maxScroll = 900-300 = 600; 600-250 = 350
+    expect(output.viewportHeight).toBe(300);
+  });
+
+  it('walks past a non-scrollable wrapper to find the real scrollable ancestor', () => {
+    render(`<div id="panel" style="overflow-y:auto"><div id="wrapper"><button id="target">目标</button></div></div>`);
+    const panel = document.getElementById('panel')!;
+    Object.defineProperty(panel, 'scrollHeight', { value: 900, configurable: true });
+    Object.defineProperty(panel, 'clientHeight', { value: 300, configurable: true });
+    const target = document.getElementById('target')!;
+    (target as unknown as { scrollIntoView: () => void }).scrollIntoView = () => {
+      panel.scrollTop = 100;
+    };
+    const output = scrollPageInPage({ selector: '#target' });
+    expect(output.container?.tag).toBe('div');
+    expect(output.scrolledBy).toBe(100);
+  });
+
+  it('reports zero movement with the selector echoed back when the selector matches nothing', () => {
+    const output = scrollPageInPage({ selector: '#missing' });
+    expect(output.scrolledBy).toBe(0);
+    expect(output.container).toBeUndefined();
+    expect(output.selector).toBe('#missing');
+  });
+
+  it('reports a best-effort label for the moved container from aria-label', () => {
+    render(`<div id="panel" aria-label="聊天记录" style="overflow-y:auto"><button id="target">目标</button></div>`);
+    const panel = document.getElementById('panel')!;
+    Object.defineProperty(panel, 'scrollHeight', { value: 900, configurable: true });
+    Object.defineProperty(panel, 'clientHeight', { value: 300, configurable: true });
+    const target = document.getElementById('target')!;
+    (target as unknown as { scrollIntoView: () => void }).scrollIntoView = () => {
+      panel.scrollTop = 50;
+    };
+    const output = scrollPageInPage({ selector: '#target' });
+    expect(output.container?.label).toBe('聊天记录');
   });
 });
