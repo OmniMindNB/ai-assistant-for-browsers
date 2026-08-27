@@ -350,7 +350,8 @@ export interface SetAgentOverlayResult {
 
 export type FormFieldKind =
   | 'text' | 'textarea' | 'select' | 'checkbox' | 'radio'
-  | 'contenteditable' | 'file' | 'submit' | 'button' | 'link' | 'unsupported';
+  | 'contenteditable' | 'file' | 'submit' | 'button' | 'link' | 'unsupported'
+  | 'scrollable';
 
 export interface FormFieldDescriptor {
   fieldId: string;
@@ -387,6 +388,19 @@ export interface GetFormPayload {
   includeHidden?: boolean;
   /** 把正文按 DOM 序穿插进 fields（每个字段的 precedingText）与顶层 trailingText。默认 false。 */
   includeText?: boolean;
+  /** 发现页面上的可滚动容器，随 GetFormResult.scrollableContainers 一起发放 fieldId。默认 false。 */
+  includeScrollable?: boolean;
+}
+
+export interface ScrollableContainerDescriptor {
+  /** "s1"/"s2"/... 独立命名空间，不与表单字段的 "f1"/"f2" 冲突。 */
+  fieldId: string;
+  tag: string;
+  /** 尽力而为的标签：aria-label/id 兜底，页面可控，已压空白截断。 */
+  label?: string;
+  scrollTop: number;
+  scrollHeight: number;
+  clientHeight: number;
 }
 
 export interface GetFormResult {
@@ -400,6 +414,8 @@ export interface GetFormResult {
   trailingText?: string;
   /** precedingText/trailingText 中是否发生了截断。includeText 为 false 时恒为 false。 */
   textTruncated: boolean;
+  /** 页面上发现的可滚动容器；仅 includeScrollable 时有值（可能是空数组）。 */
+  scrollableContainers?: ScrollableContainerDescriptor[];
 }
 
 export interface FillFormPayload {

@@ -7,6 +7,7 @@ import {
   type FillFormPayload,
   type FillFormResult,
   type FormFieldDescriptor,
+  type ScrollableContainerDescriptor,
   type GetComputedStylePayload,
   type GetComputedStyleResult,
   type GetFormPayload,
@@ -414,6 +415,8 @@ interface FieldSnapshot {
   trailingText: string | undefined;
   /** 任一字段的 precedingText 或 trailingText 是否被截断到 MAX_FIELD_TEXT_CHARS。 */
   textTruncated: boolean;
+  /** 页面上发现的可滚动容器；未开 includeScrollable 时为 undefined。 */
+  scrollableContainers: ScrollableContainerDescriptor[] | undefined;
 }
 
 /**
@@ -431,6 +434,7 @@ async function snapshotFields(tabId: number, payload: GetFormPayload = {}): Prom
       selector: payload?.selector,
       includeHidden: payload?.includeHidden,
       includeText: payload?.includeText,
+      includeScrollable: payload?.includeScrollable,
       maxFields: MAX_FORM_FIELDS,
       maxOptions: MAX_SELECT_OPTIONS,
     },
@@ -456,6 +460,21 @@ async function snapshotFields(tabId: number, payload: GetFormPayload = {}): Prom
     if (sanitizeFieldText(raw.precedingText, 'tail').truncated) textTruncated = true;
   });
 
+  const scrollableContainers: ScrollableContainerDescriptor[] | undefined = collected.scrollables?.map(
+    (raw, index) => {
+      const fieldId = `s${index + 1}`;
+      handles[fieldId] = { path: raw.path, expect: { tag: raw.tag }, sensitive: false, kind: 'scrollable' };
+      return {
+        fieldId,
+        tag: raw.tag,
+        label: raw.label,
+        scrollTop: raw.scrollTop,
+        scrollHeight: raw.scrollHeight,
+        clientHeight: raw.clientHeight,
+      };
+    },
+  );
+
   const trailingSanitized = sanitizeFieldText(collected.trailingText);
   if (trailingSanitized.truncated) textTruncated = true;
 
@@ -479,11 +498,13 @@ async function snapshotFields(tabId: number, payload: GetFormPayload = {}): Prom
     newFields: fields.filter((field) => field.isNew),
     trailingText: trailingSanitized.text,
     textTruncated,
+    scrollableContainers,
   };
 }
 
 async function getForm(payload: GetFormPayload, tabId: number): Promise<GetFormResult> {
-  const { collected, fields, orphanFieldIds, trailingText, textTruncated } = await snapshotFields(tabId, payload);
+  const { collected, fields, orphanFieldIds, trailingText, textTruncated, scrollableContainers } =
+    await snapshotFields(tabId, payload);
 
   return {
     forms: collected.forms.map((form) => ({
@@ -501,6 +522,7 @@ async function getForm(payload: GetFormPayload, tabId: number): Promise<GetFormR
     truncated: collected.truncated,
     trailingText,
     textTruncated,
+    scrollableContainers,
   };
 }
 
