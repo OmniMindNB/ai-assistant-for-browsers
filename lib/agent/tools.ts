@@ -660,17 +660,29 @@ function makeScrollTool(session: TabSessionController): BrowserAgentTool {
   return {
     name: 'browser_scroll',
     label: 'Scroll',
-    description: 'Scroll the page to specific coordinates, or scroll a specific element into view.',
+    description:
+      'Scroll the page to specific coordinates, scroll a specific element into view, or (with fieldId) scroll a specific container discovered by browser_get_form(includeScrollable: true) directly — use fieldId when you need to page through a panel, chat log, or virtual list that has no single target element to scroll into view.',
     parameters: Type.Object({
-      selector: Type.Optional(Type.String({ description: 'CSS selector to scroll into view. If omitted, scrolls the window to x/y.' })),
+      fieldId: Type.Optional(Type.String({ description: 'A scrollable container fieldId from browser_get_form(includeScrollable: true). Takes priority over selector.' })),
+      selector: Type.Optional(Type.String({ description: 'CSS selector to scroll into view. If omitted (and fieldId is not given), scrolls the window to x/y.' })),
       x: Type.Optional(Type.Number()),
-      y: Type.Optional(Type.Number()),
+      y: Type.Optional(Type.Number({ description: 'Absolute vertical scroll target: window scrollY in the default mode, or that container\'s scrollTop when fieldId is given.' })),
       behavior: Type.Optional(Type.Union([Type.Literal('auto'), Type.Literal('smooth')])),
     }),
     execute: async (_toolCallId, params) => {
       const payload = params as ScrollPagePayload;
       const response = (await sendMessage<ScrollPagePayload, ScrollPageResult>('SCROLL_PAGE', payload, session.currentTabId)) as MessageResponse<ScrollPageResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '滚动失败');
+      if (response.data.fieldsTableStale) {
+        throw new Error('字段表已失效（页面已变化或已导航），请重新调用 browser_get_form 获取新的 fieldId 后再滚动。');
+      }
+      if (response.data.status && response.data.status !== 'ok') {
+        throw new Error(
+          response.data.status === 'mismatch'
+            ? '该容器与读取时不一致，页面可能已变化，请重新调用 browser_get_form。'
+            : '未知的 fieldId，请重新调用 browser_get_form。',
+        );
+      }
       return textResult(describeScrollResult(response.data), response.data as unknown as Record<string, unknown>);
     },
   };

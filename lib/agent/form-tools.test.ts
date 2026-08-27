@@ -137,6 +137,46 @@ describe('browser_fill_form', () => {
   });
 });
 
+function scrollTool() {
+  const tool = createBrowserTools(createTabSession(1)).find((candidate) => candidate.name === 'browser_scroll');
+  if (!tool) throw new Error('browser_scroll 未注册');
+  return tool;
+}
+
+describe('browser_scroll', () => {
+  it('is registered as a tool', () => {
+    expect(scrollTool().name).toBe('browser_scroll');
+  });
+
+  it('passes fieldId through to the SCROLL_PAGE payload', async () => {
+    sendMessage.mockResolvedValueOnce({
+      id: '1',
+      ok: true,
+      data: { x: 0, y: 300, scrolledBy: 300, pixelsAbove: 300, pixelsBelow: 300, viewportHeight: 400, status: 'ok' },
+    });
+    await scrollTool().execute('call-1', { fieldId: 's1', y: 300 });
+    expect(sendMessage).toHaveBeenCalledWith('SCROLL_PAGE', { fieldId: 's1', y: 300 }, 1);
+  });
+
+  it('tells the model to re-read the form when the handle table is stale', async () => {
+    sendMessage.mockResolvedValueOnce({
+      id: '1',
+      ok: true,
+      data: { x: 0, y: 0, scrolledBy: 0, pixelsAbove: 0, pixelsBelow: 0, viewportHeight: 0, status: 'not_found', fieldsTableStale: true },
+    });
+    await expect(scrollTool().execute('call-1', { fieldId: 's1' })).rejects.toThrow('browser_get_form');
+  });
+
+  it('throws when the fieldId does not resolve (not_found, table present)', async () => {
+    sendMessage.mockResolvedValueOnce({
+      id: '1',
+      ok: true,
+      data: { x: 0, y: 0, scrolledBy: 0, pixelsAbove: 0, pixelsBelow: 0, viewportHeight: 0, status: 'not_found' },
+    });
+    await expect(scrollTool().execute('call-1', { fieldId: 's1' })).rejects.toThrow();
+  });
+});
+
 describe('多标签页：工具目标随 session.currentTabId 变化', () => {
   it('browser_read_page 使用调用时刻的 session.currentTabId，而不是创建工具集时的值', async () => {
     const session = createTabSession(1);
