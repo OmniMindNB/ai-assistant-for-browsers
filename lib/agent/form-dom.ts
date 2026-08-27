@@ -688,6 +688,96 @@ export function probeClickTarget(input: ProbeClickInput): ProbeClickOutput {
   };
 }
 
+export interface ScrollContainerInput {
+  /** 发放句柄时的页面 URL；与当前不符即认为句柄表过期。 */
+  url: string;
+  path: FormFieldPathStep[];
+  expect: { tag: string };
+  x?: number;
+  y?: number;
+  behavior?: 'auto' | 'smooth';
+}
+
+export interface ScrollContainerOutput {
+  status: 'ok' | 'not_found' | 'mismatch';
+  x: number;
+  y: number;
+  scrolledBy: number;
+  pixelsAbove: number;
+  pixelsBelow: number;
+  viewportHeight: number;
+  tag?: string;
+  label?: string;
+  fieldsTableStale?: boolean;
+}
+
+// ⚠️ 序列化注入，禁止引用模块作用域绑定（包括本文件的其它函数）——resolve() 与
+// applyFormFill/probeClickTarget 里的同名函数各自独立内联，是同一个既有约定。
+export function scrollContainerInPage(input: ScrollContainerInput): ScrollContainerOutput {
+  const empty = { x: 0, y: 0, scrolledBy: 0, pixelsAbove: 0, pixelsBelow: 0, viewportHeight: 0 };
+
+  if (input.url && input.url !== location.href) {
+    return { ...empty, status: 'not_found', fieldsTableStale: true };
+  }
+
+  const resolve = (path: FormFieldPathStep[]): Element | null => {
+    let scope: ParentNode | null = document;
+    let element: Element | null = null;
+    for (const step of path) {
+      if (step.kind === 'shadow') {
+        const shadowRoot: ShadowRoot | null = (element as HTMLElement | null)?.shadowRoot ?? null;
+        if (!shadowRoot) return null;
+        scope = shadowRoot;
+        continue;
+      }
+      if (!scope) return null;
+      const matches: Element[] = Array.from(scope.querySelectorAll(`:scope > ${step.selector}`));
+      element = matches[step.index] ?? null;
+      if (!element) return null;
+      scope = element;
+    }
+    return element;
+  };
+
+  const element = resolve(input.path);
+  if (!element) return { ...empty, status: 'not_found' };
+  if (element.tagName.toLowerCase() !== input.expect.tag.toLowerCase()) {
+    return { ...empty, status: 'mismatch' };
+  }
+
+  const container = element as HTMLElement;
+  const clientHeight = container.clientHeight;
+  const maxScroll = Math.max(0, container.scrollHeight - clientHeight);
+  const clamp = (value: number): number => Math.min(Math.max(value, 0), maxScroll);
+  const startTop = container.scrollTop;
+  const requestedTop = typeof input.y === 'number' ? input.y : startTop;
+  const requestedLeft = typeof input.x === 'number' ? input.x : container.scrollLeft;
+
+  const scrollableContainer = container as unknown as { scrollTo?: (opts: ScrollToOptions) => void };
+  if (typeof scrollableContainer.scrollTo === 'function') {
+    scrollableContainer.scrollTo({ top: requestedTop, left: requestedLeft, behavior: input.behavior ?? 'auto' });
+  } else {
+    container.scrollTop = requestedTop;
+    container.scrollLeft = requestedLeft;
+  }
+  const finalTop = clamp(requestedTop);
+
+  const rawLabel = container.getAttribute('aria-label') || container.id || '';
+  const label = rawLabel ? rawLabel.replace(/\s+/g, ' ').trim().slice(0, 80) || undefined : undefined;
+
+  return {
+    status: 'ok',
+    x: container.scrollLeft,
+    y: Math.round(finalTop),
+    scrolledBy: Math.round(finalTop - startTop),
+    pixelsAbove: Math.round(finalTop),
+    pixelsBelow: Math.round(Math.max(0, maxScroll - finalTop)),
+    viewportHeight: clientHeight,
+    tag: container.tagName.toLowerCase(),
+    label,
+  };
+}
+
 export interface LegacyWriteStatus {
   status: 'ok' | 'not_found' | 'not_clickable' | 'not_writable' | 'invalid_value' | 'blocked_sensitive';
   detail?: string;

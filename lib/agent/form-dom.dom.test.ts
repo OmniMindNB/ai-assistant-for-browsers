@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { collectFormFields } from './form-dom';
 import { applyFormFill, type ApplyFillItem } from './form-dom';
+import { scrollContainerInPage } from './form-dom';
 import { MAX_FIELD_TEXT_CHARS, sanitizeFieldText, toFieldDescriptor } from './form-schema';
 
 const INPUT = { maxFields: 120, maxOptions: 50 };
@@ -859,5 +860,79 @@ describe('applyFormFill', () => {
     expect(output.submitted?.status).toBe('ok');
     expect(order).toEqual(['scrollIntoView:center', 'pointerdown']);
     expect((document.body.lastElementChild as HTMLElement).style.top).toBe('120px');
+  });
+});
+
+describe('scrollContainerInPage', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  function panel(scrollHeight: number, clientHeight: number, scrollTop = 0): HTMLElement {
+    render(`<div id="panel"></div>`);
+    const el = document.getElementById('panel')!;
+    Object.defineProperty(el, 'scrollHeight', { value: scrollHeight, configurable: true });
+    Object.defineProperty(el, 'clientHeight', { value: clientHeight, configurable: true });
+    el.scrollTop = scrollTop;
+    return el;
+  }
+
+  const PATH = [
+    { kind: 'selector' as const, selector: 'body', index: 0 },
+    { kind: 'selector' as const, selector: 'div', index: 0 },
+  ];
+
+  it('scrolls the container to an absolute y and reports container-relative metrics', () => {
+    panel(1000, 400, 0);
+    const output = scrollContainerInPage({ url: location.href, path: PATH, expect: { tag: 'div' }, y: 300 });
+    expect(output.status).toBe('ok');
+    expect(output.y).toBe(300);
+    expect(output.scrolledBy).toBe(300);
+    expect(output.pixelsAbove).toBe(300);
+    expect(output.pixelsBelow).toBe(300); // maxScroll = 1000-400 = 600; 600-300 = 300
+    expect(output.viewportHeight).toBe(400);
+    expect(output.tag).toBe('div');
+  });
+
+  it('clamps the requested y to the container scroll range', () => {
+    panel(1000, 400, 0);
+    const output = scrollContainerInPage({ url: location.href, path: PATH, expect: { tag: 'div' }, y: 9999 });
+    expect(output.y).toBe(600);
+    expect(output.pixelsBelow).toBe(0);
+  });
+
+  it('returns not_found when the path resolves to nothing', () => {
+    render(`<div></div>`);
+    const output = scrollContainerInPage({
+      url: location.href,
+      path: [
+        { kind: 'selector', selector: 'body', index: 0 },
+        { kind: 'selector', selector: 'span', index: 0 },
+      ],
+      expect: { tag: 'span' },
+    });
+    expect(output.status).toBe('not_found');
+  });
+
+  it('returns mismatch when the resolved element no longer matches the expected tag', () => {
+    panel(1000, 400);
+    const output = scrollContainerInPage({ url: location.href, path: PATH, expect: { tag: 'section' } });
+    expect(output.status).toBe('mismatch');
+  });
+
+  it('reports fieldsTableStale when the page has navigated since the handle was issued', () => {
+    panel(1000, 400);
+    const output = scrollContainerInPage({ url: 'https://elsewhere.test/', path: PATH, expect: { tag: 'div' } });
+    expect(output.fieldsTableStale).toBe(true);
+    expect(output.status).toBe('not_found');
+  });
+
+  it('reports a best-effort label from aria-label', () => {
+    render(`<div id="panel" aria-label="聊天记录"></div>`);
+    const el = document.getElementById('panel')!;
+    Object.defineProperty(el, 'scrollHeight', { value: 1000, configurable: true });
+    Object.defineProperty(el, 'clientHeight', { value: 400, configurable: true });
+    const output = scrollContainerInPage({ url: location.href, path: PATH, expect: { tag: 'div' }, y: 100 });
+    expect(output.label).toBe('聊天记录');
   });
 });
