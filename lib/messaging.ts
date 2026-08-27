@@ -275,6 +275,8 @@ export interface SelectOptionResult {
 }
 
 export interface ScrollPagePayload {
+  /** browser_get_form 的 scrollableContainers 里的 fieldId；优先于 selector。 */
+  fieldId?: string;
   selector?: string;
   x?: number;
   y?: number;
@@ -287,11 +289,17 @@ export interface ScrollPageResult {
   y: number;
   /** 垂直方向的实际位移，正数向下。滚不动时为 0。 */
   scrolledBy: number;
-  /** 视口上方 / 下方尚未查看的像素数，用来告诉模型「还剩多少没看」。 */
+  /** 视口（或容器）上方 / 下方尚未查看的像素数，用来告诉模型「还剩多少没看」。 */
   pixelsAbove: number;
   pixelsBelow: number;
   /** 换算「约几屏」用；取不到时为 0，文案会省略屏数提示。 */
   viewportHeight: number;
+  /** 实际发生滚动的是内层容器而非整个窗口时才有值。 */
+  container?: { tag: string; label?: string };
+  /** 仅 fieldId 模式会失败；window/selector 模式不设置此字段（向后兼容，等价于成功）。 */
+  status?: 'ok' | 'not_found' | 'mismatch';
+  /** 句柄表已失效（页面导航或 storage 丢失），模型必须重新调用 browser_get_form。 */
+  fieldsTableStale?: boolean;
 }
 
 export interface NavigateTabPayload {

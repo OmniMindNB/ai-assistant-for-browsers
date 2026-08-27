@@ -66,12 +66,14 @@ import {
   listPanelOpenedTabs,
   markPanelOpenedForTab,
 } from '@/lib/tab-panel-scope';
-import { mergeFillOutcomes, planFieldClick, planFormFill } from '@/lib/agent/fill-form-request';
+import { mergeFillOutcomes, planFieldClick, planFieldScroll, planFormFill } from '@/lib/agent/fill-form-request';
 import {
   applyFormFill,
   clickElementInPage,
   collectFormFields,
   probeClickTarget,
+  scrollContainerInPage,
+  scrollPageInPage,
   selectOptionInPage,
   typeTextInPage,
   type ApplyFillItem,
@@ -970,42 +972,46 @@ async function selectOption(payload: SelectOptionPayload, tabId: number): Promis
 }
 
 async function scrollPage(payload: ScrollPagePayload, tabId: number): Promise<ScrollPageResult> {
-  return executeInTab(tabId, payload, (input): ScrollPageResult => {
-    const behavior = input?.behavior ?? 'auto';
-    const viewportHeight = window.innerHeight || 0;
-    const maxScroll = Math.max(0, document.documentElement.scrollHeight - viewportHeight);
-    const clamp = (value: number): number => Math.min(Math.max(value, 0), maxScroll);
-    const startY = window.scrollY;
+  if (payload?.fieldId) {
+    return scrollContainerByFieldId(payload, tabId);
+  }
+  return executeInTab(tabId, { selector: payload?.selector, x: payload?.x, y: payload?.y, behavior: payload?.behavior }, scrollPageInPage);
+}
 
-    // 终点一律「算」出来而不是滚完再测：behavior: 'smooth' 时滚动是异步的，注入函数同步返回，
-    // 事后读 window.scrollY 只会读到起点，于是把一次正常滚动误报成「页面没有滚动」。
-    let finalY: number;
-    if (input?.selector) {
-      const target = document.querySelector(input.selector);
-      if (target) {
-        const rect = target.getBoundingClientRect();
-        target.scrollIntoView({ behavior, block: 'center' });
-        // block: 'center' 的落点：把元素中心对齐到视口中心。
-        finalY = clamp(startY + rect.top + rect.height / 2 - viewportHeight / 2);
-      } else {
-        finalY = startY;
-      }
-    } else {
-      const requestedY = input?.y ?? startY;
-      window.scrollTo({ left: input?.x ?? window.scrollX, top: requestedY, behavior });
-      finalY = clamp(requestedY);
-    }
-
+// fieldId 路径复用 clickElementByFieldId 的模式：查表 → 校验 kind → 注入解析+滚动。
+async function scrollContainerByFieldId(payload: ScrollPagePayload, tabId: number): Promise<ScrollPageResult> {
+  const table = await getFormFieldsForTab(tabId);
+  const plan = planFieldScroll(payload.fieldId!, table);
+  if (!plan.ok || !plan.target) {
     return {
-      selector: input?.selector,
-      x: window.scrollX,
-      y: Math.round(finalY),
-      scrolledBy: Math.round(finalY - startY),
-      pixelsAbove: Math.round(finalY),
-      pixelsBelow: Math.round(Math.max(0, maxScroll - finalY)),
-      viewportHeight,
+      x: 0,
+      y: 0,
+      scrolledBy: 0,
+      pixelsAbove: 0,
+      pixelsBelow: 0,
+      viewportHeight: 0,
+      status: 'not_found',
+      fieldsTableStale: plan.reason === 'no_table',
     };
-  });
+  }
+
+  const result = await executeInTab(
+    tabId,
+    { url: table!.url, path: plan.target.path, expect: plan.target.expect, x: payload.x, y: payload.y, behavior: payload.behavior },
+    scrollContainerInPage,
+  );
+
+  return {
+    x: result.x,
+    y: result.y,
+    scrolledBy: result.scrolledBy,
+    pixelsAbove: result.pixelsAbove,
+    pixelsBelow: result.pixelsBelow,
+    viewportHeight: result.viewportHeight,
+    container: result.status === 'ok' ? { tag: result.tag!, label: result.label } : undefined,
+    status: result.status,
+    fieldsTableStale: result.fieldsTableStale,
+  };
 }
 
 // 拒绝非 http(s) 协议的跳转目标，防止 agent 被诱导跳转到 javascript:/file:/chrome: 等敏感 scheme。
