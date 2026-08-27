@@ -58,6 +58,22 @@ describe('browser_get_form', () => {
     await getFormTool().execute('call-1', { includeText: true });
     expect(sendMessage).toHaveBeenCalledWith('GET_FORM', { includeText: true }, 1);
   });
+
+  it('passes includeScrollable through to the GET_FORM payload', async () => {
+    sendMessage.mockResolvedValueOnce({ id: '1', ok: true, data: RESULT });
+    await getFormTool().execute('call-1', { includeScrollable: true });
+    expect(sendMessage).toHaveBeenCalledWith('GET_FORM', { includeScrollable: true }, 1);
+  });
+
+  it('surfaces discovered scrollable containers in the result text', async () => {
+    sendMessage.mockResolvedValueOnce({
+      id: '1',
+      ok: true,
+      data: { ...RESULT, scrollableContainers: [{ fieldId: 's1', tag: 'div', scrollTop: 0, scrollHeight: 900, clientHeight: 300 }] },
+    });
+    const output = await getFormTool().execute('call-1', { includeScrollable: true });
+    expect((output.content[0] as { text: string }).text).toContain('s1');
+  });
 });
 
 function fillFormTool() {

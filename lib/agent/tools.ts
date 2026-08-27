@@ -318,6 +318,12 @@ function makeGetFormTool(session: TabSessionController): BrowserAgentTool {
             "Interleave the page's readable text into the field list: each field gets a precedingText with the text that appeared right before it (after the previous field), and the result gets a trailingText for anything after the last field. Use this to understand what a field is for from its surrounding context (a hint or disclaimer next to it) without a separate browser_read_page call. Defaults to false.",
         }),
       ),
+      includeScrollable: Type.Optional(
+        Type.Boolean({
+          description:
+            'Also discover scrollable containers on the page (elements with their own overflow:auto/scroll scrollbar, distinct from the page/window itself) and list them under scrollableContainers, each with a fieldId. Pass that fieldId to browser_scroll to scroll that specific container directly — use this for panels, chat logs, and virtual lists where you need to page through content that has no single target element to scroll into view. Defaults to false.',
+        }),
+      ),
     }),
     execute: async (_toolCallId, params) => {
       const payload = params as GetFormPayload;
