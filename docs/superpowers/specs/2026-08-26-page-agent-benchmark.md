@@ -64,7 +64,7 @@
 
 - [ ] 未开始
 
-### [ ] P1 — 页面位置感 + 容器内滚动
+### [x] P1 — 页面位置感 + 容器内滚动
 
 **是什么**：`dom/getPageInfo.ts` 每步给模型一行视口尺寸/总页高/上下方还有几屏/当前处在 x%；可滚动容器标成 `data-scrollable="top=...,bottom=..."`；`scroll(index)` 能滚指定容器（`actions.ts:275` 沿祖先链找最近可滚动祖先）。
 
@@ -72,7 +72,7 @@
 
 **怎么做**：`browser_get_form` 采集时顺手收集可滚动容器（它已经在遍历 DOM），`browser_scroll` 支持按 `fieldId`/selector 滚容器而非只滚 window。
 
-- [ ] 未开始
+- [x] 已完成——设计：`docs/superpowers/specs/2026-08-27-scroll-position-awareness-design.md`，实施计划：`docs/superpowers/plans/2026-08-27-scroll-position-awareness.md`（9 个任务全部落地，`pnpm compile`/`pnpm test`/`pnpm build` 均通过，1027/1027 测试；子智能体驱动开发流程执行，每任务独立评审 + 全分支终审，终审发现的 4 处跨任务问题已在一轮修复中处理；已合并到 main，commit 范围 `e0ca3be..1ae4e19`）。已知遗留（未阻塞合并，见 SDD 终审记录）：`s{n}` 容器句柄会在任意写操作后被 `collectNewFieldsAfterWrite` 静默丢弃（已修正错误提示文案指向 `includeScrollable: true`，但未实现句柄跨写操作续存，留作后续跟进）；`browser_get_form(includeScrollable)` 尚未做人工浏览器冒烟测试。
 
 ### [x] P2 — 统一的页面快照工具（小范围验证已完成，暂不上完整树表示）
 
