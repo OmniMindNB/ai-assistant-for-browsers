@@ -51,6 +51,20 @@ describe('describeScrollResult', () => {
   it('omits the screen-count hint when the viewport height is unknown', () => {
     expect(describeScrollResult(scroll({ viewportHeight: 0 }))).toBe('✅ 已下滚 800px。下方还有 2400px 未查看。');
   });
+
+  it('names the container that actually scrolled instead of implying the whole page moved', () => {
+    expect(
+      describeScrollResult(
+        scroll({ selector: '#target', scrolledBy: 250, pixelsBelow: 350, container: { tag: 'div', label: '聊天记录' } }),
+      ),
+    ).toBe('✅ 已把内层 <div>（"聊天记录"）容器下滚 250px。下方还有 350px（约 0.3 屏）未查看。');
+  });
+
+  it('names the container without a label when none is available', () => {
+    expect(
+      describeScrollResult(scroll({ scrolledBy: 300, pixelsBelow: 0, container: { tag: 'div' } })),
+    ).toBe('✅ 已把内层 <div> 容器下滚 300px，已到达容器底部。');
+  });
 });
 
 function click(overrides: Partial<ClickElementResult> = {}): ClickElementResult {

@@ -17,33 +17,42 @@ function describeRemaining(pixels: number, viewportHeight: number): string {
 }
 
 export function describeScrollResult(result: ScrollPageResult): string {
-  const { scrolledBy, pixelsAbove, pixelsBelow, viewportHeight } = result;
+  const { scrolledBy, pixelsAbove, pixelsBelow, viewportHeight, container } = result;
   const atTop = pixelsAbove <= 1;
   const atBottom = pixelsBelow <= 1;
+  const place = container ? '容器' : '页面';
 
   if (scrolledBy === 0) {
-    if (atBottom) return '⚠️ 页面没有滚动：已在底部，无法继续下滚。';
-    if (atTop) return '⚠️ 页面没有滚动：已在顶部，无法继续上滚。';
-    return `⚠️ 页面没有发生滚动。上方 ${pixelsAbove}px，下方 ${pixelsBelow}px。`;
+    if (atBottom) return `⚠️ ${place}没有滚动：已在底部，无法继续下滚。`;
+    if (atTop) return `⚠️ ${place}没有滚动：已在顶部，无法继续上滚。`;
+    return `⚠️ ${place}没有发生滚动。上方 ${pixelsAbove}px，下方 ${pixelsBelow}px。`;
   }
 
-  const head = result.selector
-    ? `✅ 已把 "${result.selector}" 滚动到视口中央。`
-    : scrolledBy > 0
-      ? `✅ 已下滚 ${scrolledBy}px`
-      : `✅ 已上滚 ${Math.abs(scrolledBy)}px`;
+  // 有 label 时括注紧贴标签名（"<div>（"聊天记录"）容器"）；没有 label 时用空格断词，
+  // 否则 "<div>容器" 会读起来像标签名的一部分。
+  const containerLabel = container?.label ? `（"${container.label}"）` : ' ';
+  const target = container ? `内层 <${container.tag}>${containerLabel}容器` : undefined;
 
-  // 按滚动方向报告「前方」还剩多少：下滚关心下方，上滚关心上方。
+  const head = result.selector && !container
+    ? `✅ 已把 "${result.selector}" 滚动到视口中央。`
+    : target
+      ? scrolledBy > 0
+        ? `✅ 已把${target}下滚 ${scrolledBy}px`
+        : `✅ 已把${target}上滚 ${Math.abs(scrolledBy)}px`
+      : scrolledBy > 0
+        ? `✅ 已下滚 ${scrolledBy}px`
+        : `✅ 已上滚 ${Math.abs(scrolledBy)}px`;
+
   const forwardAtEdge = scrolledBy > 0 ? atBottom : atTop;
   const forwardPixels = scrolledBy > 0 ? pixelsBelow : pixelsAbove;
   const edgeLabel = scrolledBy > 0 ? '底部' : '顶部';
   const sideLabel = scrolledBy > 0 ? '下方' : '上方';
 
-  if (result.selector) {
+  if (result.selector && !container) {
     return forwardAtEdge ? `${head}已到达页面${edgeLabel}。` : `${head}${sideLabel}还有 ${describeRemaining(forwardPixels, viewportHeight)}。`;
   }
   return forwardAtEdge
-    ? `${head}，已到达页面${edgeLabel}。`
+    ? `${head}，已到达${place}${edgeLabel}。`
     : `${head}。${sideLabel}还有 ${describeRemaining(forwardPixels, viewportHeight)}。`;
 }
 
