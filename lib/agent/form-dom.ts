@@ -10,6 +10,7 @@ export interface CollectFormInput {
   selector?: string;
   includeHidden?: boolean;
   includeText?: boolean;
+  includeScrollable?: boolean;
   maxFields: number;
   maxOptions: number;
 }
@@ -21,6 +22,16 @@ export interface CollectedFormInfo {
   method?: string;
 }
 
+export interface RawScrollableContainer {
+  path: FormFieldPathStep[];
+  tag: string;
+  /** 未净化，只做过空白压缩+截断（与 elementText/label 同款内联写法，不能从注入函数调用 form-schema.ts）。 */
+  label?: string;
+  scrollTop: number;
+  scrollHeight: number;
+  clientHeight: number;
+}
+
 export interface CollectFormOutput {
   url: string;
   raws: RawFormField[];
@@ -29,6 +40,8 @@ export interface CollectFormOutput {
   truncated: boolean;
   /** 未净化的正文，排在最后一个字段之后。仅 includeText 时可能有值。 */
   trailingText?: string;
+  /** 页面上发现的可滚动容器；仅 includeScrollable 时有值（可能是空数组）。 */
+  scrollables?: RawScrollableContainer[];
 }
 
 export function collectFormFields(input: CollectFormInput): CollectFormOutput {
@@ -40,6 +53,18 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
   let genericCollected = 0;
   const includeHidden = input.includeHidden === true;
   const includeText = input.includeText === true;
+  const includeScrollable = input.includeScrollable === true;
+  const MAX_SCROLLABLE_CONTAINERS = 20;
+  const scrollables: RawScrollableContainer[] = [];
+
+  const isScrollableContainer = (element: Element): boolean => {
+    if (element === document.documentElement || element === document.body) return false;
+    if (element.scrollHeight <= element.clientHeight) return false;
+    const style = element.ownerDocument.defaultView?.getComputedStyle(element);
+    const overflowY = style?.overflowY;
+    return overflowY === 'auto' || overflowY === 'scroll';
+  };
+
   const raws: RawFormField[] = [];
   const fieldElements: Element[] = [];
   const forms: CollectedFormInfo[] = [];
@@ -218,6 +243,18 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
         unreachable.closedShadowRoots += 1;
       }
 
+      if (includeScrollable && scrollables.length < MAX_SCROLLABLE_CONTAINERS && isScrollableContainer(element)) {
+        const rawLabel = element.getAttribute('aria-label') || element.id || '';
+        scrollables.push({
+          path: buildPath(element),
+          tag: element.tagName.toLowerCase(),
+          label: rawLabel ? rawLabel.replace(/\s+/g, ' ').trim().slice(0, 80) || undefined : undefined,
+          scrollTop: element.scrollTop,
+          scrollHeight: element.scrollHeight,
+          clientHeight: element.clientHeight,
+        });
+      }
+
       if (!isFieldTag(element)) continue;
 
       const isGeneric = !isStandardFieldTag(element);
@@ -307,7 +344,7 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
     trailingText = finalize(trailingBuffer, 'head');
   }
 
-  return { url: location.href, raws, forms, unreachable, truncated, trailingText };
+  return { url: location.href, raws, forms, unreachable, truncated, trailingText, scrollables: includeScrollable ? scrollables : undefined };
 }
 
 export interface ApplyFillItem {

@@ -296,6 +296,80 @@ describe('collectFormFields', () => {
   });
 });
 
+describe('collectFormFields — includeScrollable', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  function stubScrollMetrics(el: Element, scrollHeight: number, clientHeight: number): void {
+    Object.defineProperty(el, 'scrollHeight', { value: scrollHeight, configurable: true });
+    Object.defineProperty(el, 'clientHeight', { value: clientHeight, configurable: true });
+  }
+
+  it('does not collect scrollables when includeScrollable is not set', () => {
+    render(`<div id="panel" style="overflow-y:auto"></div>`);
+    stubScrollMetrics(document.getElementById('panel')!, 800, 300);
+    expect(collectFormFields(INPUT).scrollables).toBeUndefined();
+  });
+
+  it('detects an overflow-y:auto container whose content overflows', () => {
+    render(`<div id="panel" style="overflow-y:auto"></div>`);
+    stubScrollMetrics(document.getElementById('panel')!, 800, 300);
+    const output = collectFormFields({ ...INPUT, includeScrollable: true });
+    expect(output.scrollables).toHaveLength(1);
+    expect(output.scrollables![0]).toMatchObject({ tag: 'div', scrollTop: 0, scrollHeight: 800, clientHeight: 300 });
+  });
+
+  it('does not treat overflow-y:visible as scrollable even when content overflows', () => {
+    render(`<div id="panel" style="overflow-y:visible"></div>`);
+    stubScrollMetrics(document.getElementById('panel')!, 800, 300);
+    expect(collectFormFields({ ...INPUT, includeScrollable: true }).scrollables).toEqual([]);
+  });
+
+  it('does not treat a non-overflowing overflow-y:auto container as scrollable', () => {
+    render(`<div id="panel" style="overflow-y:auto"></div>`);
+    stubScrollMetrics(document.getElementById('panel')!, 300, 300);
+    expect(collectFormFields({ ...INPUT, includeScrollable: true }).scrollables).toEqual([]);
+  });
+
+  it('excludes body/documentElement even when a selector scope makes them iterable candidates', () => {
+    render('<p>content</p>');
+    document.documentElement.setAttribute('style', 'overflow-y:auto');
+    document.body.setAttribute('style', 'overflow-y:auto');
+    stubScrollMetrics(document.documentElement, 2000, 500);
+    stubScrollMetrics(document.body, 2000, 500);
+    const output = collectFormFields({ ...INPUT, includeScrollable: true, selector: 'html' });
+    expect(output.scrollables!.some((s) => s.tag === 'body' || s.tag === 'html')).toBe(false);
+  });
+
+  it('discovers a scrollable container nested inside an open shadow root', () => {
+    render(`<div id="host"></div>`);
+    const host = document.getElementById('host')!;
+    host.attachShadow({ mode: 'open' }).innerHTML = `<div id="inner" style="overflow-y:auto"></div>`;
+    const inner = host.shadowRoot!.querySelector('#inner')!;
+    stubScrollMetrics(inner, 900, 400);
+    const output = collectFormFields({ ...INPUT, includeScrollable: true });
+    expect(output.scrollables).toHaveLength(1);
+    expect(output.scrollables![0].path.some((step) => step.kind === 'shadow')).toBe(true);
+  });
+
+  it('caps the number of collected scrollable containers at 20', () => {
+    render(Array.from({ length: 25 }, (_, i) => `<div id="p${i}" style="overflow-y:auto"></div>`).join(''));
+    for (let i = 0; i < 25; i += 1) {
+      stubScrollMetrics(document.getElementById(`p${i}`)!, 800, 300);
+    }
+    const output = collectFormFields({ ...INPUT, includeScrollable: true });
+    expect(output.scrollables).toHaveLength(20);
+  });
+
+  it('records a best-effort label from aria-label', () => {
+    render(`<div id="panel" aria-label="聊天记录" style="overflow-y:auto"></div>`);
+    stubScrollMetrics(document.getElementById('panel')!, 800, 300);
+    const output = collectFormFields({ ...INPUT, includeScrollable: true });
+    expect(output.scrollables![0].label).toBe('聊天记录');
+  });
+});
+
 // jsdom's selector engine (@asamuzakjp/dom-selector, as used by jsdom 30) fails to
 // resolve `:scope` when the query root is a ShadowRoot: `shadowRoot.querySelectorAll(
 // ':scope > x')` and even `shadowRoot.querySelectorAll(':scope x')` always return an
