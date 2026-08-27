@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FillFormFieldOutcome, FillFormPayload } from '@/lib/messaging';
-import { mergeFillOutcomes, planFieldClick, planFormFill } from './fill-form-request';
+import { mergeFillOutcomes, planFieldClick, planFieldScroll, planFormFill } from './fill-form-request';
 import type { FormFieldHandle, FormFieldTable } from './tab-form-fields';
 
 function handle(overrides: Partial<FormFieldHandle> = {}): FormFieldHandle {
@@ -168,6 +168,28 @@ describe('planFieldClick', () => {
     expect(planFieldClick('f1', table({ f1: h }))).toEqual({
       ok: true,
       submit: { fieldId: 'f1', path: h.path, expect: h.expect },
+    });
+  });
+});
+
+describe('planFieldScroll', () => {
+  it('reports no_table when the tab has no handle table at all', () => {
+    expect(planFieldScroll('s1', undefined)).toEqual({ ok: false, reason: 'no_table' });
+  });
+
+  it('reports unknown_field when the fieldId is not in the table', () => {
+    expect(planFieldScroll('s9', table({ f1: handle() }))).toEqual({ ok: false, reason: 'unknown_field' });
+  });
+
+  it('reports wrong_kind when the fieldId belongs to a form field, not a scrollable container', () => {
+    expect(planFieldScroll('f1', table({ f1: handle() }))).toEqual({ ok: false, reason: 'wrong_kind' });
+  });
+
+  it('resolves a known scrollable fieldId to its path and expected tag', () => {
+    const h = handle({ kind: 'scrollable', expect: { tag: 'div' } });
+    expect(planFieldScroll('s1', table({ s1: h }))).toEqual({
+      ok: true,
+      target: { fieldId: 's1', path: h.path, expect: { tag: 'div' } },
     });
   });
 });

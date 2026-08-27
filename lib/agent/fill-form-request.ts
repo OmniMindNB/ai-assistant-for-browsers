@@ -96,3 +96,18 @@ export function planFieldClick(fieldId: string, table: FormFieldTable | undefine
   if (!handle) return { ok: false, reason: 'unknown_field' };
   return { ok: true, submit: { fieldId, path: handle.path, expect: handle.expect } };
 }
+
+export interface FieldScrollPlan {
+  ok: boolean;
+  reason?: 'no_table' | 'unknown_field' | 'wrong_kind';
+  target?: { fieldId: string; path: FormFieldHandle['path']; expect: { tag: string } };
+}
+
+/** browser_scroll(fieldId) 的查表与校验：background 只负责把结果送进页面执行。 */
+export function planFieldScroll(fieldId: string, table: FormFieldTable | undefined): FieldScrollPlan {
+  if (!table) return { ok: false, reason: 'no_table' };
+  const handle = table.fields[fieldId];
+  if (!handle) return { ok: false, reason: 'unknown_field' };
+  if (handle.kind !== 'scrollable') return { ok: false, reason: 'wrong_kind' };
+  return { ok: true, target: { fieldId, path: handle.path, expect: { tag: handle.expect.tag } } };
+}
