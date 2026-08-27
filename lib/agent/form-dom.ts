@@ -830,10 +830,11 @@ export function scrollPageInPage(input: ScrollPageInPageInput): ScrollPageInPage
     return null;
   };
 
-  // 与 collectFormFields/scrollContainerInPage 的同名 label 逻辑不同：这里只认 aria-label，
-  // 不回退到 id——id 多半是开发者取的技术性标识（如 "panel"），当噪声呈现给模型不如干脆没有。
+  // 与 collectFormFields/scrollContainerInPage 的同名 label 逻辑保持一致：aria-label 优先，
+  // 退化到 id 兜底——container 是同一个概念性字段，不该因为产出它的代码路径（Task 4 的
+  // fieldId 直接滚动 vs Task 5 这里的祖先链探测）而给模型呈现不一致的标签规则。
   const describeContainer = (element: Element): { tag: string; label?: string } => {
-    const rawLabel = element.getAttribute('aria-label') || '';
+    const rawLabel = element.getAttribute('aria-label') || element.id || '';
     return {
       tag: element.tagName.toLowerCase(),
       label: rawLabel ? rawLabel.replace(/\s+/g, ' ').trim().slice(0, 80) || undefined : undefined,

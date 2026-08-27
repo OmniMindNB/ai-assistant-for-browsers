@@ -1012,7 +1012,7 @@ describe('scrollPageInPage', () => {
 
     const output = scrollPageInPage({ selector: '#target' });
 
-    expect(output.container).toEqual({ tag: 'div', label: undefined });
+    expect(output.container).toEqual({ tag: 'div', label: 'panel' });
     expect(output.scrolledBy).toBe(250);
     expect(output.pixelsAbove).toBe(250);
     expect(output.pixelsBelow).toBe(350); // maxScroll = 900-300 = 600; 600-250 = 350
