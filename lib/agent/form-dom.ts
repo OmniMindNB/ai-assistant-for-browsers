@@ -870,6 +870,7 @@ export function scrollPageInPage(input: ScrollPageInPageInput): ScrollPageInPage
       // 滚完再读 rect 会读到"已经居中"之后的新位置，把终点算错（与 entrypoints/background.ts
       // 里被搬迁前的 scrollPage 顺序一致，byte-for-byte 不能改）。
       const rect = target.getBoundingClientRect();
+      // typeof 守卫是给未实现 scrollIntoView 的 jsdom 留的，生产环境该方法必然存在。
       if (typeof target.scrollIntoView === 'function') target.scrollIntoView({ behavior, block: 'center' });
       const finalY = clamp(startY + rect.top + rect.height / 2 - viewportHeight / 2);
       return {
@@ -888,11 +889,12 @@ export function scrollPageInPage(input: ScrollPageInPageInput): ScrollPageInPage
     const startTop = ancestor.scrollTop;
     // 强制 auto：滚完要立即同步读回 ancestor.scrollTop，behavior:'smooth' 会让这一步读到
     // 动画中途的值。窗口分支不受影响，仍然按调用方要求的 behavior 走。
+    // typeof 守卫同上：只是给未实现 scrollIntoView 的 jsdom 留的。
     if (typeof target.scrollIntoView === 'function') target.scrollIntoView({ behavior: 'auto', block: 'center' });
     const finalTop = Math.min(Math.max(ancestor.scrollTop, 0), containerMaxScroll);
     return {
       selector: input.selector,
-      x: window.scrollX,
+      x: Math.round(ancestor.scrollLeft),
       y: Math.round(finalTop),
       scrolledBy: Math.round(finalTop - startTop),
       pixelsAbove: Math.round(finalTop),

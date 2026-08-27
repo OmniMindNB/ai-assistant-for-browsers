@@ -170,6 +170,13 @@ describe('planFieldClick', () => {
       submit: { fieldId: 'f1', path: h.path, expect: h.expect },
     });
   });
+
+  it('reports wrong_kind when the fieldId belongs to a scrollable container, not a clickable field', () => {
+    expect(planFieldClick('s1', table({ s1: handle({ kind: 'scrollable', expect: { tag: 'div' } }) }))).toEqual({
+      ok: false,
+      reason: 'wrong_kind',
+    });
+  });
 });
 
 describe('planFieldScroll', () => {

@@ -85,7 +85,7 @@ export function mergeFillOutcomes(
 
 export interface FieldClickPlan {
   ok: boolean;
-  reason?: 'no_table' | 'unknown_field';
+  reason?: 'no_table' | 'unknown_field' | 'wrong_kind';
   submit?: { fieldId: string; path: FormFieldHandle['path']; expect: FormFieldHandle['expect'] };
 }
 
@@ -94,6 +94,9 @@ export function planFieldClick(fieldId: string, table: FormFieldTable | undefine
   if (!table) return { ok: false, reason: 'no_table' };
   const handle = table.fields[fieldId];
   if (!handle) return { ok: false, reason: 'unknown_field' };
+  // s{n} 句柄是滚动容器，不是可点击字段：放过去会用 {tag:'div'} 这种弱 expect 顺利通过
+  // 校验，对面板本体派发一次真实点击（ref: 设计文档 §3.5，click-handle-addressing）。
+  if (handle.kind === 'scrollable') return { ok: false, reason: 'wrong_kind' };
   return { ok: true, submit: { fieldId, path: handle.path, expect: handle.expect } };
 }
 

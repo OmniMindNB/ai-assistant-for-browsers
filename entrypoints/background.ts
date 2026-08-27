@@ -890,7 +890,10 @@ async function clickElementByFieldId(fieldId: string, tabId: number): Promise<Cl
       matched: 0,
       clickedIndex: null,
       status: 'not_found',
-      detail: '未知的 fieldId，请重新调用 browser_get_form。',
+      detail:
+        plan.reason === 'wrong_kind'
+          ? '该 fieldId 是一个可滚动容器，不是可点击元素，请改用 browser_scroll。'
+          : '未知的 fieldId，请重新调用 browser_get_form。',
       fieldsTableStale: plan.reason === 'no_table',
     };
   }

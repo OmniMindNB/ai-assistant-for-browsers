@@ -674,13 +674,13 @@ function makeScrollTool(session: TabSessionController): BrowserAgentTool {
       const response = (await sendMessage<ScrollPagePayload, ScrollPageResult>('SCROLL_PAGE', payload, session.currentTabId)) as MessageResponse<ScrollPageResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '滚动失败');
       if (response.data.fieldsTableStale) {
-        throw new Error('字段表已失效（页面已变化或已导航），请重新调用 browser_get_form 获取新的 fieldId 后再滚动。');
+        throw new Error('字段表已失效（页面已变化或已导航），请重新调用 browser_get_form(includeScrollable: true) 获取新的 fieldId 后再滚动。');
       }
       if (response.data.status && response.data.status !== 'ok') {
         throw new Error(
           response.data.status === 'mismatch'
-            ? '该容器与读取时不一致，页面可能已变化，请重新调用 browser_get_form。'
-            : '未知的 fieldId，请重新调用 browser_get_form。',
+            ? '该容器与读取时不一致，页面可能已变化，请重新调用 browser_get_form(includeScrollable: true)。'
+            : '未知的 fieldId，如果这是一个可滚动容器请重新调用 browser_get_form(includeScrollable: true)。',
         );
       }
       return textResult(describeScrollResult(response.data), response.data as unknown as Record<string, unknown>);
