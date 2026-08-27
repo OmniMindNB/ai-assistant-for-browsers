@@ -747,11 +747,15 @@ export function scrollContainerInPage(input: ScrollContainerInput): ScrollContai
 
   const container = element as HTMLElement;
   const clientHeight = container.clientHeight;
+  const clientWidth = container.clientWidth;
   const maxScroll = Math.max(0, container.scrollHeight - clientHeight);
-  const clamp = (value: number): number => Math.min(Math.max(value, 0), maxScroll);
+  const maxScrollX = Math.max(0, container.scrollWidth - clientWidth);
+  const clampY = (value: number): number => Math.min(Math.max(value, 0), maxScroll);
+  const clampX = (value: number): number => Math.min(Math.max(value, 0), maxScrollX);
   const startTop = container.scrollTop;
+  const startLeft = container.scrollLeft;
   const requestedTop = typeof input.y === 'number' ? input.y : startTop;
-  const requestedLeft = typeof input.x === 'number' ? input.x : container.scrollLeft;
+  const requestedLeft = typeof input.x === 'number' ? input.x : startLeft;
 
   const scrollableContainer = container as unknown as { scrollTo?: (opts: ScrollToOptions) => void };
   if (typeof scrollableContainer.scrollTo === 'function') {
@@ -760,14 +764,15 @@ export function scrollContainerInPage(input: ScrollContainerInput): ScrollContai
     container.scrollTop = requestedTop;
     container.scrollLeft = requestedLeft;
   }
-  const finalTop = clamp(requestedTop);
+  const finalTop = clampY(requestedTop);
+  const finalLeft = clampX(requestedLeft);
 
   const rawLabel = container.getAttribute('aria-label') || container.id || '';
   const label = rawLabel ? rawLabel.replace(/\s+/g, ' ').trim().slice(0, 80) || undefined : undefined;
 
   return {
     status: 'ok',
-    x: container.scrollLeft,
+    x: Math.round(finalLeft),
     y: Math.round(finalTop),
     scrolledBy: Math.round(finalTop - startTop),
     pixelsAbove: Math.round(finalTop),

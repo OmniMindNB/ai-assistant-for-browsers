@@ -894,6 +894,26 @@ describe('scrollContainerInPage', () => {
     expect(output.tag).toBe('div');
   });
 
+  it('scrolls the container to an absolute x and clamps it to scroll range', () => {
+    render(`<div id="panel"></div>`);
+    const el = document.getElementById('panel')!;
+    Object.defineProperty(el, 'scrollHeight', { value: 500, configurable: true });
+    Object.defineProperty(el, 'clientHeight', { value: 400, configurable: true });
+    Object.defineProperty(el, 'scrollWidth', { value: 1200, configurable: true });
+    Object.defineProperty(el, 'clientWidth', { value: 400, configurable: true });
+    el.scrollLeft = 0;
+    el.scrollTop = 0;
+
+    const output = scrollContainerInPage({ url: location.href, path: PATH, expect: { tag: 'div' }, x: 500 });
+    expect(output.status).toBe('ok');
+    expect(output.x).toBe(500);
+    expect(output.y).toBe(0);
+
+    // Test clamping: maxScrollX = 1200 - 400 = 800; 9999 gets clamped to 800
+    const clampedOutput = scrollContainerInPage({ url: location.href, path: PATH, expect: { tag: 'div' }, x: 9999 });
+    expect(clampedOutput.x).toBe(800);
+  });
+
   it('clamps the requested y to the container scroll range', () => {
     panel(1000, 400, 0);
     const output = scrollContainerInPage({ url: location.href, path: PATH, expect: { tag: 'div' }, y: 9999 });
