@@ -109,10 +109,18 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
   const hasPointerCursor = (element: Element): boolean => {
     const tag = element.tagName.toLowerCase();
     if (tag === 'html' || tag === 'body') return false;
-    let ancestor = element.parentElement;
+    let ancestor: Node | null = element.parentNode;
     while (ancestor) {
-      if (nearFullscreenRejected.has(ancestor)) return false;
-      ancestor = ancestor.parentElement;
+      if (ancestor instanceof ShadowRoot) {
+        ancestor = ancestor.host;
+        continue;
+      }
+      if (ancestor instanceof Element) {
+        if (nearFullscreenRejected.has(ancestor)) return false;
+        ancestor = ancestor.parentNode;
+        continue;
+      }
+      break;
     }
     const view = element.ownerDocument.defaultView;
     if (!view) return false;
@@ -274,6 +282,8 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
     for (const element of elements) {
       if (element.tagName.toLowerCase() === 'iframe') unreachable.iframes += 1;
 
+      const interactiveKind = classifyInteractive(element);
+
       const shadowRoot = (element as HTMLElement).shadowRoot;
       if (shadowRoot) {
         walk(shadowRoot);
@@ -297,7 +307,6 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
         });
       }
 
-      const interactiveKind = classifyInteractive(element);
       if (!interactiveKind) continue;
 
       const isGeneric = !isStandardFieldTag(element);
@@ -317,6 +326,18 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
       if (isGeneric) genericCollected += 1;
     }
   };
+
+  // body/html 通常不会出现在被遍历的 element 里（walk() 的默认 scope 是 document.body，
+  // querySelectorAll('*') 不含 scope 自身），所以不能指望 hasPointerCursor 顺路发现它们。
+  // 但若站点把 cursor: pointer 设在这两层，后代会整页继承同一个值，等同于让整页护栏
+  // 失效——显式检查一次，直接计入 nearFullscreenRejected。
+  for (const rootLike of [document.documentElement, document.body]) {
+    if (!rootLike) continue;
+    const view = rootLike.ownerDocument.defaultView;
+    if (view && view.getComputedStyle(rootLike).cursor === 'pointer') {
+      nearFullscreenRejected.add(rootLike);
+    }
+  }
 
   const scope = input.selector ? document.querySelector(input.selector) : document.body;
   if (scope) walk(scope);
