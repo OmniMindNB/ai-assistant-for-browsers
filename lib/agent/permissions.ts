@@ -31,6 +31,8 @@ export const READ_ONLY_TOOL_NAMES = new Set([
   'ask_user',
   // 同上：纯粹的计时等待，不碰页面或浏览器状态。
   'wait',
+  // 不修改页面或浏览器状态——只是让模型显式声明这轮任务的成败信号。
+  'report_task_outcome',
 ]);
 
 /** 用户明确要求的低风险自动执行名单；仍属于写工具，只是不经过确认卡片。 */

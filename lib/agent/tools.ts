@@ -1,6 +1,7 @@
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import { Type } from '@earendil-works/pi-ai';
 import { describeClickResult, describeNavigateResult, describeNewFields, describeScrollResult } from './action-result-text';
+import { REPORT_TASK_OUTCOME_TOOL_NAME, type TaskOutcome, type TaskOutcomeValue } from './task-outcome';
 import { formatTabList, type TabSessionController } from './tab-session';
 import {
   sendMessage,
@@ -50,12 +51,15 @@ export type BrowserAgentTool = AgentTool<any, Record<string, unknown>>;
 export interface BrowserToolsConfig {
   /** 供 ask_user 工具调用，等待用户在侧边栏里回答；未接入时该工具直接报错。 */
   onAskUser?: (toolCallId: string, question: string, signal?: AbortSignal) => Promise<string>;
+  /** 供 report_task_outcome 工具调用，把模型汇报的成败信号转发给外层。 */
+  onTaskOutcome?: (outcome: TaskOutcome) => void;
 }
 
 export function createBrowserTools(session: TabSessionController, config: BrowserToolsConfig = {}): BrowserAgentTool[] {
   return [
     browserGetActiveTabTool,
     makeAskUserTool(config.onAskUser),
+    makeReportTaskOutcomeTool(config.onTaskOutcome),
     waitTool,
     makeReadPageTool(session),
     makeGetPageMetaTool(session),
@@ -117,6 +121,29 @@ function makeAskUserTool(onAskUser?: BrowserToolsConfig['onAskUser']): BrowserAg
       const { question } = params as { question: string };
       const answer = await onAskUser(toolCallId, question, signal);
       return textResult(`用户回答：${answer}`, { question, answer });
+    },
+  };
+}
+
+// 不带 browser_ 前缀，理由同 ask_user/wait：不修改页面或浏览器状态。
+function makeReportTaskOutcomeTool(onTaskOutcome?: BrowserToolsConfig['onTaskOutcome']): BrowserAgentTool {
+  return {
+    name: REPORT_TASK_OUTCOME_TOOL_NAME,
+    label: 'Report Task Outcome',
+    description:
+      '当你刚刚完成了一个涉及修改页面或与页面交互的任务并准备结束这一轮时，调用它显式声明这次任务的结果。' +
+      '不要在纯问答、没有实际操作页面的轮次里调用它。',
+    parameters: Type.Object({
+      outcome: Type.Union(
+        [Type.Literal('success'), Type.Literal('partial'), Type.Literal('failure')],
+        { description: 'success=完全达成；partial=部分达成或做了但不确定是否完全生效；failure=没能达成。' },
+      ),
+      reason: Type.String({ description: '一句话原因，partial/failure 时说明具体卡在哪一步。' }),
+    }),
+    execute: async (_toolCallId, params) => {
+      const { outcome, reason } = params as { outcome: TaskOutcomeValue; reason: string };
+      onTaskOutcome?.({ outcome, reason });
+      return textResult(`已记录任务结果：${outcome}。`, { outcome, reason });
     },
   };
 }
