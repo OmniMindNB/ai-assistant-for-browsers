@@ -1,5 +1,6 @@
 import type { ChatMessageRecord } from '@/lib/db';
 import type { MessageAttachment } from './attachments';
+import type { TaskOutcome } from '@/lib/agent/task-outcome';
 
 // 侧边栏消息的形状与派生规则（ref: docs/superpowers/specs/2026-07-26-edit-history-message-design.md §3）。
 // 本功能的全部可测逻辑集中在这里：vitest 只覆盖 lib/**，entrypoints/ 没有测试基建。
@@ -16,6 +17,8 @@ export interface ChatMessage {
   quotedText?: string;
   /** 已就绪附件的历史安全投影（文本/图片/PDF 元数据）；不重新进入后续轮次的 prompt。 */
   attachments?: MessageAttachment[];
+  /** 本轮任务成败信号；仅当模型在一个动过页面的回合里调用了 report_task_outcome 才会有值。 */
+  taskOutcome?: TaskOutcome;
 }
 
 const TITLE_MAX_CHARS = 40;
@@ -62,6 +65,7 @@ export function toMessageRecords(
     kind: message.kind,
     quotedText: message.quotedText,
     attachments: message.attachments,
+    taskOutcome: message.taskOutcome,
   }));
 }
 

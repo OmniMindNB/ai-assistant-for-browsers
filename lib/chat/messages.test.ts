@@ -137,6 +137,18 @@ describe('toMessageRecords', () => {
     const records = toMessageRecords('c-1', [msg('a', 'user', '问')]);
     expect(records[0].attachments).toBeUndefined();
   });
+
+  it('保留 taskOutcome', () => {
+    const records = toMessageRecords('c-1', [
+      { id: 'a', role: 'assistant', content: '已完成', createdAt: 1000, taskOutcome: { outcome: 'success', reason: '已提交表单。' } },
+    ]);
+    expect(records[0].taskOutcome).toEqual({ outcome: 'success', reason: '已提交表单。' });
+  });
+
+  it('没有 taskOutcome 时字段为 undefined', () => {
+    const records = toMessageRecords('c-1', [msg('a', 'user', '问')]);
+    expect(records[0].taskOutcome).toBeUndefined();
+  });
 });
 
 describe('conversationTitle', () => {

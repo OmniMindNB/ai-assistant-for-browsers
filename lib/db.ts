@@ -1,5 +1,6 @@
 import Dexie, { type Table } from 'dexie';
 import type { MessageAttachment } from './chat/attachments';
+import type { TaskOutcome } from './agent/task-outcome';
 
 // 本地持久化（ref: technical-plan.md §2.4）
 // 对话历史 / Skill 定义存 IndexedDB；API Key 等配置走 chrome.storage（见 settings.ts）。
@@ -26,6 +27,11 @@ export interface ChatMessageRecord {
    * 不建索引，同上无需 Dexie 版本迁移；存量记录无此字段即视为没有附件。
    */
   attachments?: MessageAttachment[];
+  /**
+   * 本轮任务成败信号，仅当模型调用过 report_task_outcome 才有值。
+   * 不建索引，同 kind/quotedText/attachments 一样无需 Dexie 版本迁移；存量记录无此字段即视为没有信号。
+   */
+  taskOutcome?: TaskOutcome;
 }
 
 export interface ConversationRecord {
