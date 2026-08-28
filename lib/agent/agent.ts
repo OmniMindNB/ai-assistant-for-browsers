@@ -153,8 +153,12 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
       }
 
       const isWriteTool = WRITE_TOOL_NAMES.has(context.toolCall.name);
-      const policyBlock = policy.preflight(context.toolCall.name, context.args, isWriteTool);
-      if (policyBlock) return recordPreExecutionBlock(policyBlock);
+      // report_task_outcome 完全豁免预算记账：它既不占预算，也绝不能被预算上限拦下——
+      // 预算耗尽的那一轮恰恰是最需要 failure 徽标的一轮（ref: 最终审查 Important）。
+      if (context.toolCall.name !== REPORT_TASK_OUTCOME_TOOL_NAME) {
+        const policyBlock = policy.preflight(context.toolCall.name, context.args, isWriteTool);
+        if (policyBlock) return recordPreExecutionBlock(policyBlock);
+      }
 
       const permissionBlock = await beforeToolCallPermissionGate(context, {
         gateState: confirmGateState,
@@ -194,7 +198,10 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
     },
     afterToolCall: async (context) => {
       const toolName = context.toolCall.name;
-      policy.recordExecution(toolName, context.args, context.isError);
+      // 与 beforeToolCall 的豁免对称：调用 report_task_outcome 不消耗任何预算额度。
+      if (toolName !== REPORT_TASK_OUTCOME_TOOL_NAME) {
+        policy.recordExecution(toolName, context.args, context.isError);
+      }
       toolCallCounts.set(toolName, (toolCallCounts.get(toolName) ?? 0) + 1);
 
       if (!context.isError && WRITE_TOOL_NAMES.has(toolName)) writeToolRanThisRun = true;
@@ -240,18 +247,30 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
     prepareNextTurnWithContext: async (context) => {
       const budgetExhausted = policy.exhausted;
       if (policy.prepareFinalResponse()) {
+        // 这是预算耗尽/连续被阻断的运行唯一一次收尾轮。如果写工具跑过却还没汇报结果，
+        // 必须在这一轮把 report_task_outcome 递回去——否则最需要 failure 徽标的运行
+        // 反而永远拿不到徽标（ref: 最终审查 Important）。判断条件与下面 else if 分支
+        // 完全一致，只是不看 hasToolCalls：这一轮本来就是在通知模型停止调用工具。
+        const outcomeStillOwed = Boolean(
+          writeToolRanThisRun && !outcomeReported && !outcomeForceAttempted && reportTaskOutcomeTool,
+        );
+        // 与 else if 分支共用同一个标志位，保证每次 agent.prompt() 最多补调一次。
+        if (outcomeStillOwed) outcomeForceAttempted = true;
+        const baseInstruction = budgetExhausted
+          ? '工具调用预算已经用完。不要再调用任何工具，请立即基于已有结果给出最终回答，并明确说明仍不确定的部分。'
+          : '工具调用连续被阻止，工具调用阶段已经结束。不要再调用任何工具，请立即基于已有结果给出最终回答，并明确说明仍不确定的部分。';
         const finalInstruction: AgentMessage = {
           role: 'user',
-          content: budgetExhausted
-            ? '工具调用预算已经用完。不要再调用任何工具，请立即基于已有结果给出最终回答，并明确说明仍不确定的部分。'
-            : '工具调用连续被阻止，工具调用阶段已经结束。不要再调用任何工具，请立即基于已有结果给出最终回答，并明确说明仍不确定的部分。',
+          content: outcomeStillOwed
+            ? `${baseInstruction}唯一的例外是 report_task_outcome：它不占用工具预算，仍然必须调用它，说明这次操作是 success/partial/failure，并给出一句话原因。`
+            : baseInstruction,
           timestamp: Date.now(),
         };
         return {
           context: {
             ...context.context,
             messages: [...context.context.messages, finalInstruction],
-            tools: [],
+            tools: outcomeStillOwed && reportTaskOutcomeTool ? [reportTaskOutcomeTool] : [],
           },
         };
       }

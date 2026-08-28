@@ -293,7 +293,59 @@ describe('createBrowserAgentOptions task outcome forcing', () => {
     expect(steer).not.toHaveBeenCalled();
   });
 
-  it('leaves the existing budget-exhaustion branch untouched when both could apply', async () => {
+  // 预算耗尽的那一轮恰恰是最需要 failure 徽标的一轮：既有分支原来无条件返回 tools: []，
+  // 模型在唯一一次收尾轮里根本没有 report_task_outcome 可调（ref: 最终审查 Important）。
+  it('offers report_task_outcome during the final turn when the budget is exhausted and a report is still owed', async () => {
+    const steer = vi.fn();
+    const hooks = createBrowserAgentOptions({
+      provider: baseProvider,
+      tabId: 1,
+      tools: [reportTaskOutcomeTool],
+      readToolCallBudget: 1,
+      writeToolCallBudget: 1,
+      steer,
+    });
+    // 写工具跑过一次，预算随即耗尽（读=写预算=1）。
+    await hooks.afterToolCall?.(afterContext('browser_click', { selector: '#a' }, false));
+    const next = await hooks.prepareNextTurnWithContext?.({
+      message: toolCallStillPendingMessage('browser_click'),
+      context: { messages: [], tools: [{ name: 'still-present' }] },
+    } as unknown as PrepareNextTurnContext);
+
+    expect(next?.context?.tools).toEqual([reportTaskOutcomeTool]);
+    const content = (next?.context?.messages.at(-1) as { content: string }).content;
+    expect(content).toContain('工具调用预算已经用完');
+    expect(content).toContain('report_task_outcome');
+  });
+
+  // 单次触发：预算分支已经把 outcomeForceAttempted 置位，之后 else if 分支不会再补一次。
+  it('does not force a second closing turn after the budget branch already offered the tool', async () => {
+    const steer = vi.fn();
+    const hooks = createBrowserAgentOptions({
+      provider: baseProvider,
+      tabId: 1,
+      tools: [reportTaskOutcomeTool],
+      readToolCallBudget: 1,
+      writeToolCallBudget: 1,
+      steer,
+    });
+    await hooks.afterToolCall?.(afterContext('browser_click', { selector: '#a' }, false));
+    await hooks.prepareNextTurnWithContext?.({
+      message: toolCallStillPendingMessage('browser_click'),
+      context: { messages: [], tools: [{ name: 'still-present' }] },
+    } as unknown as PrepareNextTurnContext);
+
+    // 阶段机已经离开 active，prepareFinalResponse 不会再返回 true；此时若 outcomeForceAttempted
+    // 没被置位，下面这次调用会走 else if 分支再补一轮 steer。
+    const second = await hooks.prepareNextTurnWithContext?.({
+      message: textOnlyMessage('still nothing'),
+      context: { messages: [], tools: [reportTaskOutcomeTool] },
+    } as unknown as PrepareNextTurnContext);
+    expect(second).toBeUndefined();
+    expect(steer).not.toHaveBeenCalled();
+  });
+
+  it('keeps the budget-exhaustion branch byte-identical when no report is owed', async () => {
     const steer = vi.fn();
     const hooks = createBrowserAgentOptions({
       provider: baseProvider,
@@ -303,13 +355,102 @@ describe('createBrowserAgentOptions task outcome forcing', () => {
       writeToolCallBudget: 2,
       steer,
     });
-    await hooks.afterToolCall?.(afterContext('browser_read_page', {}, false)); // 预算耗尽
+    await hooks.afterToolCall?.(afterContext('browser_read_page', {}, false)); // 只读，没有写工具跑过
     const next = await hooks.prepareNextTurnWithContext?.({
       message: toolCallStillPendingMessage('browser_read_page'),
       context: { messages: [], tools: [{ name: 'still-present' }] },
     } as unknown as PrepareNextTurnContext);
-    expect(next?.context?.tools).toEqual([]); // 既有分支的行为：清空全部工具，不是收窄成 report_task_outcome
-    expect(next?.context?.messages.at(-1)).toMatchObject({ content: expect.stringContaining('工具调用预算已经用完') });
+
+    expect(next?.context?.tools).toEqual([]);
+    expect((next?.context?.messages.at(-1) as { content: string }).content).toBe(
+      '工具调用预算已经用完。不要再调用任何工具，请立即基于已有结果给出最终回答，并明确说明仍不确定的部分。',
+    );
+  });
+
+  it('keeps the budget-exhaustion branch byte-identical when the outcome was already reported', async () => {
+    const hooks = createBrowserAgentOptions({
+      provider: baseProvider,
+      tabId: 1,
+      tools: [reportTaskOutcomeTool],
+      readToolCallBudget: 1,
+      writeToolCallBudget: 1,
+      steer: vi.fn(),
+    });
+    await hooks.afterToolCall?.(afterContext('browser_click', { selector: '#a' }, false));
+    await hooks.afterToolCall?.(afterContext('report_task_outcome', { outcome: 'success', reason: 'ok' }, false));
+    const next = await hooks.prepareNextTurnWithContext?.({
+      message: toolCallStillPendingMessage('browser_click'),
+      context: { messages: [], tools: [{ name: 'still-present' }] },
+    } as unknown as PrepareNextTurnContext);
+
+    expect(next?.context?.tools).toEqual([]);
+    expect((next?.context?.messages.at(-1) as { content: string }).content).toBe(
+      '工具调用预算已经用完。不要再调用任何工具，请立即基于已有结果给出最终回答，并明确说明仍不确定的部分。',
+    );
+  });
+
+  // 连续被阻断的收尾分支走的是同一段代码，同样要在欠汇报时把工具递回去。
+  it('offers report_task_outcome on the consecutive-block final turn when a report is still owed', async () => {
+    sendMessageSpy
+      .mockResolvedValueOnce({ ok: true, data: { isSubmit: true } })
+      .mockResolvedValueOnce({ ok: true, data: { isSubmit: true } });
+    const hooks = createBrowserAgentOptions({
+      provider: baseProvider,
+      tabId: 1,
+      tools: [reportTaskOutcomeTool],
+      readToolCallBudget: 12,
+      writeToolCallBudget: 24,
+      steer: vi.fn(),
+      onConfirm: async () => false,
+    });
+    // 先成功跑一次写工具，这样确实欠一次汇报。
+    await hooks.afterToolCall?.(afterContext('browser_modify_dom', { selector: '#a' }, false));
+    // 再连续两次被拒绝（pre-execution block），触发「连续被阻止」收尾。
+    await hooks.beforeToolCall?.(beforeContext('browser_click', { selector: '#submit-a' }));
+    await hooks.beforeToolCall?.(beforeContext('browser_click', { selector: '#submit-b' }));
+
+    const next = await hooks.prepareNextTurnWithContext?.({
+      message: toolCallStillPendingMessage('browser_click'),
+      context: { messages: [], tools: [{ name: 'still-present' }] },
+    } as unknown as PrepareNextTurnContext);
+
+    expect(next?.context?.tools).toEqual([reportTaskOutcomeTool]);
+    const content = (next?.context?.messages.at(-1) as { content: string }).content;
+    expect(content).toContain('工具调用连续被阻止');
+    expect(content).toContain('report_task_outcome');
+  });
+
+  it('never blocks report_task_outcome on an exhausted budget', async () => {
+    const hooks = createBrowserAgentOptions({
+      provider: baseProvider,
+      tabId: 1,
+      tools: [reportTaskOutcomeTool],
+      readToolCallBudget: 1,
+      writeToolCallBudget: 1,
+      steer: vi.fn(),
+    });
+    await hooks.afterToolCall?.(afterContext('browser_read_page', {}, false)); // 预算耗尽
+    // 对照组：普通只读工具此时确实被硬阻断。
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_read_page', {}))).toMatchObject({ block: true });
+    // report_task_outcome 完全豁免预算 preflight。
+    expect(
+      await hooks.beforeToolCall?.(beforeContext('report_task_outcome', { outcome: 'failure', reason: '预算用尽。' })),
+    ).toBeUndefined();
+  });
+
+  it('does not consume a budget slot when report_task_outcome executes', async () => {
+    const hooks = createBrowserAgentOptions({
+      provider: baseProvider,
+      tabId: 1,
+      tools: [reportTaskOutcomeTool],
+      readToolCallBudget: 2,
+      writeToolCallBudget: 2,
+      steer: vi.fn(),
+    });
+    await hooks.afterToolCall?.(afterContext('browser_read_page', {}, false)); // 1/2
+    await hooks.afterToolCall?.(afterContext('report_task_outcome', { outcome: 'success', reason: 'ok' }, false));
+    // 如果上面那次算进了预算，这里就是 2/2 已耗尽，只读工具会被阻断。
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_query_dom', { selector: '.x' }))).toBeUndefined();
   });
 
   it('threads onTaskOutcome through to the default report_task_outcome tool', async () => {
