@@ -1124,4 +1124,36 @@ describe('collectFormFields cursor signal', () => {
       Element.prototype.getBoundingClientRect = original;
     }
   });
+
+  it('gives one handle to a clickable card, not one per descendant', () => {
+    // cursor 是继承属性：真实浏览器里卡片内的每个后代计算值都是 pointer。
+    // 这里在后代上也显式写出，模拟继承后的结果（见本 describe 顶部注释）。
+    render(
+      '<div style="cursor: pointer" class="card">' +
+        '<span style="cursor: pointer">商品名</span>' +
+        '<span style="cursor: pointer">￥99</span>' +
+        '</div>',
+    );
+    const out = collectFormFields(INPUT);
+    expect(out.raws).toHaveLength(1);
+    expect(out.raws[0].tag).toBe('div');
+  });
+
+  it('still collects a real button nested inside a clickable card', () => {
+    render(
+      '<div style="cursor: pointer" class="card">' +
+        '<span style="cursor: pointer">商品名</span>' +
+        '<button style="cursor: pointer">加入购物车</button>' +
+        '</div>',
+    );
+    const tags = collectFormFields(INPUT).raws.map((field) => field.tag);
+    expect(tags).toEqual(['div', 'button']);
+  });
+
+  it('does not suppress a cursor element whose collected ancestor is unrelated', () => {
+    render(
+      '<button>提交</button>' + '<div style="cursor: pointer">卡片</div>',
+    );
+    expect(collectFormFields(INPUT).raws).toHaveLength(2);
+  });
 });

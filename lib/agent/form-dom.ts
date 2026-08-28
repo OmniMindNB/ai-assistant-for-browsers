@@ -277,6 +277,31 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
     };
   };
 
+  // cursor 是继承属性：<div style="cursor:pointer"><span>下单</span></div> 里 span 的计算值
+  // 同样是 pointer。朴素实现会把卡片和它每一个后代都收进来，瞬间打爆 genericFieldQuota，
+  // 还给模型一堆指向同一次交互的重复句柄。
+  //
+  // 规则（对标 alibaba/page-agent dom_tree/index.js:1420 的 handleHighlighting）：
+  // 最外层命中的祖先胜出，仅靠 cursor 命中的后代一律抑制；靠廉价检查命中的后代
+  // （真 <button>、真 role）不受抑制——它们是独立的交互目标（ref: 设计文档 §4.2）。
+  //
+  // querySelectorAll('*') 返回文档序，祖先必然先于后代被处理，这个前提是规则成立的基础。
+  // 沿 parentElement 上溯在 shadow root 边界自然终止（parentElement 为 null），这没问题：
+  // walk() 对每个 open shadowRoot 是单独递归的，边界两侧本就是两趟独立遍历。
+  //
+  // 已知限制：祖先抑制发生在同一次 walk() 迭代内；若命中的祖先本身还有一个 open shadow root，
+  // 其内部的 cursor 命中后代不会被抑制——host 的 collectedElements 登记发生在其 shadow 内容
+  // 被遍历之后。三个验收用例均为纯 light DOM，未覆盖这一层，属于已知限制。
+  const collectedElements = new Set<Element>();
+  const hasCollectedAncestor = (element: Element): boolean => {
+    let parent = element.parentElement;
+    while (parent) {
+      if (collectedElements.has(parent)) return true;
+      parent = parent.parentElement;
+    }
+    return false;
+  };
+
   const walk = (root: ParentNode): void => {
     const elements = Array.from(root.querySelectorAll('*'));
     for (const element of elements) {
@@ -308,6 +333,7 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
       }
 
       if (!interactiveKind) continue;
+      if (interactiveKind === 'cursor' && hasCollectedAncestor(element)) continue;
 
       const isGeneric = !isStandardFieldTag(element);
       if (isGeneric && genericCollected >= genericFieldQuota) {
@@ -323,6 +349,7 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
       if (hidden && !includeHidden) continue;
       raws.push(raw);
       fieldElements.push(element);
+      collectedElements.add(element);
       if (isGeneric) genericCollected += 1;
     }
   };
