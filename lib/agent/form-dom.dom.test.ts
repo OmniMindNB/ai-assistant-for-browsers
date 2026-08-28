@@ -1053,3 +1053,53 @@ describe('scrollPageInPage', () => {
     expect(output.container?.label).toBe('聊天记录');
   });
 });
+
+describe('collectFormFields cursor signal', () => {
+  // jsdom 对 CSS 继承的支持不完整，getComputedStyle 未必会把祖先的 cursor 继承给后代。
+  // 因此测试一律在需要"计算值为 pointer"的元素上直接写 inline style —— 这与真实浏览器里
+  // 继承后的结果等价，且不依赖 jsdom 的级联实现。
+  it('collects a listener-only div that has a pointer cursor', () => {
+    render('<div style="cursor: pointer" class="card">下单</div>');
+    const out = collectFormFields(INPUT);
+    expect(out.raws).toHaveLength(1);
+    expect(out.raws[0].byCursor).toBe(true);
+    expect(out.raws[0].interactive).toBe(true);
+    expect(toFieldDescriptor(out.raws[0], 'f1').kind).toBe('button');
+  });
+
+  it('ignores an ordinary div with the default cursor', () => {
+    render('<div class="card">下单</div>');
+    expect(collectFormFields(INPUT).raws).toHaveLength(0);
+  });
+
+  it('does not mark a real button as cursor-detected even when it has a pointer cursor', () => {
+    render('<button style="cursor: pointer">提交</button>');
+    const out = collectFormFields(INPUT);
+    expect(out.raws).toHaveLength(1);
+    expect(out.raws[0].byCursor).toBeUndefined();
+  });
+
+  it('never collects body or html through the cursor signal', () => {
+    document.body.setAttribute('style', 'cursor: pointer');
+    render('<span>仅文本</span>');
+    const out = collectFormFields(INPUT);
+    expect(out.raws.some((field) => field.tag === 'body' || field.tag === 'html')).toBe(false);
+    document.body.removeAttribute('style');
+  });
+
+  it('skips a near-fullscreen element so an overlay cannot swallow the page', () => {
+    const original = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function (this: Element): DOMRect {
+      if ((this as HTMLElement).classList?.contains('overlay')) {
+        return { ...NON_ZERO_RECT, width: window.innerWidth, height: window.innerHeight } as DOMRect;
+      }
+      return NON_ZERO_RECT;
+    };
+    try {
+      render('<div class="overlay" style="cursor: pointer"><span>x</span></div>');
+      expect(collectFormFields(INPUT).raws).toHaveLength(0);
+    } finally {
+      Element.prototype.getBoundingClientRect = original;
+    }
+  });
+});

@@ -93,12 +93,53 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
     return Number.isFinite(value) && value >= 0;
   };
 
-  const isFieldTag = (element: Element): boolean => {
+  // cursor 是「为人类用户」必须设对的属性，比 role/tabindex（只有专门做无障碍时才会写对）
+  // 可靠得多，是自研下拉/卡片/图标按钮唯一稳定的可交互信号
+  //（ref: 设计文档 §4.1；对标 alibaba/page-agent dom_tree/index.js:695）。
+  //
+  // 护栏两条：html/body 永不因 cursor 入选；近乎全屏的元素（整屏遮罩、全屏包裹容器）不是
+  // 可点击目标，放它进来会在祖先抑制下把整页吞掉（ref: 设计文档 §4.3）。
+
+  // 记录被「近乎全屏」护栏拒绝的元素。cursor 是继承属性——仅拒绝这个元素本身不够，
+  // 它的后代会独立继承同一个 pointer 样式、自己的 rect 又不大，照样能通过判定，
+  // 让"整屏遮罩不能吞掉整页"这条护栏形同虚设。querySelectorAll('*') 是文档序，
+  // 祖先必然先于后代被处理，这个前提让"先记录、后查询"成立。
+  const nearFullscreenRejected = new Set<Element>();
+
+  const hasPointerCursor = (element: Element): boolean => {
     const tag = element.tagName.toLowerCase();
-    if (tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'button') return true;
-    if ((element as HTMLElement).isContentEditable === true) return true;
-    if (tag === 'a' && element.getAttribute('href')) return true;
-    return hasInteractiveRole(element) || hasExplicitTabindex(element);
+    if (tag === 'html' || tag === 'body') return false;
+    let ancestor = element.parentElement;
+    while (ancestor) {
+      if (nearFullscreenRejected.has(ancestor)) return false;
+      ancestor = ancestor.parentElement;
+    }
+    const view = element.ownerDocument.defaultView;
+    if (!view) return false;
+    if (view.getComputedStyle(element).cursor !== 'pointer') return false;
+    const rect = element.getBoundingClientRect();
+    const isNearFullscreen = rect.width >= view.innerWidth * 0.9 && rect.height >= view.innerHeight * 0.9;
+    if (isNearFullscreen) {
+      nearFullscreenRejected.add(element);
+      return false;
+    }
+    return true;
+  };
+
+  // 返回 false = 不可交互；'semantic' = 靠标签/contentEditable/href/role/tabindex 命中；
+  // 'cursor' = 廉价检查全部落空、仅靠 computed cursor 命中。
+  //
+  // 顺序重要：walk() 会遍历 document.body 下的每个元素，而 hasPointerCursor 里的
+  // getComputedStyle 是强制样式解算。廉价检查必须排在前面短路，让纯文本 span、布局 div
+  // 这类绝大多数元素不触发它（ref: 设计文档 §4.1）。
+  const classifyInteractive = (element: Element): false | 'semantic' | 'cursor' => {
+    const tag = element.tagName.toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'button') return 'semantic';
+    if ((element as HTMLElement).isContentEditable === true) return 'semantic';
+    if (tag === 'a' && element.getAttribute('href')) return 'semantic';
+    if (hasInteractiveRole(element) || hasExplicitTabindex(element)) return 'semantic';
+    if (hasPointerCursor(element)) return 'cursor';
+    return false;
   };
 
   const isStandardFieldTag = (element: Element): boolean => {
@@ -149,7 +190,7 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
     return steps;
   };
 
-  const describe = (element: Element): RawFormField => {
+  const describe = (element: Element, byCursor: boolean): RawFormField => {
     const tag = element.tagName.toLowerCase();
     const asInput = element as HTMLInputElement;
     const asSelect = element as HTMLSelectElement;
@@ -193,7 +234,7 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
     const interactive =
       !isStandardFieldTag &&
       (element as HTMLElement).isContentEditable !== true &&
-      (hasInteractiveRole(element) || hasExplicitTabindex(element))
+      (byCursor || hasInteractiveRole(element) || hasExplicitTabindex(element))
         ? true
         : undefined;
     const elementText = tag === 'button' || tag === 'a' || interactive ? textOf(element) : undefined;
@@ -224,6 +265,7 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
       href,
       elementText,
       interactive,
+      byCursor: byCursor ? (true as const) : undefined,
     };
   };
 
@@ -255,7 +297,8 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
         });
       }
 
-      if (!isFieldTag(element)) continue;
+      const interactiveKind = classifyInteractive(element);
+      if (!interactiveKind) continue;
 
       const isGeneric = !isStandardFieldTag(element);
       if (isGeneric && genericCollected >= genericFieldQuota) {
@@ -266,7 +309,7 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
         truncated = true;
         return;
       }
-      const raw = describe(element);
+      const raw = describe(element, interactiveKind === 'cursor');
       const hidden = (raw.type || '').toLowerCase() === 'hidden' || !raw.visible;
       if (hidden && !includeHidden) continue;
       raws.push(raw);
