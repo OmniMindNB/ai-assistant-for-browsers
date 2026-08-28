@@ -100,6 +100,7 @@ function renderNotes(data: GetFormResult): string[] {
     );
   }
   if (data.truncated) notes.push('字段数量已达上限，请用 selector 参数缩小范围后重新读取。');
+  if (data.textTruncated) notes.push('部分正文已截断，完整正文请用 browser_read_page 读取。');
   return notes;
 }
 

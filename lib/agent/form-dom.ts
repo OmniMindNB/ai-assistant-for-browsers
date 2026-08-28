@@ -106,28 +106,36 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
   // 祖先必然先于后代被处理，这个前提让"先记录、后查询"成立。
   const nearFullscreenRejected = new Set<Element>();
 
+  // 判断一个元素是否「近乎全屏」，供 hasPointerCursor 的护栏和下面 walk() 里的
+  // collectedElements 登记共用——一个近乎全屏的元素，不管是靠 cursor 还是靠语义检查
+  // （role/tabindex/真实标签）被收录，都不该把整页 cursor 命中的后代吞掉。
+  const isNearFullscreenRect = (element: Element, view: Window): boolean => {
+    const rect = element.getBoundingClientRect();
+    return rect.width >= view.innerWidth * 0.9 && rect.height >= view.innerHeight * 0.9;
+  };
+
   const hasPointerCursor = (element: Element): boolean => {
     const tag = element.tagName.toLowerCase();
     if (tag === 'html' || tag === 'body') return false;
-    let ancestor: Node | null = element.parentNode;
-    while (ancestor) {
-      if (ancestor instanceof ShadowRoot) {
-        ancestor = ancestor.host;
-        continue;
+    if (nearFullscreenRejected.size > 0) {
+      let ancestor: Node | null = element.parentNode;
+      while (ancestor) {
+        if (ancestor instanceof ShadowRoot) {
+          ancestor = ancestor.host;
+          continue;
+        }
+        if (ancestor instanceof Element) {
+          if (nearFullscreenRejected.has(ancestor)) return false;
+          ancestor = ancestor.parentNode;
+          continue;
+        }
+        break;
       }
-      if (ancestor instanceof Element) {
-        if (nearFullscreenRejected.has(ancestor)) return false;
-        ancestor = ancestor.parentNode;
-        continue;
-      }
-      break;
     }
     const view = element.ownerDocument.defaultView;
     if (!view) return false;
     if (view.getComputedStyle(element).cursor !== 'pointer') return false;
-    const rect = element.getBoundingClientRect();
-    const isNearFullscreen = rect.width >= view.innerWidth * 0.9 && rect.height >= view.innerHeight * 0.9;
-    if (isNearFullscreen) {
+    if (isNearFullscreenRect(element, view)) {
       nearFullscreenRejected.add(element);
       return false;
     }
@@ -286,8 +294,8 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
   // （真 <button>、真 role）不受抑制——它们是独立的交互目标（ref: 设计文档 §4.2）。
   //
   // querySelectorAll('*') 返回文档序，祖先必然先于后代被处理，这个前提是规则成立的基础。
-  // 沿 parentElement 上溯在 shadow root 边界自然终止（parentElement 为 null），这没问题：
-  // walk() 对每个 open shadowRoot 是单独递归的，边界两侧本就是两趟独立遍历。
+  // 沿 parentElement 上溯在 shadow root 边界处终止（parentElement 为 null）——其后果见下方
+  // 已知限制。
   //
   // 已知限制：祖先抑制发生在同一次 walk() 迭代内；若命中的祖先本身还有一个 open shadow root，
   // 其内部的 cursor 命中后代不会被抑制——host 的 collectedElements 登记发生在其 shadow 内容
@@ -349,7 +357,13 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
       if (hidden && !includeHidden) continue;
       raws.push(raw);
       fieldElements.push(element);
-      collectedElements.add(element);
+      // 全屏/近全屏元素若被正常收录（例如一个真的占满全屏的 role="button"），不能把它计入
+      // collectedElements 去抑制后代——那等于把「cursor 路径专用」的全屏护栏意外扩散到语义
+      // 检测路径，会让一个全屏遮罩层的 role/tabindex 命中吞掉整页所有 cursor 命中的子元素。
+      const collectionView = element.ownerDocument.defaultView;
+      if (!(collectionView && isNearFullscreenRect(element, collectionView))) {
+        collectedElements.add(element);
+      }
       if (isGeneric) genericCollected += 1;
     }
   };

@@ -145,7 +145,10 @@ f8 text「昵称」empty new
 1. `html` / `body` 永不因 cursor 被收录（参考实现 `doesElementHaveInteractivePointer` 第一行也是 `if (tagName === 'html') return false`）。
 2. 跳过 `rect.width >= innerWidth * 0.9 && rect.height >= innerHeight * 0.9` 的元素——整屏遮罩层、全屏包裹容器不是可点击目标。
 
-护栏只作用于 **cursor 路径**：一个真的占满全屏的 `<button>` 仍会被廉价检查收录，不受影响。
+护栏对「是否收录这个元素本身」只作用于 **cursor 路径**：一个真的占满全屏的 `<button>`（或带
+`role`/`tabindex` 的语义化元素）仍会被廉价检查收录，不受影响。但「是否允许一个元素抑制它的
+后代」（§4.2 的祖先抑制）对两条路径一视同仁：一个近乎全屏的元素——无论是靠 cursor 命中还是
+靠语义检查命中——都不会被计入祖先抑制的登记表，避免它把整页所有 cursor 命中的子元素都吞掉。
 
 ### 4.4 `RawFormField` 增加 `byCursor` 标记，透传到 `FormFieldDescriptor`
 

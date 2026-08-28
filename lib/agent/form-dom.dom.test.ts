@@ -1117,9 +1117,26 @@ describe('collectFormFields cursor signal', () => {
     try {
       render('<div class="overlay" style="cursor: pointer"></div>');
       const host = document.querySelector('.overlay')!;
-      host.attachShadow({ mode: 'open' }).innerHTML = '<span>仅文本</span>';
+      host.attachShadow({ mode: 'open' }).innerHTML = '<span style="cursor: pointer">仅文本</span>';
       const out = collectFormFields(INPUT);
       expect(out.raws).toHaveLength(0);
+    } finally {
+      Element.prototype.getBoundingClientRect = original;
+    }
+  });
+
+  it('does not let a near-fullscreen semantically-detected element suppress cursor descendants', () => {
+    const original = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function (this: Element): DOMRect {
+      if ((this as HTMLElement).classList?.contains('overlay')) {
+        return { ...NON_ZERO_RECT, width: window.innerWidth, height: window.innerHeight } as DOMRect;
+      }
+      return NON_ZERO_RECT;
+    };
+    try {
+      render('<div class="overlay" role="button"><span style="cursor: pointer">下单</span></div>');
+      const out = collectFormFields(INPUT);
+      expect(out.raws).toHaveLength(2);
     } finally {
       Element.prototype.getBoundingClientRect = original;
     }

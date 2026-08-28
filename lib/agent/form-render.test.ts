@@ -167,6 +167,11 @@ describe('renderFormResultForModel', () => {
     expect(text).toContain('字段数量已达上限');
   });
 
+  it('keeps the textTruncated note when includeText cut off surrounding copy', () => {
+    const text = renderFormResultForModel(result({ textTruncated: true }));
+    expect(text).toContain('部分正文已截断');
+  });
+
   it('renders scrollable containers with their handles', () => {
     const text = renderFormResultForModel(
       result({
