@@ -387,6 +387,8 @@ export interface FormFieldDescriptor {
   validationMessage?: string;
   /** 相对上一次快照新出现的元素（下拉建议、展开的菜单项等）。首次读取该页面时不标记。 */
   isNew?: boolean;
+  /** 仅由 computed cursor 命中的通用可交互元素（非语义标签/role/tabindex）。用于观察召回质量与快速回退。 */
+  byCursor?: true;
   /** 排在这个字段之前、上一个字段之后出现的正文；已净化截断。仅 GetFormPayload.includeText 时有值。 */
   precedingText?: string;
 }

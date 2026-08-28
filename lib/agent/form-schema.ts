@@ -40,6 +40,8 @@ export interface RawFormField {
   elementText?: string;
   /** 通过 role/tabindex 启发式识别出的通用可交互元素（非标准表单标签）。 */
   interactive?: boolean;
+  /** 该元素是仅靠 computed cursor 判定命中的（廉价的标签/role/tabindex 检查全部落空）。 */
+  byCursor?: true;
   /** 排在这个字段之前、上一个字段之后出现的正文；未净化（见 form-dom.ts 的 collectFormFields）。 */
   precedingText?: string;
 }
@@ -138,6 +140,7 @@ export function toFieldDescriptor(raw: RawFormField, fieldId: string): FormField
     formId: typeof raw.formIndex === 'number' ? `form${raw.formIndex}` : undefined,
     validationMessage: raw.validationMessage || undefined,
     precedingText,
+    byCursor: raw.byCursor,
   };
 }
 

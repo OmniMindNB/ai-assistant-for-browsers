@@ -311,3 +311,36 @@ describe('findNewFieldIds', () => {
     expect(findNewFieldIds([field('f1', 'a')], ['a', 'b'])).toEqual(new Set());
   });
 });
+
+describe('toFieldDescriptor byCursor passthrough', () => {
+  function raw(overrides: Partial<RawFormField> = {}): RawFormField {
+    return {
+      path: [],
+      tag: 'div',
+      required: false,
+      disabled: false,
+      readOnly: false,
+      visible: true,
+      contentEditable: false,
+      ...overrides,
+    };
+  }
+
+  it('carries byCursor through to the descriptor', () => {
+    expect(toFieldDescriptor(raw({ byCursor: true, interactive: true }), 'f1').byCursor).toBe(true);
+  });
+
+  it('leaves byCursor undefined for semantically detected fields', () => {
+    expect(toFieldDescriptor(raw({ tag: 'button' }), 'f1').byCursor).toBeUndefined();
+  });
+
+  it('makes a cursor-detected element clickable, not unsupported', () => {
+    // interactive 为真是 resolveFieldKind 归到 'button' 的唯一途径；漏了它，
+    // 靠 cursor 捞回来的元素会拿到 unsupported、被 CLICKABLE_KINDS 判为不可点击，
+    // 等于发了一个没用的句柄（ref: 设计文档 §4.5）。
+    const descriptor = toFieldDescriptor(raw({ byCursor: true, interactive: true, elementText: '下单' }), 'f1');
+    expect(descriptor.kind).toBe('button');
+    expect(descriptor.clickable).toBe(true);
+    expect(descriptor.label).toBe('下单');
+  });
+});
