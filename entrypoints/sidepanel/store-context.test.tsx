@@ -783,6 +783,50 @@ describe('chat store page context', () => {
     await send;
   });
 
+  it('attaches a reported task outcome to the assistant message before persisting', async () => {
+    let resolvePrompt!: () => void;
+    const agent = makeAgent();
+    agent.prompt.mockImplementation(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    mocks.sendMessage.mockImplementation((type: string) => {
+      if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: [
+        'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE',
+        'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION',
+        'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
+      ] } });
+      return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    });
+
+    const send = useChat.getState().send('fill the form');
+    await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalled());
+    const onTaskOutcome = mocks.createBrowserAgent.mock.calls[0][0].onTaskOutcome as (outcome: unknown) => void;
+    onTaskOutcome({ outcome: 'success', reason: '已提交表单。' });
+    resolvePrompt();
+    await send;
+
+    const last = useChat.getState().messages.at(-1);
+    expect(last?.taskOutcome).toEqual({ outcome: 'success', reason: '已提交表单。' });
+  });
+
+  it('does not attach a task outcome when report_task_outcome was never called', async () => {
+    const agent = makeAgent();
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    await useChat.getState().send('what does this page say');
+
+    const last = useChat.getState().messages.at(-1);
+    expect(last?.taskOutcome).toBeUndefined();
+  });
+
+  it('restores a persisted task outcome when reopening a conversation', async () => {
+    mocks.getConversationMessages.mockResolvedValueOnce([
+      { role: 'assistant', content: '已完成', createdAt: 1, taskOutcome: { outcome: 'partial', reason: '只填了一半。' } },
+    ]);
+    await useChat.getState().openConversation('with-outcome');
+
+    const restored = useChat.getState().messages.at(-1);
+    expect(restored?.taskOutcome).toEqual({ outcome: 'partial', reason: '只填了一半。' });
+  });
+
   it('resolves a pending ask_user question when the run is stopped, instead of leaving it hanging', async () => {
     let resolvePrompt!: () => void;
     const agent = makeAgent();

@@ -29,6 +29,7 @@ import {
   type ChatMessage,
 } from '@/lib/chat/messages';
 import { createBrowserAgent } from '@/lib/agent/agent';
+import type { TaskOutcome } from '@/lib/agent/task-outcome';
 import {
   buildSystemPrompt,
   DEFAULT_READ_TOOL_CALL_BUDGET,
@@ -177,6 +178,7 @@ interface ActiveRun {
   resolveQuestion: ((answer: string) => void) | null;
   pendingToolArgs: Map<string, { toolName: string; args: unknown }>;
   terminatedToolCallIds: Set<string>;
+  taskOutcome: TaskOutcome | null;
 }
 let activeRun: ActiveRun | null = null;
 let runEpoch = 0;
@@ -815,6 +817,7 @@ export const useChat = create<ChatState>((set, get) => ({
         kind: r.kind,
         quotedText: r.quotedText,
         attachments: r.attachments,
+        taskOutcome: r.taskOutcome,
       }));
     clearAllSlowActivityTimers();
     set({
@@ -953,6 +956,7 @@ async function runAgent(
     resolveQuestion: null,
     pendingToolArgs: new Map(),
     terminatedToolCallIds: new Set(),
+    taskOutcome: null,
   };
   activeRun = run;
   const all = initialState.providers;
@@ -1105,6 +1109,10 @@ async function runAgent(
       void sendMessage('SET_AGENT_OVERLAY', payload, targetTabId).catch(() => undefined);
     },
     onSessionChange: (session) => { void saveTabSession(session).catch(() => undefined); },
+    onTaskOutcome: (outcome) => {
+      if (!isCurrentRun(run, get)) return;
+      run.taskOutcome = outcome;
+    },
   });
   if (!isCurrentRun(run, get)) return false;
   run.agent = agent;
@@ -1226,6 +1234,16 @@ async function runAgent(
   } finally {
     unsubscribe();
     if (isCurrentRun(run, get)) {
+      if (run.taskOutcome) {
+        const outcome = run.taskOutcome;
+        set((state) => {
+          const messages = state.messages.slice();
+          const last = messages[messages.length - 1];
+          if (!last) return {};
+          messages[messages.length - 1] = { ...last, taskOutcome: outcome };
+          return { messages };
+        });
+      }
       const messages = get().messages;
       // The turn is terminal before persistence starts: navigation must not
       // abort an already-complete agent or schedule a second snapshot write.
