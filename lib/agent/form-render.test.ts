@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { FormFieldDescriptor } from '@/lib/messaging';
-import { renderFieldLine } from './form-render';
+import type { FormFieldDescriptor, GetFormResult } from '@/lib/messaging';
+import { renderFieldLine, renderFormResultForModel } from './form-render';
 
 function field(overrides: Partial<FormFieldDescriptor> = {}): FormFieldDescriptor {
   return {
@@ -99,5 +99,96 @@ describe('renderFieldLine', () => {
       { showFormId: false },
     );
     expect(line).toBe('f1 text「建议」empty disabled readonly hidden new');
+  });
+});
+
+function result(overrides: Partial<GetFormResult> = {}): GetFormResult {
+  return {
+    forms: [],
+    fields: [],
+    orphanFieldIds: [],
+    unreachable: { iframes: 0, closedShadowRoots: 0 },
+    truncated: false,
+    textTruncated: false,
+    ...overrides,
+  };
+}
+
+describe('renderFormResultForModel', () => {
+  it('keeps the untrusted-content declaration', () => {
+    expect(renderFormResultForModel(result())).toContain('untrusted page content');
+  });
+
+  it('leads with a count of forms and interactive elements', () => {
+    const text = renderFormResultForModel(
+      result({ forms: [{ formId: 'form0', submitFieldIds: [] }], fields: [field(), field({ fieldId: 'f2' })] }),
+    );
+    expect(text).toContain('共 1 个表单、2 个可交互元素。');
+  });
+
+  it('renders one line per form with its submit handles', () => {
+    const text = renderFormResultForModel(
+      result({
+        forms: [{ formId: 'form0', method: 'post', action: 'https://example.com/checkout', submitFieldIds: ['f5'] }],
+      }),
+    );
+    expect(text).toContain('[form0] method=post action=https://example.com/checkout submit=f5');
+  });
+
+  it('shows formId on fields only when the page has several forms', () => {
+    const single = renderFormResultForModel(
+      result({ forms: [{ formId: 'form0', submitFieldIds: [] }], fields: [field({ formId: 'form0' })] }),
+    );
+    expect(single).not.toContain('form=form0');
+
+    const many = renderFormResultForModel(
+      result({
+        forms: [
+          { formId: 'form0', submitFieldIds: [] },
+          { formId: 'form1', submitFieldIds: [] },
+        ],
+        fields: [field({ formId: 'form0' })],
+      }),
+    );
+    expect(many).toContain('form=form0');
+  });
+
+  it('never leaks any fingerprint', () => {
+    const text = renderFormResultForModel(result({ fields: [field({ fingerprint: 'SHOULD-NOT-APPEAR' })] }));
+    expect(text).not.toContain('SHOULD-NOT-APPEAR');
+  });
+
+  it('keeps the unreachable and truncation notes that stop the model probing', () => {
+    const text = renderFormResultForModel(
+      result({ unreachable: { iframes: 2, closedShadowRoots: 1 }, truncated: true }),
+    );
+    expect(text).toContain('2 个 iframe');
+    expect(text).toContain('closed shadow root');
+    expect(text).toContain('字段数量已达上限');
+  });
+
+  it('renders scrollable containers with their handles', () => {
+    const text = renderFormResultForModel(
+      result({
+        scrollableContainers: [
+          { fieldId: 's1', tag: 'div', label: '消息列表', scrollTop: 0, scrollHeight: 4000, clientHeight: 600 },
+        ],
+      }),
+    );
+    expect(text).toContain('s1 div「消息列表」scrollTop=0 scrollHeight=4000 clientHeight=600');
+  });
+
+  it('renders trailing text when includeText was used', () => {
+    expect(renderFormResultForModel(result({ trailingText: '提交即代表同意条款' }))).toContain(
+      '尾部正文: 提交即代表同意条款',
+    );
+  });
+
+  it('is dramatically smaller than the pretty-printed JSON it replaces', () => {
+    const fields = Array.from({ length: 40 }, (_, index) =>
+      field({ fieldId: `f${index + 1}`, label: `字段${index + 1}` }),
+    );
+    const data = result({ fields });
+    expect(renderFormResultForModel(data).length).toBeLessThan(JSON.stringify(data, null, 2).length / 4);
   });
 });
