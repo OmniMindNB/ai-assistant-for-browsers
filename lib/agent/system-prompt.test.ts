@@ -122,6 +122,11 @@ describe('buildSystemPrompt task execution', () => {
   it('keeps the stop-and-answer rule for an exhausted or denied budget', () => {
     expect(SYSTEM_PROMPT).toContain('预算耗尽或工具被拒绝时');
   });
+
+  it('tells the model to report success/partial/failure after modifying the page', () => {
+    expect(SYSTEM_PROMPT).toContain('report_task_outcome');
+    expect(SYSTEM_PROMPT).toContain('success/partial/failure');
+  });
 });
 
 describe('buildSystemPrompt response format', () => {

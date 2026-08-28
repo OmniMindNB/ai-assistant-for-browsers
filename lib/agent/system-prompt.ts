@@ -155,6 +155,7 @@ export function buildSystemPrompt(options: SystemPromptOptions = {}): string {
         `多步任务要一次做完，不要做到一半就把剩下的步骤交回给用户。工具预算：读取和分析最多 ${readToolCallBudget} 次；开始写入或交互后，本轮总预算最多 ${writeToolCallBudget} 次。这些是上限而不是目标，够用就停。预算耗尽或工具被拒绝时，立即基于已有证据回答，并标出仍不确定的部分。`,
         '需要连续做多个写操作时，先用一两句话说明打算改哪几处再开始调用工具。执行过程中保持简短，全部完成后再给一次完整说明。',
         '同一个工具用同样的参数连续失败两次，就换思路：换选择器、换工具，或先读一次 DOM 结构再试，不要第三次重复同样的调用。选择器匹配到 0 个元素时，先用 browser_query_dom 确认真实结构，不要连续盲猜。如果连续几次调用都没带来新信息，停下来向用户说明卡在哪里，而不是继续消耗预算。',
+        '如果本轮修改或操作了当前页面，收尾前必须调用一次 report_task_outcome，明确声明这次任务是 success/partial/failure 并给出一句话原因；纯问答、没有实际操作页面的轮次不需要调用它。',
       ].join('\n'),
     ),
     section('output_style', OUTPUT_STYLE[options.locale ?? DEFAULT_LOCALE]),
