@@ -1,6 +1,7 @@
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import { Type } from '@earendil-works/pi-ai';
 import { describeClickResult, describeNavigateResult, describeNewFields, describeScrollResult } from './action-result-text';
+import { renderFormResultForModel } from './form-render';
 import { REPORT_TASK_OUTCOME_TOOL_NAME, type TaskOutcome, type TaskOutcomeValue } from './task-outcome';
 import { formatTabList, type TabSessionController } from './tab-session';
 import {
@@ -357,17 +358,10 @@ function makeGetFormTool(session: TabSessionController): BrowserAgentTool {
       const response = (await sendMessage<GetFormPayload, GetFormResult>('GET_FORM', payload, session.currentTabId)) as MessageResponse<GetFormResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '表单读取失败');
 
-      const data = response.data;
-      const notes: string[] = [];
-      if (data.unreachable.iframes > 0) {
-        notes.push(`页面中有 ${data.unreachable.iframes} 个 iframe，其内部表单当前版本无法读取或操作。`);
-      }
-      if (data.unreachable.closedShadowRoots > 0) {
-        notes.push(`页面中有 ${data.unreachable.closedShadowRoots} 个可能含 closed shadow root 的自定义元素，其内部字段不可见。`);
-      }
-      if (data.truncated) notes.push('字段数量已达上限，请用 selector 参数缩小范围后重新读取。');
-
-      return textResult([formatJson('表单结构', data), ...notes].join('\n'), data as unknown as Record<string, unknown>);
+      return textResult(
+        renderFormResultForModel(response.data),
+        response.data as unknown as Record<string, unknown>,
+      );
     },
   };
 }

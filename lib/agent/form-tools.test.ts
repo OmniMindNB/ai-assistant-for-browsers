@@ -42,6 +42,26 @@ describe('browser_get_form', () => {
     expect((output.content[0] as { text: string }).text).toContain('untrusted page content');
   });
 
+  it('renders fields as compact lines instead of pretty-printed JSON', async () => {
+    sendMessage.mockResolvedValueOnce({ id: '1', ok: true, data: RESULT });
+    const output = await getFormTool().execute('call-1', {});
+    const text = (output.content[0] as { text: string }).text;
+    expect(text).toContain('f1 text「邮箱」value="a@b.c" required');
+    expect(text).not.toContain('"fieldId": "f1"');
+  });
+
+  it('never sends the verification fingerprint to the model', async () => {
+    sendMessage.mockResolvedValueOnce({ id: '1', ok: true, data: RESULT });
+    const output = await getFormTool().execute('call-1', {});
+    expect((output.content[0] as { text: string }).text).not.toContain('input|email|email|邮箱');
+  });
+
+  it('still hands the full structured data to the UI', async () => {
+    sendMessage.mockResolvedValueOnce({ id: '1', ok: true, data: RESULT });
+    const output = await getFormTool().execute('call-1', {});
+    expect(output.details).toMatchObject({ fields: [{ fieldId: 'f1', fingerprint: 'input|email|email|邮箱' }] });
+  });
+
   it('surfaces unreachable iframes in the text so the model stops probing', async () => {
     sendMessage.mockResolvedValueOnce({ id: '1', ok: true, data: RESULT });
     const output = await getFormTool().execute('call-1', {});
