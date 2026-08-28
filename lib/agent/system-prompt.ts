@@ -1,8 +1,8 @@
 import type { ResolvedLocale } from '@/lib/i18n';
 import { WRITE_TOOL_NAMES } from './permissions';
 
-export const DEFAULT_READ_TOOL_CALL_BUDGET = 12;
-export const DEFAULT_WRITE_TOOL_CALL_BUDGET = 24;
+export const DEFAULT_READ_TOOL_CALL_BUDGET = 20;
+export const DEFAULT_WRITE_TOOL_CALL_BUDGET = 40;
 
 /**
  * 提示词里列举的写入/交互工具名，直接由权限表推导，避免新增工具时提示词漏改。
