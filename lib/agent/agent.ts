@@ -17,6 +17,7 @@ import {
 import { browserOpenAIStream } from './openai-stream';
 import { browserAnthropicStream } from './anthropic-stream';
 import { beforeToolCallPermissionGate, WRITE_TOOL_NAMES } from './permissions';
+import { REPORT_TASK_OUTCOME_TOOL_NAME, type TaskOutcome } from './task-outcome';
 import { createConfirmGateState, type ConfirmFn } from './confirm-gate';
 import { createBrowserTools, type BrowserAgentTool } from './tools';
 import { createTabSession, type TabSessionController } from './tab-session';
@@ -57,6 +58,8 @@ export interface BrowserAgentOptions {
   writeToolCallBudget?: number;
   onConfirm?: ConfirmFn;
   onAskUser?: (toolCallId: string, question: string, signal?: AbortSignal) => Promise<string>;
+  /** report_task_outcome 工具被调用时转发给外层，用于把成败信号落到对应的 assistant 消息上。 */
+  onTaskOutcome?: (outcome: TaskOutcome) => void;
   /**
    * 写操作获批、或当前操作目标切换时通知外层同步执行期遮罩。第二个参数是这次遮罩状态
    * 要作用的 tabId——遮罩必须跟随当前实际被操作的 tab，不再总是面板自己绑定的那个
@@ -96,12 +99,16 @@ export function buildSubmitIntentProbePayload(toolName: string, args: unknown): 
 
 export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): AgentOptions {
   const session = options.session ?? createTabSession(options.tabId);
-  const tools = options.tools ?? createBrowserTools(session, { onAskUser: options.onAskUser });
+  const tools = options.tools ?? createBrowserTools(session, { onAskUser: options.onAskUser, onTaskOutcome: options.onTaskOutcome });
+  const reportTaskOutcomeTool = tools.find((tool) => tool.name === REPORT_TASK_OUTCOME_TOOL_NAME);
   const readToolCallBudget = options.readToolCallBudget ?? DEFAULT_READ_TOOL_CALL_BUDGET;
   const writeToolCallBudget = options.writeToolCallBudget ?? DEFAULT_WRITE_TOOL_CALL_BUDGET;
   const policy = createAgentToolPolicy({ readToolCallBudget, writeToolCallBudget });
   let implementationDossierCollected = false;
   let postDossierFollowUps = 0;
+  let writeToolRanThisRun = false;
+  let outcomeReported = false;
+  let outcomeForceAttempted = false;
   const toolCallCounts = new Map<string, number>();
   const confirmGateState = createConfirmGateState();
   let overlayTabId = options.tabId;
@@ -190,6 +197,9 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
       policy.recordExecution(toolName, context.args, context.isError);
       toolCallCounts.set(toolName, (toolCallCounts.get(toolName) ?? 0) + 1);
 
+      if (!context.isError && WRITE_TOOL_NAMES.has(toolName)) writeToolRanThisRun = true;
+      if (!context.isError && toolName === REPORT_TASK_OUTCOME_TOOL_NAME) outcomeReported = true;
+
       // 切换/开新/关闭标签页导致当前操作目标变化时，遮罩要跟过去：
       // 先关旧目标（如果它还是遮罩最后一次开在的那个 tab），再开新目标。
       if (!context.isError && TAB_SESSION_MUTATING_TOOLS.has(toolName) && session.currentTabId !== overlayTabId) {
@@ -229,21 +239,37 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
     },
     prepareNextTurnWithContext: async (context) => {
       const budgetExhausted = policy.exhausted;
-      if (!policy.prepareFinalResponse()) return undefined;
-      const finalInstruction: AgentMessage = {
-        role: 'user',
-        content: budgetExhausted
-          ? '工具调用预算已经用完。不要再调用任何工具，请立即基于已有结果给出最终回答，并明确说明仍不确定的部分。'
-          : '工具调用连续被阻止，工具调用阶段已经结束。不要再调用任何工具，请立即基于已有结果给出最终回答，并明确说明仍不确定的部分。',
-        timestamp: Date.now(),
-      };
-      return {
-        context: {
-          ...context.context,
-          messages: [...context.context.messages, finalInstruction],
-          tools: [],
-        },
-      };
+      if (policy.prepareFinalResponse()) {
+        const finalInstruction: AgentMessage = {
+          role: 'user',
+          content: budgetExhausted
+            ? '工具调用预算已经用完。不要再调用任何工具，请立即基于已有结果给出最终回答，并明确说明仍不确定的部分。'
+            : '工具调用连续被阻止，工具调用阶段已经结束。不要再调用任何工具，请立即基于已有结果给出最终回答，并明确说明仍不确定的部分。',
+          timestamp: Date.now(),
+        };
+        return {
+          context: {
+            ...context.context,
+            messages: [...context.context.messages, finalInstruction],
+            tools: [],
+          },
+        };
+      }
+
+      // 写工具跑过、这轮消息没有（新的）工具调用（模型认为自己已经收尾）、还没汇报过、
+      // 还没强制补调过一次、且 report_task_outcome 确实在可用工具里——五个条件同时成立才补一轮。
+      const hasToolCalls = context.message?.content?.some((part) => part.type === 'toolCall') ?? false;
+      if (writeToolRanThisRun && !outcomeReported && !outcomeForceAttempted && !hasToolCalls && reportTaskOutcomeTool) {
+        outcomeForceAttempted = true; // 保证最多补调一次，绝不循环
+        options.steer({
+          role: 'user',
+          content:
+            '任务已结束但还没有汇报结果。请立即调用 report_task_outcome，说明这次操作是 success/partial/failure，并给出一句话原因，然后停止。',
+          timestamp: Date.now(),
+        });
+        return { context: { ...context.context, tools: [reportTaskOutcomeTool] } };
+      }
+      return undefined;
     },
     shouldStopAfterTurn: async () => policy.shouldStopAfterTurn(),
     transformContext: async (messages) => compactAgentMessages(messages),

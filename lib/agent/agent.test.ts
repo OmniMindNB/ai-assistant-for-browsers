@@ -17,6 +17,7 @@ import { buildSubmitIntentProbePayload, createBrowserAgentOptions, createModel, 
 import { browserOpenAIStream } from './openai-stream';
 import { browserAnthropicStream } from './anthropic-stream';
 import { createTabSession } from './tab-session';
+import type { BrowserAgentTool } from './tools';
 
 const baseProvider: ProviderConfig = {
   id: 'p-1',
@@ -44,6 +45,14 @@ function afterContext(name: string, args: unknown, isError: boolean): AfterToolC
     result: { content: [{ type: 'text', text: isError ? 'failed' : 'ok' }], details: {} },
     isError,
   } as unknown as AfterToolCallContext;
+}
+
+function textOnlyMessage(text: string) {
+  return { content: [{ type: 'text', text }] };
+}
+
+function toolCallStillPendingMessage(name: string) {
+  return { content: [{ type: 'toolCall', id: `${name}-id`, name, arguments: {} }] };
 }
 
 function runtimeOptions(overrides: { onConfirm?: () => Promise<boolean> } = {}) {
@@ -184,6 +193,139 @@ describe('createBrowserAgentOptions tool policy hooks', () => {
     expect(
       await hooks.prepareNextTurnWithContext?.({ context: { messages: [], tools: [{}] } } as unknown as PrepareNextTurnContext),
     ).toMatchObject({ context: { tools: [] } });
+  });
+});
+
+describe('createBrowserAgentOptions task outcome forcing', () => {
+  const reportTaskOutcomeTool = { name: 'report_task_outcome' } as unknown as BrowserAgentTool;
+
+  function hooksWithTool(overrides: { onTaskOutcome?: (outcome: unknown) => void; steer?: (m: AgentMessage) => void } = {}) {
+    return createBrowserAgentOptions({
+      provider: baseProvider,
+      tabId: 1,
+      tools: [reportTaskOutcomeTool],
+      readToolCallBudget: 12,
+      writeToolCallBudget: 24,
+      steer: overrides.steer ?? vi.fn(),
+      onTaskOutcome: overrides.onTaskOutcome,
+    });
+  }
+
+  it('does not force a closing turn when no write tool ran this run', async () => {
+    const steer = vi.fn();
+    const hooks = hooksWithTool({ steer });
+    await hooks.afterToolCall?.(afterContext('browser_read_page', {}, false));
+    const next = await hooks.prepareNextTurnWithContext?.({
+      message: textOnlyMessage('done'),
+      context: { messages: [], tools: [reportTaskOutcomeTool] },
+    } as unknown as PrepareNextTurnContext);
+    expect(next).toBeUndefined();
+    expect(steer).not.toHaveBeenCalled();
+  });
+
+  it('does not force a closing turn while the model still has pending tool calls', async () => {
+    const steer = vi.fn();
+    const hooks = hooksWithTool({ steer });
+    await hooks.afterToolCall?.(afterContext('browser_click', { selector: '#a' }, false));
+    const next = await hooks.prepareNextTurnWithContext?.({
+      message: toolCallStillPendingMessage('browser_click'),
+      context: { messages: [], tools: [reportTaskOutcomeTool] },
+    } as unknown as PrepareNextTurnContext);
+    expect(next).toBeUndefined();
+    expect(steer).not.toHaveBeenCalled();
+  });
+
+  it('forces exactly one closing turn restricted to report_task_outcome after a write with no outcome reported', async () => {
+    const steer = vi.fn();
+    const hooks = hooksWithTool({ steer });
+    await hooks.afterToolCall?.(afterContext('browser_click', { selector: '#a' }, false));
+
+    const first = await hooks.prepareNextTurnWithContext?.({
+      message: textOnlyMessage('done'),
+      context: { messages: [], tools: [reportTaskOutcomeTool] },
+    } as unknown as PrepareNextTurnContext);
+    expect(first?.context?.tools).toEqual([reportTaskOutcomeTool]);
+    expect(steer).toHaveBeenCalledTimes(1);
+    expect(steer.mock.calls[0][0]).toMatchObject({
+      role: 'user',
+      content: expect.stringContaining('report_task_outcome'),
+    });
+
+    // 模型在被强制的这一轮仍然没有调用，也只补一次，不会无限重试。
+    const second = await hooks.prepareNextTurnWithContext?.({
+      message: textOnlyMessage('still nothing'),
+      context: { messages: [], tools: [reportTaskOutcomeTool] },
+    } as unknown as PrepareNextTurnContext);
+    expect(second).toBeUndefined();
+    expect(steer).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not force a closing turn once report_task_outcome has already been called', async () => {
+    const steer = vi.fn();
+    const hooks = hooksWithTool({ steer });
+    await hooks.afterToolCall?.(afterContext('browser_click', { selector: '#a' }, false));
+    await hooks.afterToolCall?.(afterContext('report_task_outcome', { outcome: 'success', reason: 'ok' }, false));
+
+    const next = await hooks.prepareNextTurnWithContext?.({
+      message: textOnlyMessage('done'),
+      context: { messages: [], tools: [reportTaskOutcomeTool] },
+    } as unknown as PrepareNextTurnContext);
+    expect(next).toBeUndefined();
+    expect(steer).not.toHaveBeenCalled();
+  });
+
+  it('does not force a closing turn when report_task_outcome is not among the available tools', async () => {
+    const steer = vi.fn();
+    const hooks = createBrowserAgentOptions({
+      provider: baseProvider,
+      tabId: 1,
+      tools: [],
+      readToolCallBudget: 12,
+      writeToolCallBudget: 24,
+      steer,
+    });
+    await hooks.afterToolCall?.(afterContext('browser_click', { selector: '#a' }, false));
+    const next = await hooks.prepareNextTurnWithContext?.({
+      message: textOnlyMessage('done'),
+      context: { messages: [], tools: [] },
+    } as unknown as PrepareNextTurnContext);
+    expect(next).toBeUndefined();
+    expect(steer).not.toHaveBeenCalled();
+  });
+
+  it('leaves the existing budget-exhaustion branch untouched when both could apply', async () => {
+    const steer = vi.fn();
+    const hooks = createBrowserAgentOptions({
+      provider: baseProvider,
+      tabId: 1,
+      tools: [reportTaskOutcomeTool],
+      readToolCallBudget: 1,
+      writeToolCallBudget: 2,
+      steer,
+    });
+    await hooks.afterToolCall?.(afterContext('browser_read_page', {}, false)); // 预算耗尽
+    const next = await hooks.prepareNextTurnWithContext?.({
+      message: toolCallStillPendingMessage('browser_read_page'),
+      context: { messages: [], tools: [{ name: 'still-present' }] },
+    } as unknown as PrepareNextTurnContext);
+    expect(next?.context?.tools).toEqual([]); // 既有分支的行为：清空全部工具，不是收窄成 report_task_outcome
+    expect(next?.context?.messages.at(-1)).toMatchObject({ content: expect.stringContaining('工具调用预算已经用完') });
+  });
+
+  it('threads onTaskOutcome through to the default report_task_outcome tool', async () => {
+    const onTaskOutcome = vi.fn();
+    const hooks = createBrowserAgentOptions({
+      provider: baseProvider,
+      tabId: 1,
+      readToolCallBudget: 12,
+      writeToolCallBudget: 24,
+      steer: vi.fn(),
+      onTaskOutcome,
+    });
+    const tool = (hooks.initialState!.tools as BrowserAgentTool[]).find((t) => t.name === 'report_task_outcome');
+    expect(tool).toBeDefined();
+    await tool!.execute('call-1', { outcome: 'partial', reason: '只完成了一半。' });
+    expect(onTaskOutcome).toHaveBeenCalledWith({ outcome: 'partial', reason: '只完成了一半。' });
   });
 });
 
