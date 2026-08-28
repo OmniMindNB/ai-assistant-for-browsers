@@ -25,7 +25,10 @@ import { AttachmentChip } from './components/AttachmentChip';
 import type { PendingConfirmation, PendingQuestion, UIMessage } from './store';
 import { resolvePageAttached, type ResolvedShortcutCommand } from '@/lib/workbench/presentation';
 import {
+  IconAlertTriangle,
+  IconCheck,
   IconChevronDown,
+  IconClose,
   IconPencil,
 } from './icons';
 
@@ -466,6 +469,27 @@ function Message({
         {content && showThinkingIndicator && (
           <div className="mt-1">
             <TypingDots />
+          </div>
+        )}
+        {message.taskOutcome && (
+          <div
+            className={`mt-2 inline-flex items-center gap-1.5 text-xs font-medium ${
+              message.taskOutcome.outcome === 'success'
+                ? 'text-emerald-700 dark:text-emerald-400'
+                : message.taskOutcome.outcome === 'partial'
+                  ? 'text-amber-700 dark:text-amber-400'
+                  : 'text-red-700 dark:text-red-400'
+            }`}
+            title={message.taskOutcome.reason}
+          >
+            {message.taskOutcome.outcome === 'success' ? (
+              <IconCheck className="h-3.5 w-3.5" />
+            ) : message.taskOutcome.outcome === 'partial' ? (
+              <IconAlertTriangle className="h-3.5 w-3.5" />
+            ) : (
+              <IconClose className="h-3.5 w-3.5" />
+            )}
+            <span>{t(`chat.taskOutcome.${message.taskOutcome.outcome}`)}</span>
           </div>
         )}
       </div>

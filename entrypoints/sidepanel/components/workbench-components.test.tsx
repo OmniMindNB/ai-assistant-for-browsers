@@ -941,6 +941,78 @@ describe('activity step list', () => {
 
     expect(screen.queryByLabelText('Generating')).toBeNull();
   });
+
+  it('renders a success badge with the reported reason as a tooltip', () => {
+    (chatStore as any).messages = [
+      {
+        id: 'm1',
+        role: 'assistant',
+        content: 'Done',
+        createdAt: 1,
+        taskOutcome: { outcome: 'success', reason: 'Filled and submitted the form.' },
+      },
+    ];
+    (chatStore as any).busy = false;
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    expect(screen.getByText('Task completed')).toBeVisible();
+    expect(screen.getByTitle('Filled and submitted the form.')).toBeVisible();
+  });
+
+  it('renders partial and failure badges with distinct labels', () => {
+    (chatStore as any).messages = [
+      {
+        id: 'm1',
+        role: 'assistant',
+        content: 'Partly done',
+        createdAt: 1,
+        taskOutcome: { outcome: 'partial', reason: 'Filled 2 of 3 fields.' },
+      },
+      {
+        id: 'm2',
+        role: 'user',
+        content: 'try again',
+        createdAt: 2,
+      },
+      {
+        id: 'm3',
+        role: 'assistant',
+        content: 'Could not finish',
+        createdAt: 3,
+        taskOutcome: { outcome: 'failure', reason: 'Submit button was never found.' },
+      },
+    ];
+    (chatStore as any).busy = false;
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    expect(screen.getByText('Partially completed')).toBeVisible();
+    expect(screen.getByText('Task not completed')).toBeVisible();
+  });
+
+  it('does not render a badge when the message has no taskOutcome', () => {
+    (chatStore as any).messages = [
+      { id: 'm1', role: 'user', content: 'Do something', createdAt: 1 },
+      { id: 'm2', role: 'assistant', content: 'Working on it', createdAt: 2 },
+    ];
+    (chatStore as any).busy = false;
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    expect(screen.queryByText('Task completed')).toBeNull();
+    expect(screen.queryByText('Partially completed')).toBeNull();
+    expect(screen.queryByText('Task not completed')).toBeNull();
+  });
 });
 
 describe('workbench context controls', () => {
