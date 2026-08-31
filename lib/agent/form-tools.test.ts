@@ -1,11 +1,24 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GetFormResult } from '@/lib/messaging';
+import { defaultRedactionSettings } from '@/lib/redaction';
 import { createTabSession } from './tab-session';
 
 const sendMessage = vi.fn();
 vi.mock('@/lib/messaging', async () => {
   const actual = await vi.importActual<typeof import('@/lib/messaging')>('@/lib/messaging');
   return { ...actual, sendMessage: (...args: unknown[]) => sendMessage(...args) };
+});
+
+const loadRedactionSettings = vi.fn();
+vi.mock('@/lib/redaction', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/redaction')>('@/lib/redaction');
+  return { ...actual, loadRedactionSettings: (...args: unknown[]) => loadRedactionSettings(...args) };
+});
+
+// 默认关闭：既有测试用例对渲染文本做精确匹配，不应受脱敏默认开启影响。
+// 新增的脱敏专项测试用 mockResolvedValueOnce 显式覆盖成开启状态。
+beforeEach(() => {
+  loadRedactionSettings.mockResolvedValue({ enabled: false, rules: [] });
 });
 
 const { createBrowserTools } = await import('./tools');
@@ -93,6 +106,48 @@ describe('browser_get_form', () => {
     });
     const output = await getFormTool().execute('call-1', { includeScrollable: true });
     expect((output.content[0] as { text: string }).text).toContain('s1');
+  });
+
+  it('redacts sensitive values through the redaction pipeline when enabled', async () => {
+    loadRedactionSettings.mockResolvedValueOnce(defaultRedactionSettings());
+    const resultWithPhone: GetFormResult = {
+      ...RESULT,
+      fields: [{ ...RESULT.fields[0], value: '13812345678', label: '手机号', name: 'phone' }],
+    };
+    sendMessage.mockResolvedValueOnce({ id: '1', ok: true, data: resultWithPhone });
+
+    const output = await getFormTool().execute('call-1', {});
+    const text = (output.content[0] as { text: string }).text;
+
+    expect(text).toContain('[手机号已脱敏]');
+    expect(text).not.toContain('13812345678');
+  });
+
+  it('keeps original values when redaction is disabled', async () => {
+    loadRedactionSettings.mockResolvedValueOnce({ enabled: false, rules: [] });
+    const resultWithPhone: GetFormResult = {
+      ...RESULT,
+      fields: [{ ...RESULT.fields[0], value: '13812345678', label: '手机号', name: 'phone' }],
+    };
+    sendMessage.mockResolvedValueOnce({ id: '1', ok: true, data: resultWithPhone });
+
+    const output = await getFormTool().execute('call-1', {});
+    const text = (output.content[0] as { text: string }).text;
+
+    expect(text).toContain('13812345678');
+  });
+
+  it('still hands the unredacted structured data to the UI via details', async () => {
+    loadRedactionSettings.mockResolvedValueOnce(defaultRedactionSettings());
+    const resultWithPhone: GetFormResult = {
+      ...RESULT,
+      fields: [{ ...RESULT.fields[0], value: '13812345678', label: '手机号', name: 'phone' }],
+    };
+    sendMessage.mockResolvedValueOnce({ id: '1', ok: true, data: resultWithPhone });
+
+    const output = await getFormTool().execute('call-1', {});
+
+    expect(output.details).toMatchObject({ fields: [{ fieldId: 'f1', value: '13812345678' }] });
   });
 });
 

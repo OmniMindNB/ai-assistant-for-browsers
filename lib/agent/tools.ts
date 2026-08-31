@@ -2,6 +2,7 @@ import type { AgentTool } from '@earendil-works/pi-agent-core';
 import { Type } from '@earendil-works/pi-ai';
 import { describeClickResult, describeNavigateResult, describeNewFields, describeScrollResult } from './action-result-text';
 import { renderFormResultForModel } from './form-render';
+import { loadRedactionSettings, redactText } from '@/lib/redaction';
 import { REPORT_TASK_OUTCOME_TOOL_NAME, type TaskOutcome, type TaskOutcomeValue } from './task-outcome';
 import { formatTabList, type TabSessionController } from './tab-session';
 import {
@@ -358,8 +359,9 @@ function makeGetFormTool(session: TabSessionController): BrowserAgentTool {
       const response = (await sendMessage<GetFormPayload, GetFormResult>('GET_FORM', payload, session.currentTabId)) as MessageResponse<GetFormResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '表单读取失败');
 
+      const redactionSettings = await loadRedactionSettings();
       return textResult(
-        renderFormResultForModel(response.data),
+        redactText(renderFormResultForModel(response.data), redactionSettings),
         response.data as unknown as Record<string, unknown>,
       );
     },
