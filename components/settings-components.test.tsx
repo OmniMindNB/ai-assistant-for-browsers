@@ -115,6 +115,15 @@ describe('grouped options settings', () => {
     expect(screen.queryByRole('heading', { name: 'Privacy & permissions' })).not.toBeInTheDocument();
   });
 
+  it('shows the redaction settings inside the Privacy section', async () => {
+    const user = userEvent.setup();
+    renderWithLocale(<OptionsApp />);
+
+    await user.click(screen.getByRole('button', { name: 'Privacy & permissions' }));
+
+    expect(await screen.findByRole('checkbox', { name: 'Enable page content redaction' })).toBeVisible();
+  });
+
   it('lists nav items in the specified order', async () => {
     renderWithLocale(<OptionsApp />);
 

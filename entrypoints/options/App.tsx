@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import AppearanceSettings from '@/components/AppearanceSettings';
 import LanguageSettings from '@/components/LanguageSettings';
 import ProviderSettings from '@/components/ProviderSettings';
+import RedactionSettings from '@/components/RedactionSettings';
 import {
   IconAbout,
   IconAppearance,
@@ -95,6 +96,7 @@ function PrivacySection() {
           </article>
         ))}
       </div>
+      <RedactionSettings />
     </section>
   );
 }
