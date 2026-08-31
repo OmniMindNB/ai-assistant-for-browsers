@@ -52,6 +52,7 @@ import {
   type TypeTextResult,
   newMessageId,
 } from '@/lib/messaging';
+import { loadRedactionSettings, redactText } from '@/lib/redaction';
 import { fetchPageResourceText } from '@/lib/page-resource-fetch';
 import { resolveTargetTab } from '@/lib/agent/tab-target';
 import { sendToContentScript } from '@/lib/agent/content-script-messaging';
@@ -369,7 +370,8 @@ async function extractActivePage(tabId: number): Promise<PageContent> {
   if (!response?.ok || !response.data) {
     throw new Error(response?.error ?? '页面提取失败');
   }
-  return response.data;
+  const redactionSettings = await loadRedactionSettings();
+  return { ...response.data, text: redactText(response.data.text, redactionSettings) };
 }
 
 async function getActiveSelection(tabId: number): Promise<PageSelection> {
