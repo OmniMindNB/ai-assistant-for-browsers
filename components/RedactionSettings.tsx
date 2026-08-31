@@ -3,15 +3,31 @@ import { useTranslation } from '@/lib/i18n';
 import {
   REDACTION_STORAGE_KEY,
   loadRedactionSettings,
+  newRedactionRuleId,
   saveRedactionSettings,
+  type RedactionRule,
   type RedactionSettings as RedactionSettingsData,
 } from '@/lib/redaction';
+
+interface RuleDraft {
+  label: string;
+  pattern: string;
+}
+
+interface DraftErrors {
+  label?: string;
+  pattern?: string;
+}
+
+const EMPTY_DRAFT: RuleDraft = { label: '', pattern: '' };
 
 export default function RedactionSettings() {
   const { t } = useTranslation();
   const [settings, setSettings] = useState<RedactionSettingsData | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [draft, setDraft] = useState<RuleDraft | null>(null);
+  const [draftErrors, setDraftErrors] = useState<DraftErrors>({});
 
   useEffect(() => {
     let active = true;
@@ -71,6 +87,50 @@ export default function RedactionSettings() {
     await persist({ ...settings, rules });
   }
 
+  async function removeRule(rule: RedactionRule) {
+    if (!settings || saving) return;
+    if (!window.confirm(t('privacy.redaction.confirmDeleteRule'))) return;
+    await persist({ ...settings, rules: settings.rules.filter((candidate) => candidate.id !== rule.id) });
+  }
+
+  function beginAdd() {
+    setDraft({ ...EMPTY_DRAFT });
+    setDraftErrors({});
+    setError(null);
+  }
+
+  function cancelAdd() {
+    setDraft(null);
+    setDraftErrors({});
+  }
+
+  async function saveDraft() {
+    if (!draft || !settings || saving) return;
+    const label = draft.label.trim();
+    const pattern = draft.pattern.trim();
+    const nextErrors: DraftErrors = {
+      ...(!label ? { label: t('privacy.redaction.ruleLabelRequired') } : {}),
+      ...(!pattern ? { pattern: t('privacy.redaction.rulePatternRequired') } : {}),
+    };
+    if (nextErrors.label || nextErrors.pattern) {
+      setDraftErrors(nextErrors);
+      return;
+    }
+    try {
+      // eslint-disable-next-line no-new
+      new RegExp(pattern);
+    } catch (err) {
+      setDraftErrors({});
+      setError(t('privacy.redaction.invalidPattern', { message: err instanceof Error ? err.message : String(err) }));
+      return;
+    }
+
+    const newRule: RedactionRule = { id: newRedactionRuleId(), label, pattern, enabled: true, builtin: false };
+    await persist({ ...settings, rules: [...settings.rules, newRule] });
+    setDraft(null);
+    setDraftErrors({});
+  }
+
   if (!settings) {
     return (
       <section className="mt-6">
@@ -89,12 +149,24 @@ export default function RedactionSettings() {
 
   return (
     <section className="mt-6">
-      <h3 className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
-        {t('privacy.redaction.heading')}
-      </h3>
-      <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-        {t('privacy.redaction.description')}
-      </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+            {t('privacy.redaction.heading')}
+          </h3>
+          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+            {t('privacy.redaction.description')}
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={saving || Boolean(draft)}
+          onClick={beginAdd}
+          className="rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-white"
+        >
+          {t('privacy.redaction.addRule')}
+        </button>
+      </div>
 
       {error && (
         <p
@@ -132,10 +204,87 @@ export default function RedactionSettings() {
               />
               <span className="truncate">{rule.label}</span>
             </label>
-            <code className="truncate text-xs text-neutral-400 dark:text-neutral-500">{rule.pattern}</code>
+            <div className="flex min-w-0 items-center gap-2">
+              <code className="truncate text-xs text-neutral-400 dark:text-neutral-500">{rule.pattern}</code>
+              {!rule.builtin && (
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => void removeRule(rule)}
+                  aria-label={t('privacy.redaction.deleteRuleAria', { label: rule.label })}
+                  className="shrink-0 rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/40"
+                >
+                  {t('common.delete')}
+                </button>
+              )}
+            </div>
           </li>
         ))}
       </ul>
+
+      {draft && (
+        <form
+          aria-label={t('privacy.redaction.addRuleHeading')}
+          onSubmit={(event) => {
+            event.preventDefault();
+            void saveDraft();
+          }}
+          className="mt-4 rounded-lg border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900/60"
+        >
+          <h4 className="mb-3 text-sm font-medium text-neutral-800 dark:text-neutral-100">
+            {t('privacy.redaction.addRuleHeading')}
+          </h4>
+          <div className="space-y-3">
+            <label className="block text-xs text-neutral-600 dark:text-neutral-300">
+              <span className="mb-1 block">{t('privacy.redaction.ruleLabel')}</span>
+              <input
+                value={draft.label}
+                disabled={saving}
+                onChange={(event) => {
+                  setDraft((current) => (current ? { ...current, label: event.target.value } : current));
+                  setDraftErrors((current) => ({ ...current, label: undefined }));
+                }}
+                className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+              />
+              {draftErrors.label && (
+                <span className="mt-1 block text-xs text-red-600 dark:text-red-400">{draftErrors.label}</span>
+              )}
+            </label>
+            <label className="block text-xs text-neutral-600 dark:text-neutral-300">
+              <span className="mb-1 block">{t('privacy.redaction.rulePattern')}</span>
+              <input
+                value={draft.pattern}
+                disabled={saving}
+                onChange={(event) => {
+                  setDraft((current) => (current ? { ...current, pattern: event.target.value } : current));
+                  setDraftErrors((current) => ({ ...current, pattern: undefined }));
+                }}
+                className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 font-mono text-sm text-neutral-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+              />
+              {draftErrors.pattern && (
+                <span className="mt-1 block text-xs text-red-600 dark:text-red-400">{draftErrors.pattern}</span>
+              )}
+            </label>
+          </div>
+          <div className="mt-3 flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={saving}
+              onClick={cancelAdd}
+              className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-white disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+            >
+              {t('privacy.redaction.cancel')}
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {t('privacy.redaction.save')}
+            </button>
+          </div>
+        </form>
+      )}
     </section>
   );
 }

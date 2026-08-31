@@ -524,6 +524,99 @@ describe('grouped options settings', () => {
     expect(screen.getByRole('checkbox', { name: 'Enable page content redaction' })).not.toBeChecked();
     expect(screen.queryByRole('checkbox', { name: '邮箱' })).not.toBeInTheDocument();
   });
+
+  it('adds a valid custom rule and persists it', async () => {
+    const user = userEvent.setup();
+    const set = (globalThis as any).browser.storage.local.set as ReturnType<typeof vi.fn>;
+    renderWithLocale(<RedactionSettings />);
+
+    await screen.findByRole('checkbox', { name: 'Enable page content redaction' });
+    await user.click(screen.getByRole('button', { name: 'Add custom rule' }));
+    await user.type(screen.getByLabelText('Rule label'), '工号');
+    // userEvent.type() interprets `{}` as special-key syntax, so a literal
+    // regex quantifier like `{4}` must be set via fireEvent.change instead.
+    fireEvent.change(screen.getByLabelText('Regular expression'), { target: { value: 'EMP-\\d{4}' } });
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(screen.getByRole('checkbox', { name: '工号' })).toBeChecked();
+    const persisted = set.mock.calls.at(-1)?.[0]['runi:redaction'];
+    expect(persisted.rules.find((rule: { label: string }) => rule.label === '工号')).toMatchObject({
+      pattern: 'EMP-\\d{4}',
+      enabled: true,
+      builtin: false,
+    });
+  });
+
+  it('rejects an invalid regular expression without saving', async () => {
+    const user = userEvent.setup();
+    const set = (globalThis as any).browser.storage.local.set as ReturnType<typeof vi.fn>;
+    renderWithLocale(<RedactionSettings />);
+
+    await screen.findByRole('checkbox', { name: 'Enable page content redaction' });
+    // Loading with no stored 'runi:redaction' key seeds defaults via one `set`
+    // call; capture the count here so the assertion below only checks that
+    // saving the invalid draft doesn't trigger an *additional* write.
+    const callsBeforeSave = set.mock.calls.length;
+    await user.click(screen.getByRole('button', { name: 'Add custom rule' }));
+    await user.type(screen.getByLabelText('Rule label'), '坏规则');
+    await user.type(screen.getByLabelText('Regular expression'), '(unclosed');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(screen.getByText(/Invalid regular expression/)).toBeVisible();
+    expect(set.mock.calls.length).toBe(callsBeforeSave);
+  });
+
+  it('requires both a label and a pattern before saving', async () => {
+    const user = userEvent.setup();
+    renderWithLocale(<RedactionSettings />);
+
+    await screen.findByRole('checkbox', { name: 'Enable page content redaction' });
+    await user.click(screen.getByRole('button', { name: 'Add custom rule' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(screen.getByText('Enter a rule label')).toBeVisible();
+    expect(screen.getByText('Enter a regular expression')).toBeVisible();
+  });
+
+  it('deletes a custom rule after confirmation', async () => {
+    storageData['runi:redaction'] = {
+      enabled: true,
+      rules: [{ id: 'custom-1', label: '工号', pattern: 'EMP-\\d{4}', enabled: true, builtin: false }],
+    };
+    const user = userEvent.setup();
+    const set = (globalThis as any).browser.storage.local.set as ReturnType<typeof vi.fn>;
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    renderWithLocale(<RedactionSettings />);
+
+    await user.click(await screen.findByRole('button', { name: 'Delete rule 工号' }));
+
+    expect(screen.queryByRole('checkbox', { name: '工号' })).not.toBeInTheDocument();
+    const persisted = set.mock.calls.at(-1)?.[0]['runi:redaction'];
+    expect(persisted.rules).toHaveLength(0);
+  });
+
+  it('does not delete a custom rule when confirmation is declined', async () => {
+    storageData['runi:redaction'] = {
+      enabled: true,
+      rules: [{ id: 'custom-1', label: '工号', pattern: 'EMP-\\d{4}', enabled: true, builtin: false }],
+    };
+    const user = userEvent.setup();
+    const set = (globalThis as any).browser.storage.local.set as ReturnType<typeof vi.fn>;
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    renderWithLocale(<RedactionSettings />);
+
+    await user.click(await screen.findByRole('button', { name: 'Delete rule 工号' }));
+
+    expect(set).not.toHaveBeenCalled();
+    expect(screen.getByRole('checkbox', { name: '工号' })).toBeInTheDocument();
+  });
+
+  it('does not offer a delete button for built-in rules', async () => {
+    renderWithLocale(<RedactionSettings />);
+
+    await screen.findByRole('checkbox', { name: '手机号' });
+    expect(screen.queryByRole('button', { name: 'Delete rule 手机号' })).not.toBeInTheDocument();
+  });
 });
 
 describe('SettingsShell', () => {
