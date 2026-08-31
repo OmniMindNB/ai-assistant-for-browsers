@@ -25,7 +25,7 @@ Runi 不提供内置托管模型。首次对话前，需要配置你自己的 AI
 
 - 🔒 **仅提交前确认**：Deny-First 权限模型会自动执行所有已知页面操作，只有检测到的表单提交会逐次请求确认，未知工具一律拒绝。`browser_navigate` 在权限层和后台双重校验，只允许 http(s)；页面外部资源抓取会拒绝环回、内网、链路本地与 IPv4-mapped IPv6 地址
 - 🔍 **证据驱动的分析**：可读取页面正文 / DOM / HTML / 脚本 / 样式表 / 计算样式 / 截图；`browser_inspect_page_implementation` 一次调用汇总全部证据并给出关键词匹配的 `evidenceSummary`，回答「这个效果怎么实现的」时点名引用具体代码，而不是泛泛描述
-- 🖐️ **页面操作**：可改样式、改 DOM、点击、输入、选择下拉、滚动、跳转、写 storage、打开或关闭标签页；这些已知操作会自动执行，只有检测到的表单提交会停下来询问。工具调用有预算上限（默认 12 次读取分析，开始写操作后放宽到 24 次），预算耗尽只允许再生成一次最终回答
+- 🖐️ **页面操作**：可改样式、改 DOM、点击、输入、选择下拉、滚动、跳转、写 storage，也可以打开新标签页、在多个标签页间切换、关闭并跟踪当前操作目标；写操作执行期间页面上会显示不遮挡输入的执行遮罩，操作过程清晰可见。这些已知操作会自动执行，只有检测到的表单提交会停下来询问。工具调用有预算上限（默认 12 次读取分析，开始写操作后放宽到 24 次），预算耗尽只允许再生成一次最终回答
 - 🔑 **自带模型**：支持 OpenAI 兼容的 Chat Completions 与 Anthropic Messages 两种协议，内置 DeepSeek / OpenAI / 通义千问 / 智谱 GLM / Moonshot / 本地 Ollama 预设，也可完全自定义端点；可配置多个 Provider 与多个模型，在输入框里直接切换
 - 🗂️ **本地优先**：对话历史存在本地 IndexedDB，Provider 配置与界面偏好存在 `chrome.storage.local`，不同步到任何云端，也没有开发者后端与分析 SDK
 - 📎 **本地文件上下文**：单条消息最多附加 5 个文件，支持文本（最多 30,000 字符）、图片（≤ 5 MB）和 PDF（≤ 20 MB，本地提取最多 60,000 字符，不含 OCR）。PDF 在 Worker 中本地解析并显示进度，支持拖拽；PDF 正文只用于当前一轮，历史中只保留文件元数据
@@ -97,7 +97,7 @@ lib/                # 共享库
   messaging.ts      # 三端统一消息协议
   agent/            # Agent 循环与工具调用
     agent.ts        # Agent 封装（model / tools / 生命周期钩子 / 上下文压缩）
-    tools.ts        # browser_* 工具定义（10 个只读 + 8 个写入/交互）
+    tools.ts        # browser_* 工具定义（13 个只读 + 11 个写入/交互）+ ask_user / wait / report_task_outcome
     permissions.ts  # Deny-First 权限分级（always_allow / auto_allow / confirm_always / deny）
     confirm-gate.ts # 检测到的表单提交逐次触发确认
     tool-policy.ts  # 工具调用预算、重复失败熔断、收敛终止
@@ -107,6 +107,8 @@ lib/                # 共享库
     anthropic-stream.ts     # Anthropic Messages streamFn
     activity-steps.ts       # 本轮工具调用的步骤时间线
     tab-conversation.ts     # 标签页 ↔ 会话绑定
+    tab-session.ts          # 多标签页编排：追踪 agent 打开的标签页与当前操作目标
+    agent-overlay.ts        # 写操作执行期页面遮罩（视觉信号，不拦截输入）
   chat/             # 附件（文本/图片/PDF）、PDF 本地提取与解析队列
   i18n/             # zh / en 词典与 useTranslation()
   shortcuts.ts      # 快捷指令存储与校验（内置 + 自定义）

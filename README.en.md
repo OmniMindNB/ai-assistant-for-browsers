@@ -25,7 +25,7 @@ See the [Provider setup guide](docs/provider-setup.en.md) for more detail and tr
 
 - 🔒 **Confirm submissions only**: a Deny-First permission model automatically executes all known page actions. Only detected form submissions ask for confirmation each time; unknown tools are always denied. `browser_navigate` is restricted to http(s) independently in both the permission layer and the background worker, and page-resource fetches reject loopback, private, link-local, and IPv4-mapped IPv6 targets
 - 🔍 **Evidence-driven analysis**: reads page text / DOM / HTML / scripts / stylesheets / computed styles / screenshots. `browser_inspect_page_implementation` gathers all of that in a single call plus a keyword-matched `evidenceSummary`, so "how is this implemented" gets an answer citing specific code instead of a generic description
-- 🖐️ **Page actions**: Runi can set styles, modify the DOM, click, type, pick from selects, scroll, navigate, write storage, and open or close tabs. These known actions run automatically; only detected form submissions pause for approval. Tool calls are budgeted (12 read/analysis calls by default, raised to 24 when writing starts); when the budget runs out the model gets exactly one more turn to produce a final answer
+- 🖐️ **Page actions**: Runi can set styles, modify the DOM, click, type, pick from selects, scroll, navigate, and write storage — plus open new tabs, switch between them, close them, and track the current operating target across a multi-tab task. While a write action executes, a non-blocking overlay appears on the page so the operation stays visible. These known actions run automatically; only detected form submissions pause for approval. Tool calls are budgeted (12 read/analysis calls by default, raised to 24 when writing starts); when the budget runs out the model gets exactly one more turn to produce a final answer
 - 🔑 **Bring your own model**: supports both OpenAI-compatible Chat Completions and the Anthropic Messages protocol, with presets for DeepSeek / OpenAI / Qwen / Zhipu GLM / Moonshot / local Ollama and a fully custom endpoint option. Configure multiple providers and models, and switch between them straight from the composer
 - 🗂️ **Local-first**: conversation history lives in local IndexedDB, provider configs and UI preferences in `chrome.storage.local` — never synced to any cloud. There is no developer backend and no analytics or ad SDK
 - 📎 **Local file context**: attach up to 5 files per message — text (up to 30,000 characters), images (≤ 5 MB), and PDFs (≤ 20 MB, up to 60,000 characters extracted locally, no OCR). PDFs are parsed locally in a Worker with progress feedback and drag-and-drop support; extracted PDF text is used for one turn only, and history keeps just the file metadata
@@ -97,7 +97,7 @@ lib/                # Shared libraries
   messaging.ts      # Unified messaging protocol across the three contexts
   agent/            # Agent loop and tool calls
     agent.ts        # Agent wiring (model / tools / lifecycle hooks / context compaction)
-    tools.ts        # browser_* tool definitions (10 read-only + 8 write/interactive)
+    tools.ts        # browser_* tool definitions (13 read-only + 11 write/interactive) + ask_user / wait / report_task_outcome
     permissions.ts  # Deny-First tiers (always_allow / auto_allow / confirm_always / deny)
     confirm-gate.ts # Detected form submissions prompt every time
     tool-policy.ts  # Tool-call budgets, repeated-failure circuit breaker, forced convergence
@@ -107,6 +107,8 @@ lib/                # Shared libraries
     anthropic-stream.ts     # Anthropic Messages streamFn
     activity-steps.ts       # Per-turn tool-call step timeline
     tab-conversation.ts     # Tab <-> conversation binding
+    tab-session.ts          # Multi-tab orchestration: tracks agent-opened tabs and the current operating target
+    agent-overlay.ts        # On-page overlay shown while a write action executes (visual signal, never blocks input)
   chat/             # Attachments (text/image/PDF), local PDF extraction and parse queue
   i18n/             # zh / en dictionaries and useTranslation()
   shortcuts.ts      # Shortcut storage and validation (built-in + custom)

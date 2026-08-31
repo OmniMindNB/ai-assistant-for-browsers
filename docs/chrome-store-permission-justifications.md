@@ -42,13 +42,13 @@ Used to support access to the active page when the user invokes Runi and starts 
 **English**
 
 ```text
-Used to identify and validate the user-selected target tab, read its title and URL for page-grounded requests, open the extension settings page, and perform navigation explicitly requested by the user. It is not used to build a browsing-history profile or track the user across tabs.
+Used to identify and validate the user-selected target tab, read its title and URL for page-grounded requests, open the extension settings page, and perform navigation explicitly requested by the user. As part of the same known-action automation, Runi may also open a new tab, close a tab it opened, or switch its operating target among tabs it opened during the current task; it never opens, closes, reads, or switches to tabs the user opened themselves. It is not used to build a browsing-history profile or track the user across tabs.
 ```
 
 **简体中文**
 
 ```text
-用于识别和校验用户选择的目标标签页、读取其标题与 URL 以处理基于页面的请求、打开扩展设置页，以及执行用户明确请求的导航。此权限不用于建立浏览历史画像或跨标签页跟踪用户。
+用于识别和校验用户选择的目标标签页、读取其标题与 URL 以处理基于页面的请求、打开扩展设置页，以及执行用户明确请求的导航。作为同一套已知操作自动执行的一部分，Runi 也可能打开新标签页、关闭它自己打开过的标签页，或在当前任务里它打开过的标签页之间切换操作目标；它不会打开、关闭、读取或切换到用户自己打开的标签页。此权限不用于建立浏览历史画像或跨标签页跟踪用户。
 ```
 
 ## `scripting`
@@ -70,13 +70,13 @@ Used to run packaged page-reading and structured page-write functions in the tar
 **English**
 
 ```text
-Used to store provider settings, API keys, shortcuts, language, theme, and workbench preferences in chrome.storage.local, and temporary tab-to-conversation state in chrome.storage.session. Runi does not sync this storage or upload it to a developer-operated backend. When the user initiates an Agent request, the selected provider API key is sent only to the configured provider endpoint as its authentication credential.
+Used to store provider settings, API keys, shortcuts, language, theme, and workbench preferences in chrome.storage.local, and temporary per-tab state in chrome.storage.session — conversation binding, the current multi-tab operating target, and whether the in-page execution overlay is active. Runi does not sync this storage or upload it to a developer-operated backend. When the user initiates an Agent request, the selected provider API key is sent only to the configured provider endpoint as its authentication credential.
 ```
 
 **简体中文**
 
 ```text
-用于在 chrome.storage.local 中保存 Provider 设置、API Key、快捷方式、语言、主题和工作台偏好，并在 chrome.storage.session 中保存临时的标签页与对话对应状态。Runi 不会同步这些存储内容，也不会上传到开发者运营的后端。用户发起 Agent 请求时，所选 Provider 的 API Key 仅作为认证凭据发送到已配置的 Provider 端点。
+用于在 chrome.storage.local 中保存 Provider 设置、API Key、快捷方式、语言、主题和工作台偏好，并在 chrome.storage.session 中保存临时的按标签页状态——对话绑定、当前多标签页操作目标，以及页面执行遮罩是否生效。Runi 不会同步这些存储内容，也不会上传到开发者运营的后端。用户发起 Agent 请求时，所选 Provider 的 API Key 仅作为认证凭据发送到已配置的 Provider 端点。
 ```
 
 ## `sidePanel`

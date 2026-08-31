@@ -30,7 +30,7 @@ Provider 设置、API Key、界面偏好和对话历史保存在你的本机浏�
 | 对话内容 | 你的提示词、快捷操作提示、近期对话历史和 AI 回复；其中可能包含你主动输入的个人信息或机密信息 | 对话消息保存在浏览器本地 IndexedDB | 当前提示和近期对话上下文会直接发送到你配置的 AI Provider |
 | Provider 配置与凭据 | Provider 名称、Base URL、模型、协议和 API Key | 保存在 `chrome.storage.local`，Runi 不进行同步 | Base URL 决定请求目标；模型和请求内容会发送到该端点，API Key 会作为认证请求头发送到该端点 |
 | 界面偏好 | 语言偏好和主题偏好 | 保存在 `chrome.storage.local` | Runi 不会将其发送给 AI Provider |
-| 会话状态 | 标签页对应的对话 | 保存在 `chrome.storage.session`；这是浏览器会话级存储，Runi 不进行同步 | 不会以会话记录的形式发送给 AI Provider |
+| 会话状态 | 标签页对应的对话、当前多标签页操作目标、页面执行遮罩是否生效 | 保存在 `chrome.storage.session`；这是浏览器会话级存储，Runi 不进行同步 | 不会以会话记录的形式发送给 AI Provider |
 
 就 Chrome Web Store 披露而言，Runi 将 `Website content` 以及可能出现在用户输入的对话或用户选择文件中的适用类别标记为收集/处理，因为这些内容会为了核心功能传输到用户自行选择的 AI Provider。Runi 开发者不会通过 Runi 后端接收这些内容。
 
@@ -51,7 +51,7 @@ Runi 不会把数据用于广告、画像、信贷或资格判断、无关的产
 - Provider 设置、API Key、语言和主题保存在 `chrome.storage.local`。
 - 对话消息保存在浏览器本地 IndexedDB。
 - 文本和图片附件内容可能随浏览器本地对话消息保存。对于 PDF，仅保存元数据；在本地提取的 PDF 文本只在当前请求期间短暂处理。
-- 临时的标签页与对话对应状态保存在 `chrome.storage.session`。
+- 临时的标签页与对话对应状态、多标签页操作目标和执行遮罩状态保存在 `chrome.storage.session`。
 - 页面工具结果和截图 data URL 不会写入 Runi 的持久化对话数据库。
 
 你可以在 Runi 中删除单个对话并移除 Provider 配置。清除本扩展的浏览器数据或卸载 Runi 会删除其本地数据。删除 Runi 本地数据不会删除 AI Provider 已处理或保留的副本；这些副本需按相应 Provider 的控制方式和政策处理。
@@ -73,9 +73,9 @@ Runi `1.1.3` 使用以下权限：
 | 权限 | 用途 |
 |---|---|
 | `activeTab` | 支持由用户调用的当前活动页面访问 |
-| `tabs` | 识别并校验目标标签页、读取其标题与 URL、打开扩展设置页，以及执行用户请求的导航 |
+| `tabs` | 识别并校验目标标签页、读取其标题与 URL、打开扩展设置页，执行用户请求的导航，以及作为已知操作自动打开/关闭/切换 Runi 自己打开过的标签页 |
 | `scripting` | 在目标页面运行随扩展打包的页面读取与结构化写入函数 |
-| `storage` | 保存 Provider 设置、API Key、快捷方式、语言、主题和工作台偏好，以及临时的标签页与对话对应状态 |
+| `storage` | 保存 Provider 设置、API Key、快捷方式、语言、主题和工作台偏好，以及临时的标签页与对话对应状态、多标签页操作目标和执行遮罩状态 |
 | `sidePanel` | 承载 Runi 的主要界面 |
 | 主机访问权限：`<all_urls>` | 让同一个当前页面 Agent 可在用户选择的 HTTP 和 HTTPS 网站上工作，并获取页面引用的资源 |
 

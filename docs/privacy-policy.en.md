@@ -30,7 +30,7 @@ Provider settings, API keys, interface preferences, and conversation history are
 | Conversation content | Your prompts, quick-action prompts, recent conversation history, and AI responses; this content may include personal or confidential information that you choose to enter | Conversation messages are stored in browser-local IndexedDB | The current prompt and recent conversation context are sent directly to your configured AI provider |
 | Provider configuration and credentials | Provider name, Base URL, model, protocol, and API key | Stored in `chrome.storage.local` and not synced by Runi | The Base URL selects the destination. The model and request content are sent to that endpoint, and the API key is sent to that endpoint as an authentication header |
 | Interface preferences | Language preference and theme preference | Stored in `chrome.storage.local` | Not sent to the AI provider by Runi |
-| Session state | The conversation associated with a tab, keyed by tab ID | Stored in `chrome.storage.session`, which is browser-session storage and is not synced by Runi | Not sent as session records to the AI provider |
+| Session state | The conversation associated with a tab, the current multi-tab operating target, and whether the in-page execution overlay is active | Stored in `chrome.storage.session`, which is browser-session storage and is not synced by Runi | Not sent as session records to the AI provider |
 
 For Chrome Web Store disclosure purposes, Runi treats `Website content` and the applicable categories that may appear in user-entered conversations or user-selected files as collected/processed because that content is transmitted off-device to the AI provider selected by the user for the core feature. Runi’s developer does not receive that content through a Runi backend.
 
@@ -51,7 +51,7 @@ When you initiate an Agent request, you direct Runi to send your current prompt,
 - Provider settings, API keys, language, and theme are stored in `chrome.storage.local`.
 - Conversation messages are stored in browser-local IndexedDB.
 - Text and image attachment contents may be stored with their browser-local conversation messages. For PDFs, only metadata is stored; locally extracted PDF text is transient to the current request.
-- Tab-to-conversation state is stored temporarily in `chrome.storage.session`.
+- Tab-to-conversation state, the multi-tab operating target, and execution-overlay state are stored temporarily in `chrome.storage.session`.
 - Page tool results and screenshot data URLs are not written to Runi’s persistent conversation database.
 
 You can delete individual conversations and remove provider configurations in Runi. Clearing the extension’s browser data or uninstalling Runi removes its local data. Deleting Runi’s local data does not delete copies already processed or retained by your AI provider; use that provider’s controls and policy for those copies.
@@ -73,9 +73,9 @@ Runi `1.1.3` uses this permission set:
 | Permission | Purpose |
 |---|---|
 | `activeTab` | Supports user-invoked access to the active page |
-| `tabs` | Identifies and validates the target tab, reads its title and URL, opens the extension settings page, and performs user-requested navigation |
+| `tabs` | Identifies and validates the target tab, reads its title and URL, opens the extension settings page, performs user-requested navigation, and — as a known action executed automatically — opens, closes, or switches between tabs Runi itself opened |
 | `scripting` | Runs packaged read and structured-write functions in the target page |
-| `storage` | Stores provider settings, API keys, shortcuts, language, theme, and workbench preferences, plus temporary tab-to-conversation state |
+| `storage` | Stores provider settings, API keys, shortcuts, language, theme, and workbench preferences, plus temporary tab-to-conversation state, the multi-tab operating target, and execution-overlay state |
 | `sidePanel` | Hosts Runi’s primary interface |
 | Host access: `<all_urls>` | Lets the same current-page Agent work on user-selected HTTP and HTTPS sites and fetch page-referenced resources |
 
