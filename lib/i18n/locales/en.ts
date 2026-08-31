@@ -296,4 +296,11 @@ export const en: Record<keyof typeof zh, string> = {
     'Provider settings, API keys, and conversation history are stored locally in your browser.',
   'privacy.noBackendTitle': 'No Runi backend or analytics',
   'privacy.noBackendBody': 'Runi has no developer-operated backend or analytics.',
+  'privacy.redaction.heading': 'Page content redaction',
+  'privacy.redaction.description':
+    'Automatically replaces sensitive info like phone numbers and emails with placeholders before page text and form structure leave the extension.',
+  'privacy.redaction.enableLabel': 'Enable page content redaction',
+  'privacy.redaction.rulesListLabel': 'Redaction rules',
+  'privacy.redaction.loading': 'Loading redaction settings…',
+  'privacy.redaction.storageError': 'Could not save redaction settings.',
 };

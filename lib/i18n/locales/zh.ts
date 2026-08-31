@@ -291,4 +291,10 @@ export const zh = {
   'privacy.localDataBody': 'Provider 设置、API Key 和对话历史保存在浏览器本地。',
   'privacy.noBackendTitle': '没有 Runi 后端或分析服务',
   'privacy.noBackendBody': 'Runi 不运营开发者后端，也不收集分析数据。',
+  'privacy.redaction.heading': '页面内容脱敏',
+  'privacy.redaction.description': '在页面正文和表单结构离开扩展前，自动把手机号、邮箱等敏感信息替换为占位符。',
+  'privacy.redaction.enableLabel': '启用页面内容脱敏',
+  'privacy.redaction.rulesListLabel': '脱敏规则',
+  'privacy.redaction.loading': '正在加载脱敏设置…',
+  'privacy.redaction.storageError': '无法保存脱敏设置。',
 } as const;

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocaleProvider } from '@/lib/i18n';
 import OptionsApp from '@/entrypoints/options/App';
 import ProviderSettings from './ProviderSettings';
+import RedactionSettings from './RedactionSettings';
 import ShortcutSettings from './ShortcutSettings';
 import SettingsShell, {
   type SettingsSectionDescriptor,
@@ -448,6 +449,80 @@ describe('grouped options settings', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not save shortcuts.');
     expect(toggle).toBeChecked();
+  });
+
+  it('loads default redaction settings enabled with all four built-in rules', async () => {
+    renderWithLocale(<RedactionSettings />);
+
+    const toggle = await screen.findByRole('checkbox', { name: 'Enable page content redaction' });
+    expect(toggle).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: '手机号' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: '邮箱' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: '身份证号' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: '银行卡号' })).toBeChecked();
+  });
+
+  it('persists toggling the master switch off', async () => {
+    const user = userEvent.setup();
+    const set = (globalThis as any).browser.storage.local.set as ReturnType<typeof vi.fn>;
+    renderWithLocale(<RedactionSettings />);
+
+    const toggle = await screen.findByRole('checkbox', { name: 'Enable page content redaction' });
+    await user.click(toggle);
+
+    expect(toggle).not.toBeChecked();
+    const persisted = set.mock.calls.at(-1)?.[0]['runi:redaction'];
+    expect(persisted.enabled).toBe(false);
+  });
+
+  it('persists disabling a single built-in rule', async () => {
+    const user = userEvent.setup();
+    const set = (globalThis as any).browser.storage.local.set as ReturnType<typeof vi.fn>;
+    renderWithLocale(<RedactionSettings />);
+
+    const phoneToggle = await screen.findByRole('checkbox', { name: '手机号' });
+    await user.click(phoneToggle);
+
+    expect(phoneToggle).not.toBeChecked();
+    const persisted = set.mock.calls.at(-1)?.[0]['runi:redaction'];
+    expect(persisted.rules.find((rule: { id: string }) => rule.id === 'phone').enabled).toBe(false);
+  });
+
+  it('reverts the toggle and shows an error when persisting fails', async () => {
+    const user = userEvent.setup();
+    const set = (globalThis as any).browser.storage.local.set as ReturnType<typeof vi.fn>;
+    renderWithLocale(<RedactionSettings />);
+
+    const toggle = await screen.findByRole('checkbox', { name: 'Enable page content redaction' });
+    expect(toggle).toBeChecked();
+
+    set.mockRejectedValueOnce(new Error('write rejected'));
+    await user.click(toggle);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not save redaction settings.');
+    expect(toggle).toBeChecked();
+  });
+
+  it('refreshes from a live storage change', async () => {
+    renderWithLocale(<RedactionSettings />);
+    await screen.findByRole('checkbox', { name: 'Enable page content redaction' });
+
+    act(() => {
+      providerStorageListener?.(
+        {
+          'runi:redaction': {
+            newValue: {
+              enabled: false,
+              rules: [{ id: 'phone', label: '手机号', pattern: '1[3-9]\\d{9}', enabled: true, builtin: true }],
+            },
+          },
+        },
+        'local',
+      );
+    });
+
+    expect(screen.getByRole('checkbox', { name: 'Enable page content redaction' })).not.toBeChecked();
+    expect(screen.queryByRole('checkbox', { name: '邮箱' })).not.toBeInTheDocument();
   });
 });
 
