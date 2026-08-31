@@ -305,6 +305,11 @@ describe('表单作业流程', () => {
   it('lists the batch form tool in the write-tool section', () => {
     expect(SYSTEM_PROMPT).toContain('browser_fill_form');
   });
+
+  it('warns that redaction placeholders must never be written back to the page', () => {
+    expect(SYSTEM_PROMPT).toContain('已脱敏');
+    expect(SYSTEM_PROMPT).toContain('不要通过 browser_fill_form/browser_type 原样写回页面');
+  });
 });
 
 // 写工具现在会在结果尾部自动回报新出现的可交互元素，并同步刷新句柄表。
