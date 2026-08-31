@@ -144,6 +144,7 @@ export const zh = {
   'agentActivity.failed.wait': '等待 {target} 秒失败',
   'agentActivity.tool.readPage': '读取页面',
   'agentActivity.tool.getPageMeta': '获取页面元信息',
+  'agentActivity.tool.getForm': '获取表单结构',
   'agentActivity.tool.inspectPageImplementation': '检查页面实现',
   'agentActivity.tool.getScripts': '获取脚本',
   'agentActivity.tool.getStylesheets': '获取样式表',

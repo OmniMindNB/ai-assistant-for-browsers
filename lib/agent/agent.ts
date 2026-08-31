@@ -9,6 +9,7 @@ import type { Api, Message, Model } from '@earendil-works/pi-ai';
 import { resolveProviderApi, type ProviderConfig } from '@/lib/settings';
 import {
   sendMessage,
+  type GetTabUrlResult,
   type MessageResponse,
   type ProbeClickTargetPayload,
   type ProbeClickTargetResult,
@@ -16,7 +17,7 @@ import {
 } from '@/lib/messaging';
 import { browserOpenAIStream } from './openai-stream';
 import { browserAnthropicStream } from './anthropic-stream';
-import { beforeToolCallPermissionGate, WRITE_TOOL_NAMES } from './permissions';
+import { beforeToolCallPermissionGate, READ_ONLY_TOOL_NAMES, WRITE_TOOL_NAMES } from './permissions';
 import { REPORT_TASK_OUTCOME_TOOL_NAME, type TaskOutcome } from './task-outcome';
 import { createConfirmGateState, type ConfirmFn } from './confirm-gate';
 import { createBrowserTools, type BrowserAgentTool } from './tools';
@@ -31,6 +32,13 @@ import {
 
 const MAX_CONTEXT_MESSAGES = 24;
 const MAX_TOOL_RESULT_CHARS = 30000;
+/**
+ * browser_navigate/browser_open_tab 自己的结果文案已经告诉模型跳到哪了；这里只补这三个
+ * 工具可能*隐式*触发的导航（链接点击、表单提交、回车提交），此前对模型完全不可见
+ * （ref: docs/superpowers/specs/2026-08-31-page-agent-benchmark.md §3.2）。
+ */
+const NAVIGATION_WATCH_TOOLS = new Set(['browser_click', 'browser_fill_form', 'browser_type']);
+const POST_NAVIGATION_SETTLE_MS = 500;
 const IMPLEMENTATION_DOSSIER_TOOL = 'browser_inspect_page_implementation';
 const MAX_POST_DOSSIER_FOLLOW_UPS = 4;
 const POST_DOSSIER_ALLOWED_TOOLS = new Set([
@@ -112,6 +120,8 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
   const toolCallCounts = new Map<string, number>();
   const confirmGateState = createConfirmGateState();
   let overlayTabId = options.tabId;
+  // tabId -> 最后一次已知的 URL，用于识别 browser_click/fill_form/type 隐式触发的导航。
+  const lastKnownUrl = new Map<number, string>();
   const TAB_SESSION_MUTATING_TOOLS = new Set(['browser_open_tab', 'browser_switch_tab', 'browser_close_tab']);
   const recordPreExecutionBlock = (block: BeforeToolCallResult): BeforeToolCallResult => {
     policy.recordPreExecutionBlock();
@@ -206,6 +216,27 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
 
       if (!context.isError && WRITE_TOOL_NAMES.has(toolName)) writeToolRanThisRun = true;
       if (!context.isError && toolName === REPORT_TASK_OUTCOME_TOOL_NAME) outcomeReported = true;
+
+      if (!context.isError) {
+        if (toolName === 'browser_navigate' || toolName === 'browser_open_tab') {
+          const url = (context.result.details as { url?: string } | undefined)?.url;
+          if (url) lastKnownUrl.set(session.currentTabId, url);
+        } else if (NAVIGATION_WATCH_TOOLS.has(toolName)) {
+          const newUrl = await fetchTabUrl(session.currentTabId);
+          if (newUrl) {
+            const previousUrl = lastKnownUrl.get(session.currentTabId);
+            if (previousUrl !== undefined && previousUrl !== newUrl) {
+              options.steer({
+                role: 'user',
+                content: `[系统观察] 页面地址已变化：从 "${previousUrl}" 跳转到 "${newUrl}"。页面可能仍在加载，原有的元素/表单状态可能已经失效，请视情况重新获取页面信息。`,
+                timestamp: Date.now(),
+              });
+              await sleep(POST_NAVIGATION_SETTLE_MS);
+            }
+            lastKnownUrl.set(session.currentTabId, newUrl);
+          }
+        }
+      }
 
       // 切换/开新/关闭标签页导致当前操作目标变化时，遮罩要跟过去：
       // 先关旧目标（如果它还是遮罩最后一次开在的那个 tab），再开新目标。
@@ -333,10 +364,52 @@ function isLlmMessage(message: AgentMessage): message is Message {
   return message.role === 'user' || message.role === 'assistant' || message.role === 'toolResult';
 }
 
+/**
+ * 内部专用 GET_TAB_URL 查询；无响应/异常一律视为"查不到"，不阻塞、不误报导航
+ * （与 beforeToolCall 里 resolveSubmitIntent 的失败即降级处理保持一致）。
+ */
+async function fetchTabUrl(tabId: number): Promise<string | undefined> {
+  try {
+    const response = (await sendMessage<undefined, GetTabUrlResult>('GET_TAB_URL', undefined, tabId)) as
+      | MessageResponse<GetTabUrlResult>
+      | undefined;
+    return response?.ok ? response.data?.url : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * 只读工具（browser_read_page/get_html/get_form/query_dom/...）的结果才是真正的"浏览器
+ * 状态快照"，又大又会过期；写/交互工具的结果本来就是 action-result-text.ts 生成的一句话，
+ * 不需要压缩。只让最新一份只读结果保留完整内容，更早的一律压成 describeToolActivity 的
+ * 摘要——否则旧 DOM dump 会一直占着上下文，模型还可能照着过期快照继续操作
+ * （ref: docs/superpowers/specs/2026-08-31-page-agent-benchmark.md §3.1）。
+ */
 function compactAgentMessages(messages: AgentMessage[]): AgentMessage[] {
   const kept = messages.slice(-MAX_CONTEXT_MESSAGES);
-  return kept.map((message) => {
-    if (message.role !== 'toolResult') return message;
+  const toolCallArgs = collectToolCallArguments(kept);
+
+  let lastReadResultIndex = -1;
+  kept.forEach((message, index) => {
+    if (message.role === 'toolResult' && READ_ONLY_TOOL_NAMES.has(message.toolName)) lastReadResultIndex = index;
+  });
+
+  return kept.map((message, index) => {
+    if (message.role !== 'toolResult' || !READ_ONLY_TOOL_NAMES.has(message.toolName)) return message;
+
+    if (index !== lastReadResultIndex) {
+      const summary = describeToolActivity(
+        message.toolName,
+        toolCallArgs.get(message.toolCallId),
+        message.isError ? 'failed' : 'done',
+      );
+      return { ...message, content: [{ type: 'text', text: summary }] };
+    }
 
     const compactedContent = message.content.map((part) => {
       if (part.type !== 'text' || part.text.length <= MAX_TOOL_RESULT_CHARS) return part;
@@ -350,4 +423,15 @@ function compactAgentMessages(messages: AgentMessage[]): AgentMessage[] {
 
     return { ...message, content: compactedContent };
   });
+}
+
+function collectToolCallArguments(messages: AgentMessage[]): Map<string, unknown> {
+  const args = new Map<string, unknown>();
+  for (const message of messages) {
+    if (message.role !== 'assistant') continue;
+    for (const part of message.content) {
+      if (part.type === 'toolCall') args.set(part.id, part.arguments);
+    }
+  }
+  return args;
 }

@@ -17,6 +17,7 @@ import { buildSubmitIntentProbePayload, createBrowserAgentOptions, createModel, 
 import { browserOpenAIStream } from './openai-stream';
 import { browserAnthropicStream } from './anthropic-stream';
 import { createTabSession } from './tab-session';
+import { describeToolActivity } from './activity-description';
 import type { BrowserAgentTool } from './tools';
 
 const baseProvider: ProviderConfig = {
@@ -36,13 +37,18 @@ function beforeContext(name: string, args: unknown): BeforeToolCallContext {
   } as unknown as BeforeToolCallContext;
 }
 
-function afterContext(name: string, args: unknown, isError: boolean): AfterToolCallContext {
+function afterContext(
+  name: string,
+  args: unknown,
+  isError: boolean,
+  details: Record<string, unknown> = {},
+): AfterToolCallContext {
   return {
     toolCall: { id: `${name}-id`, name, arguments: args },
     args,
     assistantMessage: {},
     context: {},
-    result: { content: [{ type: 'text', text: isError ? 'failed' : 'ok' }], details: {} },
+    result: { content: [{ type: 'text', text: isError ? 'failed' : 'ok' }], details },
     isError,
   } as unknown as AfterToolCallContext;
 }
@@ -527,6 +533,239 @@ describe('执行期遮罩', () => {
     await options.beforeToolCall!(beforeContext('browser_click', { selector: '#submit', index: 0 }), undefined);
 
     expect(onOverlay).not.toHaveBeenCalled();
+  });
+});
+
+// ref: docs/superpowers/specs/2026-08-31-page-agent-benchmark.md §3.2 —
+// browser_navigate/browser_open_tab 自己的结果文案已经告诉模型跳到哪了；这里只补
+// browser_click / browser_fill_form / browser_type 隐式触发的导航，此前对模型完全不可见。
+describe('隐式导航的 <sys> 观察通道', () => {
+  function hooksWithSteer(steer: (m: AgentMessage) => void = vi.fn()) {
+    return createBrowserAgentOptions({
+      provider: baseProvider,
+      tabId: 1,
+      tools: [],
+      readToolCallBudget: 12,
+      writeToolCallBudget: 24,
+      steer,
+    });
+  }
+
+  it('browser_navigate 从自身结果里静默记录基线，不额外查询 URL 也不发观察消息', async () => {
+    sendMessageSpy.mockClear();
+    const steer = vi.fn();
+    const hooks = hooksWithSteer(steer);
+
+    await hooks.afterToolCall?.(
+      afterContext('browser_navigate', { url: 'https://example.com/a' }, false, { url: 'https://example.com/a' }),
+    );
+
+    expect(sendMessageSpy).not.toHaveBeenCalled();
+    expect(steer).not.toHaveBeenCalled();
+  });
+
+  it('该 tab 还没有基线时，隐式点击只静默记录，不误报"已跳转"', async () => {
+    sendMessageSpy.mockResolvedValueOnce({ ok: true, data: { url: 'https://example.com/first' } });
+    const steer = vi.fn();
+    const hooks = hooksWithSteer(steer);
+
+    await hooks.afterToolCall?.(afterContext('browser_click', { selector: '#a' }, false));
+
+    expect(steer).not.toHaveBeenCalled();
+  });
+
+  it('隐式点击导致 URL 变化时，追加一句观察消息并等待页面稳定后才把控制权交还给模型', async () => {
+    vi.useFakeTimers();
+    try {
+      const steer = vi.fn();
+      const hooks = hooksWithSteer(steer);
+      await hooks.afterToolCall?.(
+        afterContext('browser_navigate', { url: 'https://example.com/a' }, false, { url: 'https://example.com/a' }),
+      );
+      sendMessageSpy.mockResolvedValueOnce({ ok: true, data: { url: 'https://example.com/b' } });
+
+      let settled = false;
+      const pending = hooks.afterToolCall
+        ?.(afterContext('browser_click', { selector: '#a' }, false))
+        .then(() => {
+          settled = true;
+        });
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(settled).toBe(false);
+      expect(steer).toHaveBeenCalledTimes(1);
+      expect(steer.mock.calls[0][0]).toMatchObject({
+        role: 'user',
+        content: expect.stringContaining('https://example.com/a'),
+      });
+      expect((steer.mock.calls[0][0] as { content: string }).content).toContain('https://example.com/b');
+
+      await vi.advanceTimersByTimeAsync(500);
+      await pending;
+      expect(settled).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('隐式点击后 URL 未变化则不发观察消息也不等待', async () => {
+    const steer = vi.fn();
+    const hooks = hooksWithSteer(steer);
+    await hooks.afterToolCall?.(
+      afterContext('browser_navigate', { url: 'https://example.com/a' }, false, { url: 'https://example.com/a' }),
+    );
+    sendMessageSpy.mockResolvedValueOnce({ ok: true, data: { url: 'https://example.com/a' } });
+
+    await hooks.afterToolCall?.(afterContext('browser_click', { selector: '#a' }, false));
+
+    expect(steer).not.toHaveBeenCalled();
+  });
+
+  it('browser_fill_form 与 browser_type 同样纳入隐式导航监听', async () => {
+    const steer = vi.fn();
+    const hooks = hooksWithSteer(steer);
+    await hooks.afterToolCall?.(
+      afterContext('browser_navigate', { url: 'https://example.com/a' }, false, { url: 'https://example.com/a' }),
+    );
+
+    sendMessageSpy.mockResolvedValueOnce({ ok: true, data: { url: 'https://example.com/submitted' } });
+    await hooks.afterToolCall?.(afterContext('browser_fill_form', { fields: [] }, false));
+    expect(steer).toHaveBeenCalledTimes(1);
+
+    steer.mockClear();
+    sendMessageSpy.mockResolvedValueOnce({ ok: true, data: { url: 'https://example.com/typed' } });
+    await hooks.afterToolCall?.(afterContext('browser_type', { fieldId: 'f1', text: 'x' }, false));
+    expect(steer).toHaveBeenCalledTimes(1);
+  });
+
+  it('工具执行失败时不查询 URL、也不产生观察消息', async () => {
+    sendMessageSpy.mockClear();
+    const steer = vi.fn();
+    const hooks = hooksWithSteer(steer);
+
+    await hooks.afterToolCall?.(afterContext('browser_click', { selector: '#a' }, true));
+
+    expect(sendMessageSpy).not.toHaveBeenCalled();
+    expect(steer).not.toHaveBeenCalled();
+  });
+});
+
+function assistantToolCallMessage(id: string, name: string, args: Record<string, unknown>): AgentMessage {
+  return {
+    role: 'assistant',
+    content: [{ type: 'toolCall', id, name, arguments: args }],
+  } as unknown as AgentMessage;
+}
+
+function toolResultMessage(toolCallId: string, toolName: string, text: string, isError = false): AgentMessage {
+  return {
+    role: 'toolResult',
+    toolCallId,
+    toolName,
+    content: [{ type: 'text', text }],
+    isError,
+    timestamp: Date.now(),
+  } as unknown as AgentMessage;
+}
+
+function resultText(message: AgentMessage): string {
+  return ((message as unknown as { content: { type: string; text: string }[] }).content[0]).text;
+}
+
+// ref: docs/superpowers/specs/2026-08-31-page-agent-benchmark.md §3.1 —
+// 对方每步从 history 重建 prompt，只挂当前这一份浏览器状态；旧的 DOM/HTML dump 完全不进
+// 上下文。我们没有强制自评字段，改用已有的 describeToolActivity 一句话摘要作为压缩来源。
+describe('上下文压缩：只读工具的历史结果压成一句话摘要', () => {
+  it('把更早的只读工具结果压成一句话摘要，只保留最新一份完整内容', async () => {
+    const hooks = runtimeOptions();
+    const messages: AgentMessage[] = [
+      assistantToolCallMessage('call-1', 'browser_read_page', {}),
+      toolResultMessage('call-1', 'browser_read_page', 'PAGE TEXT A'.repeat(50)),
+      assistantToolCallMessage('call-2', 'browser_click', { selector: '#a' }),
+      toolResultMessage('call-2', 'browser_click', '已点击 "#a"。'),
+      assistantToolCallMessage('call-3', 'browser_read_page', {}),
+      toolResultMessage('call-3', 'browser_read_page', 'PAGE TEXT B (current)'),
+    ];
+
+    const compacted = await hooks.transformContext!(messages);
+
+    expect(resultText(compacted[1])).toBe(describeToolActivity('browser_read_page', {}, 'done'));
+    expect(resultText(compacted[3])).toBe('已点击 "#a"。');
+    expect(resultText(compacted[5])).toBe('PAGE TEXT B (current)');
+  });
+
+  it('用工具调用当时的参数生成摘要文案', async () => {
+    const hooks = runtimeOptions();
+    const messages: AgentMessage[] = [
+      assistantToolCallMessage('call-1', 'browser_query_dom', { selector: '.old-target' }),
+      toolResultMessage('call-1', 'browser_query_dom', 'huge dom dump'),
+      assistantToolCallMessage('call-2', 'browser_read_page', {}),
+      toolResultMessage('call-2', 'browser_read_page', 'latest page text'),
+    ];
+
+    const compacted = await hooks.transformContext!(messages);
+
+    expect(resultText(compacted[1])).toBe(
+      describeToolActivity('browser_query_dom', { selector: '.old-target' }, 'done'),
+    );
+  });
+
+  it('压缩失败的旧读取结果时保留失败状态', async () => {
+    const hooks = runtimeOptions();
+    const messages: AgentMessage[] = [
+      assistantToolCallMessage('call-1', 'browser_get_html', { selector: '#x' }),
+      toolResultMessage('call-1', 'browser_get_html', 'error: not found', true),
+      assistantToolCallMessage('call-2', 'browser_read_page', {}),
+      toolResultMessage('call-2', 'browser_read_page', 'latest'),
+    ];
+
+    const compacted = await hooks.transformContext!(messages);
+
+    expect(resultText(compacted[1])).toBe(describeToolActivity('browser_get_html', { selector: '#x' }, 'failed'));
+  });
+
+  it('browser_get_form 的旧结果有专门的摘要文案，不落入通用兜底', async () => {
+    const hooks = runtimeOptions();
+    const messages: AgentMessage[] = [
+      assistantToolCallMessage('call-1', 'browser_get_form', {}),
+      toolResultMessage('call-1', 'browser_get_form', 'huge form structure dump'),
+      assistantToolCallMessage('call-2', 'browser_read_page', {}),
+      toolResultMessage('call-2', 'browser_read_page', 'latest'),
+    ];
+
+    const compacted = await hooks.transformContext!(messages);
+
+    expect(resultText(compacted[1])).not.toBe(describeToolActivity('browser_unknown_tool', {}, 'done'));
+    expect(resultText(compacted[1])).toBe(describeToolActivity('browser_get_form', {}, 'done'));
+  });
+
+  it('非只读工具的历史结果原样保留，不参与摘要压缩', async () => {
+    const hooks = runtimeOptions();
+    const longWriteText = 'X'.repeat(500);
+    const messages: AgentMessage[] = [
+      assistantToolCallMessage('call-1', 'browser_fill_form', { fields: [] }),
+      toolResultMessage('call-1', 'browser_fill_form', longWriteText),
+      assistantToolCallMessage('call-2', 'browser_read_page', {}),
+      toolResultMessage('call-2', 'browser_read_page', 'latest'),
+    ];
+
+    const compacted = await hooks.transformContext!(messages);
+
+    expect(resultText(compacted[1])).toBe(longWriteText);
+  });
+
+  it('最新一份读取结果超长时仍按 MAX_TOOL_RESULT_CHARS 截断（安全网保留）', async () => {
+    const hooks = runtimeOptions();
+    const hugeText = 'A'.repeat(40000);
+    const messages: AgentMessage[] = [
+      assistantToolCallMessage('call-1', 'browser_read_page', {}),
+      toolResultMessage('call-1', 'browser_read_page', hugeText),
+    ];
+
+    const compacted = await hooks.transformContext!(messages);
+
+    expect(resultText(compacted[1]).length).toBeLessThan(hugeText.length);
+    expect(resultText(compacted[1])).toContain('已截断');
   });
 });
 

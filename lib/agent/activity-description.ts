@@ -41,6 +41,8 @@ export function describeToolActivity(toolName: string, args: unknown, status: Ac
       return plain(status, 'agentActivity.tool.readPage');
     case 'browser_get_page_meta':
       return plain(status, 'agentActivity.tool.getPageMeta');
+    case 'browser_get_form':
+      return plain(status, 'agentActivity.tool.getForm');
     case 'browser_inspect_page_implementation': {
       const focus = str('focus');
       return focus

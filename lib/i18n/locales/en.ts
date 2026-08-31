@@ -148,6 +148,7 @@ export const en: Record<keyof typeof zh, string> = {
   'agentActivity.failed.wait': 'Failed to wait {target}s',
   'agentActivity.tool.readPage': 'Read page',
   'agentActivity.tool.getPageMeta': 'Get page metadata',
+  'agentActivity.tool.getForm': 'Get form structure',
   'agentActivity.tool.inspectPageImplementation': 'Inspect page implementation',
   'agentActivity.tool.getScripts': 'Get scripts',
   'agentActivity.tool.getStylesheets': 'Get stylesheets',

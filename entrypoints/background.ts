@@ -12,6 +12,7 @@ import {
   type GetComputedStyleResult,
   type GetFormPayload,
   type GetFormResult,
+  type GetTabUrlResult,
   type GetHtmlPayload,
   type GetHtmlResult,
   type GetScriptsPayload,
@@ -262,6 +263,9 @@ async function handleMessage(message: Message, sender?: MessageSender): Promise<
     case 'GET_ACTIVE_TAB':
       return getActiveTab();
 
+    case 'GET_TAB_URL':
+      return getTabUrl(requireTabId(message));
+
     case 'EXTRACT_PAGE':
       return extractActivePage(requireTabId(message));
 
@@ -345,6 +349,14 @@ async function getActiveTab() {
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
   if (!tab) throw new Error('未找到活动标签页');
   return { id: tab.id, title: tab.title, url: tab.url };
+}
+
+// 内部专用：给 agent.ts 探测 browser_click/fill_form/type 之类隐式触发的导航
+// （ref: docs/superpowers/specs/2026-08-31-page-agent-benchmark.md §3.2）。不出现在
+// SUPPORTED_MESSAGE_TYPES 里，不是模型可调用的工具。
+async function getTabUrl(tabId: number): Promise<GetTabUrlResult> {
+  const tab = await browser.tabs.get(tabId);
+  return { url: tab.url ?? '', title: tab.title };
 }
 
 async function extractActivePage(tabId: number): Promise<PageContent> {

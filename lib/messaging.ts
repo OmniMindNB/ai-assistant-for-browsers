@@ -7,6 +7,7 @@ export type MessageType =
   | 'GET_SELECTION'
   | 'ASK_SELECTION'
   | 'GET_ACTIVE_TAB'
+  | 'GET_TAB_URL'
   | 'QUERY_DOM'
   | 'GET_HTML'
   | 'GET_SCRIPTS'
@@ -466,6 +467,16 @@ export interface ProbeClickTargetResult {
   formAction?: string;
   fieldCount?: number;
   fieldLabels?: { fieldId: string; label?: string }[];
+}
+
+/**
+ * 内部专用（不出现在 SUPPORTED_MESSAGE_TYPES 里，不暴露给模型）：查询给定 tabId 当前的
+ * URL，供 agent.ts 探测 browser_click/browser_fill_form/browser_type 之类隐式触发的导航
+ * （ref: docs/superpowers/specs/2026-08-31-page-agent-benchmark.md §3.2）。
+ */
+export interface GetTabUrlResult {
+  url: string;
+  title?: string;
 }
 
 /** 生成唯一消息 ID */
