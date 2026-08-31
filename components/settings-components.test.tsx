@@ -566,6 +566,22 @@ describe('grouped options settings', () => {
     expect(set.mock.calls.length).toBe(callsBeforeSave);
   });
 
+  it('clears the stale error banner when canceling the add-rule draft', async () => {
+    const user = userEvent.setup();
+    renderWithLocale(<RedactionSettings />);
+
+    await screen.findByRole('checkbox', { name: 'Enable page content redaction' });
+    await user.click(screen.getByRole('button', { name: 'Add custom rule' }));
+    await user.type(screen.getByLabelText('Rule label'), '坏规则');
+    await user.type(screen.getByLabelText('Regular expression'), '(unclosed');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(screen.getByText(/Invalid regular expression/)).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByText(/Invalid regular expression/)).not.toBeInTheDocument();
+  });
+
   it('requires both a label and a pattern before saving', async () => {
     const user = userEvent.setup();
     renderWithLocale(<RedactionSettings />);

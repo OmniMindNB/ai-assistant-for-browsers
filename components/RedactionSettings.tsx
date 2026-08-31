@@ -102,6 +102,7 @@ export default function RedactionSettings() {
   function cancelAdd() {
     setDraft(null);
     setDraftErrors({});
+    setError(null);
   }
 
   async function saveDraft() {
