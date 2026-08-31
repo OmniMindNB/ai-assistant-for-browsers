@@ -194,12 +194,12 @@ describe('maintained release capability contract', () => {
     );
   });
 
-  it('describes only structured page writes and tab-to-conversation session state', () => {
+  it('describes only structured page writes and per-tab session state', () => {
     const permissions = readRepoFile('docs/chrome-store-permission-justifications.md');
     expect(permissions).toContain('packaged page-reading and structured page-write functions');
-    expect(permissions).toContain('temporary tab-to-conversation state in chrome.storage.session');
+    expect(permissions).toContain('temporary per-tab state in chrome.storage.session');
     expect(permissions).toContain('随扩展打包的页面读取与结构化写入函数');
-    expect(permissions).toContain('临时的标签页与对话对应状态');
+    expect(permissions).toContain('临时的按标签页状态');
 
     expect(readRepoFile('docs/privacy-policy.en.md')).toContain(
       'temporary tab-to-conversation state',
