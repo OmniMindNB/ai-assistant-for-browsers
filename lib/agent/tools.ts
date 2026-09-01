@@ -667,7 +667,7 @@ function makeTypeTool(session: TabSessionController): BrowserAgentTool {
     name: 'browser_type',
     label: 'Type',
     description:
-      'Set the value of an input or textarea matching a CSS selector, dispatching input/change events so frameworks like React observe the change. Prefer browser_get_form + browser_fill_form for forms; use this only for one-off edits.',
+      'Set the value of an input or textarea matching a CSS selector, dispatching input/change events so frameworks like React observe the change. For form fields use browser_get_form + a single batched browser_fill_form instead: calling this once per field costs one full model round-trip each. Use this only for a one-off input outside a form.',
     parameters: Type.Object({
       selector: Type.String({ description: 'CSS selector for the input or textarea.' }),
       index: Type.Optional(Type.Number({ description: 'Which matched element to type into, 0-based. Defaults to 0.' })),

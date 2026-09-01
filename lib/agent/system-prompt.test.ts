@@ -323,3 +323,40 @@ describe('写后自动回报新元素', () => {
     expect(SYSTEM_PROMPT).toContain('句柄表');
   });
 });
+
+// 实测（2026-09-01 perf 采样）：一次填表任务里模型调了 7 次 browser_type + 4 次
+// browser_query_dom，browser_get_form 只调了 2 次——每个字段一次 LLM 往返，是这次
+// "变慢" 的主要来源。<form_workflow> 早就写了"一次 fill_form 填完所有字段"，模型
+// 却没跟，根因是 prompt 自相矛盾：<page_actions> 把"填写表单"列进了"直接调用写工具"
+// 的清单并指向 query_dom 找选择器，<tool_strategy> 的选工具索引里又完全没有表单这一条。
+// 一条正确规则对两条相反规则，模型跟了多数。这组断言锁住消歧后的措辞。
+describe('buildSystemPrompt 表单路径不被其它分区反向指引', () => {
+  it('page_actions 不再把填写表单列进「直接调用写工具」的清单', () => {
+    const pageActions = SYSTEM_PROMPT.match(/<page_actions>\n([\s\S]*?)\n<\/page_actions>/)?.[1] ?? '';
+    expect(pageActions).not.toContain('填写表单');
+  });
+
+  it('page_actions 把表单类操作显式让给 form_workflow', () => {
+    const pageActions = SYSTEM_PROMPT.match(/<page_actions>\n([\s\S]*?)\n<\/page_actions>/)?.[1] ?? '';
+    expect(pageActions).toContain('<form_workflow>');
+  });
+
+  it('选工具索引里有表单这一条，指向 get_form + fill_form', () => {
+    const strategy = SYSTEM_PROMPT.match(/<tool_strategy>\n([\s\S]*?)\n<\/tool_strategy>/)?.[1] ?? '';
+    expect(strategy).toContain('browser_get_form');
+    expect(strategy).toContain('browser_fill_form');
+  });
+
+  it('query_dom 定位选择器那条明确把表单字段排除在外', () => {
+    const strategy = SYSTEM_PROMPT.match(/<tool_strategy>\n([\s\S]*?)\n<\/tool_strategy>/)?.[1] ?? '';
+    const queryDomLine = strategy.split('\n').find((line) => line.includes('browser_query_dom')) ?? '';
+    expect(queryDomLine).toContain('表单');
+  });
+
+  it('form_workflow 把逐字段 browser_type 写成明确的反面做法', () => {
+    expect(SYSTEM_PROMPT).toContain('browser_type');
+    const workflow = SYSTEM_PROMPT.match(/<form_workflow>\n([\s\S]*?)\n<\/form_workflow>/)?.[1] ?? '';
+    const batchLine = workflow.split('\n').find((line) => line.includes('fill_form 填完')) ?? '';
+    expect(batchLine).toContain('browser_type');
+  });
+});

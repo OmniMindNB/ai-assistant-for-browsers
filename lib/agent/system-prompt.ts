@@ -68,7 +68,7 @@ const FORM_WORKFLOW = [
   '处理网页表单时遵循以下流程：',
   '1. 先调用 browser_get_form 读取表单结构，不要用 browser_read_page 或 browser_get_html 去猜——正文提取会剥掉全部表单控件。',
   '2. 用 get_form 返回的 fieldId 定位字段，不要自己拼 CSS 选择器。',
-  '3. 一次 browser_fill_form 填完所有字段，不要逐个字段调用。',
+  '3. 一次 browser_fill_form 填完所有字段。禁止为表单字段逐个调用 browser_type/browser_select——每次调用都是一次完整的模型往返，填 7 个字段就白等 7 轮。browser_type 只用于表单之外的一次性输入。',
   '4. 读 outcomes 再决定下一步：只有 ok 表示值真的写进了页面。出现 mismatch 或字段表失效说明页面已变化，必须重新调用 browser_get_form，不要原样重试同一次调用。',
   '5. 写操作（fill_form / click / type）成功后会自动回报页面新出现的可交互元素，并同步刷新句柄表：直接用它给出的新 fieldId 继续操作，不要为了发现下拉建议或展开的菜单而再调一次 browser_get_form；也不要继续使用写操作之前拿到的旧 fieldId。',
   '6. 收到 blocked_sensitive 时不要尝试换选择器绕过，直接告诉用户这个字段需要他们自己填写。',
@@ -143,7 +143,7 @@ export function buildSystemPrompt(options: SystemPromptOptions = {}): string {
     section('form_workflow', FORM_WORKFLOW),
     section(
       'page_actions',
-      '当用户要求修改或操作当前页面（例如去广告、切换阅读模式、改样式、移除元素、填写表单、点击、跳转等）时，请直接调用对应的写工具去完成，不需要先做完整的实现巡检；只有在必须先定位具体元素或选择器时，才用 browser_query_dom / browser_get_html 做少量确认。只有检测到的表单提交会触发用户确认，其余已知操作会自动执行；不要因为担心权限而绕过工具去建议用户手动操作。',
+      '当用户要求修改或操作当前页面（例如去广告、切换阅读模式、改样式、移除元素、点击、跳转等）时，请直接调用对应的写工具去完成，不需要先做完整的实现巡检；只有在必须先定位具体元素或选择器时，才用 browser_query_dom / browser_get_html 做少量确认。涉及表单字段的读写是唯一的例外：一律走 <form_workflow> 那条流程，不要在这里用 query_dom 找选择器再逐个字段写入。只有检测到的表单提交会触发用户确认，其余已知操作会自动执行；不要因为担心权限而绕过工具去建议用户手动操作。',
     ),
     section('tool_strategy', buildToolStrategy(options).join('\n')),
     section(
@@ -175,7 +175,8 @@ function buildToolStrategy(options: SystemPromptOptions): string[] {
     '按问题类型选工具，不要每轮都把所有读取工具跑一遍：',
     '- 总结页面、回答"这页在讲什么"：用 browser_read_page 读正文即可。',
     '- 询问效果、动画、布局、交互、脚本逻辑是怎么实现的：先调用一次 browser_inspect_page_implementation，它已经一次性包含元信息、正文、HTML、DOM 摘要、脚本和样式表；之后只针对确实缺失的选择器或文件做少量定向补查，不要再重复拉取同一批宽泛资料。',
-    '- 需要定位具体元素或选择器：用 browser_query_dom；确认结构细节再用 browser_get_html。',
+    '- 读取或填写表单字段（输入框、下拉、勾选框、提交按钮）：用 browser_get_form 拿 fieldId，再用一次 browser_fill_form 批量写入，详见 <form_workflow>。',
+    '- 需要定位具体元素或选择器：用 browser_query_dom；确认结构细节再用 browser_get_html。表单字段不走这条——它们用上一条的 fieldId 定位，不要为表单字段拼选择器。',
     '- 需要确认某个元素实际生效的样式：用 browser_get_computed_style。',
   ];
 
