@@ -270,6 +270,8 @@ export async function startRun(request: StartRunRequest, ports: PortRegistry): P
     }
 
     if (event.type === 'message_end') {
+      // Flush any pending text before persisting, so state.messages reflects the complete message
+      flush();
       void persistMessages(state);
     }
   });
@@ -288,18 +290,23 @@ export async function startRun(request: StartRunRequest, ports: PortRegistry): P
     } finally {
       unsubscribe();
       if (flushTimer !== null) clearTimeout(flushTimer);
-      if (state.taskOutcome) {
-        const last = state.messages[state.messages.length - 1];
-        if (last) state.messages = [...state.messages.slice(0, -1), { ...last, taskOutcome: state.taskOutcome }];
+      // Only perform cleanup if this run is still the current one for this tab.
+      // If a new run was started for the same tab while this one was in flight,
+      // this run's finally block should not clobber the new run's state.
+      if (runs.get(state.tabId) === state) {
+        if (state.taskOutcome) {
+          const last = state.messages[state.messages.length - 1];
+          if (last) state.messages = [...state.messages.slice(0, -1), { ...last, taskOutcome: state.taskOutcome }];
+        }
+        state.busy = false;
+        state.activitySteps = [];
+        state.pendingConfirmation = null;
+        state.pendingQuestion = null;
+        await persistMessages(state);
+        pushAndPersist(state, ports);
+        await clearRunStateSnapshot(state.tabId).catch(() => undefined);
+        runs.delete(state.tabId);
       }
-      state.busy = false;
-      state.activitySteps = [];
-      state.pendingConfirmation = null;
-      state.pendingQuestion = null;
-      await persistMessages(state);
-      pushAndPersist(state, ports);
-      await clearRunStateSnapshot(state.tabId).catch(() => undefined);
-      if (runs.get(state.tabId) === state) runs.delete(state.tabId);
     }
   })();
 }
