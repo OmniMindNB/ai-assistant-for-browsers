@@ -82,7 +82,7 @@ function renderScrollableLine(container: ScrollableContainerDescriptor): string 
   const head = container.label
     ? `${container.fieldId} ${container.tag}「${container.label}」`
     : `${container.fieldId} ${container.tag} `;
-  return `${head}scrollTop=${container.scrollTop} scrollHeight=${container.scrollHeight} clientHeight=${container.clientHeight}`;
+  return `${head}top=${container.pixelsAbove} bottom=${container.pixelsBelow} left=${container.pixelsLeft} right=${container.pixelsRight}`;
 }
 
 /**

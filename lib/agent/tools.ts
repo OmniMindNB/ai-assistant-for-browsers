@@ -58,11 +58,17 @@ export interface BrowserToolsConfig {
 }
 
 export function createBrowserTools(session: TabSessionController, config: BrowserToolsConfig = {}): BrowserAgentTool[] {
-  return [
+  // wait 靠它扣除"距离上一次工具调用完成、这段时间里已经流逝了多久"（主要是模型生成
+  // 下一次 tool call 本身的 LLM 往返延迟），避免请求的等待时长无谓地叠加在这段延迟之上
+  // （ref: 对标 alibaba/page-agent 的 wait 实现，只补差额时间）。用一个所有工具共享的
+  // mutable ref，而不是只在 wait 自己身上维护：这样即使中间调用的是别的工具，
+  // "上一次活动发生在什么时候"依然准确。
+  const activity: ToolActivityTracker = { lastUpdateAt: Date.now() };
+  const tools: BrowserAgentTool[] = [
     browserGetActiveTabTool,
     makeAskUserTool(config.onAskUser),
     makeReportTaskOutcomeTool(config.onTaskOutcome),
-    waitTool,
+    makeWaitTool(activity),
     makeReadPageTool(session),
     makeGetPageMetaTool(session),
     makeInspectPageImplementationTool(session),
@@ -87,6 +93,24 @@ export function createBrowserTools(session: TabSessionController, config: Browse
     makeCloseTabTool(session),
     makeListTabsTool(session),
   ];
+  return tools.map((tool) => withActivityTracking(tool, activity));
+}
+
+interface ToolActivityTracker {
+  lastUpdateAt: number;
+}
+
+function withActivityTracking(tool: BrowserAgentTool, activity: ToolActivityTracker): BrowserAgentTool {
+  return {
+    ...tool,
+    execute: async (toolCallId, params, signal) => {
+      try {
+        return await tool.execute(toolCallId, params, signal);
+      } finally {
+        activity.lastUpdateAt = Date.now();
+      }
+    },
+  };
 }
 
 // 例外：不参与"当前操作目标"——它的用途是让模型知道"用户现在焦点在哪"，
@@ -151,26 +175,33 @@ function makeReportTaskOutcomeTool(onTaskOutcome?: BrowserToolsConfig['onTaskOut
 }
 
 // 不带 browser_ 前缀，理由同 ask_user：不修改页面或浏览器状态。
-const waitTool: BrowserAgentTool = {
-  name: 'wait',
-  label: 'Wait',
-  description: '等待指定秒数，用于页面或数据还没加载完成时的短暂等待。',
-  parameters: Type.Object({
-    seconds: Type.Optional(Type.Number({ description: '等待的秒数，1-15，默认 2。' })),
-  }),
-  execute: async (_toolCallId, params, signal) => {
-    const raw = params && typeof params === 'object' && 'seconds' in params ? (params as { seconds?: unknown }).seconds : undefined;
-    const seconds = Math.min(15, Math.max(1, typeof raw === 'number' && Number.isFinite(raw) ? raw : 2));
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(resolve, seconds * 1000);
-      signal?.addEventListener('abort', () => {
-        clearTimeout(timer);
-        reject(new Error('等待已被中止。'));
+function makeWaitTool(activity: ToolActivityTracker): BrowserAgentTool {
+  return {
+    name: 'wait',
+    label: 'Wait',
+    description: '等待指定秒数，用于页面或数据还没加载完成时的短暂等待。',
+    parameters: Type.Object({
+      seconds: Type.Optional(Type.Number({ description: '等待的秒数，1-15，默认 2。' })),
+    }),
+    execute: async (_toolCallId, params, signal) => {
+      const raw = params && typeof params === 'object' && 'seconds' in params ? (params as { seconds?: unknown }).seconds : undefined;
+      const seconds = Math.min(15, Math.max(1, typeof raw === 'number' && Number.isFinite(raw) ? raw : 2));
+      // 只补差额：距离上一次工具调用完成已经流逝的时间（多半是模型生成这次 tool call
+      // 本身的 LLM 往返延迟）先扣掉，不重复计入等待时长。回报给模型的仍是它请求的
+      // 原始秒数，不是实际睡眠时长——它问的是"页面/数据有没有等够"，不是内部实现细节。
+      const elapsedMs = Math.max(0, Date.now() - activity.lastUpdateAt);
+      const remainingMs = Math.max(0, seconds * 1000 - elapsedMs);
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(resolve, remainingMs);
+        signal?.addEventListener('abort', () => {
+          clearTimeout(timer);
+          reject(new Error('等待已被中止。'));
+        });
       });
-    });
-    return textResult(`已等待 ${seconds} 秒。`, { seconds });
-  },
-};
+      return textResult(`已等待 ${seconds} 秒。`, { seconds });
+    },
+  };
+}
 
 function makeReadPageTool(session: TabSessionController): BrowserAgentTool {
   return {

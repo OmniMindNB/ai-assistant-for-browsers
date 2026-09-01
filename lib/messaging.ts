@@ -409,9 +409,12 @@ export interface ScrollableContainerDescriptor {
   tag: string;
   /** 尽力而为的标签：aria-label/id 兜底，页面可控，已压空白截断。 */
   label?: string;
-  scrollTop: number;
-  scrollHeight: number;
-  clientHeight: number;
+  /** 四向剩余距离（像素），而不是原始 scrollTop/scrollHeight/clientHeight——模型不用
+   *  自己算还能滚多远（ref: 对标 alibaba/page-agent 的 data-scrollable 属性）。 */
+  pixelsAbove: number;
+  pixelsBelow: number;
+  pixelsLeft: number;
+  pixelsRight: number;
 }
 
 export interface GetFormResult {

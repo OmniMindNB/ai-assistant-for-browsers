@@ -1,7 +1,7 @@
 // 表单字段的纯逻辑层：把注入函数采回来的原始属性归一化成协议里的 FormFieldDescriptor。
 // 放在注入函数外面，是因为 executeScript 会序列化函数体、闭包外引用一律失效
 // （ref: Spec-0005 §设计方案「一条决定模块边界的硬约束」）。
-import type { FormFieldDescriptor, FormFieldKind } from '@/lib/messaging';
+import type { FormFieldDescriptor, FormFieldKind, ScrollableContainerDescriptor } from '@/lib/messaging';
 
 const MAX_LABEL_CHARS = 80;
 
@@ -44,6 +44,20 @@ export interface RawFormField {
   byCursor?: true;
   /** 排在这个字段之前、上一个字段之后出现的正文；未净化（见 form-dom.ts 的 collectFormFields）。 */
   precedingText?: string;
+}
+
+/** 注入函数 collectFormFields 的单个可滚动容器输出。字段全部是可序列化的原始值。 */
+export interface RawScrollableContainer {
+  path: FormFieldPathStep[];
+  tag: string;
+  /** 未净化，只做过空白压缩+截断（与 elementText/label 同款内联写法，不能从注入函数调用 form-schema.ts）。 */
+  label?: string;
+  scrollTop: number;
+  scrollHeight: number;
+  clientHeight: number;
+  scrollLeft: number;
+  scrollWidth: number;
+  clientWidth: number;
 }
 
 /**
@@ -141,6 +155,26 @@ export function toFieldDescriptor(raw: RawFormField, fieldId: string): FormField
     validationMessage: raw.validationMessage || undefined,
     precedingText,
     byCursor: raw.byCursor,
+  };
+}
+
+/** 把原始滚动指标折算成四向剩余距离——模型不用自己拿 scrollHeight-clientHeight-scrollTop
+ *  再心算一遍（ref: 设计文档 §3.8，对标 alibaba/page-agent 的 data-scrollable 属性）。
+ *  命名与 ScrollPageResult/ScrollContainerOutput 的 pixelsAbove/pixelsBelow 保持一致。 */
+export function toScrollableContainerDescriptor(
+  raw: RawScrollableContainer,
+  fieldId: string,
+): ScrollableContainerDescriptor {
+  const maxScrollTop = Math.max(0, raw.scrollHeight - raw.clientHeight);
+  const maxScrollLeft = Math.max(0, raw.scrollWidth - raw.clientWidth);
+  return {
+    fieldId,
+    tag: raw.tag,
+    label: raw.label,
+    pixelsAbove: raw.scrollTop,
+    pixelsBelow: Math.max(0, maxScrollTop - raw.scrollTop),
+    pixelsLeft: raw.scrollLeft,
+    pixelsRight: Math.max(0, maxScrollLeft - raw.scrollLeft),
   };
 }
 

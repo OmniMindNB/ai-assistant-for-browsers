@@ -80,7 +80,7 @@ import {
   typeTextInPage,
   type ApplyFillItem,
 } from '@/lib/agent/form-dom';
-import { findNewFieldIds, sanitizeFieldText, sanitizePageText, toFieldDescriptor } from '@/lib/agent/form-schema';
+import { findNewFieldIds, sanitizeFieldText, sanitizePageText, toFieldDescriptor, toScrollableContainerDescriptor } from '@/lib/agent/form-schema';
 import { getFormFieldsForTab, setFormFieldsForTab, type FormFieldHandle } from '@/lib/agent/tab-form-fields';
 import { decideSubmitIntent } from '@/lib/agent/form-submit';
 
@@ -480,14 +480,7 @@ async function snapshotFields(tabId: number, payload: GetFormPayload = {}): Prom
     (raw, index) => {
       const fieldId = `s${index + 1}`;
       handles[fieldId] = { path: raw.path, expect: { tag: raw.tag }, sensitive: false, kind: 'scrollable' };
-      return {
-        fieldId,
-        tag: raw.tag,
-        label: raw.label,
-        scrollTop: raw.scrollTop,
-        scrollHeight: raw.scrollHeight,
-        clientHeight: raw.clientHeight,
-      };
+      return toScrollableContainerDescriptor(raw, fieldId);
     },
   );
 

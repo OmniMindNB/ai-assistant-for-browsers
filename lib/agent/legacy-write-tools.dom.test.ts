@@ -208,6 +208,76 @@ describe('clickElementInPage 的光标事件', () => {
   });
 });
 
+describe('clickElementInPage 的命中测试与 hover 收尾', () => {
+  beforeEach(() => { document.body.innerHTML = ''; });
+
+  it('dispatches the click sequence to the innermost element hit by elementFromPoint, not the resolved target', async () => {
+    document.body.innerHTML = `<button id="btn"><span id="icon">🔍</span></button>`;
+    const icon = document.getElementById('icon')!;
+    document.elementFromPoint = () => icon;
+    const seenTargets: EventTarget[] = [];
+    icon.addEventListener('click', (e) => seenTargets.push(e.target as EventTarget));
+
+    const result = await clickElementInPage({ selector: '#btn', index: 0 });
+
+    expect(result.status).toBe('ok');
+    expect(seenTargets).toEqual([icon]);
+  });
+
+  it('falls back to the resolved target when elementFromPoint returns nothing (e.g. jsdom)', async () => {
+    document.body.innerHTML = `<button id="btn">发送</button>`;
+    const button = document.getElementById('btn')!;
+    document.elementFromPoint = () => null;
+    const seenTargets: EventTarget[] = [];
+    button.addEventListener('click', (e) => seenTargets.push(e.target as EventTarget));
+
+    await clickElementInPage({ selector: '#btn', index: 0 });
+
+    expect(seenTargets).toEqual([button]);
+  });
+
+  it('fires pointerout/pointerleave/mouseout/mouseleave/blur on the previously clicked element before clicking a new one', async () => {
+    document.body.innerHTML = `<button id="a">A</button><button id="b">B</button>`;
+    const a = document.getElementById('a')!;
+    document.elementFromPoint = () => null;
+    await clickElementInPage({ selector: '#a', index: 0 });
+
+    const seen: string[] = [];
+    for (const type of ['pointerout', 'pointerleave', 'mouseout', 'mouseleave', 'blur']) {
+      a.addEventListener(type, () => seen.push(type));
+    }
+    await clickElementInPage({ selector: '#b', index: 0 });
+
+    expect(seen).toEqual(['pointerout', 'pointerleave', 'mouseout', 'mouseleave', 'blur']);
+  });
+
+  it('does not fire blur-out events when clicking the same element again', async () => {
+    document.body.innerHTML = `<button id="a">A</button>`;
+    const a = document.getElementById('a')!;
+    document.elementFromPoint = () => null;
+    await clickElementInPage({ selector: '#a', index: 0 });
+
+    const seen: string[] = [];
+    for (const type of ['pointerout', 'mouseout', 'blur']) {
+      a.addEventListener(type, () => seen.push(type));
+    }
+    await clickElementInPage({ selector: '#a', index: 0 });
+
+    expect(seen).toEqual([]);
+  });
+
+  it('skips blur-out handling instead of throwing when the previously clicked element left the DOM', async () => {
+    document.body.innerHTML = `<button id="a">A</button><button id="b">B</button>`;
+    document.elementFromPoint = () => null;
+    await clickElementInPage({ selector: '#a', index: 0 });
+    document.getElementById('a')!.remove();
+
+    const result = await clickElementInPage({ selector: '#b', index: 0 });
+
+    expect(result.status).toBe('ok');
+  });
+});
+
 describe('typeTextInPage', () => {
   beforeEach(() => { document.body.innerHTML = ''; });
 

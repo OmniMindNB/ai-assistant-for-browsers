@@ -9,7 +9,9 @@ import {
   sanitizeFieldText,
   sanitizePageText,
   toFieldDescriptor,
+  toScrollableContainerDescriptor,
   type RawFormField,
+  type RawScrollableContainer,
 } from './form-schema';
 
 function raw(overrides: Partial<RawFormField> = {}): RawFormField {
@@ -342,5 +344,64 @@ describe('toFieldDescriptor byCursor passthrough', () => {
     expect(descriptor.kind).toBe('button');
     expect(descriptor.clickable).toBe(true);
     expect(descriptor.label).toBe('下单');
+  });
+});
+
+function rawScrollable(overrides: Partial<RawScrollableContainer> = {}): RawScrollableContainer {
+  return {
+    path: [{ kind: 'selector', selector: 'div', index: 0 }],
+    tag: 'div',
+    scrollTop: 0,
+    scrollHeight: 0,
+    clientHeight: 0,
+    scrollLeft: 0,
+    scrollWidth: 0,
+    clientWidth: 0,
+    ...overrides,
+  };
+}
+
+describe('toScrollableContainerDescriptor', () => {
+  it('reports vertical remaining distance instead of raw scrollTop/scrollHeight/clientHeight', () => {
+    const descriptor = toScrollableContainerDescriptor(
+      rawScrollable({ scrollTop: 300, scrollHeight: 1000, clientHeight: 400 }),
+      's1',
+    );
+    expect(descriptor.pixelsAbove).toBe(300);
+    expect(descriptor.pixelsBelow).toBe(300); // maxScroll = 1000-400 = 600; 600-300 = 300
+  });
+
+  it('reports horizontal remaining distance the same way', () => {
+    const descriptor = toScrollableContainerDescriptor(
+      rawScrollable({ scrollLeft: 100, scrollWidth: 900, clientWidth: 400 }),
+      's1',
+    );
+    expect(descriptor.pixelsLeft).toBe(100);
+    expect(descriptor.pixelsRight).toBe(400); // maxScrollX = 900-400 = 500; 500-100 = 400
+  });
+
+  it('clamps remaining distance to 0 instead of going negative for a stale/inconsistent snapshot', () => {
+    const descriptor = toScrollableContainerDescriptor(
+      rawScrollable({ scrollTop: 900, scrollHeight: 1000, clientHeight: 400, scrollLeft: 900, scrollWidth: 900, clientWidth: 400 }),
+      's1',
+    );
+    expect(descriptor.pixelsBelow).toBe(0);
+    expect(descriptor.pixelsRight).toBe(0);
+  });
+
+  it('reports zero remaining distance in both directions for a container with no horizontal overflow', () => {
+    const descriptor = toScrollableContainerDescriptor(
+      rawScrollable({ scrollTop: 0, scrollHeight: 800, clientHeight: 300 }),
+      's1',
+    );
+    expect(descriptor.pixelsLeft).toBe(0);
+    expect(descriptor.pixelsRight).toBe(0);
+  });
+
+  it('carries fieldId, tag, and label through unchanged', () => {
+    const descriptor = toScrollableContainerDescriptor(rawScrollable({ tag: 'section', label: '聊天记录' }), 's2');
+    expect(descriptor.fieldId).toBe('s2');
+    expect(descriptor.tag).toBe('section');
+    expect(descriptor.label).toBe('聊天记录');
   });
 });

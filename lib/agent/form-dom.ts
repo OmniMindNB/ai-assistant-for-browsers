@@ -4,7 +4,7 @@
 // 函数体内不得引用任何模块作用域的绑定（本文件的其它函数、常量、import 的值），
 // 否则在页面里一律是 undefined。所有配置通过 input 参数传入。
 // 类型导入（import type）会被编译期擦除，不受此限制。
-import type { FormFieldPathStep, RawFormField } from './form-schema';
+import type { FormFieldPathStep, RawFormField, RawScrollableContainer } from './form-schema';
 
 export interface CollectFormInput {
   selector?: string;
@@ -20,16 +20,6 @@ export interface CollectedFormInfo {
   name?: string;
   action?: string;
   method?: string;
-}
-
-export interface RawScrollableContainer {
-  path: FormFieldPathStep[];
-  tag: string;
-  /** 未净化，只做过空白压缩+截断（与 elementText/label 同款内联写法，不能从注入函数调用 form-schema.ts）。 */
-  label?: string;
-  scrollTop: number;
-  scrollHeight: number;
-  clientHeight: number;
 }
 
 export interface CollectFormOutput {
@@ -142,6 +132,18 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
     return true;
   };
 
+  // React（及同类框架）常把委托事件监听器挂在挂载点上，这会让挂载点看起来"可交互"
+  // （常见于聚焦陷阱用的显式 tabindex，偶尔也有 role），但它自己从来不是真实点击目标——
+  // 只有它的后代才是。permissions.ts 已经拒绝了 "#root"/"#app" 作为
+  // browser_click/browser_modify_dom 的 selector 兜底目标，但那一拦发生在元素已经
+  // 进了 raws、占了 token、模型已经决定点它之后。在采集阶段直接排除，拦得更早
+  // （ref: 设计文档 §3.4）。只匹配整段 id，不匹配包含关系，避免误伤 id="root-panel"
+  // 这类真实业务元素。
+  const isRootMountContainer = (element: Element): boolean => {
+    const id = (element.getAttribute('id') || '').toLowerCase();
+    return id === 'root' || id === 'app';
+  };
+
   // 返回 false = 不可交互；'semantic' = 靠标签/contentEditable/href/role/tabindex 命中；
   // 'cursor' = 廉价检查全部落空、仅靠 computed cursor 命中。
   //
@@ -149,6 +151,7 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
   // getComputedStyle 是强制样式解算。廉价检查必须排在前面短路，让纯文本 span、布局 div
   // 这类绝大多数元素不触发它（ref: 设计文档 §4.1）。
   const classifyInteractive = (element: Element): false | 'semantic' | 'cursor' => {
+    if (isRootMountContainer(element)) return false;
     const tag = element.tagName.toLowerCase();
     if (tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'button') return 'semantic';
     if ((element as HTMLElement).isContentEditable === true) return 'semantic';
@@ -337,6 +340,9 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
           scrollTop: element.scrollTop,
           scrollHeight: element.scrollHeight,
           clientHeight: element.clientHeight,
+          scrollLeft: element.scrollLeft,
+          scrollWidth: element.scrollWidth,
+          clientWidth: element.clientWidth,
         });
       }
 
@@ -691,8 +697,12 @@ export async function applyFormFill(input: ApplyFillInput): Promise<ApplyFillOut
       if (disabled || !hasBox || covered) {
         submitted = { fieldId: input.submit.fieldId, status: 'not_clickable' };
       } else {
-        // ⚠️ 与 clickElementInPage 重复：两处都是被 executeScript 序列化注入页面的独立函数，
-        // 不能引用模块作用域的共享 helper，只能各自内联。
+        // 命中测试同 clickElementInPage：topMost 是 button 自身或其后代时才切换派发目标，
+        // 否则（含 topMost 为 null）退回 button。covered 已经在上面拦掉了"命中了不相关
+        // 元素"的情况。⚠️ 与 clickElementInPage 重复：两处都是被 executeScript 序列化注入
+        // 页面的独立函数，不能引用模块作用域的共享 helper，只能各自内联。
+        const dispatchTarget = topMost && button.contains(topMost) ? (topMost as HTMLElement) : button;
+
         const highlight = document.createElement('div');
         highlight.style.cssText =
           `position:fixed;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;` +
@@ -711,18 +721,32 @@ export async function applyFormFill(input: ApplyFillInput): Promise<ApplyFillOut
         window.dispatchEvent(new CustomEvent('runi:cursor-move', { detail: { x: centerX, y: centerY } }));
         await new Promise((resolve) => setTimeout(resolve, 250));
 
+        // 同 clickElementInPage：给上一次点击的元素补一套「鼠标离开」事件，防止它弹出的
+        // hover 菜单粘住不消失。⚠️ 与 clickElementInPage 重复，不能共用 helper。
+        const runiWindow = window as Window & { __runiLastClickTarget__?: Element };
+        const lastClicked = runiWindow.__runiLastClickTarget__;
+        if (lastClicked && lastClicked.isConnected && lastClicked !== dispatchTarget) {
+          const leaveOpts = { bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse', isPrimary: true };
+          lastClicked.dispatchEvent(new PointerEvent('pointerout', leaveOpts));
+          lastClicked.dispatchEvent(new PointerEvent('pointerleave', { ...leaveOpts, bubbles: false }));
+          lastClicked.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, cancelable: true }));
+          lastClicked.dispatchEvent(new MouseEvent('mouseleave', { bubbles: false, cancelable: true }));
+          (lastClicked as HTMLElement).blur?.();
+        }
+
         const pointerOpts = { bubbles: true, cancelable: true, clientX: centerX, clientY: centerY, pointerId: 1, pointerType: 'mouse', isPrimary: true };
         const mouseOpts = { bubbles: true, cancelable: true, clientX: centerX, clientY: centerY, button: 0 };
-        button.dispatchEvent(new PointerEvent('pointerover', pointerOpts));
-        button.dispatchEvent(new PointerEvent('pointerenter', { ...pointerOpts, bubbles: false }));
-        button.dispatchEvent(new MouseEvent('mouseover', mouseOpts));
-        button.dispatchEvent(new MouseEvent('mouseenter', { ...mouseOpts, bubbles: false }));
-        button.dispatchEvent(new PointerEvent('pointerdown', pointerOpts));
-        button.dispatchEvent(new MouseEvent('mousedown', mouseOpts));
-        button.focus();
-        button.dispatchEvent(new PointerEvent('pointerup', pointerOpts));
-        button.dispatchEvent(new MouseEvent('mouseup', mouseOpts));
-        button.dispatchEvent(new MouseEvent('click', mouseOpts));
+        dispatchTarget.dispatchEvent(new PointerEvent('pointerover', pointerOpts));
+        dispatchTarget.dispatchEvent(new PointerEvent('pointerenter', { ...pointerOpts, bubbles: false }));
+        dispatchTarget.dispatchEvent(new MouseEvent('mouseover', mouseOpts));
+        dispatchTarget.dispatchEvent(new MouseEvent('mouseenter', { ...mouseOpts, bubbles: false }));
+        dispatchTarget.dispatchEvent(new PointerEvent('pointerdown', pointerOpts));
+        dispatchTarget.dispatchEvent(new MouseEvent('mousedown', mouseOpts));
+        (dispatchTarget as HTMLElement).focus?.();
+        dispatchTarget.dispatchEvent(new PointerEvent('pointerup', pointerOpts));
+        dispatchTarget.dispatchEvent(new MouseEvent('mouseup', mouseOpts));
+        dispatchTarget.dispatchEvent(new MouseEvent('click', mouseOpts));
+        runiWindow.__runiLastClickTarget__ = dispatchTarget;
 
         // ⚠️ 与 clickElementInPage 重复：两处都是被序列化注入的独立函数，不能共用 helper。
         // aria-label 优先：图标按钮的可见文本往往为空或只是一个字形。
@@ -1060,8 +1084,14 @@ export async function clickElementInPage(input: { selector: string; index: numbe
     };
   }
 
+  // 命中测试：真实浏览器里事件落在该坐标下最内层的元素上（例如按钮内的图标 <svg>），
+  // 不是恒定落在 resolve 出来的 target 本身。topMost 不是 target 自身或其后代时已经在
+  // 上面被判成"遮挡"并提前返回，所以这里 target.contains(topMost) 为真时二者必属同一
+  // 语义目标；topMost 为 null（如 jsdom 未实现 elementFromPoint）时退回 target。
   // ⚠️ 与 applyFormFill 的 submit 分支重复：两处都是被 executeScript 序列化注入页面的独立函数，
   // 不能引用模块作用域的共享 helper，只能各自内联。
+  const dispatchTarget = topMost && target.contains(topMost) ? (topMost as HTMLElement) : target;
+
   const highlight = document.createElement('div');
   highlight.style.cssText =
     `position:fixed;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;` +
@@ -1080,18 +1110,36 @@ export async function clickElementInPage(input: { selector: string; index: numbe
   window.dispatchEvent(new CustomEvent('runi:cursor-move', { detail: { x: centerX, y: centerY } }));
   await new Promise((resolve) => setTimeout(resolve, 250));
 
+  // 上一次被点击的元素在这次点击前补一套「鼠标离开」事件，防止它弹出的 hover 菜单
+  // 粘在页面上不消失——page.window 在多次 executeScript 调用之间是同一个真实的
+  // 页面全局对象，可以安全地把它当会话状态存（导航会换新的 window，天然重置）。
+  // ⚠️ 与 applyFormFill 的 submit 分支重复：两处都是被序列化注入的独立函数，不能共用 helper。
+  const runiWindow = window as Window & { __runiLastClickTarget__?: Element };
+  const lastClicked = runiWindow.__runiLastClickTarget__;
+  if (lastClicked && lastClicked.isConnected && lastClicked !== dispatchTarget) {
+    const leaveOpts = { bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse', isPrimary: true };
+    lastClicked.dispatchEvent(new PointerEvent('pointerout', leaveOpts));
+    lastClicked.dispatchEvent(new PointerEvent('pointerleave', { ...leaveOpts, bubbles: false }));
+    lastClicked.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, cancelable: true }));
+    lastClicked.dispatchEvent(new MouseEvent('mouseleave', { bubbles: false, cancelable: true }));
+    // 用真正的 blur() 而不是派发合成事件：它同时会把浏览器的焦点状态清空，避免下面
+    // dispatchTarget.focus() 再对它触发一次原生 blur，重复两遍。
+    (lastClicked as HTMLElement).blur?.();
+  }
+
   const pointerOpts = { bubbles: true, cancelable: true, clientX: centerX, clientY: centerY, pointerId: 1, pointerType: 'mouse', isPrimary: true };
   const mouseOpts = { bubbles: true, cancelable: true, clientX: centerX, clientY: centerY, button: 0 };
-  target.dispatchEvent(new PointerEvent('pointerover', pointerOpts));
-  target.dispatchEvent(new PointerEvent('pointerenter', { ...pointerOpts, bubbles: false }));
-  target.dispatchEvent(new MouseEvent('mouseover', mouseOpts));
-  target.dispatchEvent(new MouseEvent('mouseenter', { ...mouseOpts, bubbles: false }));
-  target.dispatchEvent(new PointerEvent('pointerdown', pointerOpts));
-  target.dispatchEvent(new MouseEvent('mousedown', mouseOpts));
-  target.focus();
-  target.dispatchEvent(new PointerEvent('pointerup', pointerOpts));
-  target.dispatchEvent(new MouseEvent('mouseup', mouseOpts));
-  target.dispatchEvent(new MouseEvent('click', mouseOpts));
+  dispatchTarget.dispatchEvent(new PointerEvent('pointerover', pointerOpts));
+  dispatchTarget.dispatchEvent(new PointerEvent('pointerenter', { ...pointerOpts, bubbles: false }));
+  dispatchTarget.dispatchEvent(new MouseEvent('mouseover', mouseOpts));
+  dispatchTarget.dispatchEvent(new MouseEvent('mouseenter', { ...mouseOpts, bubbles: false }));
+  dispatchTarget.dispatchEvent(new PointerEvent('pointerdown', pointerOpts));
+  dispatchTarget.dispatchEvent(new MouseEvent('mousedown', mouseOpts));
+  (dispatchTarget as HTMLElement).focus?.();
+  dispatchTarget.dispatchEvent(new PointerEvent('pointerup', pointerOpts));
+  dispatchTarget.dispatchEvent(new MouseEvent('mouseup', mouseOpts));
+  dispatchTarget.dispatchEvent(new MouseEvent('click', mouseOpts));
+  runiWindow.__runiLastClickTarget__ = dispatchTarget;
 
   // aria-label 优先：图标按钮的可见文本往往为空或只是一个字形。
   const rawLabel = target.getAttribute('aria-label') || target.textContent || '';

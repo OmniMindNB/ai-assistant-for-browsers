@@ -172,15 +172,15 @@ describe('renderFormResultForModel', () => {
     expect(text).toContain('部分正文已截断');
   });
 
-  it('renders scrollable containers with their handles', () => {
+  it('renders scrollable containers with their handles and four-directional remaining distance', () => {
     const text = renderFormResultForModel(
       result({
         scrollableContainers: [
-          { fieldId: 's1', tag: 'div', label: '消息列表', scrollTop: 0, scrollHeight: 4000, clientHeight: 600 },
+          { fieldId: 's1', tag: 'div', label: '消息列表', pixelsAbove: 0, pixelsBelow: 3400, pixelsLeft: 0, pixelsRight: 0 },
         ],
       }),
     );
-    expect(text).toContain('s1 div「消息列表」scrollTop=0 scrollHeight=4000 clientHeight=600');
+    expect(text).toContain('s1 div「消息列表」top=0 bottom=3400 left=0 right=0');
   });
 
   it('renders trailing text when includeText was used', () => {

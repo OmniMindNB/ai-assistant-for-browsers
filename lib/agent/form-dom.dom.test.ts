@@ -311,9 +311,21 @@ describe('collectFormFields — includeScrollable', () => {
     document.body.innerHTML = '';
   });
 
-  function stubScrollMetrics(el: Element, scrollHeight: number, clientHeight: number): void {
+  function stubScrollMetrics(
+    el: Element,
+    scrollHeight: number,
+    clientHeight: number,
+    horizontal?: { scrollWidth: number; clientWidth: number; scrollLeft?: number },
+  ): void {
     Object.defineProperty(el, 'scrollHeight', { value: scrollHeight, configurable: true });
     Object.defineProperty(el, 'clientHeight', { value: clientHeight, configurable: true });
+    if (horizontal) {
+      Object.defineProperty(el, 'scrollWidth', { value: horizontal.scrollWidth, configurable: true });
+      Object.defineProperty(el, 'clientWidth', { value: horizontal.clientWidth, configurable: true });
+      if (horizontal.scrollLeft !== undefined) {
+        Object.defineProperty(el, 'scrollLeft', { value: horizontal.scrollLeft, configurable: true, writable: true });
+      }
+    }
   }
 
   it('does not collect scrollables when includeScrollable is not set', () => {
@@ -377,6 +389,20 @@ describe('collectFormFields — includeScrollable', () => {
     stubScrollMetrics(document.getElementById('panel')!, 800, 300);
     const output = collectFormFields({ ...INPUT, includeScrollable: true });
     expect(output.scrollables![0].label).toBe('聊天记录');
+  });
+
+  it('also captures horizontal scroll metrics for a vertically-scrollable container', () => {
+    render(`<div id="panel" style="overflow-y:auto"></div>`);
+    stubScrollMetrics(document.getElementById('panel')!, 800, 300, { scrollWidth: 1200, clientWidth: 400, scrollLeft: 50 });
+    const output = collectFormFields({ ...INPUT, includeScrollable: true });
+    expect(output.scrollables![0]).toMatchObject({ scrollWidth: 1200, clientWidth: 400, scrollLeft: 50 });
+  });
+
+  it('defaults horizontal scroll metrics to 0 when the container has no horizontal overflow', () => {
+    render(`<div id="panel" style="overflow-y:auto"></div>`);
+    stubScrollMetrics(document.getElementById('panel')!, 800, 300);
+    const output = collectFormFields({ ...INPUT, includeScrollable: true });
+    expect(output.scrollables![0]).toMatchObject({ scrollWidth: 0, clientWidth: 0, scrollLeft: 0 });
   });
 });
 
@@ -1172,5 +1198,43 @@ describe('collectFormFields cursor signal', () => {
       '<button>提交</button>' + '<div style="cursor: pointer">卡片</div>',
     );
     expect(collectFormFields(INPUT).raws).toHaveLength(2);
+  });
+});
+
+describe('collectFormFields root container exclusion', () => {
+  // React (and similar frameworks) attach delegated event listeners at the app mount
+  // point, which can make it look interactive (an explicit tabindex for focus trapping,
+  // or occasionally a role) even though it is never a real click target itself — only
+  // its descendants are. permissions.ts already denies "#root"/"#app" as selector
+  // fallback targets for browser_click/browser_modify_dom, but that catches it only
+  // after it has already taken a raws slot and the model has already decided to act on
+  // it. Excluding it at collection time (here) is strictly earlier.
+  it('never collects a #root container even when it carries an interactive role/tabindex', () => {
+    render('<div id="root" role="button" tabindex="0"><span>内容</span></div>');
+    expect(collectFormFields(INPUT).raws).toHaveLength(0);
+  });
+
+  it('never collects a #root container via the cursor signal either', () => {
+    // jsdom 的 cursor 继承并不总生效（同文件顶部"collectFormFields cursor signal"
+    // describe 已注明这一限制），这里只断言 #root 本身不入选——不断言它内部
+    // 是否独立继承到 cursor:pointer，那是另一回事，不是本测试要覆盖的行为。
+    render('<div id="root" style="cursor: pointer"><span>内容</span></div>');
+    expect(collectFormFields(INPUT).raws.some((raw) => raw.id === 'root')).toBe(false);
+  });
+
+  it('excludes #app the same way as #root', () => {
+    render('<div id="app" role="button" tabindex="0"><span>内容</span></div>');
+    expect(collectFormFields(INPUT).raws).toHaveLength(0);
+  });
+
+  it('still collects real interactive descendants inside a #root container', () => {
+    render('<div id="root"><button>点击</button></div>');
+    const out = collectFormFields(INPUT);
+    expect(out.raws.map((raw) => raw.tag)).toEqual(['button']);
+  });
+
+  it('does not exclude an unrelated div that merely has an id containing "root"', () => {
+    render('<div id="root-panel" role="button" tabindex="0">内容</div>');
+    expect(collectFormFields(INPUT).raws).toHaveLength(1);
   });
 });
