@@ -1118,6 +1118,21 @@ async function runAgent(
   if (!isCurrentRun(run, get)) return false;
   run.agent = agent;
   let acc = '';
+  let streamFlushTimer: ReturnType<typeof setTimeout> | null = null;
+  const STREAM_FLUSH_INTERVAL_MS = 48;
+  // text_delta 到达时立刻累加进 acc（下面 !acc.trim() 判空、控制台日志等逻辑都直接读
+  // 这个变量，必须实时），但对 store 的 set() 节流到约一帧一次：不节流的话，长回复期间
+  // 每个 token 都会触发一次全量 store 更新——即使消息列表已经 memo 化，命中更新的那一条
+  // 消息本身仍要为每个 token 重新跑一遍 <Markdown> 的 remark/rehype-highlight 解析。
+  // isCurrentRun 判断避免用户在节流窗口内切换/清空会话后，姗姗来迟的一次 flush 把内容
+  // 写进了错误的会话。
+  function flushStream() {
+    if (streamFlushTimer !== null) {
+      clearTimeout(streamFlushTimer);
+      streamFlushTimer = null;
+    }
+    if (isCurrentRun(run, get)) replaceLastAssistant(set, acc);
+  }
   const unsubscribe = agent.subscribe((event) => {
     if (!isCurrentRun(run, get)) return;
 
@@ -1140,7 +1155,9 @@ async function runAgent(
 
     if (event.type === 'message_update' && event.assistantMessageEvent.type === 'text_delta') {
       acc += event.assistantMessageEvent.delta;
-      replaceLastAssistant(set, acc);
+      if (streamFlushTimer === null) {
+        streamFlushTimer = setTimeout(flushStream, STREAM_FLUSH_INTERVAL_MS);
+      }
     }
 
     if (event.type === 'tool_execution_start' && !run.terminatedToolCallIds.has(event.toolCallId)) {
@@ -1252,6 +1269,9 @@ async function runAgent(
     }
   } finally {
     unsubscribe();
+    // 节流窗口内可能还有未落到 store 的尾部 delta；下面的 taskOutcome 合并和
+    // persistConversationSnapshot 都读 get().messages，必须先追平。
+    flushStream();
     if (isCurrentRun(run, get)) {
       if (run.taskOutcome) {
         const outcome = run.taskOutcome;

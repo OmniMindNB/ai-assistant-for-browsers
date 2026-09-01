@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useChat } from './store';
 
 // react-markdown + rehype-highlight 拉入较大的解析/高亮代码，单独分包，
@@ -138,33 +138,42 @@ export default function App() {
     return () => el.removeEventListener('scroll', onScroll);
   }, []);
 
+  const resetToFollowing = useCallback(() => {
+    atBottomRef.current = true;
+    setShowJumpToBottom(false);
+  }, []);
+
   // 切换会话 / 新建会话 / 删除当前会话时，关闭尚未提交的编辑框，并回到“跟随最新内容”状态。
   useEffect(() => {
     setEditingId(null);
     resetToFollowing();
-  }, [conversationId]);
+  }, [conversationId, resetToFollowing]);
 
-  async function submitEdit(id: string, content: string) {
-    // 只有 editMessage 真正成功发起（截断+提交）才关闭编辑框；busy / id 未命中 /
-    // 不可编辑 / 空内容 / Provider 未配置 / API Key 缺失 / 标签页解析失败等前置失败
-    // 都会返回 false，此时编辑框保持打开、用户刚敲的内容原样保留，页面上方的
-    // error 提示负责说明失败原因，不在编辑框里再加一套错误 UI。
-    if (requestBlocked) return;
-    resetToFollowing();
-    const ok = await editMessage(id, content);
-    if (ok) setEditingId(null);
-  }
+  // useCallback 稳定引用：这三个（连同下方的 handleBeginEdit / handleCancelEdit）会作为
+  // props 传给下面 memo 包裹的 Message；引用每次渲染都变的话 memo 形同虚设，输入框打字之类
+  // 与消息列表无关的 store 更新还是会级联重渲染每一条历史消息。
+  const submitEdit = useCallback(
+    async (id: string, content: string) => {
+      // 只有 editMessage 真正成功发起（截断+提交）才关闭编辑框；busy / id 未命中 /
+      // 不可编辑 / 空内容 / Provider 未配置 / API Key 缺失 / 标签页解析失败等前置失败
+      // 都会返回 false，此时编辑框保持打开、用户刚敲的内容原样保留，页面上方的
+      // error 提示负责说明失败原因，不在编辑框里再加一套错误 UI。
+      if (requestBlocked) return;
+      resetToFollowing();
+      const ok = await editMessage(id, content);
+      if (ok) setEditingId(null);
+    },
+    [requestBlocked, resetToFollowing, editMessage],
+  );
+
+  const handleBeginEdit = useCallback((id: string) => setEditingId(id), []);
+  const handleCancelEdit = useCallback(() => setEditingId(null), []);
 
   useEffect(() => {
     if (atBottomRef.current) {
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
     }
   }, [messages, activitySteps]);
-
-  function resetToFollowing() {
-    atBottomRef.current = true;
-    setShowJumpToBottom(false);
-  }
 
   function jumpToBottom() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -277,9 +286,9 @@ export default function App() {
                       }
                       editing={editingId === m.id}
                       discardCount={editingId === m.id ? discardedCount(messages, m.id) : 0}
-                      onBeginEdit={() => setEditingId(m.id)}
-                      onCancelEdit={() => setEditingId(null)}
-                      onSubmitEdit={(content) => submitEdit(m.id, content)}
+                      onBeginEdit={handleBeginEdit}
+                      onCancelEdit={handleCancelEdit}
+                      onSubmitEdit={submitEdit}
                     />
                   ))
                 )}
@@ -370,7 +379,12 @@ function ProviderBanner({ onOpenSettings }: { onOpenSettings: () => void }) {
 
 /* ---------------- 消息区 ---------------- */
 
-function Message({
+// memo 包裹：App 把整个 store 一次性解构订阅，任何字段变化（比如输入框打字）都会
+// 重渲染 App，进而重渲染 messages.map 生成的每一个 <Message>。没有 memo 的话，这会
+// 连带把每条历史消息里的 <Markdown> 解析树在完全无关的按键上重新构建一遍。配合调用方
+// 传入的 handleBeginEdit / handleCancelEdit / submitEdit（均为 useCallback 稳定引用），
+// 这里的浅比较才能真正跳过没变化的消息。
+const Message = memo(function Message({
   message,
   busy,
   requestBlocked,
@@ -387,9 +401,9 @@ function Message({
   showThinkingIndicator: boolean;
   editing: boolean;
   discardCount: number;
-  onBeginEdit: () => void;
+  onBeginEdit: (id: string) => void;
   onCancelEdit: () => void;
-  onSubmitEdit: (content: string) => void;
+  onSubmitEdit: (id: string, content: string) => void;
 }) {
   const { t } = useTranslation();
   const { role, content } = message;
@@ -404,7 +418,7 @@ function Message({
               discardCount={discardCount}
               disabled={requestBlocked}
               onCancel={onCancelEdit}
-              onSubmit={onSubmitEdit}
+              onSubmit={(content) => onSubmitEdit(message.id, content)}
             />
           </div>
         </div>
@@ -434,7 +448,7 @@ function Message({
           {!requestBlocked && isEditableMessage(message) && (
             <button
               type="button"
-              onClick={onBeginEdit}
+              onClick={() => onBeginEdit(message.id)}
               aria-label={t('chat.editMessageAriaLabel')}
               title={t('chat.editMessageAriaLabel')}
               // 只挂 hover 会让这个功能对键盘用户不存在，因此同时响应 focus-visible。
@@ -497,7 +511,7 @@ function Message({
       </div>
     </div>
   );
-}
+});
 
 function TypingDots() {
   const { t } = useTranslation();
