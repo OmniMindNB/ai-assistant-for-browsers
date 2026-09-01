@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   sendMessage: vi.fn(),
-  createBrowserAgent: vi.fn(),
+  runPortPostMessage: vi.fn(),
   getActiveProvider: vi.fn(),
   replaceConversationMessages: vi.fn(),
   getConversationMessages: vi.fn(),
@@ -27,6 +27,22 @@ function emitStorageChange(changes: Record<string, { newValue?: unknown }>, area
   for (const listener of storageListeners) listener(changes, areaName);
 }
 
+// store.ts 现在不再直接调用 createBrowserAgent；它改为通过 browser.runtime.connect(...) 建立的
+// 持久 Port 发 startRun 消息，并靠 Port 推回来的 snapshot 消息驱动 UI（见 lib/agent/run-registry.ts）。
+// 这里装一个最小的假 Port：onMessage 监听器存进 runPortListener，测试里可以手动调用它模拟
+// background 推回来的 snapshot。connectRunPort 只在 restoreTabConversation() 里调用（不是模块
+// 加载时的副作用），所以这段不需要像上面的 storageListeners 一样抢在 import 之前跑——
+// 普通赋值就够了，只要排在 `import { useChat } from './store'` 之前即可。
+let runPortListener: ((message: unknown) => void) | undefined;
+(globalThis as any).browser.runtime = {
+  ...(globalThis as any).browser.runtime,
+  connect: vi.fn(() => ({
+    postMessage: mocks.runPortPostMessage,
+    onMessage: { addListener: (fn: (message: unknown) => void) => { runPortListener = fn; } },
+    onDisconnect: { addListener: () => undefined },
+  })),
+};
+
 vi.mock('@/lib/messaging', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/messaging')>()),
   sendMessage: mocks.sendMessage,
@@ -36,10 +52,6 @@ vi.mock('@/lib/settings', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/settings')>()),
   ensureDevProvider: vi.fn(),
   getActiveProvider: mocks.getActiveProvider,
-}));
-
-vi.mock('@/lib/agent/agent', () => ({
-  createBrowserAgent: mocks.createBrowserAgent,
 }));
 
 vi.mock('@/lib/db', async (importOriginal) => ({
@@ -64,23 +76,51 @@ const provider = {
   model: 'test-model',
 };
 
-let agentEventListener: ((event: any) => void) | undefined;
+const DEFAULT_TAB_ID = 7;
 
-function makeAgent() {
-  return {
-    subscribe: vi.fn((listener) => { agentEventListener = listener; return () => undefined; }),
-    abort: vi.fn(),
-    prompt: vi.fn().mockResolvedValue(undefined),
-    state: {
-      messages: [
-        {
-          role: 'assistant',
-          content: [{ type: 'text', text: 'Hello' }],
-          stopReason: 'stop',
-        },
-      ],
-    },
+/** 建立面板 <-> background 的假 Port 连接（真实场景下面板挂载时 restoreTabConversation()
+ * 会做这件事）。多数用例需要先连上 Port，runAgent 发的 startRun 消息才有地方可去——
+ * 未连接时 postToRunPort 是静默 no-op（见 store.ts），这正是很多"不应该发起 agent 运行"
+ * 场景无需特殊处理就能通过断言的原因。 */
+async function connectPort(tabId = DEFAULT_TAB_ID): Promise<void> {
+  (globalThis as any).browser.tabs = { query: vi.fn().mockResolvedValue([{ id: tabId }]) };
+  (globalThis as any).browser.storage.session = {
+    get: vi.fn().mockResolvedValue({}),
+    set: vi.fn().mockResolvedValue(undefined),
+    remove: vi.fn().mockResolvedValue(undefined),
   };
+  await useChat.getState().restoreTabConversation();
+}
+
+interface SnapshotOverrides {
+  tabId: number;
+  conversationId: string;
+  busy: boolean;
+  messages?: unknown[];
+  activitySteps?: unknown[];
+  pendingConfirmation?: unknown;
+  pendingQuestion?: unknown;
+}
+
+/** 模拟 background 推回来的一份 snapshot——取代了原来通过 agentEventListener 逐个重放
+ * agent 事件的做法。那套逐事件计算活动步骤/慢提示的逻辑现在整个在 background 的
+ * run-registry.ts 里（已经在 Task 2/3 的 run-registry.test.ts 里覆盖），这里的 snapshot
+ * 已经是算好的最终结果，store.ts 只管原样显示。 */
+function emitSnapshot(overrides: SnapshotOverrides): void {
+  runPortListener?.({
+    type: 'snapshot',
+    messages: [],
+    activitySteps: [],
+    pendingConfirmation: null,
+    pendingQuestion: null,
+    ...overrides,
+  });
+}
+
+/** 取最近一次发起的 startRun 消息，配合 toEqual(expect.objectContaining(...)) 断言字段。 */
+function lastStartRunCall(): any {
+  const calls = mocks.runPortPostMessage.mock.calls.filter((call) => call[0]?.type === 'startRun');
+  return calls[calls.length - 1]?.[0];
 }
 
 function parsingPdfAttachment() {
@@ -101,15 +141,14 @@ function parsingPdfAttachment() {
 describe('chat store page context', () => {
   beforeEach(() => {
     mocks.sendMessage.mockReset();
-    mocks.createBrowserAgent.mockReset();
+    mocks.runPortPostMessage.mockReset();
     mocks.getActiveProvider.mockReset().mockResolvedValue(provider);
     mocks.replaceConversationMessages.mockReset().mockResolvedValue(undefined);
     mocks.getConversationMessages.mockReset().mockResolvedValue([]);
     mocks.deleteConversation.mockReset().mockResolvedValue(undefined);
     mocks.listConversations.mockReset().mockResolvedValue([]);
     mocks.extractPdfAttachment.mockReset().mockResolvedValue({ ok: false, reason: 'parse-failed' });
-    mocks.createBrowserAgent.mockReturnValue(makeAgent());
-    agentEventListener = undefined;
+    runPortListener = undefined;
     (globalThis as typeof globalThis & { browser: any }).browser.storage.local.get = vi.fn().mockResolvedValue({});
     useChat.setState({
       messages: [],
@@ -122,12 +161,8 @@ describe('chat store page context', () => {
     });
   });
 
-  // clear() cancels any module-level slow-activity timers (real setTimeouts) and resets
-  // activitySteps. Without this, a real timer armed by one test (e.g. via
-  // tool_execution_start, which schedules a 6s slow-escalation timer) can outlive that
-  // test and fire during a later, unrelated test — mutating the shared store singleton out
-  // from under it. Runs after every test, not just timer-related ones, since any test could
-  // leave a pending running step behind.
+  // clear() invalidates any activeRun and resets conversationId/messages/activitySteps,
+  // so a leftover run or armed timer from one test can't leak state into the next.
   afterEach(() => {
     useChat.getState().clear();
   });
@@ -293,30 +328,77 @@ describe('chat store page context', () => {
     expect(useChat.getState().messages[0]?.content).toBe('B');
   });
 
-  it('keeps a newly opened conversation and its record untouched when a previous agent settles late', async () => {
-    let resolvePrompt!: () => void;
-    const agent = makeAgent();
-    agent.prompt.mockImplementation(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
-    mocks.createBrowserAgent.mockReturnValue(agent);
-    mocks.sendMessage.mockImplementation((type: string) => {
-      if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: [
-        'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML',
-        'GET_COMPUTED_STYLE', 'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT',
-        'TYPE_TEXT', 'SELECT_OPTION', 'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
-      ] } });
-      return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
-    });
+  it('sends a startRun request without browser tools when a normal send requests it', async () => {
+    await connectPort();
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+
+    await useChat.getState().send('hello', { withoutBrowserTools: true });
+
+    const startRun = lastStartRunCall();
+    expect(startRun).toEqual(expect.objectContaining({ withoutBrowserTools: true }));
+    // 该轮明确不读取当前页面，因此不能把页面标题/地址注入系统提示词。
+    expect(startRun.systemPrompt).not.toContain('https://example.com/');
+    expect(startRun.systemPrompt).not.toContain('id=7');
+  });
+
+  it('injects the pinned tab and current time into the system prompt on a normal send', async () => {
+    await connectPort();
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+
+    await useChat.getState().send('hello');
+
+    const { systemPrompt } = lastStartRunCall();
+    expect(systemPrompt).toContain('<runtime_context>');
+    expect(systemPrompt).toContain('id=7');
+    expect(systemPrompt).toContain('title: "Example"');
+    expect(systemPrompt).toContain('url: "https://example.com/"');
+    expect(systemPrompt).toMatch(/当前时间：\d{4}-\d{2}-\d{2} \d{2}:\d{2} 星期./);
+  });
+
+  it('applySnapshot ignores a snapshot whose tabId does not match the active run, or that arrives after the client has navigated away', async () => {
+    // applySnapshot 的过滤条件是 run.tabId === snapshot.tabId 且 isCurrentOrigin(run.origin, get)——
+    // 后者比较的是"当前 store 的 conversationId 是否还等于这个 run 发起时捕获的 origin"，
+    // 不是拿 snapshot 自带的 conversationId 字段做比对（那个字段目前只是信息性的，见
+    // lib/agent/run-port-protocol.ts 的 RunSnapshot），所以这里分别覆盖这两条真实生效的分支。
+    await connectPort();
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    useChat.setState({ conversationId: 'A', messages: [] });
+    await useChat.getState().send('run in A');
+
+    // 错误的 tabId：必须忽略。
+    emitSnapshot({ tabId: 999, conversationId: 'A', busy: false, messages: [{ id: 'wrong-tab', role: 'assistant', content: 'wrong tab', createdAt: 1 }] });
+    expect(useChat.getState().messages.some((m) => m.content === 'wrong tab')).toBe(false);
+
+    // 客户端已经导航到另一个会话（conversationId 变了，但没有经过 invalidateActiveRun）：
+    // isCurrentOrigin 失败，必须忽略。
+    useChat.setState({ conversationId: 'somewhere-else' });
+    emitSnapshot({ tabId: 7, conversationId: 'A', busy: false, messages: [{ id: 'stale-origin', role: 'assistant', content: 'stale origin', createdAt: 1 }] });
+    expect(useChat.getState().messages.some((m) => m.content === 'stale origin')).toBe(false);
+
+    // tabId 和 origin 都对得上的 snapshot 才会生效。
+    useChat.setState({ conversationId: 'A' });
+    emitSnapshot({ tabId: 7, conversationId: 'A', busy: false, messages: [{ id: 'right', role: 'assistant', content: 'applied', createdAt: 1 }] });
+    expect(useChat.getState().messages).toEqual([{ id: 'right', role: 'assistant', content: 'applied', createdAt: 1 }]);
+  });
+
+  it('keeps a newly opened conversation untouched when the previous run in the old conversation later settles', async () => {
+    await connectPort();
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
     useChat.setState({ conversationId: 'completed-run', messages: [] });
 
-    const running = useChat.getState().send('Message for A');
-    await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalledOnce());
+    await useChat.getState().send('Message for A');
+    const aConversationId = lastStartRunCall().conversationId;
 
     mocks.getConversationMessages.mockResolvedValueOnce([{ role: 'user', content: 'Message for B', createdAt: 1 }]);
     await expect(useChat.getState().openConversation('B')).resolves.toBe(true);
-    agentEventListener?.({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'late A text' } });
-    agentEventListener?.({ type: 'tool_execution_start', toolCallId: 'late-tool', toolName: 'browser_click' });
-    resolvePrompt();
-    await running;
+
+    // A 的迟到 snapshot（conversationId 仍是 A 的）不能覆盖已经切到的 B。
+    emitSnapshot({
+      tabId: 7,
+      conversationId: aConversationId,
+      busy: false,
+      messages: [{ id: 'late', role: 'assistant', content: 'late A text', createdAt: 1 }],
+    });
 
     expect(useChat.getState()).toMatchObject({
       conversationId: 'B',
@@ -324,277 +406,88 @@ describe('chat store page context', () => {
       activitySteps: [],
       busy: false,
     });
-    expect(mocks.replaceConversationMessages).not.toHaveBeenCalledWith('B', expect.anything(), expect.anything());
   });
 
-  it('aborts a run started while opening B waits for storage before B becomes current', async () => {
+  it('sends a stop message for the run in the outgoing conversation, and ignores its stale snapshot, when a new run starts while opening another conversation is still pending', async () => {
+    await connectPort();
     let resolveOpen!: (value: any[]) => void;
-    let resolvePrompt!: () => void;
-    const agent = makeAgent();
-    agent.prompt.mockImplementation(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
-    mocks.createBrowserAgent.mockReturnValue(agent);
-    mocks.sendMessage.mockImplementation((type: string) => {
-      if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: [
-        'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE',
-        'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION',
-        'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
-      ] } });
-      return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
-    });
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
     useChat.setState({ conversationId: 'persistence-window', messages: [] });
     mocks.getConversationMessages.mockReturnValueOnce(new Promise((resolve) => { resolveOpen = resolve; }));
 
     const opening = useChat.getState().openConversation('B');
-    const running = useChat.getState().send('Gap run for A');
-    await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalledOnce());
+    await useChat.getState().send('Gap run for A');
+    const aConversationId = lastStartRunCall().conversationId;
+    mocks.runPortPostMessage.mockClear();
+
     resolveOpen([{ role: 'user', content: 'Message for B', createdAt: 1 }]);
     await expect(opening).resolves.toBe(true);
-    expect(agent.abort).toHaveBeenCalledOnce();
-    agentEventListener?.({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'late gap text' } });
-    resolvePrompt();
-    await running;
+    expect(mocks.runPortPostMessage).toHaveBeenCalledWith({ type: 'stop', tabId: 7 });
+
+    emitSnapshot({
+      tabId: 7,
+      conversationId: aConversationId,
+      busy: false,
+      messages: [{ id: 'late', role: 'assistant', content: 'late gap text', createdAt: 1 }],
+    });
 
     expect(useChat.getState()).toMatchObject({ conversationId: 'B', messages: [{ content: 'Message for B' }], busy: false });
-    expect(mocks.replaceConversationMessages).not.toHaveBeenCalledWith('B', expect.anything(), expect.anything());
   });
 
-  it('does not resurrect A when deletion waits while a new A run starts', async () => {
+  it('sends a stop message and does not resurrect a conversation whose deletion is in flight when a new run for it starts', async () => {
+    await connectPort();
     let resolveDelete!: () => void;
-    let resolvePrompt!: () => void;
-    const agent = makeAgent();
-    agent.prompt.mockImplementation(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
-    mocks.createBrowserAgent.mockReturnValue(agent);
     mocks.deleteConversation.mockImplementationOnce(() => new Promise<void>((resolve) => { resolveDelete = resolve; }));
-    mocks.sendMessage.mockImplementation((type: string) => {
-      if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: [
-        'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE',
-        'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION',
-        'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
-      ] } });
-      return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
-    });
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
     useChat.setState({ conversationId: 'A', messages: [] });
 
     const removing = useChat.getState().removeConversation('A');
-    const running = useChat.getState().send('Gap run for deleted A');
-    await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalledOnce());
+    await useChat.getState().send('Gap run for deleted A');
+    mocks.runPortPostMessage.mockClear();
+
     resolveDelete();
     await removing;
-    expect(agent.abort).toHaveBeenCalledOnce();
-    resolvePrompt();
-    await running;
+    expect(mocks.runPortPostMessage).toHaveBeenCalledWith({ type: 'stop', tabId: 7 });
 
     expect(useChat.getState().conversationId).not.toBe('A');
     expect(useChat.getState().messages).toEqual([]);
-    expect(mocks.replaceConversationMessages).not.toHaveBeenCalledWith('A', expect.anything(), expect.anything());
   });
 
-  it('clears completed-run registration so later navigation neither aborts nor persists it again', async () => {
-    const agent = makeAgent();
-    mocks.createBrowserAgent.mockReturnValue(agent);
-    mocks.sendMessage.mockImplementation((type: string) => {
-      if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: [
-        'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE',
-        'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION',
-        'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
-      ] } });
-      return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
-    });
+  it('does not send a stray stop for a run that already settled before later navigation', async () => {
+    await connectPort();
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
     useChat.setState({ conversationId: 'completed-run', messages: [] });
 
     await useChat.getState().send('Completed A');
-    expect(mocks.replaceConversationMessages).toHaveBeenCalledTimes(1);
+    const conversationId = lastStartRunCall().conversationId;
+    emitSnapshot({ tabId: 7, conversationId, busy: false, messages: [{ id: 'done', role: 'assistant', content: 'done', createdAt: 1 }] });
+    mocks.runPortPostMessage.mockClear();
+
     mocks.getConversationMessages.mockResolvedValueOnce([{ role: 'user', content: 'B', createdAt: 1 }]);
     await useChat.getState().openConversation('B');
     useChat.getState().clear();
 
-    expect(agent.abort).not.toHaveBeenCalled();
-    expect(mocks.replaceConversationMessages).toHaveBeenCalledTimes(1);
-  });
-
-  it('settles a completed run before its deferred persistence can be interrupted by navigation', async () => {
-    let resolveSave!: () => void;
-    const agent = makeAgent();
-    mocks.createBrowserAgent.mockReturnValue(agent);
-    mocks.replaceConversationMessages.mockImplementationOnce(() => new Promise<void>((resolve) => { resolveSave = resolve; }));
-    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
-    useChat.setState({ conversationId: 'persistence-window', messages: [] });
-
-    const send = useChat.getState().send('Completed A');
-    await vi.waitFor(() => expect(mocks.replaceConversationMessages).toHaveBeenCalledOnce());
-    mocks.getConversationMessages.mockResolvedValueOnce([{ role: 'user', content: 'B', createdAt: 1 }]);
-    await useChat.getState().openConversation('B');
-    useChat.getState().clear();
-    resolveSave();
-    await send;
-
-    expect(agent.abort).not.toHaveBeenCalled();
-    expect(mocks.replaceConversationMessages).toHaveBeenCalledOnce();
-    expect(useChat.getState()).toMatchObject({ messages: [], busy: false, pendingConfirmation: null });
+    expect(mocks.runPortPostMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'stop' }));
   });
 
   it('evicts B if deleting non-active B completes after B becomes active and starts a run', async () => {
+    await connectPort();
     let resolveDelete!: () => void;
-    let resolvePrompt!: () => void;
-    const agent = makeAgent();
-    agent.prompt.mockImplementation(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
-    mocks.createBrowserAgent.mockReturnValue(agent);
     mocks.deleteConversation.mockImplementationOnce(() => new Promise<void>((resolve) => { resolveDelete = resolve; }));
-    mocks.sendMessage.mockImplementation((type: string) => {
-      if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: [
-        'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE',
-        'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION',
-        'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
-      ] } });
-      return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
-    });
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
     useChat.setState({ conversationId: 'A', messages: [] });
     const deleting = useChat.getState().removeConversation('B');
     mocks.getConversationMessages.mockResolvedValueOnce([{ role: 'user', content: 'B history', createdAt: 1 }]);
     await useChat.getState().openConversation('B');
-    const running = useChat.getState().send('B run');
-    await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalledOnce());
+    await useChat.getState().send('B run');
+    mocks.runPortPostMessage.mockClear();
+
     resolveDelete();
     await deleting;
-    expect(agent.abort).toHaveBeenCalledOnce();
-    resolvePrompt();
-    await running;
+    expect(mocks.runPortPostMessage).toHaveBeenCalledWith({ type: 'stop', tabId: 7 });
 
     expect(useChat.getState().conversationId).not.toBe('B');
     expect(useChat.getState().messages).toEqual([]);
-    expect(mocks.replaceConversationMessages).not.toHaveBeenCalledWith('B', expect.anything(), expect.anything());
-  });
-
-  it('does not enqueue a B snapshot after deletion intent while B finishes before deletion commits', async () => {
-    let resolveDelete!: () => void;
-    let resolvePrompt!: () => void;
-    const agent = makeAgent();
-    agent.prompt.mockImplementation(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
-    mocks.createBrowserAgent.mockReturnValue(agent);
-    mocks.deleteConversation.mockImplementationOnce(() => new Promise<void>((resolve) => { resolveDelete = resolve; }));
-    mocks.sendMessage.mockImplementation((type: string) => {
-      if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: ['GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE', 'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION', 'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE'] } });
-      return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
-    });
-    useChat.setState({ conversationId: 'A', messages: [] });
-    const deleting = useChat.getState().removeConversation('B');
-    mocks.getConversationMessages.mockResolvedValueOnce([{ role: 'user', content: 'B history', createdAt: 1 }]);
-    await useChat.getState().openConversation('B');
-    const running = useChat.getState().send('B finishes before delete');
-    await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalledOnce());
-    resolvePrompt();
-    await running;
-    expect(mocks.replaceConversationMessages).not.toHaveBeenCalledWith('B', expect.anything(), expect.anything());
-    resolveDelete();
-    await deleting;
-    expect(mocks.deleteConversation).toHaveBeenCalledWith('B');
-    expect(useChat.getState().conversationId).not.toBe('B');
-  });
-
-  it('serializes a real completed snapshot before the authoritative delete and blocks a later snapshot', async () => {
-    let resolveSave!: () => void;
-    const operations: string[] = [];
-    const id = 'ordered-delete';
-    mocks.replaceConversationMessages.mockImplementationOnce(() => new Promise<void>((resolve) => {
-      operations.push('save');
-      resolveSave = () => { operations.push('save-complete'); resolve(); };
-    }));
-    mocks.deleteConversation.mockImplementationOnce(async () => { operations.push('delete'); });
-    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
-    useChat.setState({ conversationId: id, messages: [] });
-    const first = useChat.getState().send('persist before delete');
-    await vi.waitFor(() => expect(mocks.replaceConversationMessages).toHaveBeenCalledOnce());
-    const deleting = useChat.getState().removeConversation(id);
-    expect(mocks.deleteConversation).not.toHaveBeenCalled();
-    resolveSave();
-    await first;
-    await deleting;
-    expect(operations).toEqual(['save', 'save-complete', 'delete']);
-
-    useChat.setState({ conversationId: id, messages: [] });
-    await useChat.getState().send('late snapshot');
-    expect(mocks.replaceConversationMessages).toHaveBeenCalledOnce();
-  });
-
-  it('keeps a successful first delete tombstone when a newer same-id delete fails', async () => {
-    let resolveFirstDelete!: () => void;
-    const id = 'concurrent-delete';
-    mocks.deleteConversation
-      .mockImplementationOnce(() => new Promise<void>((resolve) => { resolveFirstDelete = resolve; }))
-      .mockRejectedValueOnce(new Error('second delete failed'));
-    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
-    useChat.setState({ conversationId: 'A', messages: [] });
-
-    const first = useChat.getState().removeConversation(id);
-    const second = useChat.getState().removeConversation(id);
-    await vi.waitFor(() => expect(mocks.deleteConversation).toHaveBeenCalledOnce());
-    resolveFirstDelete();
-    await Promise.all([first, second]);
-
-    useChat.setState({ conversationId: id, messages: [] });
-    await useChat.getState().send('late snapshot after delete failure');
-    expect(mocks.replaceConversationMessages).not.toHaveBeenCalledWith(id, expect.anything(), expect.anything());
-    expect(mocks.deleteConversation).toHaveBeenCalledTimes(2);
-  });
-
-  it('allows legitimate persistence after a lone failed delete clears its pending generation', async () => {
-    const id = 'failed-delete-recovery';
-    mocks.deleteConversation.mockRejectedValueOnce(new Error('delete failed'));
-    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
-    useChat.setState({ conversationId: 'A', messages: [] });
-    await useChat.getState().removeConversation(id);
-    useChat.setState({ conversationId: id, messages: [] });
-    await useChat.getState().send('persist after failed delete');
-    expect(mocks.replaceConversationMessages).toHaveBeenCalledWith(id, expect.anything(), expect.anything());
-  });
-
-  it('keeps newer pending deletion active when an older delete fails, then recovers after the newer failure', async () => {
-    let rejectFirst!: (error: Error) => void;
-    let rejectSecond!: (error: Error) => void;
-    const id = 'overlapping-failed-deletes';
-    mocks.deleteConversation
-      .mockImplementationOnce(() => new Promise<void>((_resolve, reject) => { rejectFirst = reject; }))
-      .mockImplementationOnce(() => new Promise<void>((_resolve, reject) => { rejectSecond = reject; }));
-    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
-    useChat.setState({ conversationId: 'A', messages: [] });
-    const first = useChat.getState().removeConversation(id);
-    const second = useChat.getState().removeConversation(id);
-    await vi.waitFor(() => expect(mocks.deleteConversation).toHaveBeenCalledOnce());
-    rejectFirst(new Error('first failed'));
-    await vi.waitFor(() => expect(mocks.deleteConversation).toHaveBeenCalledTimes(2));
-    useChat.setState({ conversationId: id, messages: [] });
-    await useChat.getState().send('blocked by second pending delete');
-    expect(mocks.replaceConversationMessages).not.toHaveBeenCalledWith(id, expect.anything(), expect.anything());
-    rejectSecond(new Error('second failed'));
-    await Promise.all([first, second]);
-    await useChat.getState().send('allowed after both failures');
-    expect(mocks.replaceConversationMessages).toHaveBeenCalledWith(id, expect.anything(), expect.anything());
-  });
-
-  it('does not block C persistence while B deletion is pending', async () => {
-    let resolveDelete!: () => void;
-    mocks.deleteConversation.mockImplementationOnce(() => new Promise<void>((resolve) => { resolveDelete = resolve; }));
-    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
-    useChat.setState({ conversationId: 'A', messages: [] });
-    const deleting = useChat.getState().removeConversation('isolated-B');
-    await vi.waitFor(() => expect(mocks.deleteConversation).toHaveBeenCalledOnce());
-    useChat.setState({ conversationId: 'isolated-C', messages: [] });
-    await useChat.getState().send('C remains writable');
-    expect(mocks.replaceConversationMessages).toHaveBeenCalledWith('isolated-C', expect.anything(), expect.anything());
-    resolveDelete();
-    await deleting;
-  });
-
-  it('allows C persistence after B deletion fails without poisoning another conversation lane', async () => {
-    mocks.deleteConversation.mockRejectedValueOnce(new Error('B deletion failed'));
-    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
-    useChat.setState({ conversationId: 'A', messages: [] });
-    await useChat.getState().removeConversation('failed-B');
-    expect(useChat.getState().error).toBeNull();
-
-    useChat.setState({ conversationId: 'recovered-C', messages: [] });
-    await useChat.getState().send('C writes after B failure');
-    expect(mocks.replaceConversationMessages).toHaveBeenCalledWith('recovered-C', expect.anything(), expect.anything());
   });
 
   it('does not start a selection shortcut after its active-tab preflight loses the conversation', async () => {
@@ -610,38 +503,32 @@ describe('chat store page context', () => {
     resolveTab({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
     await shortcut;
 
-    expect(mocks.createBrowserAgent).not.toHaveBeenCalled();
+    expect(mocks.runPortPostMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'startRun' }));
     expect(useChat.getState()).toMatchObject({ conversationId: replacementId, messages: [], busy: false });
   });
 
-  it.each(['clear', 'delete'] as const)('keeps the replacement conversation untouched when an agent settles after %s', async (action) => {
-    let resolvePrompt!: () => void;
-    const agent = makeAgent();
-    agent.prompt.mockImplementation(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
-    mocks.createBrowserAgent.mockReturnValue(agent);
-    mocks.sendMessage.mockImplementation((type: string) => {
-      if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: [
-        'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML',
-        'GET_COMPUTED_STYLE', 'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT',
-        'TYPE_TEXT', 'SELECT_OPTION', 'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
-      ] } });
-      return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
-    });
+  it.each(['clear', 'delete'] as const)('sends a stop message and keeps the replacement conversation untouched when the previous run settles after %s', async (action) => {
+    await connectPort();
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
     useChat.setState({ conversationId: 'A', messages: [] });
-    const running = useChat.getState().send('Message for A');
-    await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalledOnce());
+
+    await useChat.getState().send('Message for A');
+    const aConversationId = lastStartRunCall().conversationId;
+    mocks.runPortPostMessage.mockClear();
 
     if (action === 'clear') useChat.getState().clear();
     else await useChat.getState().removeConversation('A');
+    expect(mocks.runPortPostMessage).toHaveBeenCalledWith({ type: 'stop', tabId: 7 });
     const replacementId = useChat.getState().conversationId;
-    agentEventListener?.({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'late A text' } });
-    agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'late-tool', toolName: 'browser_click', isError: false, result: 'late' });
-    resolvePrompt();
-    await running;
+
+    emitSnapshot({
+      tabId: 7,
+      conversationId: aConversationId,
+      busy: false,
+      messages: [{ id: 'late', role: 'assistant', content: 'late A text', createdAt: 1 }],
+    });
 
     expect(useChat.getState()).toMatchObject({ conversationId: replacementId, messages: [], activitySteps: [], busy: false });
-    expect(mocks.replaceConversationMessages).not.toHaveBeenCalledWith(replacementId, expect.anything(), expect.anything());
-    if (action === 'delete') expect(mocks.replaceConversationMessages).not.toHaveBeenCalledWith('A', expect.anything(), expect.anything());
   });
 
   it.each(['clear', 'remove'] as const)('keeps %s authoritative when a pending conversation open resolves late', async (action) => {
@@ -657,161 +544,88 @@ describe('chat store page context', () => {
     expect(useChat.getState().messages).toEqual([]);
   });
 
-  it('creates an agent without browser tools when a normal send requests it', async () => {
-    mocks.sendMessage.mockImplementation((type: string) => {
-      if (type === 'GET_ACTIVE_TAB') {
-        return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
-      }
-      if (type === 'PING') {
-        return Promise.resolve({
-          ok: true,
-          data: {
-            supportedTypes: [
-              'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML',
-              'GET_COMPUTED_STYLE', 'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT',
-              'TYPE_TEXT', 'SELECT_OPTION', 'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
-            ],
-          },
-        });
-      }
-      return Promise.resolve({ ok: true, data: {} });
+  it('forwards a rejected confirmation decision over the port and reflects the resulting snapshot', async () => {
+    await connectPort();
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    const conversationId = useChat.getState().conversationId;
+
+    await useChat.getState().send('write');
+    emitSnapshot({
+      tabId: 7,
+      conversationId,
+      busy: true,
+      activitySteps: [{ id: 'call-1', description: '点击「购买」按钮 button.buy', status: 'running' }],
+      pendingConfirmation: { toolCallId: 'call-1', toolName: 'browser_click', summary: '点击「购买」按钮 button.buy' },
     });
+    expect(useChat.getState().pendingConfirmation).toEqual({ toolCallId: 'call-1', toolName: 'browser_click', summary: '点击「购买」按钮 button.buy' });
 
-    await useChat.getState().send('hello', { withoutBrowserTools: true });
-
-    expect(mocks.createBrowserAgent).toHaveBeenCalledWith(expect.objectContaining({ tools: [] }));
-    // 该轮明确不读取当前页面，因此不能把页面标题/地址注入系统提示词。
-    const { systemPrompt } = mocks.createBrowserAgent.mock.calls[0][0];
-    expect(systemPrompt).not.toContain('https://example.com/');
-    expect(systemPrompt).not.toContain('id=7');
-  });
-
-  it('injects the pinned tab and current time into the system prompt on a normal send', async () => {
-    mocks.sendMessage.mockImplementation((type: string) => {
-      if (type === 'GET_ACTIVE_TAB') {
-        return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
-      }
-      if (type === 'PING') {
-        return Promise.resolve({
-          ok: true,
-          data: {
-            supportedTypes: [
-              'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML',
-              'GET_COMPUTED_STYLE', 'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT',
-              'TYPE_TEXT', 'SELECT_OPTION', 'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
-            ],
-          },
-        });
-      }
-      return Promise.resolve({ ok: true, data: {} });
-    });
-
-    await useChat.getState().send('hello');
-
-    const { systemPrompt } = mocks.createBrowserAgent.mock.calls[0][0];
-    expect(systemPrompt).toContain('<runtime_context>');
-    expect(systemPrompt).toContain('id=7');
-    expect(systemPrompt).toContain('title: "Example"');
-    expect(systemPrompt).toContain('url: "https://example.com/"');
-    expect(systemPrompt).toMatch(/当前时间：\d{4}-\d{2}-\d{2} \d{2}:\d{2} 星期./);
-  });
-
-  it('marks a rejected confirmation as a failed activity and ignores a late error event for it', async () => {
-    let resolvePrompt!: () => void;
-    const agent = makeAgent();
-    agent.prompt.mockImplementation(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
-    mocks.createBrowserAgent.mockReturnValue(agent);
-    mocks.sendMessage.mockImplementation((type: string) => {
-      if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: [
-        'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE',
-        'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION',
-        'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
-      ] } });
-      return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
-    });
-    const send = useChat.getState().send('write');
-    await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalled());
-    const confirm = mocks.createBrowserAgent.mock.calls[0][0].onConfirm as (id: string, name: string, args: unknown, reason: string) => Promise<boolean>;
-    agentEventListener?.({ type: 'tool_execution_start', toolCallId: 'call-1', toolName: 'browser_click', args: { selector: 'button.buy' } });
-    const decision = confirm('call-1', 'browser_click', { selector: 'button.buy' }, 'confirm');
-    expect(useChat.getState().activitySteps).toMatchObject([{ id: 'call-1', status: 'running' }]);
-    expect(useChat.getState().activitySteps[0]?.description).toContain('button.buy');
     useChat.getState().respondToConfirmation(false);
-    await expect(decision).resolves.toBe(false);
+    expect(mocks.runPortPostMessage).toHaveBeenCalledWith({ type: 'respondConfirm', tabId: 7, toolCallId: 'call-1', approved: false });
+
+    // background 处理完 respondConfirm 后广播的 snapshot：activity step 标记失败，pendingConfirmation 清空。
+    emitSnapshot({
+      tabId: 7,
+      conversationId,
+      busy: true,
+      activitySteps: [{ id: 'call-1', description: '点击「购买」按钮 button.buy', status: 'failed' }],
+      pendingConfirmation: null,
+    });
+    expect(useChat.getState().pendingConfirmation).toBeNull();
     expect(useChat.getState().activitySteps).toMatchObject([{ id: 'call-1', status: 'failed' }]);
-    expect(useChat.getState().activitySteps[0]?.description).toContain('button.buy');
-    agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'call-1', toolName: 'browser_click', isError: true, result: 'late error' });
-    expect(useChat.getState().activitySteps).toMatchObject([{ id: 'call-1', status: 'failed' }]);
-    expect(useChat.getState().activitySteps[0]?.description).toContain('button.buy');
-    resolvePrompt();
-    await send;
   });
 
-  it('projects an ask_user question to pendingQuestion and resolves it with the user answer', async () => {
-    let resolvePrompt!: () => void;
-    const agent = makeAgent();
-    agent.prompt.mockImplementation(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
-    mocks.createBrowserAgent.mockReturnValue(agent);
-    mocks.sendMessage.mockImplementation((type: string) => {
-      if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: [
-        'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE',
-        'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION',
-        'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
-      ] } });
-      return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
-    });
-    const send = useChat.getState().send('which account should I use');
-    await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalled());
-    const onAskUser = mocks.createBrowserAgent.mock.calls[0][0].onAskUser as (
-      toolCallId: string,
-      question: string,
-      signal?: AbortSignal,
-    ) => Promise<string>;
+  it('projects an ask_user question to pendingQuestion and forwards the answer over the port', async () => {
+    await connectPort();
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    const conversationId = useChat.getState().conversationId;
 
+    await useChat.getState().send('which account should I use');
     expect(useChat.getState().pendingQuestion).toBeNull();
-    const pending = onAskUser('call-ask-1', '用哪个账号登录？');
-    await vi.waitFor(() => expect(useChat.getState().pendingQuestion).toEqual({
-      toolCallId: 'call-ask-1',
-      question: '用哪个账号登录？',
-    }));
+
+    emitSnapshot({
+      tabId: 7,
+      conversationId,
+      busy: true,
+      pendingQuestion: { toolCallId: 'call-ask-1', question: '用哪个账号登录？' },
+    });
+    expect(useChat.getState().pendingQuestion).toEqual({ toolCallId: 'call-ask-1', question: '用哪个账号登录？' });
 
     useChat.getState().respondToQuestion('用工作账号');
-    await expect(pending).resolves.toBe('用工作账号');
-    expect(useChat.getState().pendingQuestion).toBeNull();
+    expect(mocks.runPortPostMessage).toHaveBeenCalledWith({ type: 'respondQuestion', tabId: 7, toolCallId: 'call-ask-1', answer: '用工作账号' });
 
-    resolvePrompt();
-    await send;
+    emitSnapshot({ tabId: 7, conversationId, busy: true, pendingQuestion: null });
+    expect(useChat.getState().pendingQuestion).toBeNull();
   });
 
-  it('attaches a reported task outcome to the assistant message before persisting', async () => {
-    let resolvePrompt!: () => void;
-    const agent = makeAgent();
-    agent.prompt.mockImplementation(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
-    mocks.createBrowserAgent.mockReturnValue(agent);
-    mocks.sendMessage.mockImplementation((type: string) => {
-      if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: [
-        'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE',
-        'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION',
-        'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
-      ] } });
-      return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
-    });
+  it('attaches a reported task outcome to the assistant message via the snapshot', async () => {
+    await connectPort();
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    const conversationId = useChat.getState().conversationId;
 
-    const send = useChat.getState().send('fill the form');
-    await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalled());
-    const onTaskOutcome = mocks.createBrowserAgent.mock.calls[0][0].onTaskOutcome as (outcome: unknown) => void;
-    onTaskOutcome({ outcome: 'success', reason: '已提交表单。' });
-    resolvePrompt();
-    await send;
+    await useChat.getState().send('fill the form');
+    emitSnapshot({
+      tabId: 7,
+      conversationId,
+      busy: false,
+      messages: [{ id: 'assistant-1', role: 'assistant', content: '已提交表单。', createdAt: 1, taskOutcome: { outcome: 'success', reason: '已提交表单。' } }],
+    });
 
     const last = useChat.getState().messages.at(-1);
     expect(last?.taskOutcome).toEqual({ outcome: 'success', reason: '已提交表单。' });
   });
 
-  it('does not attach a task outcome when report_task_outcome was never called', async () => {
-    const agent = makeAgent();
-    mocks.createBrowserAgent.mockReturnValue(agent);
+  it('does not attach a task outcome when none was reported', async () => {
+    await connectPort();
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    const conversationId = useChat.getState().conversationId;
+
     await useChat.getState().send('what does this page say');
+    emitSnapshot({
+      tabId: 7,
+      conversationId,
+      busy: false,
+      messages: [{ id: 'assistant-1', role: 'assistant', content: 'This page is about...', createdAt: 1 }],
+    });
 
     const last = useChat.getState().messages.at(-1);
     expect(last?.taskOutcome).toBeUndefined();
@@ -827,222 +641,51 @@ describe('chat store page context', () => {
     expect(restored?.taskOutcome).toEqual({ outcome: 'partial', reason: '只填了一半。' });
   });
 
-  it('resolves a pending ask_user question when the run is stopped, instead of leaving it hanging', async () => {
-    let resolvePrompt!: () => void;
-    const agent = makeAgent();
-    agent.prompt.mockImplementation(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
-    mocks.createBrowserAgent.mockReturnValue(agent);
-    mocks.sendMessage.mockImplementation((type: string) => {
-      if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: [
-        'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE',
-        'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION',
-        'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
-      ] } });
-      return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
-    });
-    const send = useChat.getState().send('which account should I use');
-    await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalled());
-    const onAskUser = mocks.createBrowserAgent.mock.calls[0][0].onAskUser as (
-      toolCallId: string,
-      question: string,
-      signal?: AbortSignal,
-    ) => Promise<string>;
+  it('sends a stop message when the user stops a run with a pending ask_user question, and clears it once background confirms', async () => {
+    await connectPort();
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    const conversationId = useChat.getState().conversationId;
 
-    const pending = onAskUser('call-ask-2', '用哪个账号登录？');
-    await vi.waitFor(() => expect(useChat.getState().pendingQuestion).not.toBeNull());
+    await useChat.getState().send('which account should I use');
+    emitSnapshot({ tabId: 7, conversationId, busy: true, pendingQuestion: { toolCallId: 'call-ask-2', question: '用哪个账号登录？' } });
 
     useChat.getState().stop();
-    await expect(pending).resolves.toBe('');
+    expect(mocks.runPortPostMessage).toHaveBeenCalledWith({ type: 'stop', tabId: 7 });
+
+    emitSnapshot({ tabId: 7, conversationId, busy: false, pendingQuestion: null, activitySteps: [] });
     expect(useChat.getState().pendingQuestion).toBeNull();
-
-    resolvePrompt();
-    await send;
+    expect(useChat.getState().busy).toBe(false);
   });
 
-  it('logs a failed tool call to the console without exposing the raw result in the activity description', async () => {
-    let resolvePrompt!: () => void;
-    const agent = makeAgent();
-    agent.prompt.mockImplementation(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
-    mocks.createBrowserAgent.mockReturnValue(agent);
-    mocks.sendMessage.mockImplementation((type: string) => {
-      if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: [
-        'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE',
-        'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION',
-        'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
-      ] } });
-      return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
-    });
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const send = useChat.getState().send('read the page');
-    await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalled());
-    agentEventListener?.({ type: 'tool_execution_start', toolCallId: 'call-1', toolName: 'browser_read_page', args: {} });
-    agentEventListener?.({
-      type: 'tool_execution_end',
-      toolCallId: 'call-1',
-      toolName: 'browser_read_page',
-      isError: true,
-      result: 'Could not establish connection. Receiving end does not exist.',
-    });
-    expect(useChat.getState().activitySteps).toMatchObject([{ id: 'call-1', status: 'failed' }]);
-    expect(useChat.getState().activitySteps[0]?.description).not.toContain('Could not establish connection');
-    expect(consoleError).toHaveBeenCalledWith(
-      '[Runi] tool execution failed',
-      'browser_read_page',
-      'Could not establish connection. Receiving end does not exist.',
-    );
-    consoleError.mockRestore();
-    resolvePrompt();
-    await send;
-  });
+  it('clears activity steps and busy state once background confirms a stop', async () => {
+    await connectPort();
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    const conversationId = useChat.getState().conversationId;
 
-  it('clears activity steps on stop and ignores late events for the stopped call', async () => {
-    let rejectAbort!: (reason: Error) => void;
-    const agent = makeAgent();
-    agent.abort.mockImplementation(() => rejectAbort(new Error('aborted')));
-    agent.prompt.mockImplementation(() => new Promise<never>((_resolve, reject) => { rejectAbort = reject; }));
-    mocks.createBrowserAgent.mockReturnValue(agent);
-    mocks.sendMessage.mockImplementation((type: string) => {
-      if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: ['GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE', 'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION', 'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE'] } });
-      return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    await useChat.getState().send('write');
+    emitSnapshot({
+      tabId: 7,
+      conversationId,
+      busy: true,
+      activitySteps: [{ id: 'running', description: '点击 button', status: 'running' }],
     });
-    const send = useChat.getState().send('write');
-    await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalled());
-    agentEventListener?.({ type: 'tool_execution_start', toolCallId: 'running', toolName: 'browser_click', args: { selector: 'button' } });
     expect(useChat.getState().activitySteps).toMatchObject([{ id: 'running', status: 'running' }]);
+
     useChat.getState().stop();
-    expect(agent.abort).toHaveBeenCalledOnce();
+    expect(mocks.runPortPostMessage).toHaveBeenCalledWith({ type: 'stop', tabId: 7 });
+
+    emitSnapshot({ tabId: 7, conversationId, busy: false, activitySteps: [] });
     expect(useChat.getState().activitySteps).toEqual([]);
-    agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'running', toolName: 'browser_click', isError: false, result: 'late' });
-    expect(useChat.getState().activitySteps).toEqual([]);
-    await send;
-  });
-
-  it('accumulates completed and failed steps in the activity log instead of overwriting them', async () => {
-    let resolvePrompt!: () => void;
-    const agent = makeAgent();
-    agent.prompt.mockImplementation(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
-    mocks.createBrowserAgent.mockReturnValue(agent);
-    mocks.sendMessage.mockImplementation((type: string) => {
-      if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: ['GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE', 'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION', 'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE'] } });
-      return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
-    });
-    const send = useChat.getState().send('write');
-    await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalled());
-
-    agentEventListener?.({ type: 'tool_execution_start', toolCallId: 'call-1', toolName: 'browser_click', args: { selector: 'a' } });
-    agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'call-1', toolName: 'browser_click', isError: true, result: 'boom' });
-    expect(useChat.getState().activitySteps).toMatchObject([{ id: 'call-1', status: 'failed' }]);
-
-    agentEventListener?.({ type: 'tool_execution_start', toolCallId: 'call-2', toolName: 'browser_click', args: { selector: 'b' } });
-    expect(useChat.getState().activitySteps).toMatchObject([
-      { id: 'call-1', status: 'failed' },
-      { id: 'call-2', status: 'running' },
-    ]);
-
-    agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'call-2', toolName: 'browser_click', isError: false, result: 'ok' });
-    expect(useChat.getState().activitySteps).toMatchObject([
-      { id: 'call-1', status: 'failed' },
-      { id: 'call-2', status: 'done' },
-    ]);
-
-    resolvePrompt();
-    await send;
-    expect(useChat.getState().activitySteps).toEqual([]);
-  });
-
-  it('marks a running step slow after 6s and clears the timer once it ends', async () => {
-    vi.useFakeTimers();
-    try {
-      let resolvePrompt!: () => void;
-      const agent = makeAgent();
-      agent.prompt.mockImplementation(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
-      mocks.createBrowserAgent.mockReturnValue(agent);
-      mocks.sendMessage.mockImplementation((type: string) => {
-        if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: ['GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE', 'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION', 'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE'] } });
-        return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
-      });
-      const send = useChat.getState().send('write');
-      await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalled());
-
-      agentEventListener?.({ type: 'tool_execution_start', toolCallId: 'call-1', toolName: 'browser_click', args: { selector: 'a' } });
-      expect(useChat.getState().activitySteps).toMatchObject([{ id: 'call-1', status: 'running' }]);
-      expect(useChat.getState().activitySteps[0]?.slow).toBeFalsy();
-
-      await vi.advanceTimersByTimeAsync(6000);
-      expect(useChat.getState().activitySteps).toMatchObject([{ id: 'call-1', status: 'running', slow: true }]);
-
-      agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'call-1', toolName: 'browser_click', isError: false, result: 'ok' });
-      expect(useChat.getState().activitySteps).toMatchObject([{ id: 'call-1', status: 'done', slow: false }]);
-
-      resolvePrompt();
-      await send;
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('does not mark a step slow if it finishes before the 6s threshold', async () => {
-    vi.useFakeTimers();
-    try {
-      let resolvePrompt!: () => void;
-      const agent = makeAgent();
-      agent.prompt.mockImplementation(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
-      mocks.createBrowserAgent.mockReturnValue(agent);
-      mocks.sendMessage.mockImplementation((type: string) => {
-        if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: ['GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE', 'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION', 'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE'] } });
-        return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
-      });
-      const send = useChat.getState().send('write');
-      await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalled());
-
-      agentEventListener?.({ type: 'tool_execution_start', toolCallId: 'call-1', toolName: 'browser_click', args: { selector: 'a' } });
-      agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'call-1', toolName: 'browser_click', isError: false, result: 'ok' });
-      await vi.advanceTimersByTimeAsync(6000);
-      expect(useChat.getState().activitySteps).toMatchObject([{ id: 'call-1', status: 'done', slow: false }]);
-
-      resolvePrompt();
-      await send;
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('preserves the slow flag when a tool_execution_update arrives for an already-slow step', async () => {
-    vi.useFakeTimers();
-    try {
-      let resolvePrompt!: () => void;
-      const agent = makeAgent();
-      agent.prompt.mockImplementation(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
-      mocks.createBrowserAgent.mockReturnValue(agent);
-      mocks.sendMessage.mockImplementation((type: string) => {
-        if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: ['GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE', 'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION', 'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE'] } });
-        return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
-      });
-      const send = useChat.getState().send('write');
-      await vi.waitFor(() => expect(mocks.createBrowserAgent).toHaveBeenCalled());
-
-      agentEventListener?.({ type: 'tool_execution_start', toolCallId: 'call-1', toolName: 'browser_click', args: { selector: 'a' } });
-      await vi.advanceTimersByTimeAsync(6000);
-      expect(useChat.getState().activitySteps).toMatchObject([{ id: 'call-1', status: 'running', slow: true }]);
-
-      agentEventListener?.({ type: 'tool_execution_update', toolCallId: 'call-1', toolName: 'browser_click', args: { selector: 'a' } });
-      expect(useChat.getState().activitySteps).toMatchObject([{ id: 'call-1', status: 'running', slow: true }]);
-
-      agentEventListener?.({ type: 'tool_execution_end', toolCallId: 'call-1', toolName: 'browser_click', isError: false, result: 'ok' });
-      resolvePrompt();
-      await send;
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(useChat.getState().busy).toBe(false);
   });
 
   it('reports that a normal send did not start for empty input or a busy store', async () => {
     await expect(useChat.getState().send('   ', { withoutBrowserTools: true })).resolves.toBe(false);
-    expect(mocks.createBrowserAgent).not.toHaveBeenCalled();
+    expect(mocks.runPortPostMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'startRun' }));
 
     useChat.setState({ input: 'Hello', busy: true });
     await expect(useChat.getState().send(undefined, { withoutBrowserTools: true })).resolves.toBe(false);
-    expect(mocks.createBrowserAgent).not.toHaveBeenCalled();
+    expect(mocks.runPortPostMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'startRun' }));
   });
 
   describe('restoreTabConversation pending ask', () => {
@@ -1151,27 +794,20 @@ describe('chat store page context', () => {
   });
 
   describe('quoted selection composition on send', () => {
-    beforeEach(() => {
-      mocks.createBrowserAgent.mockReturnValue(makeAgent());
-      mocks.sendMessage.mockImplementation((type: string) => {
-        if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: [
-          'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE',
-          'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION',
-          'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
-        ] } });
-        return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
-      });
+    beforeEach(async () => {
+      mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+      await connectPort();
       useChat.setState({ input: '', quotedSelection: null });
     });
 
-    it('sends the quote-formatted template plus the question to the agent, but stores only the question as the displayed message', async () => {
+    it('sends the quote-formatted template plus the question to background, but stores only the question as the displayed message', async () => {
       useChat.setState({ quotedSelection: 'the selected text' });
 
       await useChat.getState().send('what does this mean?');
 
-      const agent = mocks.createBrowserAgent.mock.results[0].value;
-      expect(agent.prompt).toHaveBeenCalledWith(expect.stringContaining('the selected text'));
-      expect(agent.prompt).toHaveBeenCalledWith(expect.stringContaining('what does this mean?'));
+      const startRun = lastStartRunCall();
+      expect(startRun.agentUserContent).toContain('the selected text');
+      expect(startRun.agentUserContent).toContain('what does this mean?');
 
       const userMessage = useChat.getState().messages.find((m) => m.role === 'user')!;
       expect(userMessage.content).toBe('what does this mean?');
@@ -1189,8 +825,8 @@ describe('chat store page context', () => {
     it('sends just the question, with no quotedText, when there is no pending quote', async () => {
       await useChat.getState().send('a plain question');
 
-      const agent = mocks.createBrowserAgent.mock.results[0].value;
-      expect(agent.prompt).toHaveBeenCalledWith('a plain question');
+      const startRun = lastStartRunCall();
+      expect(startRun.agentUserContent).toBe('a plain question');
 
       const userMessage = useChat.getState().messages.find((m) => m.role === 'user')!;
       expect(userMessage.quotedText).toBeUndefined();
@@ -1202,7 +838,7 @@ describe('chat store page context', () => {
       useChat.getState().clearQuotedSelection();
 
       expect(useChat.getState().quotedSelection).toBeNull();
-      expect(mocks.createBrowserAgent).not.toHaveBeenCalled();
+      expect(mocks.runPortPostMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'startRun' }));
     });
   });
 
@@ -1428,7 +1064,7 @@ describe('chat store page context', () => {
       prompt: 'Read the page',
     });
 
-    expect(mocks.createBrowserAgent).not.toHaveBeenCalled();
+    expect(mocks.runPortPostMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'startRun' }));
     expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 
@@ -1441,23 +1077,16 @@ describe('chat store page context', () => {
 
     await expect(useChat.getState().editMessage(message.id, 'new')).resolves.toBe(false);
 
-    expect(mocks.createBrowserAgent).not.toHaveBeenCalled();
+    expect(mocks.runPortPostMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'startRun' }));
     expect(mocks.getActiveProvider).not.toHaveBeenCalled();
     expect(mocks.sendMessage).not.toHaveBeenCalled();
     expect(useChat.getState().messages).toEqual([message]);
   });
 
   describe('attachment composition on send', () => {
-    beforeEach(() => {
-      mocks.createBrowserAgent.mockReturnValue(makeAgent());
-      mocks.sendMessage.mockImplementation((type: string) => {
-        if (type === 'PING') return Promise.resolve({ ok: true, data: { supportedTypes: [
-          'GET_PAGE_META', 'GET_SCRIPTS', 'GET_STYLESHEETS', 'QUERY_DOM', 'GET_HTML', 'GET_COMPUTED_STYLE',
-          'CAPTURE_SCREENSHOT', 'SET_STYLE', 'MODIFY_DOM', 'CLICK_ELEMENT', 'TYPE_TEXT', 'SELECT_OPTION',
-          'SCROLL_PAGE', 'NAVIGATE_TAB', 'SET_STORAGE',
-        ] } });
-        return Promise.resolve({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
-      });
+    beforeEach(async () => {
+      mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+      await connectPort();
       useChat.setState({ input: '', pendingAttachments: [] });
     });
 
@@ -1466,9 +1095,9 @@ describe('chat store page context', () => {
 
       await useChat.getState().send('summarize this');
 
-      const agent = mocks.createBrowserAgent.mock.results[0].value;
-      expect(agent.prompt).toHaveBeenCalledWith(expect.stringContaining('secret notes'));
-      expect(agent.prompt).toHaveBeenCalledWith(expect.stringContaining('summarize this'));
+      const startRun = lastStartRunCall();
+      expect(startRun.agentUserContent).toContain('secret notes');
+      expect(startRun.agentUserContent).toContain('summarize this');
       expect(useChat.getState().pendingAttachments).toHaveLength(0);
 
       const userMessage = useChat.getState().messages.find((m) => m.role === 'user')!;
@@ -1477,21 +1106,18 @@ describe('chat store page context', () => {
       expect(userMessage.attachments![0].name).toBe('notes.txt');
     });
 
-    it('passes an image attachment to agent.prompt as the second argument', async () => {
+    it('passes an image attachment as the images field of the startRun request', async () => {
       await useChat.getState().addAttachmentFiles([
         new File([new Uint8Array([1, 2, 3])], 'photo.png', { type: 'image/png' }),
       ]);
 
       await useChat.getState().send('what is this?');
 
-      const agent = mocks.createBrowserAgent.mock.results[0].value;
-      expect(agent.prompt).toHaveBeenCalledWith(
-        expect.any(String),
-        [expect.objectContaining({ type: 'image', mimeType: 'image/png' })],
-      );
+      const startRun = lastStartRunCall();
+      expect(startRun.images).toEqual([expect.objectContaining({ type: 'image', mimeType: 'image/png' })]);
     });
 
-    it('sends PDF text once but keeps only metadata on the displayed and persisted message', async () => {
+    it('sends PDF text once but keeps only metadata on the displayed message', async () => {
       mocks.extractPdfAttachment.mockResolvedValue({
         ok: true,
         value: { text: 'private PDF text', pageCount: 2, extractedChars: 16, truncated: false },
@@ -1502,12 +1128,11 @@ describe('chat store page context', () => {
 
       await useChat.getState().send('summarize');
 
-      const agent = mocks.createBrowserAgent.mock.results[0].value;
-      expect(agent.prompt.mock.calls[0][0]).toContain('private PDF text');
+      const startRun = lastStartRunCall();
+      expect(startRun.agentUserContent).toContain('private PDF text');
       const userMessage = useChat.getState().messages.find((message) => message.role === 'user')!;
       expect(userMessage.attachments?.[0]).toMatchObject({ kind: 'pdf', pageCount: 2 });
       expect(JSON.stringify(userMessage)).not.toContain('private PDF text');
-      expect(JSON.stringify(mocks.replaceConversationMessages.mock.calls)).not.toContain('private PDF text');
     });
 
     it('allows typed text to send while an error chip remains', async () => {
@@ -1537,8 +1162,8 @@ describe('chat store page context', () => {
 
       await expect(useChat.getState().send()).resolves.toBe(true);
 
-      const agent = mocks.createBrowserAgent.mock.results[0].value;
-      expect(agent.prompt.mock.calls[0][0]).toContain('Analyze the attached file.');
+      const startRun = lastStartRunCall();
+      expect(startRun.agentUserContent).toContain('Analyze the attached file.');
     });
 
     it('cancels attachment work added while send preflight is still pending', async () => {
@@ -1566,7 +1191,7 @@ describe('chat store page context', () => {
       expect(useChat.getState().pendingAttachments).toEqual([]);
     });
 
-    it('does not send or persist a ready PDF removed during send preflight', async () => {
+    it('does not send a ready PDF removed during send preflight', async () => {
       mocks.extractPdfAttachment.mockResolvedValue({
         ok: true,
         value: { text: 'removed private text', pageCount: 1, extractedChars: 20, truncated: false },
@@ -1583,14 +1208,13 @@ describe('chat store page context', () => {
       resolveProvider(provider);
 
       await expect(sending).resolves.toBe(true);
-      const agent = mocks.createBrowserAgent.mock.results[0].value;
-      expect(agent.prompt).toHaveBeenCalledWith('continue without removed file');
+      const startRun = lastStartRunCall();
+      expect(startRun.agentUserContent).toBe('continue without removed file');
       const userMessage = useChat.getState().messages.find((message) => message.role === 'user')!;
       expect(userMessage.attachments).toBeUndefined();
-      expect(JSON.stringify(mocks.replaceConversationMessages.mock.calls)).not.toContain('removed private text');
     });
 
-    it('does not send or persist a ready PDF disposed during send preflight', async () => {
+    it('does not send a ready PDF disposed during send preflight', async () => {
       mocks.extractPdfAttachment.mockResolvedValue({
         ok: true,
         value: { text: 'disposed private text', pageCount: 1, extractedChars: 21, truncated: false },
@@ -1606,11 +1230,10 @@ describe('chat store page context', () => {
       resolveProvider(provider);
 
       await expect(sending).resolves.toBe(true);
-      const agent = mocks.createBrowserAgent.mock.results[0].value;
-      expect(agent.prompt).toHaveBeenCalledWith('continue after disposal');
+      const startRun = lastStartRunCall();
+      expect(startRun.agentUserContent).toBe('continue after disposal');
       const userMessage = useChat.getState().messages.find((message) => message.role === 'user')!;
       expect(userMessage.attachments).toBeUndefined();
-      expect(JSON.stringify(mocks.replaceConversationMessages.mock.calls)).not.toContain('disposed private text');
     });
   });
 });

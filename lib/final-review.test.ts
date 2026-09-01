@@ -217,6 +217,13 @@ describe('side-panel custom shortcut wiring', () => {
     path.resolve(process.cwd(), 'entrypoints/sidepanel/App.tsx'),
     'utf8',
   );
+  // 面板不再直接持有 Agent 实例：isBrowserTools=false 现在只是 store.ts 随 startRun 消息
+  // 发给 background 的一个布尔标记，真正把它翻译成空 tools 列表传给 createBrowserAgent 的代码
+  // 在 lib/agent/run-registry.ts 里（ref: 2026-09-01-agent-run-in-background 迁移）。
+  const runRegistrySource = fs.readFileSync(
+    path.resolve(process.cwd(), 'lib/agent/run-registry.ts'),
+    'utf8',
+  );
 
   it('uses one generic shortcut action instead of hard-coded actions', () => {
     expect(storeSource).toContain('runShortcut: async (shortcut) =>');
@@ -228,7 +235,7 @@ describe('side-panel custom shortcut wiring', () => {
   });
 
   it('passes an empty tool list for isolated scopes', () => {
-    expect(storeSource).toContain('tools: options.withoutBrowserTools ? [] : undefined');
+    expect(runRegistrySource).toContain('tools: request.withoutBrowserTools ? [] : undefined');
     expect(storeSource).toContain('withoutBrowserTools: execution.browserTools ===');
     expect(storeSource).toContain("'none'");
   });

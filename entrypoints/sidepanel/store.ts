@@ -1,6 +1,4 @@
 import { create } from 'zustand';
-import type { Agent } from '@earendil-works/pi-agent-core';
-import type { AssistantMessage, Message as AgentLlmMessage } from '@earendil-works/pi-ai';
 import {
   sendMessage,
   type ActiveTabInfo,
@@ -18,28 +16,20 @@ import {
   deleteConversation as deleteConversationRecord,
   getConversationMessages,
   listConversations,
-  replaceConversationMessages,
   type ConversationRecord,
 } from '@/lib/db';
 import {
-  conversationTitle,
   findMessageIndex,
   isEditableMessage,
-  toMessageRecords,
   type ChatMessage,
 } from '@/lib/chat/messages';
-import { createBrowserAgent } from '@/lib/agent/agent';
-import type { TaskOutcome } from '@/lib/agent/task-outcome';
 import {
   buildSystemPrompt,
   DEFAULT_READ_TOOL_CALL_BUDGET,
   DEFAULT_WRITE_TOOL_CALL_BUDGET,
 } from '@/lib/agent/system-prompt';
 import { buildShortcutExecution } from '@/lib/chat/shortcut-prompts';
-import { summarizeToolCallForConfirmation } from '@/lib/agent/confirm-summary';
-import { describeToolActivity } from '@/lib/agent/activity-description';
-import { flushPerfTrace, recordPerfFirstToken, recordPerfMark } from '@/lib/agent/perf-trace';
-import { finishActivityStep, markActivityStepSlow, upsertActivityStep, type ActivityStep } from '@/lib/agent/activity-steps';
+import { markActivityStepSlow, type ActivityStep } from '@/lib/agent/activity-steps';
 import { getConversationIdForTab, setConversationIdForTab } from '@/lib/agent/tab-conversation';
 import { clearTabSession, loadTabSession, saveTabSession } from '@/lib/agent/tab-session-storage';
 import { createTabSession } from '@/lib/agent/tab-session';
@@ -72,41 +62,22 @@ import {
   resolveShortcut,
   type ShortcutConfig,
 } from '@/lib/shortcuts';
+import {
+  AGENT_RUN_PORT_NAME,
+  type PanelToBackground,
+  type BackgroundToPanel,
+  type SnapshotMessage,
+  type PendingConfirmation,
+  type PendingQuestion,
+} from '@/lib/agent/run-port-protocol';
 
 const SLOW_ACTIVITY_MS = 6000;
-const REQUIRED_AGENT_MESSAGE_TYPES = [
-  'GET_PAGE_META',
-  'GET_SCRIPTS',
-  'GET_STYLESHEETS',
-  'QUERY_DOM',
-  'GET_HTML',
-  'GET_COMPUTED_STYLE',
-  'CAPTURE_SCREENSHOT',
-  'SET_STYLE',
-  'MODIFY_DOM',
-  'CLICK_ELEMENT',
-  'TYPE_TEXT',
-  'SELECT_OPTION',
-  'SCROLL_PAGE',
-  'NAVIGATE_TAB',
-  'SET_STORAGE',
-] as const;
 
 export type UIMessage = ChatMessage;
 
 export type { ActivityStep } from '@/lib/agent/activity-steps';
 
-export interface PendingConfirmation {
-  toolCallId: string;
-  toolName: string;
-  summary: string;
-  codePreview?: string;
-}
-
-export interface PendingQuestion {
-  toolCallId: string;
-  question: string;
-}
+export type { PendingConfirmation, PendingQuestion };
 
 export type PageContextState =
   | { status: 'loading' }
@@ -171,17 +142,48 @@ interface ConversationOrigin {
   conversationEpoch: number;
 }
 
+// 真正的运行状态（Agent 实例、pending confirmation/question 的 resolver、活动步骤）现在都
+// 在 background 的 run-registry.ts 里；面板这份 ActiveRun 只剩下"用来过滤过期事件"的身份信息
+// （ref: docs/superpowers/specs/2026-09-01-agent-run-in-background-design.md）。
 interface ActiveRun {
   id: number;
   origin: ConversationOrigin;
-  agent: Agent | null;
-  resolveConfirmation: ((approved: boolean) => void) | null;
-  resolveQuestion: ((answer: string) => void) | null;
-  pendingToolArgs: Map<string, { toolName: string; args: unknown }>;
-  terminatedToolCallIds: Set<string>;
-  taskOutcome: TaskOutcome | null;
+  tabId: number;
 }
 let activeRun: ActiveRun | null = null;
+
+let runPort: ReturnType<typeof browser.runtime.connect> | null = null;
+
+function postToRunPort(message: PanelToBackground): void {
+  runPort?.postMessage(message);
+}
+
+/** panelTabId 解析出来之后调用一次（见 restoreTabConversation），建立与 background 的
+ * 持久连接。面板文档被销毁时这个 Port 自然断开，不需要显式清理——不影响 background 里
+ * 的 run 继续跑，见 lib/agent/run-registry.ts 的 detachPort 文档注释。*/
+function connectRunPort(tabId: number, set: StoreSet, get: StoreGet): void {
+  runPort = browser.runtime.connect({ name: AGENT_RUN_PORT_NAME });
+  runPort.onMessage.addListener((raw: unknown) => {
+    const message = raw as BackgroundToPanel;
+    if (message.type === 'snapshot') applySnapshot(message, set, get);
+    // orphanResolved 目前不会被触发（见 background.ts Step 3 的注释），面板不处理这个分支——
+    // 孤儿恢复写回 Dexie 后，下次这个 tab 的会话被打开时会照常从历史里读到那条 failure 消息。
+  });
+  postToRunPort({ type: 'hello', tabId });
+}
+
+function applySnapshot(snapshot: SnapshotMessage, set: StoreSet, get: StoreGet): void {
+  const run = activeRun;
+  if (!run || run.tabId !== snapshot.tabId || !isCurrentOrigin(run.origin, get)) return;
+  set({
+    messages: snapshot.messages,
+    activitySteps: snapshot.activitySteps,
+    pendingConfirmation: snapshot.pendingConfirmation,
+    pendingQuestion: snapshot.pendingQuestion,
+    busy: snapshot.busy,
+  });
+  if (!snapshot.busy) settleRun(run);
+}
 let runEpoch = 0;
 let conversationEpoch = 0;
 /** 侧边栏面板自己绑定的 tabId；挂载时解析一次并缓存，用于把 conversationId 变化写回对应 tab 的映射。 */
@@ -334,32 +336,20 @@ function isCurrentRun(run: ActiveRun, get: () => ChatState): boolean {
 
 function settleRun(run: ActiveRun): void {
   if (activeRun?.id !== run.id) return;
-  run.resolveConfirmation = null;
-  run.resolveQuestion = null;
-  run.agent = null;
   activeRun = null;
 }
 
 function invalidateActiveRun(
   set: (partial: Partial<ChatState> | ((s: ChatState) => Partial<ChatState>)) => void,
   get: () => ChatState,
-  persist = true,
 ): void {
   const run = activeRun;
   if (!run) return;
-  const messages = isCurrentOrigin(run.origin, get) ? get().messages : [];
   activeRun = null;
-  run.resolveConfirmation?.(false);
-  run.resolveConfirmation = null;
-  run.resolveQuestion?.('');
-  run.resolveQuestion = null;
-  run.agent?.abort();
+  postToRunPort({ type: 'stop', tabId: run.tabId });
   if (isCurrentOrigin(run.origin, get)) {
     clearAllSlowActivityTimers();
     set({ busy: false, pendingConfirmation: null, pendingQuestion: null, activitySteps: [] });
-  }
-  if (persist && messages.length > 0) {
-    void persistConversationSnapshot(run.origin.conversationId, messages);
   }
 }
 
@@ -731,48 +721,41 @@ export const useChat = create<ChatState>((set, get) => ({
     );
   },
 
+  // stop/respondToConfirmation/respondToQuestion 不再本地 resolve 任何东西——那些 resolver
+  // 现在活在 background 的 run-registry.ts 里。这里只把用户的动作转发成 Port 消息；
+  // background 处理完之后会重新广播一份 snapshot，UI 状态更新走 applySnapshot 那条统一路径
+  // （ref: lib/agent/run-registry.ts 的 respondConfirm/respondQuestion/stopRun，它们处理完
+  // 都会 broadcast(tabId, snapshotOf(state))）。
   stop: () => {
     const run = activeRun;
     if (!run || !isCurrentRun(run, get)) return;
-    run.resolveConfirmation?.(false);
-    run.resolveConfirmation = null;
-    run.resolveQuestion?.('');
-    run.resolveQuestion = null;
-    run.agent?.abort();
-    for (const step of get().activitySteps) run.terminatedToolCallIds.add(step.id);
-    const pendingId = get().pendingConfirmation?.toolCallId ?? get().pendingQuestion?.toolCallId;
-    if (pendingId) run.terminatedToolCallIds.add(pendingId);
-    clearAllSlowActivityTimers();
-    set({ pendingConfirmation: null, pendingQuestion: null, activitySteps: [] });
+    postToRunPort({ type: 'stop', tabId: run.tabId });
   },
 
   respondToConfirmation: (approved) => {
     const run = activeRun;
     if (!run || !isCurrentRun(run, get)) return;
-    run.resolveConfirmation?.(approved);
-    run.resolveConfirmation = null;
     const pending = get().pendingConfirmation;
-    set({ pendingConfirmation: null });
-    if (!approved && pending) {
-      run.terminatedToolCallIds.add(pending.toolCallId);
-      const info = run.pendingToolArgs.get(pending.toolCallId);
-      const description = describeToolActivity(pending.toolName, info?.args, 'failed');
-      set((s) => ({
-        activitySteps: upsertActivityStep(s.activitySteps, {
-          id: pending.toolCallId,
-          description,
-          status: 'failed',
-        }),
-      }));
-    }
+    if (!pending) return;
+    postToRunPort({
+      type: 'respondConfirm',
+      tabId: run.tabId,
+      toolCallId: pending.toolCallId,
+      approved,
+    });
   },
 
   respondToQuestion: (answer) => {
     const run = activeRun;
     if (!run || !isCurrentRun(run, get)) return;
-    run.resolveQuestion?.(answer);
-    run.resolveQuestion = null;
-    set({ pendingQuestion: null });
+    const pending = get().pendingQuestion;
+    if (!pending) return;
+    postToRunPort({
+      type: 'respondQuestion',
+      tabId: run.tabId,
+      toolCallId: pending.toolCallId,
+      answer,
+    });
   },
 
   clear: () => {
@@ -838,6 +821,7 @@ export const useChat = create<ChatState>((set, get) => ({
     const tabId = tabs[0]?.id;
     if (typeof tabId !== 'number') return;
     panelTabId = tabId;
+    connectRunPort(tabId, set, get);
     const savedId = await getConversationIdForTab(tabId);
     if (savedId) {
       restoringSavedConversation = true;
@@ -858,7 +842,7 @@ export const useChat = create<ChatState>((set, get) => ({
     const removingActive = get().conversationId === id;
     if (removingActive) {
       get().disposeAttachments();
-      invalidateActiveRun(set, get, false);
+      invalidateActiveRun(set, get);
       conversationEpoch += 1;
     }
     try {
@@ -875,7 +859,7 @@ export const useChat = create<ChatState>((set, get) => ({
         // persist the record that has just been deleted. This cleanup is
         // authoritative even when refreshing the drawer fails afterward.
         get().disposeAttachments();
-        invalidateActiveRun(set, get, false);
+        invalidateActiveRun(set, get);
         conversationEpoch += 1;
         clearAllSlowActivityTimers();
         set({
@@ -952,12 +936,10 @@ async function runAgent(
   const run: ActiveRun = {
     id: ++runEpoch,
     origin,
-    agent: null,
-    resolveConfirmation: null,
-    resolveQuestion: null,
-    pendingToolArgs: new Map(),
-    terminatedToolCallIds: new Set(),
-    taskOutcome: null,
+    // tabId 在这里还不知道（要等下面 resolveActiveTab() 完成）——先用占位值让 isCurrentRun
+    // 在此之前的 await（getActiveProvider 等）期间能正常按 id/origin 判断race，
+    // tab 解析出来后立刻用真实 tabId 覆盖（见下面 `run.tabId = tabId;`）。
+    tabId: -1,
   };
   activeRun = run;
   const all = initialState.providers;
@@ -992,6 +974,7 @@ async function runAgent(
   }
   if (!isCurrentRun(run, get)) return false;
   const tabId = tab.id;
+  run.tabId = tabId;
   const tabSession = await loadTabSession(tabId).catch(() => createTabSession(tabId));
 
   // 截断必须放在 Provider 校验与 resolveActiveTabId 之后：那两处失败会 set({ error }) 直接 return，
@@ -1060,402 +1043,33 @@ async function runAgent(
     pendingConfirmation: null,
     pendingQuestion: null,
   });
-  if (!isCurrentRun(run, get)) return false;
-
-  const onConfirm = async (toolCallId: string, toolName: string, args: unknown, _reason: string): Promise<boolean> => {
-    if (!isCurrentRun(run, get)) return false;
-    const targetTab =
-      tabSession.currentTabId !== tabId
-        ? tabSession.trackedTabs.find((t) => t.id === tabSession.currentTabId)
-        : undefined;
-    const { summary, codePreview } = summarizeToolCallForConfirmation(toolName, args, targetTab);
-    run.pendingToolArgs.set(toolCallId, { toolName, args });
-    set({ pendingConfirmation: { toolCallId, toolName, summary, codePreview } });
-    return new Promise<boolean>((resolve) => {
-      run.resolveConfirmation = resolve;
-    });
-  };
-
-  // ask_user 工具自己就是"停下来问用户"，不走 onConfirm 那条批准/拒绝闸门——
-  // 这里只负责把问题投影到 UI、等待 respondToQuestion 把答案送回来。
-  const onAskUser = async (toolCallId: string, question: string, signal?: AbortSignal): Promise<string> => {
-    if (!isCurrentRun(run, get) || signal?.aborted) return '';
-    set({ pendingQuestion: { toolCallId, question } });
-    return new Promise<string>((resolve) => {
-      run.resolveQuestion = resolve;
-    });
-  };
-
-  const agent = createBrowserAgent({
-    provider: agentProvider,
+  activeRun = { id: run.id, origin: run.origin, tabId };
+  postToRunPort({
+    type: 'startRun',
     tabId,
-    session: tabSession,
+    conversationId: run.origin.conversationId,
+    provider: agentProvider,
     systemPrompt: buildSystemPrompt({
       locale: getCurrentLocale(),
       readToolCallBudget: DEFAULT_READ_TOOL_CALL_BUDGET,
       writeToolCallBudget: DEFAULT_WRITE_TOOL_CALL_BUDGET,
       now: new Date(),
-      // 禁用浏览器工具的快捷方式不注入页面信息：那一轮明确要求不读取当前页面，
-      // 注入标题/地址既与该约束矛盾，也是白送给模型的一段网页可控文本。
       page: options.withoutBrowserTools ? undefined : { tabId, title: tab.title, url: tab.url },
       constraints: options.systemPromptSuffix,
     }),
-    tools: options.withoutBrowserTools ? [] : undefined,
-    messages: toAgentMessages(history),
+    withoutBrowserTools: options.withoutBrowserTools,
+    // history 是提交前的历史，不含本轮新增的用户消息——run-registry.ts 的 startRun 会自己
+    // 拼接 [...historyMessages, displayMessage, 占位 assistant]。这里传 history 而不是
+    // 上面 set({messages:[...history, committedDisplay, ...]}) 用过的那个拼接结果，否则
+    // committedDisplay 会在 run-registry.ts 那边被重复拼接一次。
+    historyMessages: history,
+    displayMessage: committedDisplay,
+    agentUserContent: committedAgentUserContent,
+    images: committedImages,
     readToolCallBudget: DEFAULT_READ_TOOL_CALL_BUDGET,
     writeToolCallBudget: DEFAULT_WRITE_TOOL_CALL_BUDGET,
-    onConfirm,
-    onAskUser,
-    onOverlay: (payload, targetTabId) => {
-      void sendMessage('SET_AGENT_OVERLAY', payload, targetTabId).catch(() => undefined);
-    },
-    onSessionChange: (session) => { void saveTabSession(session).catch(() => undefined); },
-    onTaskOutcome: (outcome) => {
-      if (!isCurrentRun(run, get)) return;
-      run.taskOutcome = outcome;
-    },
   });
-  if (!isCurrentRun(run, get)) return false;
-  run.agent = agent;
-  let acc = '';
-  let streamFlushTimer: ReturnType<typeof setTimeout> | null = null;
-  const STREAM_FLUSH_INTERVAL_MS = 48;
-  // text_delta 到达时立刻累加进 acc（下面 !acc.trim() 判空、控制台日志等逻辑都直接读
-  // 这个变量，必须实时），但对 store 的 set() 节流到约一帧一次：不节流的话，长回复期间
-  // 每个 token 都会触发一次全量 store 更新——即使消息列表已经 memo 化，命中更新的那一条
-  // 消息本身仍要为每个 token 重新跑一遍 <Markdown> 的 remark/rehype-highlight 解析。
-  // isCurrentRun 判断避免用户在节流窗口内切换/清空会话后，姗姗来迟的一次 flush 把内容
-  // 写进了错误的会话。
-  function flushStream() {
-    if (streamFlushTimer !== null) {
-      clearTimeout(streamFlushTimer);
-      streamFlushTimer = null;
-    }
-    if (isCurrentRun(run, get)) replaceLastAssistant(set, acc);
-  }
-  const unsubscribe = agent.subscribe((event) => {
-    if (!isCurrentRun(run, get)) return;
-
-    // 耗时画像埋点（默认只在 dev 构建下生效，见 lib/agent/perf-trace.ts）：这里把
-    // agent 事件流上的边界原样转记下来，运行结束时在控制台输出一份分桶统计。
-    if (event.type === 'agent_start') recordPerfMark('agent_start');
-    if (event.type === 'turn_start') recordPerfMark('turn_start');
-    if (event.type === 'message_update') recordPerfFirstToken();
-    // ⚠️ message_end 不只在助手消息结束时发：pi-agent-core 给用户 prompt
-    // (agent-loop.js:52)、steer 注入的消息 (:98) 和每一条工具结果 (:508) 都会发一遍。
-    // 不过滤的话，turn_start 之后紧跟的那条 prompt/工具结果 message_end 会把这一轮
-    // 从 turn_start 到首 token 的等待整段从 LLM 桶里切掉，严重低估模型往返占比。
-    if (event.type === 'message_end' && event.message.role === 'assistant') recordPerfMark('message_end');
-    if (event.type === 'tool_execution_start') recordPerfMark('tool_start', event.toolName);
-    if (event.type === 'tool_execution_end') recordPerfMark('tool_end', event.toolName);
-    if (event.type === 'agent_end') {
-      recordPerfMark('agent_end');
-      flushPerfTrace();
-    }
-
-    if (event.type === 'message_update' && event.assistantMessageEvent.type === 'text_delta') {
-      acc += event.assistantMessageEvent.delta;
-      if (streamFlushTimer === null) {
-        streamFlushTimer = setTimeout(flushStream, STREAM_FLUSH_INTERVAL_MS);
-      }
-    }
-
-    if (event.type === 'tool_execution_start' && !run.terminatedToolCallIds.has(event.toolCallId)) {
-      run.pendingToolArgs.set(event.toolCallId, { toolName: event.toolName, args: event.args });
-      set((s) => ({
-        activitySteps: upsertActivityStep(s.activitySteps, {
-          id: event.toolCallId,
-          description: describeToolActivity(event.toolName, event.args, 'running'),
-          status: 'running',
-        }),
-      }));
-      scheduleSlowActivityTimer(set, event.toolCallId);
-    }
-
-    if (event.type === 'tool_execution_update' && !run.terminatedToolCallIds.has(event.toolCallId)) {
-      run.pendingToolArgs.set(event.toolCallId, { toolName: event.toolName, args: event.args });
-      set((s) => {
-        const existing = s.activitySteps.find((step) => step.id === event.toolCallId);
-        return {
-          activitySteps: upsertActivityStep(s.activitySteps, {
-            id: event.toolCallId,
-            description: describeToolActivity(event.toolName, event.args, 'running'),
-            status: 'running',
-            slow: existing?.slow,
-          }),
-        };
-      });
-      scheduleSlowActivityTimer(set, event.toolCallId);
-    }
-
-    if (event.type === 'tool_execution_end') {
-      const blocked = event.isError && isToolGuardBlockResult(event.result);
-      // 聊天界面里的活动提示刻意不展示原始 tool result（可能带用户输入的敏感值，见下方
-      // "does not expose raw tool payloads" 一类用例），所以失败原因只打到控制台，方便
-      // 打开 DevTools 排查，不在 UI 上泄露。
-      if (event.isError && !blocked) {
-        // event.result 通常是 { content: [{type:'text', text}], details } 这样的对象——
-        // console.error 直接打对象在 chrome://extensions 的错误面板里会被字符串化成
-        // "[object Object]"（该面板不支持对象展开，只有普通 DevTools 控制台才行），
-        // 所以这里尽量把文本消息拆出来打，保证错误面板里也能看到实际原因。
-        const result = event.result as unknown;
-        const message =
-          typeof result === 'string'
-            ? result
-            : ((result as { content?: Array<{ type: string; text?: string }> } | undefined)?.content?.find(
-                (c) => c.type === 'text',
-              )?.text ?? result);
-        console.error('[Runi] tool execution failed', event.toolName, message);
-      }
-      const info = run.pendingToolArgs.get(event.toolCallId);
-      run.pendingToolArgs.delete(event.toolCallId);
-      clearSlowActivityTimer(event.toolCallId);
-      if (!run.terminatedToolCallIds.has(event.toolCallId)) {
-        const finalStatus = blocked || event.isError ? 'failed' : 'done';
-        const description = describeToolActivity(event.toolName, info?.args, finalStatus);
-        set((s) => ({
-          activitySteps: finishActivityStep(s.activitySteps, event.toolCallId, finalStatus, description),
-        }));
-      }
-    }
-  });
-
-  try {
-    const missingTypes = await getMissingAgentMessageTypes();
-    if (!isCurrentRun(run, get)) return false;
-    if (missingTypes.length > 0) {
-      acc = t('store.staleBackgroundWarning', { missingTypes: missingTypes.join(', ') });
-      replaceLastAssistant(set, acc);
-      // 到这里历史已经截断并提交（上面的 set({ messages: ... }) 已执行），
-      // 对 editMessage 来说这是「成功发起」，只是后台协议过旧导致本轮没能真正跑起来。
-      return true;
-    }
-
-    // 不能传 undefined 作为显式第二参数：store-context.test.tsx 里 toHaveBeenCalledWith('...') 断言的是单参数调用，
-    // 传两个参数（哪怕第二个是 undefined）会让 vitest 的参数数组比对失败。
-    if (committedImages && committedImages.length > 0) {
-      await agent.prompt(committedAgentUserContent, committedImages);
-    } else {
-      await agent.prompt(committedAgentUserContent);
-    }
-    if (!isCurrentRun(run, get)) return false;
-    if (!acc.trim()) {
-      // pi-agent-core 不会为流式错误抛异常：agent-loop 遇到 stopReason "error"/"aborted" 时
-      // 直接 return，所以 agent.prompt() 正常 resolve。真正的错误信息只存在于最后一条
-      // assistant 消息的 errorMessage 上——不读它，任何 HTTP 400 / 中途错误都会退化成
-      // 一句无信息量的「没有生成文本结果」。
-      const last = findLastAssistant(agent.state.messages);
-      acc = extractLastAssistantText(agent.state.messages) || describeEmptyAgentRun(last);
-      if (!extractLastAssistantText(agent.state.messages)) {
-        // 传对象给 console.error 在 chrome://extensions 错误面板里会被字符串化成
-        // "[object Object]"（该面板不支持对象展开），所以这里改成打印可读文本。
-        console.error(
-          '[Runi] Agent 未产生文本结果',
-          compactJson({
-            stopReason: last?.stopReason,
-            errorMessage: last?.errorMessage,
-            lastAssistantContent: last?.content,
-          }),
-        );
-      }
-      replaceLastAssistant(set, acc);
-    }
-  } catch (e) {
-    if (!isCurrentRun(run, get)) return false;
-    if (e instanceof DOMException && e.name === 'AbortError') {
-      // 用户主动停止，保留已生成的部分内容
-    } else {
-      set({ error: errMsg(e) });
-    }
-  } finally {
-    unsubscribe();
-    // 节流窗口内可能还有未落到 store 的尾部 delta；下面的 taskOutcome 合并和
-    // persistConversationSnapshot 都读 get().messages，必须先追平。
-    flushStream();
-    if (isCurrentRun(run, get)) {
-      if (run.taskOutcome) {
-        const outcome = run.taskOutcome;
-        set((state) => {
-          const messages = state.messages.slice();
-          const last = messages[messages.length - 1];
-          if (!last) return {};
-          messages[messages.length - 1] = { ...last, taskOutcome: outcome };
-          return { messages };
-        });
-      }
-      const messages = get().messages;
-      // The turn is terminal before persistence starts: navigation must not
-      // abort an already-complete agent or schedule a second snapshot write.
-      settleRun(run);
-      clearAllSlowActivityTimers();
-      set({ busy: false, activitySteps: [] });
-      // 回合结束就撤遮罩。正常完成、模型出错、用户中止三条路径都汇到这个 finally
-      // （见下方注释），所以这一处就够。送不到也不要紧——content script 侧有 15s 看门狗兜底。
-      // 遮罩此时实际所在的 tab 是 tabSession.currentTabId（轮次里可能已经切换过），不一定是
-      // 面板绑定的 tabId。
-      void sendMessage('SET_AGENT_OVERLAY', { active: false }, tabSession.currentTabId).catch(() => undefined);
-      void saveTabSession(tabSession).catch(() => undefined);
-      await persistConversationSnapshot(run.origin.conversationId, messages);
-    }
-  }
-  // 走到这里说明历史已经截断并提交（正常完成 / 模型出错 / 用户中止都在 try/catch 内处理，
-  // 不会抛出到这里），对调用方而言就是「成功发起」。
   return true;
-}
-
-function replaceLastAssistant(
-  set: (partial: Partial<ChatState> | ((s: ChatState) => Partial<ChatState>)) => void,
-  content: string,
-): void {
-  set((state) => {
-    const messages = state.messages.slice();
-    const last = messages[messages.length - 1];
-    if (!last) return { error: null };
-    messages[messages.length - 1] = { ...last, content };
-    return { messages, error: null };
-  });
-}
-
-function toAgentMessages(messages: UIMessage[]): AgentLlmMessage[] {
-  return messages.map((message) => {
-    if (message.role === 'user') {
-      return { role: 'user', content: message.content, timestamp: Date.now() };
-    }
-    return {
-      role: 'assistant',
-      content: message.content ? [{ type: 'text', text: message.content }] : [],
-      api: 'openai-completions',
-      provider: 'history',
-      model: 'history',
-      usage: {
-        input: 0,
-        output: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        totalTokens: 0,
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-      },
-      stopReason: 'stop',
-      timestamp: Date.now(),
-    } satisfies AssistantMessage;
-  });
-}
-
-function extractLastAssistantText(messages: unknown[]): string {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (!message || typeof message !== 'object' || (message as { role?: unknown }).role !== 'assistant') continue;
-    const content = (message as { content?: unknown }).content;
-    if (!Array.isArray(content)) continue;
-    return content
-      .filter((part): part is { type: 'text'; text: string } =>
-        Boolean(part && typeof part === 'object' && (part as { type?: unknown }).type === 'text'),
-      )
-      .map((part) => part.text)
-      .join('\n')
-      .trim();
-  }
-  return '';
-}
-
-interface LastAssistantInfo {
-  stopReason?: string;
-  errorMessage?: string;
-  content?: unknown;
-}
-
-function findLastAssistant(messages: unknown[]): LastAssistantInfo | undefined {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (!message || typeof message !== 'object' || (message as { role?: unknown }).role !== 'assistant') continue;
-    return message as LastAssistantInfo;
-  }
-  return undefined;
-}
-
-// "Failed to fetch" 是浏览器 fetch() 在网络层失败时的原始报错（断网、DNS 解析失败、连接被拒、CORS 拦截等），
-// 与「Base URL / API Key / 模型名填错」是两类完全不同的问题，不能用同一句排查建议糊弄过去。
-function isNetworkFetchError(reason: string): boolean {
-  return /failed to fetch|network ?error|ERR_(NAME_NOT_RESOLVED|CONNECTION|INTERNET_DISCONNECTED|NETWORK_CHANGED)/i.test(
-    reason,
-  );
-}
-
-// 一轮 Agent 运行结束却没有任何文本时，尽可能说明原因，而不是只丢一句「没有生成文本结果」。
-function describeEmptyAgentRun(last: LastAssistantInfo | undefined): string {
-  if (last?.stopReason === 'error') {
-    const reason = last.errorMessage || t('store.unknownError');
-    if (isNetworkFetchError(reason)) {
-      return t('store.modelCallNetworkError', { reason });
-    }
-    return t('store.modelCallFailed', { reason });
-  }
-  if (last?.stopReason === 'length') {
-    return t('store.tokenLimitReached');
-  }
-  if (last?.stopReason === 'aborted') return t('store.generationAborted');
-  const onlyToolCalls =
-    Array.isArray(last?.content) &&
-    last.content.length > 0 &&
-    last.content.every((part) => (part as { type?: unknown })?.type === 'toolCall');
-  if (onlyToolCalls) {
-    return t('store.onlyToolCalls');
-  }
-  return t('store.noTextResult');
-}
-
-function compactJson(value: unknown): string {
-  try {
-    const text = JSON.stringify(value);
-    return text.length > 240 ? `${text.slice(0, 240)}…` : text;
-  } catch {
-    return String(value);
-  }
-}
-
-function isToolGuardBlockResult(value: unknown): boolean {
-  const text = compactJson(value);
-  return (
-    text.includes('请停止继续调用工具') ||
-    text.includes('工具调用已达到上限') ||
-    text.includes('不要重复读取这些宽泛资料')
-  );
-}
-
-async function getMissingAgentMessageTypes(): Promise<string[]> {
-  try {
-    const res = (await sendMessage('PING')) as MessageResponse<{
-      agentProtocol?: number;
-      supportedTypes?: string[];
-    }>;
-    const supported = new Set(res.ok && res.data?.supportedTypes ? res.data.supportedTypes : []);
-    return REQUIRED_AGENT_MESSAGE_TYPES.filter((type) => !supported.has(type));
-  } catch {
-    return [...REQUIRED_AGENT_MESSAGE_TYPES];
-  }
-}
-
-/**
- * 用运行开始时捕获的会话 id 和消息快照整体重写该会话。
- * 绝不能在异步 Agent 回调的 finally 里读取全局 store：用户已切换会话时，
- * 那会把旧轮次的数据错误写进新会话。
- */
-async function persistConversationSnapshot(conversationId: string, messages: UIMessage[]): Promise<void> {
-  // A snapshot created after deletion starts must never queue behind the delete
-  // and recreate its conversation. Snapshots already queued remain ahead of
-  // the delete in this conversation's lane, making delete authoritative.
-  if (successfulDeletedConversationIds.has(conversationId) || pendingDeletionGenerations.has(conversationId)) return;
-  try {
-    await enqueueConversationMutation(conversationId, async () => {
-      await replaceConversationMessages(
-        conversationId,
-        toMessageRecords(conversationId, messages),
-        conversationTitle(messages),
-      );
-    });
-  } catch (e) {
-    console.error('[Runi] 持久化会话失败', e);
-  }
 }
 
 function errMsg(e: unknown): string {
