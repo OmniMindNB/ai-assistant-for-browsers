@@ -428,7 +428,9 @@ function Message({
             ))}
           </div>
         )}
-        <div className="group flex items-center gap-1.5">
+        {/* max-w 必须挂在这一行上：它是 items-end 列的直接子项，百分比才会参照消息列宽度。
+            若挂到里面的气泡上，参照系会退化成气泡自身被内容撑出的宽度，短文本也会被截到 85% 而换行。 */}
+        <div className="group flex max-w-[85%] items-center gap-1.5">
           {!requestBlocked && isEditableMessage(message) && (
             <button
               type="button"
@@ -441,7 +443,7 @@ function Message({
               <IconPencil className="h-3.5 w-3.5" />
             </button>
           )}
-          <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-neutral-900 px-4 py-2.5 text-sm text-white dark:bg-neutral-700">
+          <div className="min-w-0 whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-neutral-900 px-4 py-2.5 text-sm text-white dark:bg-neutral-700">
             {content}
           </div>
         </div>
