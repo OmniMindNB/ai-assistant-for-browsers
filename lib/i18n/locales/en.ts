@@ -156,7 +156,6 @@ export const en: Record<keyof typeof zh, string> = {
   'agentActivity.tool.scroll': 'Scroll',
   'agentActivity.tool.unknown': 'Browser action',
   'agentActivity.actionFailed': '{action} failed',
-  'agentActivity.slowSuffix': '… this is taking longer than usual',
   'agentActivity.now.inspectFocus': 'Inspecting page implementation (focus: "{target}")',
   'agentActivity.done.inspectFocus': 'Inspected page implementation (focus: "{target}")',
   'agentActivity.failed.inspectFocus': 'Failed to inspect page implementation (focus: "{target}")',
@@ -276,8 +275,6 @@ export const en: Record<keyof typeof zh, string> = {
   'store.noProviderConfigured': 'No provider configured. Add an API key in Settings.',
   'store.missingApiKey': 'The current provider has no API key set. Add one in Settings.',
   'store.messageNotFound': 'This message is no longer in the current conversation.',
-  'store.staleBackgroundWarning':
-    'The extension\'s background service is still an old version and the browser agent tools haven\'t loaded, so I won\'t guess an answer.\n\nMissing message types: {missingTypes}\n\nClick "Reload" for Runi on the extensions management page, then refresh this page and reopen the side panel.',
   'store.modelCallFailed': 'Model call failed: {reason}\n\nPlease check the Base URL, API key, and model name in Settings.',
   'store.modelCallNetworkError':
     "Couldn't connect to the model service ({reason}). This is usually a network issue, not a configuration error. Please check:\n1. Whether this device is connected to the internet\n2. Whether reaching that Base URL requires a VPN/proxy\n3. Whether the Base URL is reachable from this network (e.g. blocked by a firewall)\n\nIf your network is confirmed fine, then check the Base URL, API key, and model name in Settings.",

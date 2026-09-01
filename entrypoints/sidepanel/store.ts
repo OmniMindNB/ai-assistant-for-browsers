@@ -29,7 +29,7 @@ import {
   DEFAULT_WRITE_TOOL_CALL_BUDGET,
 } from '@/lib/agent/system-prompt';
 import { buildShortcutExecution } from '@/lib/chat/shortcut-prompts';
-import { markActivityStepSlow, type ActivityStep } from '@/lib/agent/activity-steps';
+import { type ActivityStep } from '@/lib/agent/activity-steps';
 import { getConversationIdForTab, setConversationIdForTab } from '@/lib/agent/tab-conversation';
 import { clearTabSession, loadTabSession, saveTabSession } from '@/lib/agent/tab-session-storage';
 import { createTabSession } from '@/lib/agent/tab-session';
@@ -70,8 +70,6 @@ import {
   type PendingConfirmation,
   type PendingQuestion,
 } from '@/lib/agent/run-port-protocol';
-
-const SLOW_ACTIVITY_MS = 6000;
 
 export type UIMessage = ChatMessage;
 
@@ -152,27 +150,205 @@ interface ActiveRun {
 }
 let activeRun: ActiveRun | null = null;
 
-let runPort: ReturnType<typeof browser.runtime.connect> | null = null;
+type RunPort = ReturnType<typeof browser.runtime.connect>;
 
+let runPort: RunPort | null = null;
+/** connectRunPort 的入参留存下来，好让 onDisconnect 里的自动重连不需要调用方再传一次。 */
+let runPortTabId: number | null = null;
+let runPortSet: StoreSet | null = null;
+let runPortGet: StoreGet | null = null;
+/** Port 暂时不可用期间攒下的消息；重连成功后按序补发，绝不静默丢弃用户动作。
+ * 有意不设上限：这里排队的都是用户亲手触发的动作（发送/停止/确认），为了"防止无界增长"
+ * 而丢掉其中任何一条，正是本次要修的问题本身；而面板文档本身生命周期很短，
+ * 且 runtime.connect() 会顺带把 service worker 唤醒，队列实际上很难堆起来。 */
+const pendingPortMessages: PanelToBackground[] = [];
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+/** 握手期等待 background 对 `hello` 的回包（snapshot 或 noRun）。 */
+let pendingHello: ((snapshot: SnapshotMessage | undefined) => void) | null = null;
+
+/** background 正常情况下会立刻回 `hello`（同进程消息传递），这个超时只是"背景完全不回话"
+ * 时的兜底，避免面板挂载被无限期卡住。 */
+const HELLO_REPLY_TIMEOUT_MS = 300;
+/** 断线后重连的延迟：给 Chrome 一点时间把 service worker 拉起来，也避免背景真的不可达时
+ * 变成一个紧凑的重连热循环。 */
+const RECONNECT_DELAY_MS = 250;
+
+function flushPendingPortMessages(): void {
+  if (!runPort) return;
+  while (pendingPortMessages.length > 0) {
+    const message = pendingPortMessages[0];
+    try {
+      runPort.postMessage(message);
+    } catch {
+      // 刚建好的连接又断了：留在队列里等下一次重连，不丢。
+      return;
+    }
+    pendingPortMessages.shift();
+  }
+}
+
+/** 真正建立连接。成功返回 true；`browser.runtime.connect` 本身抛错（背景不可达）返回 false。 */
+function openRunPort(): boolean {
+  if (runPortTabId === null) return false;
+  const tabId = runPortTabId;
+  try {
+    const port = browser.runtime.connect({ name: AGENT_RUN_PORT_NAME });
+    runPort = port;
+    port.onMessage.addListener(handleRunPortMessage);
+    port.onDisconnect.addListener(() => {
+      // MV3 会定期回收空闲的 service worker，并断开挂在它上面的每一个 Port；扩展更新和
+      // 崩溃也是同一条路径。断开不代表 run 结束（background 侧 detachPort 明确不清理
+      // RunState），面板要做的只是重新连上去继续订阅。
+      if (runPort !== port) return;
+      runPort = null;
+      scheduleReconnect();
+    });
+    // 这里直接 postMessage 而不走 postToRunPort：hello 必须是这条连接上的第一条消息，
+    // 不能排在队列里补发的那些后面。
+    port.postMessage({ type: 'hello', tabId } satisfies PanelToBackground);
+    flushPendingPortMessages();
+    return true;
+  } catch {
+    runPort = null;
+    return false;
+  }
+}
+
+function scheduleReconnect(): void {
+  if (reconnectTimer !== null || runPortTabId === null) return;
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    if (runPort) return;
+    if (!openRunPort()) scheduleReconnect();
+  }, RECONNECT_DELAY_MS);
+}
+
+/**
+ * 往 Port 发一条消息。Port 断了就地重连并重发；重连也失败就入队，等下一次重连补发。
+ * 绝不能让用户的动作（发送、停止、确认卡片的批准/拒绝）在 Port 恰好处于断开状态时
+ * 静默消失，或者抛一个没人接的 "Attempting to use a disconnected port object"。
+ */
 function postToRunPort(message: PanelToBackground): void {
-  runPort?.postMessage(message);
+  if (!runPort && !openRunPort()) {
+    pendingPortMessages.push(message);
+    scheduleReconnect();
+    return;
+  }
+  try {
+    runPort!.postMessage(message);
+    return;
+  } catch {
+    runPort = null;
+  }
+  if (openRunPort()) {
+    try {
+      runPort!.postMessage(message);
+      return;
+    } catch {
+      runPort = null;
+    }
+  }
+  pendingPortMessages.push(message);
+  scheduleReconnect();
+}
+
+/** 把一次会话删除（或删除失败后的撤销）同步给 background 的落盘闸门。 */
+function notifyConversationDeleted(conversationId: string, deleted: boolean): void {
+  // Port 从未建立过（restoreTabConversation 还没跑）时无从发送，也无从入队——
+  // 那种时刻 background 里不可能有本面板发起的 run。
+  if (runPortTabId === null) return;
+  postToRunPort({ type: 'conversationDeleted', tabId: runPortTabId, conversationId, deleted });
+}
+
+function handleRunPortMessage(raw: unknown): void {
+  const message = raw as BackgroundToPanel;
+  // orphanResolved 目前不会被触发（见 background.ts 的注释），面板不处理这个分支——
+  // 孤儿恢复写回 Dexie 后，下次这个 tab 的会话被打开时会照常从历史里读到那条 failure 消息。
+  if (message.type !== 'snapshot' && message.type !== 'noRun') return;
+  if (pendingHello) {
+    // 握手回包：交给 restoreTabConversation 决定是采用这份快照还是走 Dexie 路径，
+    // 不在这里 applySnapshot——此刻 activeRun 还没建好，applySnapshot 只会把它丢掉。
+    const resolve = pendingHello;
+    pendingHello = null;
+    resolve(message.type === 'snapshot' ? message : undefined);
+    return;
+  }
+  if (message.type === 'snapshot') applySnapshot(message);
 }
 
 /** panelTabId 解析出来之后调用一次（见 restoreTabConversation），建立与 background 的
  * 持久连接。面板文档被销毁时这个 Port 自然断开，不需要显式清理——不影响 background 里
- * 的 run 继续跑，见 lib/agent/run-registry.ts 的 detachPort 文档注释。*/
-function connectRunPort(tabId: number, set: StoreSet, get: StoreGet): void {
-  runPort = browser.runtime.connect({ name: AGENT_RUN_PORT_NAME });
-  runPort.onMessage.addListener((raw: unknown) => {
-    const message = raw as BackgroundToPanel;
-    if (message.type === 'snapshot') applySnapshot(message, set, get);
-    // orphanResolved 目前不会被触发（见 background.ts Step 3 的注释），面板不处理这个分支——
-    // 孤儿恢复写回 Dexie 后，下次这个 tab 的会话被打开时会照常从历史里读到那条 failure 消息。
+ * 的 run 继续跑，见 lib/agent/run-registry.ts 的 detachPort 文档注释。
+ *
+ * 返回值是 background 对 `hello` 的回包：有存活 run 时是它的当前快照，没有时是 undefined。
+ * 调用方必须等这个回包再决定怎么恢复 UI，否则面板重开后从 Dexie 读到的旧历史会盖掉
+ * 正在跑的那一轮（本次修复的 bug 本身）。 */
+function connectRunPort(tabId: number, set: StoreSet, get: StoreGet): Promise<SnapshotMessage | undefined> {
+  runPortTabId = tabId;
+  runPortSet = set;
+  runPortGet = get;
+  return new Promise<SnapshotMessage | undefined>((resolve) => {
+    let settled = false;
+    const finish = (snapshot: SnapshotMessage | undefined): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (pendingHello === handler) pendingHello = null;
+      resolve(snapshot);
+    };
+    const handler = (snapshot: SnapshotMessage | undefined): void => finish(snapshot);
+    const timer = setTimeout(() => finish(undefined), HELLO_REPLY_TIMEOUT_MS);
+    pendingHello = handler;
+    if (!openRunPort()) {
+      // 连不上背景：不必白等超时，直接按"没有存活 run"处理，重连由 scheduleReconnect 继续。
+      scheduleReconnect();
+      finish(undefined);
+    }
   });
-  postToRunPort({ type: 'hello', tabId });
 }
 
-function applySnapshot(snapshot: SnapshotMessage, set: StoreSet, get: StoreGet): void {
+/**
+ * 面板重开时发现 background 手上还有这个 tab 的 run：直接用它的快照重建整个 UI，
+ * 并**跳过**从 Dexie 读历史那条路径。
+ *
+ * 为什么必须跳过：`RunSnapshot.messages` 按协议就是这一轮的完整权威历史，而 Dexie 里那份
+ * 可能落后（流式增量还没等到 message_end）；更要命的是 openConversation 会顺手
+ * set({ busy:false, activitySteps: [] })，正在跑的那一轮会被"恢复历史"这个动作抹掉。
+ */
+function adoptLiveRunSnapshot(snapshot: SnapshotMessage, set: StoreSet): void {
+  conversationEpoch += 1;
+  const run: ActiveRun = {
+    id: ++runEpoch,
+    origin: { conversationId: snapshot.conversationId, conversationEpoch },
+    tabId: snapshot.tabId,
+  };
+  activeRun = run;
+  // 与 openConversation 的恢复路径同一个理由：这是"面板文档重建后重新挂上同一个会话"，
+  // 不是用户切换会话，不能让 useChat.subscribe 顺手 clearTabSession —— 那会把正在跑的
+  // 这一轮追踪的标签页列表清空。
+  restoringSavedConversation = true;
+  try {
+    set({
+      conversationId: snapshot.conversationId,
+      messages: snapshot.messages,
+      activitySteps: snapshot.activitySteps,
+      pendingConfirmation: snapshot.pendingConfirmation,
+      pendingQuestion: snapshot.pendingQuestion,
+      busy: snapshot.busy,
+      error: null,
+    });
+  } finally {
+    restoringSavedConversation = false;
+  }
+  // 极小的时间窗：run 恰好在我们连上的那一刻收尾完毕，background 回的是一份 busy:false
+  // 的终局快照。照常收下最终消息，然后立刻把 activeRun 归位。
+  if (!snapshot.busy) settleRun(run);
+}
+
+function applySnapshot(snapshot: SnapshotMessage): void {
+  const set = runPortSet;
+  const get = runPortGet;
+  if (!set || !get) return;
   const run = activeRun;
   if (!run || run.tabId !== snapshot.tabId || !isCurrentOrigin(run.origin, get)) return;
   set({
@@ -348,36 +524,8 @@ function invalidateActiveRun(
   activeRun = null;
   postToRunPort({ type: 'stop', tabId: run.tabId });
   if (isCurrentOrigin(run.origin, get)) {
-    clearAllSlowActivityTimers();
     set({ busy: false, pendingConfirmation: null, pendingQuestion: null, activitySteps: [] });
   }
-}
-
-const slowActivityTimers = new Map<string, ReturnType<typeof setTimeout>>();
-
-function clearSlowActivityTimer(id: string): void {
-  const timer = slowActivityTimers.get(id);
-  if (timer !== undefined) {
-    clearTimeout(timer);
-    slowActivityTimers.delete(id);
-  }
-}
-
-function clearAllSlowActivityTimers(): void {
-  for (const timer of slowActivityTimers.values()) clearTimeout(timer);
-  slowActivityTimers.clear();
-}
-
-function scheduleSlowActivityTimer(
-  set: (partial: Partial<ChatState> | ((s: ChatState) => Partial<ChatState>)) => void,
-  id: string,
-): void {
-  if (slowActivityTimers.has(id)) return;
-  const timer = setTimeout(() => {
-    slowActivityTimers.delete(id);
-    set((s) => ({ activitySteps: markActivityStepSlow(s.activitySteps, id) }));
-  }, SLOW_ACTIVITY_MS);
-  slowActivityTimers.set(id, timer);
 }
 
 /** 返回整个 ActiveTabInfo 而不只是 id：标题和地址会注入系统提示词的 <runtime_context>，省掉一次工具调用。 */
@@ -731,7 +879,6 @@ export const useChat = create<ChatState>((set, get) => ({
     const run = activeRun;
     if (!run || !isCurrentRun(run, get)) return;
     postToRunPort({ type: 'stop', tabId: run.tabId });
-    clearAllSlowActivityTimers();
     set({ pendingConfirmation: null, pendingQuestion: null, activitySteps: [] });
   },
 
@@ -765,7 +912,6 @@ export const useChat = create<ChatState>((set, get) => ({
 
   clear: () => {
     get().disposeAttachments();
-    clearAllSlowActivityTimers();
     ++conversationOpenRequestId;
     invalidateActiveRun(set, get);
     conversationEpoch += 1;
@@ -808,7 +954,6 @@ export const useChat = create<ChatState>((set, get) => ({
         attachments: r.attachments,
         taskOutcome: r.taskOutcome,
       }));
-    clearAllSlowActivityTimers();
     set({
       messages,
       activitySteps: [],
@@ -826,17 +971,25 @@ export const useChat = create<ChatState>((set, get) => ({
     const tabId = tabs[0]?.id;
     if (typeof tabId !== 'number') return;
     panelTabId = tabId;
-    connectRunPort(tabId, set, get);
-    const savedId = await getConversationIdForTab(tabId);
-    if (savedId) {
-      restoringSavedConversation = true;
-      try {
-        await get().openConversation(savedId);
-      } finally {
-        restoringSavedConversation = false;
-      }
+    // 先握手、再决定怎么恢复：Chrome 销毁面板文档不会终止 background 里的 run，重开的这个
+    // 面板必须先问一句"这个 tab 现在还有没有在跑的 run"。有的话它的快照就是权威状态，
+    // 从 Dexie 读历史那条路径会把它盖掉（openConversation 会顺手 busy:false + 清活动步骤）。
+    const liveSnapshot = await connectRunPort(tabId, set, get);
+    if (liveSnapshot) {
+      adoptLiveRunSnapshot(liveSnapshot, set);
+      await setConversationIdForTab(tabId, liveSnapshot.conversationId);
     } else {
-      await setConversationIdForTab(tabId, get().conversationId);
+      const savedId = await getConversationIdForTab(tabId);
+      if (savedId) {
+        restoringSavedConversation = true;
+        try {
+          await get().openConversation(savedId);
+        } finally {
+          restoringSavedConversation = false;
+        }
+      } else {
+        await setConversationIdForTab(tabId, get().conversationId);
+      }
     }
 
     await consumePendingAskForTab(tabId);
@@ -850,9 +1003,18 @@ export const useChat = create<ChatState>((set, get) => ({
       invalidateActiveRun(set, get);
       conversationEpoch += 1;
     }
+    // 落盘现在完全在 background；不把"这个会话被删了"同步过去，一轮还在飞的 run 结束时
+    // 会用 replaceConversationMessages 把刚删掉的会话整行写回去，用户看到它复活
+    // （CLAUDE.md 的 delete tombstone 约束，跨进程版本）。
+    // 无条件发送、且发在删除动作之前：历史抽屉里删掉的会话可能正在另一个 tab 上跑，
+    // 只有 background 能把 conversationId 关联回持有它的 RunState；而等删除完成再发的话，
+    // 这段等待窗口正好是最容易被迟到快照复活的那一段。
+    notifyConversationDeleted(id, true);
     try {
       await beginConversationDeletion(id);
     } catch (error) {
+      // 删除最终失败 = 会话还在。撤销上面的标记，否则这个会话此后再也写不进 Dexie。
+      notifyConversationDeleted(id, false);
       if (removingActive && get().conversationId === id) set({ error: errMsg(error) });
       return;
     }
@@ -866,7 +1028,6 @@ export const useChat = create<ChatState>((set, get) => ({
         get().disposeAttachments();
         invalidateActiveRun(set, get);
         conversationEpoch += 1;
-        clearAllSlowActivityTimers();
         set({
           messages: [],
           activitySteps: [],
@@ -1036,7 +1197,6 @@ async function runAgent(
     committedImages = images.length ? images : undefined;
   }
   if (options.clearAttachments) cancelPendingAttachments(get().pendingAttachments);
-  clearAllSlowActivityTimers();
   set({
     messages: [...history, committedDisplay, makeMessage('assistant', '')],
     activitySteps: [],

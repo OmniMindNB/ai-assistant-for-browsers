@@ -152,7 +152,6 @@ export const zh = {
   'agentActivity.tool.scroll': '滚动',
   'agentActivity.tool.unknown': '浏览器操作',
   'agentActivity.actionFailed': '{action}失败',
-  'agentActivity.slowSuffix': '……时间较长，可能需要再等一下',
   'agentActivity.now.inspectFocus': '正在检查页面实现（聚焦 "{target}"）',
   'agentActivity.done.inspectFocus': '已检查页面实现（聚焦 "{target}"）',
   'agentActivity.failed.inspectFocus': '检查页面实现（聚焦 "{target}"）失败',
@@ -274,8 +273,6 @@ export const zh = {
   'store.noProviderConfigured': '未配置 Provider，请在「设置」中添加 API Key。',
   'store.missingApiKey': '当前 Provider 未填写 API Key，请在「设置」中补全。',
   'store.messageNotFound': '这条消息已不在当前对话中。',
-  'store.staleBackgroundWarning':
-    '当前扩展后台服务仍是旧版本，浏览器 Agent 工具尚未加载，因此我不会基于猜测回答。\n\n缺失消息类型：{missingTypes}\n\n请在浏览器扩展管理页点击 Runi 的「重新加载」，然后刷新当前网页并重新打开侧边栏。',
   'store.modelCallFailed': '模型调用失败：{reason}\n\n请检查设置中的 Base URL、API Key 和模型名称是否正确。',
   'store.modelCallNetworkError':
     '无法连接到模型服务（{reason}）。这通常是网络问题，而非配置错误，请检查：\n1. 当前设备是否联网\n2. 是否需要科学上网 / 代理才能访问该 Base URL\n3. Base URL 是否可从当前网络访问（例如是否被防火墙拦截）\n\n若网络确认正常，再检查设置中的 Base URL、API Key 和模型名称。',

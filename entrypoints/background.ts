@@ -61,7 +61,17 @@ import { clearConversationIdForTab } from '@/lib/agent/tab-conversation';
 import { clearPendingAskForTab, setPendingAskForTab } from '@/lib/agent/tab-pending-ask';
 import { clearTabSession } from '@/lib/agent/tab-session-storage';
 import { AGENT_RUN_PORT_NAME, type PanelToBackground } from '@/lib/agent/run-port-protocol';
-import { startRun, respondConfirm, respondQuestion, stopRun, attachPort, detachPort, scanForOrphans } from '@/lib/agent/run-registry';
+import {
+  startRun,
+  respondConfirm,
+  respondQuestion,
+  stopRun,
+  attachPort,
+  detachPort,
+  scanForOrphans,
+  markConversationDeleted,
+  unmarkConversationDeleted,
+} from '@/lib/agent/run-registry';
 import { loadLocale, applyLocale, LOCALE_KEY } from '@/lib/i18n';
 import {
   SIDE_PANEL_PATH,
@@ -142,18 +152,54 @@ export default defineBackground(() => {
   // 推送路径（Task 6 的面板实现相应地不需要特殊处理 orphanResolved 消息类型）。
   scanForOrphans().catch((err: unknown) => console.error('[Runi] scanForOrphans:', err));
 
+  // chrome.alarms 只把事件派发给已注册的监听器；没有监听器时 alarm 触发不会唤醒/续命
+  // service worker，run-registry.ts 里那个 20s 周期的保活 alarm 就完全是空转。
+  // 这个回调**有意为空**：让 Chrome 有一个事件可派发、从而重置空闲回收计时器，本身就是
+  // 保活的全部作用，不需要任何业务逻辑（ref: 实现计划 Task 4 Step 4）。
+  browser.alarms.onAlarm.addListener(() => {
+    // 有意留空，见上方注释。
+  });
+
   browser.runtime.onConnect.addListener((port) => {
     if (port.name !== AGENT_RUN_PORT_NAME) return;
+
+    // 这条 Port 承载确认闸门的应答（本项目最主要的 human-in-the-loop 安全控制）与
+    // startRun/stop，只接受来自本扩展自己的侧边栏文档的连接。用 runtime.getURL 拼出的
+    // 完整 chrome-extension:// 前缀做 startsWith 比对，而不是对路径做 includes——
+    // 后者会被 https://evil.example/sidepanel.html 这样的页面地址蒙混过关。
+    // getURL 的 WXT 类型要求以 `/` 开头的 public path；SIDE_PANEL_PATH 本身是 manifest 里
+    // 用的相对写法，这里补上前导斜杠，结果是同一个 chrome-extension://<id>/sidepanel.html。
+    const sidePanelUrl = browser.runtime.getURL(`/${SIDE_PANEL_PATH}`);
+    if (!port.sender?.url?.startsWith(sidePanelUrl)) {
+      console.warn('[Runi] 拒绝非侧边栏来源的 agent-run Port 连接:', port.sender?.url);
+      port.disconnect();
+      return;
+    }
+
     let boundTabId: number | undefined;
     port.onMessage.addListener((raw: unknown) => {
       const message = raw as PanelToBackground;
+      if (message.type === 'hello') {
+        boundTabId = message.tabId;
+        const snapshot = attachPort(message.tabId, port);
+        // 没有存活 run 时也必须显式回一条：面板靠这条回包决定"用背景的权威快照重建，
+        // 还是回退到从 Dexie 读历史"，沉默会让每次冷挂载都白等一次超时。
+        port.postMessage(
+          snapshot ? { type: 'snapshot', ...snapshot } : { type: 'noRun', tabId: message.tabId },
+        );
+        return;
+      }
+
+      // hello 是这条连接唯一一次声明身份的机会；此后每条消息都必须指向同一个 tabId，
+      // 否则一个面板可以替另一个 tab 批准确认卡片、中止别人的 run。
+      if (boundTabId === undefined || message.tabId !== boundTabId) {
+        console.warn(
+          `[Runi] 忽略与 hello 绑定 tabId(${String(boundTabId)}) 不符的 agent-run 消息：${message.type} tabId=${message.tabId}`,
+        );
+        return;
+      }
+
       switch (message.type) {
-        case 'hello': {
-          boundTabId = message.tabId;
-          const snapshot = attachPort(message.tabId, port);
-          if (snapshot) port.postMessage({ type: 'snapshot', ...snapshot });
-          break;
-        }
         case 'startRun':
           void startRun(message);
           break;
@@ -165,6 +211,12 @@ export default defineBackground(() => {
           break;
         case 'stop':
           stopRun(message.tabId);
+          break;
+        case 'conversationDeleted':
+          // 面板删掉的会话可能正被另一个 tab 上的 run 持有——只有这里能把 conversationId
+          // 关联回持有它的 RunState，所以不按 tabId 过滤会话身份本身。
+          if (message.deleted) markConversationDeleted(message.conversationId);
+          else unmarkConversationDeleted(message.conversationId);
           break;
       }
     });

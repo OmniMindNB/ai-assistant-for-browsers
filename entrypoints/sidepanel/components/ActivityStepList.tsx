@@ -1,11 +1,8 @@
 import { useEffect, useRef } from 'react';
-import { useTranslation } from '@/lib/i18n';
 import { IconCheck, IconClose } from '../icons';
 import type { ActivityStep } from '../store';
 
 export function ActivityStepList({ steps }: { steps: ActivityStep[] }) {
-  const { t } = useTranslation();
-  const slowSuffix = t('agentActivity.slowSuffix');
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -21,14 +18,14 @@ export function ActivityStepList({ steps }: { steps: ActivityStep[] }) {
       className="flex max-h-32 flex-col gap-1 overflow-y-auto px-1 text-xs"
     >
       {steps.map((step) => (
-        <ActivityStepRow key={step.id} step={step} slowSuffix={slowSuffix} />
+        <ActivityStepRow key={step.id} step={step} />
       ))}
     </div>
   );
 }
 
-function ActivityStepRow({ step, slowSuffix }: { step: ActivityStep; slowSuffix: string }) {
-  const text = step.status === 'running' && step.slow ? `${step.description}${slowSuffix}` : step.description;
+function ActivityStepRow({ step }: { step: ActivityStep }) {
+  const text = step.description;
 
   if (step.status === 'running') {
     return (

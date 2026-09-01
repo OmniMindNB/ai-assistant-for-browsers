@@ -63,12 +63,32 @@ export interface StopMessage {
   tabId: number;
 }
 
+/**
+ * 面板 -> background：某个会话已被用户删除（或那次删除最终失败、需要撤销标记）。
+ *
+ * 持久化现在完全发生在 background（run-registry.ts 的 persistMessages / scanForOrphans），
+ * 而"这个会话已经被删掉了"这件事只有面板知道——不同步过去的话，一轮还在飞的 run 结束时
+ * 会用 replaceConversationMessages 把刚被删掉的会话整行重新写回 Dexie，用户看到它复活
+ * （CLAUDE.md 里"delete tombstones，迟到的快照不能复活已删除会话"这条既有约束的跨进程版本）。
+ *
+ * 不限定"必须是本面板当前打开的那个会话"：历史抽屉里删掉的会话可能正在另一个 tab 上跑，
+ * 只有 background 能把 conversationId 关联回持有它的 RunState。
+ */
+export interface ConversationDeletedMessage {
+  type: 'conversationDeleted';
+  tabId: number;
+  conversationId: string;
+  /** true=已删除，落盘要跳过；false=删除失败、会话还在，撤销之前的标记。 */
+  deleted: boolean;
+}
+
 export type PanelToBackground =
   | HelloMessage
   | StartRunRequest
   | RespondConfirmMessage
   | RespondQuestionMessage
-  | StopMessage;
+  | StopMessage
+  | ConversationDeletedMessage;
 
 /** background 侧运行态的完整快照——格式化好、可以直接渲染，面板不做任何 i18n/文案拼接。 */
 export interface RunSnapshot {
@@ -94,4 +114,17 @@ export interface OrphanResolvedMessage {
   messages: ChatMessage[];
 }
 
-export type BackgroundToPanel = SnapshotMessage | OrphanResolvedMessage;
+/**
+ * background -> 面板：`hello` 的否定回包——这个 tabId 当前没有任何存活的 run。
+ *
+ * 必须显式回一条而不是"沉默即没有"：面板重开时要先知道"背景手上有没有正在跑的 run"，
+ * 才能决定是采用背景推来的权威快照、还是回退到从 Dexie 读历史那条老路径
+ * （见 store.ts 的 restoreTabConversation）。沉默的话面板只能靠超时猜，
+ * 而超时猜测会让每一次正常的冷面板挂载都白等一次超时。
+ */
+export interface NoRunMessage {
+  type: 'noRun';
+  tabId: number;
+}
+
+export type BackgroundToPanel = SnapshotMessage | OrphanResolvedMessage | NoRunMessage;

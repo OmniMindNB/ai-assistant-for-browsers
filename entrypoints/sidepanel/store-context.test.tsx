@@ -34,13 +34,43 @@ function emitStorageChange(changes: Record<string, { newValue?: unknown }>, area
 // 加载时的副作用），所以这段不需要像上面的 storageListeners 一样抢在 import 之前跑——
 // 普通赋值就够了，只要排在 `import { useChat } from './store'` 之前即可。
 let runPortListener: ((message: unknown) => void) | undefined;
+let runPortDisconnectListener: (() => void) | undefined;
+/** background 对 `hello` 的回包。默认"这个 tab 没有存活的 run"，个别用例改成一份
+ * in-flight 快照，模拟面板重开时正好撞上一轮还在跑的任务。 */
+let runPortHelloReply: unknown = null;
+
+/**
+ * 一个尽量贴近 chrome.runtime.Port 真实行为的替身——关键是**断开之后 postMessage 会抛**
+ * （"Attempting to use a disconnected port object"）。用一个断开后依然乖乖收消息的假 Port，
+ * "断线后用户动作丢失"这个 bug 在测试里根本不会显形。
+ */
+function makeFakeRunPort() {
+  let disconnected = false;
+  const port = {
+    postMessage: (message: any) => {
+      if (disconnected) throw new Error('Attempting to use a disconnected port object');
+      mocks.runPortPostMessage(message);
+      if (message?.type === 'hello') {
+        const reply = runPortHelloReply ?? { type: 'noRun', tabId: message.tabId };
+        runPortListener?.(reply);
+      }
+    },
+    onMessage: { addListener: (fn: (message: unknown) => void) => { runPortListener = fn; } },
+    onDisconnect: {
+      addListener: (fn: () => void) => {
+        runPortDisconnectListener = () => {
+          disconnected = true;
+          fn();
+        };
+      },
+    },
+  };
+  return port;
+}
+
 (globalThis as any).browser.runtime = {
   ...(globalThis as any).browser.runtime,
-  connect: vi.fn(() => ({
-    postMessage: mocks.runPortPostMessage,
-    onMessage: { addListener: (fn: (message: unknown) => void) => { runPortListener = fn; } },
-    onDisconnect: { addListener: () => undefined },
-  })),
+  connect: vi.fn(() => makeFakeRunPort()),
 };
 
 vi.mock('@/lib/messaging', async (importOriginal) => ({
@@ -149,6 +179,8 @@ describe('chat store page context', () => {
     mocks.listConversations.mockReset().mockResolvedValue([]);
     mocks.extractPdfAttachment.mockReset().mockResolvedValue({ ok: false, reason: 'parse-failed' });
     runPortListener = undefined;
+    runPortDisconnectListener = undefined;
+    runPortHelloReply = null;
     (globalThis as typeof globalThis & { browser: any }).browser.storage.local.get = vi.fn().mockResolvedValue({});
     useChat.setState({
       messages: [],
@@ -379,6 +411,123 @@ describe('chat store page context', () => {
     useChat.setState({ conversationId: 'A' });
     emitSnapshot({ tabId: 7, conversationId: 'A', busy: false, messages: [{ id: 'right', role: 'assistant', content: 'applied', createdAt: 1 }] });
     expect(useChat.getState().messages).toEqual([{ id: 'right', role: 'assistant', content: 'applied', createdAt: 1 }]);
+  });
+
+  // Chrome 会主动销毁侧边栏文档（切标签页、手动关闭），但 background 里的 run 继续跑。
+  // 重开的面板是一份全新的模块状态：activeRun 是 null，conversationId 是新随机生成的。
+  // 这两条用例覆盖的正是"重开后能不能重新接上那一轮"——本次迁移的第二个目标
+  // （设计文档 §2："面板重开后重建出完整的当前状态"）。
+  describe('reconnecting a freshly reopened panel to an in-flight background run', () => {
+    const liveMessages = [
+      { id: 'u1', role: 'user', content: '帮我填这个表单', createdAt: 1 },
+      { id: 'a1', role: 'assistant', content: '正在填写…', createdAt: 2 },
+    ];
+
+    function armLiveRunHelloReply(): void {
+      runPortHelloReply = {
+        type: 'snapshot',
+        tabId: DEFAULT_TAB_ID,
+        conversationId: 'live-conv',
+        busy: true,
+        messages: liveMessages,
+        activitySteps: [{ id: 'call-1', description: '正在填写表单', status: 'running' }],
+        pendingConfirmation: { toolCallId: 'call-1', toolName: 'browser_fill_form', summary: '提交登录表单' },
+        pendingQuestion: null,
+      };
+    }
+
+    it('adopts the in-flight snapshot returned by the hello handshake instead of loading stale Dexie history', async () => {
+      armLiveRunHelloReply();
+      // 这一轮不是本面板发起的（本用例从头到尾没有调用 send()/runAgent）——正是"面板被销毁后
+      // 重开"的场景：新文档里 activeRun 一开始就是 null。
+      await connectPort();
+
+      expect(useChat.getState()).toMatchObject({
+        conversationId: 'live-conv',
+        busy: true,
+        messages: liveMessages,
+        activitySteps: [{ id: 'call-1', status: 'running' }],
+        pendingConfirmation: { toolCallId: 'call-1', toolName: 'browser_fill_form' },
+      });
+      // 走了快照这条路径就不该再去 Dexie 读历史——那份历史可能落后于还没落盘的流式增量，
+      // 而且 openConversation 会顺手把 busy/activitySteps 清掉。
+      expect(mocks.getConversationMessages).not.toHaveBeenCalled();
+      // tabId -> conversationId 映射要跟着这份被采纳的会话走，否则下次重开又对不上。
+      expect((globalThis as any).browser.storage.session.set)
+        .toHaveBeenCalledWith({ [`runi:tab-conversation:${DEFAULT_TAB_ID}`]: 'live-conv' });
+    });
+
+    it('settles the reconnected run when its final non-busy snapshot arrives', async () => {
+      armLiveRunHelloReply();
+      await connectPort();
+
+      const finalMessages = [
+        ...liveMessages.slice(0, 1),
+        { id: 'a1', role: 'assistant', content: '已填写并提交。', createdAt: 3 },
+      ];
+      emitSnapshot({
+        tabId: DEFAULT_TAB_ID,
+        conversationId: 'live-conv',
+        busy: false,
+        messages: finalMessages,
+        activitySteps: [],
+        pendingConfirmation: null,
+      });
+
+      expect(useChat.getState()).toMatchObject({
+        busy: false,
+        messages: finalMessages,
+        activitySteps: [],
+        pendingConfirmation: null,
+      });
+
+      // settleRun 已经把 activeRun 清空：此后的 stop() 不该再往 Port 上发东西。
+      mocks.runPortPostMessage.mockClear();
+      useChat.getState().stop();
+      expect(mocks.runPortPostMessage).not.toHaveBeenCalled();
+    });
+  });
+
+  it('reconnects and resends instead of losing a user action taken while the port is down', async () => {
+    // MV3 会定期回收空闲的 service worker，连带断开每一条 Port。断开后面板手里那个 Port
+    // 对象已经死了，postMessage 会抛 "Attempting to use a disconnected port object"。
+    await connectPort();
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    await useChat.getState().send('long running task');
+    expect(runPortDisconnectListener).toBeDefined();
+
+    runPortDisconnectListener!();
+    mocks.runPortPostMessage.mockClear();
+
+    useChat.getState().stop();
+
+    // 新连接上先补一次 hello（重新登记成这个 tab 的监听者），随后 stop 必须真的送达。
+    expect(mocks.runPortPostMessage).toHaveBeenCalledWith({ type: 'hello', tabId: 7 });
+    expect(mocks.runPortPostMessage).toHaveBeenCalledWith({ type: 'stop', tabId: 7 });
+  });
+
+  it('tells background a conversation was deleted so an in-flight run cannot resurrect it', async () => {
+    await connectPort();
+
+    await useChat.getState().removeConversation('doomed-conv');
+
+    expect(mocks.runPortPostMessage).toHaveBeenCalledWith({
+      type: 'conversationDeleted', tabId: 7, conversationId: 'doomed-conv', deleted: true,
+    });
+  });
+
+  it('withdraws the deletion notice when the delete itself fails, so the conversation stays writable', async () => {
+    await connectPort();
+    mocks.deleteConversation.mockRejectedValueOnce(new Error('db is on fire'));
+
+    await useChat.getState().removeConversation('survivor-conv');
+
+    expect(mocks.runPortPostMessage).toHaveBeenCalledWith({
+      type: 'conversationDeleted', tabId: 7, conversationId: 'survivor-conv', deleted: true,
+    });
+    expect(mocks.runPortPostMessage).toHaveBeenCalledWith({
+      type: 'conversationDeleted', tabId: 7, conversationId: 'survivor-conv', deleted: false,
+    });
   });
 
   it('keeps a newly opened conversation untouched when the previous run in the old conversation later settles', async () => {

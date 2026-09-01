@@ -20,8 +20,30 @@ vi.mock('./run-state-storage', () => ({
   listOrphanRunTabIds: vi.fn(async () => []),
 }));
 
-import { startRun, getRunState, respondConfirm, respondQuestion, stopRun, attachPort, detachPort } from './run-registry';
+import {
+  startRun,
+  getRunState,
+  respondConfirm,
+  respondQuestion,
+  stopRun,
+  attachPort,
+  detachPort,
+  markConversationDeleted,
+  unmarkConversationDeleted,
+} from './run-registry';
 import type { StartRunRequest } from './run-port-protocol';
+
+/** 大部分用例并不关心 alarms，但 startRun/scanForOrphans 都会碰它；统一装一份可断言的替身。 */
+function installAlarmsStub(): void {
+  (globalThis as any).browser = {
+    ...(globalThis as any).browser,
+    alarms: {
+      create: vi.fn(),
+      clear: vi.fn(async () => true),
+      onAlarm: { addListener: vi.fn() },
+    },
+  };
+}
 
 function makeFakeAgent(events: unknown[]) {
   let listener: ((event: unknown) => void) | undefined;
@@ -51,6 +73,18 @@ function makeRequest(overrides: Partial<StartRunRequest> = {}): StartRunRequest 
     readToolCallBudget: 12,
     writeToolCallBudget: 24,
     ...overrides,
+  };
+}
+
+function makeOrphanSnapshot(tabId: number, conversationId: string) {
+  return {
+    tabId,
+    conversationId,
+    busy: true,
+    messages: [{ id: 'u1', role: 'user' as const, content: 'hi', createdAt: 1 }],
+    activitySteps: [],
+    pendingConfirmation: null,
+    pendingQuestion: null,
   };
 }
 
@@ -289,16 +323,7 @@ describe('run-registry confirm/question/stop/port', () => {
 });
 
 describe('run-registry keepalive alarm', () => {
-  beforeEach(() => {
-    (globalThis as any).browser = {
-      ...(globalThis as any).browser,
-      alarms: {
-        create: vi.fn(),
-        clear: vi.fn(async () => true),
-        onAlarm: { addListener: vi.fn() },
-      },
-    };
-  });
+  beforeEach(installAlarmsStub);
 
   it('registers a keepalive alarm while a run is in-flight and clears it when the run settles', async () => {
     const agent = makeFakeAgent([]);
@@ -352,5 +377,237 @@ describe('run-registry orphan scan', () => {
     vi.mocked(listOrphanRunTabIds).mockResolvedValueOnce([]);
     const { scanForOrphans } = await import('./run-registry');
     expect(await scanForOrphans()).toEqual([]);
+  });
+
+  // service worker 中途死掉时 startRun 的 finally 从没跑过，那个 20s 周期的保活 alarm
+  // 会一直留在 chrome.alarms 里空转，冷启动后没有任何代码再去清它。
+  it('clears the leaked keepalive alarm belonging to each orphan tab', async () => {
+    installAlarmsStub();
+    const { listOrphanRunTabIds, loadRunStateSnapshot } = await import('./run-state-storage');
+    vi.mocked(listOrphanRunTabIds).mockResolvedValueOnce([98]);
+    vi.mocked(loadRunStateSnapshot).mockResolvedValueOnce(makeOrphanSnapshot(98, 'conv-orphan'));
+
+    const { scanForOrphans } = await import('./run-registry');
+    await scanForOrphans();
+
+    expect((globalThis as any).browser.alarms.clear).toHaveBeenCalledWith('runi:agent-keepalive:98');
+  });
+
+  // 写失败时如果照样把 storage.session 里的快照清掉，用户既看不到失败消息（写没落盘），
+  // 也永久失去了重试的依据——这一轮的历史静默消失。
+  it('keeps the storage.session snapshot when the Dexie recovery write fails, so a later cold start can retry', async () => {
+    installAlarmsStub();
+    const { listOrphanRunTabIds, loadRunStateSnapshot, clearRunStateSnapshot } = await import('./run-state-storage');
+    vi.mocked(listOrphanRunTabIds).mockResolvedValueOnce([97]);
+    vi.mocked(loadRunStateSnapshot).mockResolvedValueOnce(makeOrphanSnapshot(97, 'conv-write-fails'));
+    vi.mocked(clearRunStateSnapshot).mockClear();
+    mocks.replaceConversationMessages.mockRejectedValueOnce(new Error('IndexedDB is unavailable'));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const { scanForOrphans } = await import('./run-registry');
+      await scanForOrphans();
+    } finally {
+      consoleError.mockRestore();
+    }
+
+    expect(vi.mocked(clearRunStateSnapshot)).not.toHaveBeenCalledWith(97);
+  });
+
+  it('still clears the snapshot when the recovery write succeeds', async () => {
+    installAlarmsStub();
+    const { listOrphanRunTabIds, loadRunStateSnapshot, clearRunStateSnapshot } = await import('./run-state-storage');
+    vi.mocked(listOrphanRunTabIds).mockResolvedValueOnce([96]);
+    vi.mocked(loadRunStateSnapshot).mockResolvedValueOnce(makeOrphanSnapshot(96, 'conv-write-ok'));
+    vi.mocked(clearRunStateSnapshot).mockClear();
+
+    const { scanForOrphans } = await import('./run-registry');
+    await scanForOrphans();
+
+    expect(vi.mocked(clearRunStateSnapshot)).toHaveBeenCalledWith(96);
+  });
+});
+
+// 会话删除的墓碑约束（CLAUDE.md：迟到的快照不能复活已删除会话）在迁移前完全活在
+// store.ts 的 persistConversationSnapshot 里；落盘搬到 background 之后，那份检查必须
+// 跟着搬过来，否则用户删掉一个正在跑的会话，run 结束时会把它整行写回 Dexie。
+describe('run-registry deleted-conversation tombstone', () => {
+  beforeEach(installAlarmsStub);
+
+  it('skips the settle-time Dexie write for a conversation deleted mid-run', async () => {
+    let resolvePrompt!: () => void;
+    const agent = makeFakeAgent([]);
+    agent.prompt = vi.fn(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
+    mocks.createBrowserAgent.mockReturnValue(agent);
+
+    await startRun(makeRequest({ tabId: 60, conversationId: 'deleted-mid-run' }));
+    // 开轮时的那次落盘照常发生（用户消息不能等到轮次结束才写）。
+    expect(mocks.replaceConversationMessages).toHaveBeenCalledWith(
+      'deleted-mid-run', expect.any(Array), expect.any(String),
+    );
+
+    // 用户在 run 还在飞的时候从历史抽屉里删掉了这个会话。
+    markConversationDeleted('deleted-mid-run');
+    mocks.replaceConversationMessages.mockClear();
+
+    resolvePrompt();
+    await vi.waitFor(() => expect(getRunState(60)).toBeUndefined());
+
+    expect(mocks.replaceConversationMessages).not.toHaveBeenCalled();
+    unmarkConversationDeleted('deleted-mid-run');
+  });
+
+  it('resumes writing after the mark is withdrawn (the delete itself failed)', async () => {
+    markConversationDeleted('delete-failed');
+    unmarkConversationDeleted('delete-failed');
+    const agent = makeFakeAgent([]);
+    mocks.createBrowserAgent.mockReturnValue(agent);
+
+    await startRun(makeRequest({ tabId: 61, conversationId: 'delete-failed' }));
+
+    expect(mocks.replaceConversationMessages).toHaveBeenCalledWith(
+      'delete-failed', expect.any(Array), expect.any(String),
+    );
+  });
+
+  it('skips the orphan recovery write for a conversation that was deleted', async () => {
+    installAlarmsStub();
+    const { listOrphanRunTabIds, loadRunStateSnapshot, clearRunStateSnapshot } = await import('./run-state-storage');
+    vi.mocked(listOrphanRunTabIds).mockResolvedValueOnce([95]);
+    vi.mocked(loadRunStateSnapshot).mockResolvedValueOnce(makeOrphanSnapshot(95, 'orphan-deleted'));
+    vi.mocked(clearRunStateSnapshot).mockClear();
+    markConversationDeleted('orphan-deleted');
+    mocks.replaceConversationMessages.mockClear();
+
+    const { scanForOrphans } = await import('./run-registry');
+    await scanForOrphans();
+
+    expect(mocks.replaceConversationMessages).not.toHaveBeenCalled();
+    // 快照仍然要清掉：没有可写的目标了，留着只会让每次冷启动重复处理同一条孤儿。
+    expect(vi.mocked(clearRunStateSnapshot)).toHaveBeenCalledWith(95);
+    unmarkConversationDeleted('orphan-deleted');
+  });
+});
+
+describe('run-registry surfaces a thrown agent.prompt error', () => {
+  beforeEach(installAlarmsStub);
+
+  it('writes user-visible error text into the assistant message instead of leaving it empty', async () => {
+    const agent = makeFakeAgent([]);
+    agent.prompt = vi.fn(async () => { throw new Error('boom from the provider'); });
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    mocks.replaceConversationMessages.mockClear();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      await startRun(makeRequest({ tabId: 62, conversationId: 'conv-throws' }));
+      await vi.waitFor(() => expect(getRunState(62)).toBeUndefined());
+    } finally {
+      consoleError.mockRestore();
+    }
+
+    const lastCall = mocks.replaceConversationMessages.mock.calls.at(-1) as unknown[];
+    const persisted = lastCall[1] as { role: string; content: string }[];
+    const assistant = persisted.filter((message) => message.role === 'assistant').at(-1);
+    expect(assistant?.content).toBeTruthy();
+    expect(assistant?.content).toContain('boom from the provider');
+  });
+
+  it('keeps already-streamed text and appends the error rather than replacing it', async () => {
+    let listener: ((event: unknown) => void) | undefined;
+    const agent = {
+      subscribe: vi.fn((fn: (event: unknown) => void) => { listener = fn; return () => { listener = undefined; }; }),
+      prompt: vi.fn(async () => {
+        listener?.({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '第一步已完成，' } });
+        throw new Error('connection reset');
+      }),
+      abort: vi.fn(),
+      state: { messages: [] },
+    };
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    mocks.replaceConversationMessages.mockClear();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      await startRun(makeRequest({ tabId: 63, conversationId: 'conv-partial' }));
+      await vi.waitFor(() => expect(getRunState(63)).toBeUndefined());
+    } finally {
+      consoleError.mockRestore();
+    }
+
+    const lastCall = mocks.replaceConversationMessages.mock.calls.at(-1) as unknown[];
+    const persisted = lastCall[1] as { role: string; content: string }[];
+    const assistant = persisted.filter((message) => message.role === 'assistant').at(-1);
+    expect(assistant?.content).toContain('第一步已完成，');
+    expect(assistant?.content).toContain('connection reset');
+  });
+
+  // 用户点"停止"时 agent.abort() 会让 prompt() 抛 AbortError；那不是故障，
+  // 迁移前的 store.ts 对这条路径就是"保留已生成内容、不报错"。
+  it('treats a user abort as a stop rather than a model failure', async () => {
+    const agent = makeFakeAgent([]);
+    agent.prompt = vi.fn(async () => {
+      const error = new Error('The operation was aborted.');
+      error.name = 'AbortError';
+      throw error;
+    });
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    mocks.replaceConversationMessages.mockClear();
+
+    await startRun(makeRequest({ tabId: 64, conversationId: 'conv-aborted' }));
+    await vi.waitFor(() => expect(getRunState(64)).toBeUndefined());
+
+    const lastCall = mocks.replaceConversationMessages.mock.calls.at(-1) as unknown[];
+    const persisted = lastCall[1] as { role: string; content: string }[];
+    const assistant = persisted.filter((message) => message.role === 'assistant').at(-1);
+    expect(assistant?.content).toBeTruthy();
+    expect(assistant?.content).not.toContain('The operation was aborted.');
+  });
+});
+
+describe('run-registry confirmation summary target tab', () => {
+  beforeEach(installAlarmsStub);
+
+  function lastOnConfirm(): (toolCallId: string, toolName: string, args: unknown) => Promise<boolean> {
+    const options = (mocks.createBrowserAgent.mock.calls.at(-1) as unknown[])[0] as {
+      onConfirm: (toolCallId: string, toolName: string, args: unknown) => Promise<boolean>;
+    };
+    return options.onConfirm;
+  }
+
+  function lastPendingConfirmation(posted: any[]): any {
+    return posted.map((message) => message?.pendingConfirmation).filter(Boolean).at(-1);
+  }
+
+  it('annotates the summary with the operating tab when it is not the panel tab', async () => {
+    const agent = makeFakeAgent([]);
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    mocks.loadTabSession.mockResolvedValueOnce({
+      panelTabId: 70,
+      currentTabId: 88,
+      trackedTabs: [{ id: 70 }, { id: 88, title: '网上银行', url: 'https://bank.example/pay' }],
+    } as never);
+    const posted: any[] = [];
+    attachPort(70, { postMessage: (message) => posted.push(message) });
+
+    await startRun(makeRequest({ tabId: 70 }));
+    void lastOnConfirm()('call-cross-tab', 'browser_click', { selector: '#pay' });
+
+    const pending = lastPendingConfirmation(posted);
+    expect(pending.summary).toContain('将操作标签页：《网上银行》(https://bank.example/pay)');
+    expect(pending.summary).toContain('AI 想要点击 "#pay"。');
+  });
+
+  it('omits the annotation when the operating tab is the panel tab itself', async () => {
+    const agent = makeFakeAgent([]);
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    const posted: any[] = [];
+    attachPort(71, { postMessage: (message) => posted.push(message) });
+
+    await startRun(makeRequest({ tabId: 71 }));
+    void lastOnConfirm()('call-same-tab', 'browser_click', { selector: '#pay' });
+
+    const pending = lastPendingConfirmation(posted);
+    expect(pending.summary).toBe('AI 想要点击 "#pay"。');
   });
 });

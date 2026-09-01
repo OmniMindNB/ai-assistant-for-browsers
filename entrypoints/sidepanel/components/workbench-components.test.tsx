@@ -870,16 +870,7 @@ describe('activity step list', () => {
     expect(doneText.closest('div')?.className).toContain('text-neutral-400');
   });
 
-  it('appends the slow suffix to a running step marked slow', () => {
-    render(
-      <LocaleProvider>
-        <ActivityStepList steps={[{ id: 'call-1', description: 'Reading page', status: 'running', slow: true }]} />
-      </LocaleProvider>,
-    );
-    expect(screen.getByText('Reading page… this is taking longer than usual')).toBeVisible();
-  });
-
-  it('does not append the slow suffix to a running step that is not slow', () => {
+  it('renders a running step description verbatim', () => {
     render(
       <LocaleProvider>
         <ActivityStepList steps={[{ id: 'call-1', description: 'Reading page', status: 'running' }]} />

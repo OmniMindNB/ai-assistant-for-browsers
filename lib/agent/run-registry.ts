@@ -48,6 +48,34 @@ interface RunState {
 
 const runs = new Map<number, RunState>();
 
+/**
+ * 被面板删除过的会话 id（见 run-port-protocol.ts 的 ConversationDeletedMessage）。
+ *
+ * 落盘现在全在 background 侧，而"这个会话已经被删了"只有面板知道；不记下来的话，
+ * 一轮还在飞的 run 结束时会把刚被删掉的会话整行写回 Dexie，用户看到它复活。
+ *
+ * 生命周期与 service worker 一致（冷启动即清空），这与它取代的那套面板侧 Set
+ * （随面板文档销毁而清空）的时效范围是同一量级，够用；再加一个大小上限，
+ * 避免长时间不重启的 worker 里这个集合无界增长。
+ */
+const deletedConversationIds = new Set<string>();
+const MAX_TRACKED_DELETED_CONVERSATIONS = 500;
+
+/** 面板删除了一个会话：此后所有针对它的 Dexie 写入都跳过。 */
+export function markConversationDeleted(conversationId: string): void {
+  deletedConversationIds.add(conversationId);
+  while (deletedConversationIds.size > MAX_TRACKED_DELETED_CONVERSATIONS) {
+    const oldest: string | undefined = deletedConversationIds.values().next().value;
+    if (oldest === undefined) break;
+    deletedConversationIds.delete(oldest);
+  }
+}
+
+/** 那次删除最终失败、会话仍然存在：撤销标记，否则这个会话此后再也写不进 Dexie。 */
+export function unmarkConversationDeleted(conversationId: string): void {
+  deletedConversationIds.delete(conversationId);
+}
+
 export interface PortLike {
   postMessage(message: unknown): void;
 }
@@ -81,6 +109,9 @@ function pushAndPersist(state: RunState): void {
 }
 
 async function persistMessages(state: RunState): Promise<void> {
+  // 会话已被用户删除：整轮照常收尾（清运行态、清 alarm），只是不再写 Dexie——
+  // replaceConversationMessages 是"先删后整体写入"，会把已删除的会话行重新 put 回来。
+  if (deletedConversationIds.has(state.conversationId)) return;
   await replaceConversationMessages(
     state.conversationId,
     toMessageRecords(state.conversationId, state.messages),
@@ -155,6 +186,24 @@ function describeEmptyAgentRun(last: LastAssistantInfo | undefined): string {
   return t('store.noTextResult');
 }
 
+/** 用户点了"停止"（stopRun -> agent.abort()）时 prompt() 抛出的那个 AbortError。 */
+function isUserAbortError(error: unknown): boolean {
+  return Boolean(error && typeof error === 'object' && (error as { name?: unknown }).name === 'AbortError');
+}
+
+/**
+ * `agent.prompt()` 直接抛出（而不是以 stopReason:'error' 正常收尾）时的用户可见文案。
+ *
+ * 复用 describeEmptyAgentRun 里同一套 i18n 文案与网络错误判定：对用户来说"模型调用失败"
+ * 这件事没有区别，区别只在 pi-agent-core 是把失败塞进最后一条 assistant 消息、
+ * 还是让 promise reject。
+ */
+function describeThrownAgentError(error: unknown): string {
+  const reason = (error instanceof Error ? error.message : String(error)) || t('store.unknownError');
+  if (isNetworkFetchError(reason)) return t('store.modelCallNetworkError', { reason });
+  return t('store.modelCallFailed', { reason });
+}
+
 function replaceLastAssistant(state: RunState, content: string): void {
   const last = state.messages[state.messages.length - 1];
   if (!last) return;
@@ -171,7 +220,13 @@ function startKeepalive(tabId: number): void {
   browser.alarms?.create?.(keepaliveAlarmName(tabId), { periodInMinutes: KEEPALIVE_PERIOD_MINUTES });
 }
 
-function stopKeepalive(tabId: number): void {
+/**
+ * 清掉某个 tab 的保活 alarm。
+ *
+ * 导出是为了给 scanForOrphans 用：service worker 中途死掉时 startRun 的 finally 没跑过，
+ * 那个 20s 周期 alarm 会一直留在 chrome.alarms 里空转，冷启动后没人再清它。
+ */
+export function stopKeepalive(tabId: number): void {
   void browser.alarms?.clear?.(keepaliveAlarmName(tabId));
 }
 
@@ -212,7 +267,15 @@ export async function startRun(request: StartRunRequest): Promise<void> {
   pushAndPersist(state);
 
   const onConfirm = async (toolCallId: string, toolName: string, args: unknown): Promise<boolean> => {
-    const { summary, codePreview } = summarizeToolCallForConfirmation(toolName, args, undefined);
+    // 只有当前操作目标不是面板绑定的那个 tab 时才带上标注——同一个 tab 上的操作再标一遍
+    // "将操作标签页：《本页》"只是噪音（ref: confirm-summary.ts 的 targetTab 参数说明）。
+    // 读的是 state.session 的实时字段而不是 startRun 那一刻的值：browser_open_tab /
+    // browser_switch_tab 会在一轮之内改变 currentTabId。
+    const targetTab =
+      state.session.currentTabId !== state.tabId
+        ? state.session.trackedTabs.find((tab) => tab.id === state.session.currentTabId)
+        : undefined;
+    const { summary, codePreview } = summarizeToolCallForConfirmation(toolName, args, targetTab);
     state.pendingToolArgs.set(toolCallId, { toolName, args });
     state.pendingConfirmation = { toolCallId, toolName, summary, codePreview };
     pushAndPersist(state);
@@ -271,12 +334,10 @@ export async function startRun(request: StartRunRequest): Promise<void> {
 
     if (event.type === 'tool_execution_update' && !state.terminatedToolCallIds.has(event.toolCallId)) {
       state.pendingToolArgs.set(event.toolCallId, { toolName: event.toolName, args: event.args });
-      const existingStep = state.activitySteps.find((step) => step.id === event.toolCallId);
       state.activitySteps = upsertActivityStep(state.activitySteps, {
         id: event.toolCallId,
         description: describeToolActivity(event.toolName, event.args, 'running'),
         status: 'running',
-        slow: existingStep?.slow,
       });
       pushAndPersist(state);
     }
@@ -313,7 +374,19 @@ export async function startRun(request: StartRunRequest): Promise<void> {
       }
       replaceLastAssistant(state, acc);
     } catch (e) {
-      console.error('[Runi] agent.prompt 异常', e);
+      // 只 console.error 的话（迁移后一度就是这样），占位 assistant 消息会永远停在空内容上：
+      // 用户看到轮次结束、busy 熄灭，却没有任何回复也没有任何错误提示。把结果写进消息本身，
+      // 复用下面 finally 里已有的 persistMessages/pushAndPersist 通路，不需要给 RunSnapshot
+      // 另开一个 error 字段。
+      if (isUserAbortError(e)) {
+        // 用户主动停止不是故障：保留已经流出来的部分文本（与迁移前 store.ts 的 AbortError
+        // 分支行为一致）；一个字都还没出来时给一句明确的"已中止"，而不是留一条空气泡。
+        replaceLastAssistant(state, acc.trim() ? acc : t('store.generationAborted'));
+      } else {
+        console.error('[Runi] agent.prompt 异常', e);
+        const errorText = describeThrownAgentError(e);
+        replaceLastAssistant(state, acc.trim() ? `${acc}\n\n${errorText}` : errorText);
+      }
     } finally {
       unsubscribe();
       if (flushTimer !== null) clearTimeout(flushTimer);
@@ -366,13 +439,34 @@ export async function scanForOrphans(): Promise<import('./run-port-protocol').Or
     const messages: ChatMessage[] = last && last.role === 'assistant' && !last.content
       ? [...snapshot.messages.slice(0, -1), { ...last, content: t('store.interruptedByRestart') }]
       : [...snapshot.messages, { id: `orphan-${tabId}-${Date.now()}`, role: 'assistant' as const, content: t('store.interruptedByRestart'), createdAt: Date.now() }];
-    await replaceConversationMessages(
-      snapshot.conversationId,
-      toMessageRecords(snapshot.conversationId, messages),
-      conversationTitle(messages),
-    ).catch((e: unknown) => console.error('[Runi] 孤儿 run 恢复失败', e));
+
+    // 上一次 worker 死掉时 startRun 的 finally 没跑过，那个 20s 周期的保活 alarm
+    // 还留在 chrome.alarms 里空转。这一步与写入成功与否无关，先无条件清掉。
+    stopKeepalive(tabId);
+
+    // 会话已被用户删除：不写回 Dexie（写回等于复活），但残留的运行态快照要清掉，
+    // 否则每次冷启动都会重复处理同一条孤儿。
+    let written = deletedConversationIds.has(snapshot.conversationId);
+    if (!written) {
+      written = await replaceConversationMessages(
+        snapshot.conversationId,
+        toMessageRecords(snapshot.conversationId, messages),
+        conversationTitle(messages),
+      ).then(
+        () => true,
+        (e: unknown) => {
+          console.error('[Runi] 孤儿 run 恢复失败', e);
+          return false;
+        },
+      );
+    }
+
     resolved.push({ type: 'orphanResolved', tabId, messages });
-    await clearRunStateSnapshot(tabId);
+
+    // 只有写入确实落盘了才清 storage.session 里的快照：写失败时把它留下，
+    // 下一次冷启动还能再试一次。无条件清掉的话，用户既看不到失败消息，
+    // 也永久失去了这一轮的历史。
+    if (written) await clearRunStateSnapshot(tabId).catch(() => undefined);
   }
   return resolved;
 }
