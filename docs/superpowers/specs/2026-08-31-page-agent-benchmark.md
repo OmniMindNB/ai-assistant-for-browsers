@@ -70,7 +70,7 @@
 
 ### P1
 
-#### 3.4 抽取层的交互元素黑名单（含 React 根容器误判修复）
+#### 3.4 抽取层的交互元素黑名单（含 React 根容器误判修复）✅ 已完成（2026-09-01, e75ca20）
 
 React 常把大量事件委托挂在 `#root` / `#app` 上，导致根容器被判成"可交互元素"。
 对方 `page-controller/src/patches/react.ts` 在抽取前给这些节点打 `data-page-agent-not-interactive`，直接不进索引；
@@ -80,9 +80,17 @@ React 常把大量事件委托挂在 `#root` / `#app` 上，导致根容器被�
 元素已经进了清单、占了 token、模型已经决定点它了，才被权限层拒绝。
 
 - 落点：`lib/agent/form-dom.ts` 的 `collectFormFields`，抽取阶段前移过滤
-- 延伸：用户可配的按域名黑白名单（"这个站点的删除按钮永远不许点"）
+- 延伸：用户可配的按域名黑白名单（"这个站点的删除按钮永远不许点"）——未做，超出本次范围
+- 实现：`id === 'root' || id === 'app'` 在 `classifyInteractive` 里直接短路，语义/cursor
+  两条命中路径都不再收录该元素本身，其后代不受影响
 
-#### 3.5 渲染层属性去重
+#### 3.5 渲染层属性去重 🚫 评估后跳过（2026-09-01）
+
+复核后发现 page-agent 要解决的问题（把原始属性全部铺开导致 `aria-label`/`placeholder`/
+`title` 与可见文本重复）在我们的实现里并不存在：`form-render.ts` 已经通过
+`pickFieldLabel` 的优先级链只渲染一个派生出的 `label`，从不单独输出
+`placeholder`/`aria-label`/`role`，`type` 与 `kind` 相同时已省略，无 `label` 时才输出
+`name`，value/href 早已有长度上限。没有找到具体的重复输出可以消除，跳过。
 
 对方 `page-controller/src/dom/index.ts`（`flatTreeToString`）里一串很便宜的 token 优化：
 
@@ -93,7 +101,7 @@ React 常把大量事件委托挂在 `#root` / `#app` 上，导致根容器被�
 
 - 落点：`lib/agent/form-render.ts`，可直接吸收
 
-#### 3.6 点击的两个细节
+#### 3.6 点击的两个细节 ✅ 已完成（2026-09-01, e75ca20）
 
 均在对方 `page-controller/src/actions.ts`：
 
@@ -104,15 +112,21 @@ React 常把大量事件委托挂在 `#root` / `#app` 上，导致根容器被�
 
 - 落点：`lib/agent/form-dom.ts` 的点击实现
 - 注意：对方需要临时把 mask 切成 `pointer-events: none` 才能命中测试；我们的遮罩本来就是穿透的，无此步骤
+- 实现：`clickElementInPage` 与 `applyFormFill` 的 submit 分支（两处独立内联，序列化约束）
+  都已加上 `dispatchTarget`（命中测试后的最内层元素）与 `window.__runiLastClickTarget__`
+  跨调用状态；blur 用真正的 `.blur()` 而非合成事件，避免与后续 `.focus()` 的原生 blur 重复触发
 
-#### 3.7 `wait` 扣除 LLM 往返耗时
+#### 3.7 `wait` 扣除 LLM 往返耗时 ✅ 已完成（2026-09-01, e75ca20）
 
 对方 `wait` 工具先算 `Date.now() - getLastUpdateTime()`，只补差额时间。
 我们的 `wait` 是实打实睡满，叠加在本就很慢的 LLM 往返之上。
 
 - 落点：`lib/agent/tools.ts` 的 `wait`
+- 实现：`createBrowserTools` 维护一个所有工具共享的 `lastUpdateAt` 时间戳，每次工具调用
+  结束后更新；`wait` 用 `请求秒数 - 距上次工具调用完成已流逝的时间` 决定实际睡眠时长，
+  回报给模型的仍是原始请求的秒数
 
-#### 3.8 可滚动容器在元素清单里直接带四向剩余距离
+#### 3.8 可滚动容器在元素清单里直接带四向剩余距离 ✅ 已完成（2026-09-01, e75ca20）
 
 对方把 `data-scrollable="top=..., bottom=..., left=..., right=..."` 拼进元素行，
 模型能一次性决定滚哪个容器、还能滚多远。
@@ -120,6 +134,11 @@ React 常把大量事件委托挂在 `#root` / `#app` 上，导致根容器被�
 我们的 `scrollables` 有 `fieldId`，但剩余距离只在滚完之后由 `action-result-text.ts` 事后告知。
 
 - 落点：`lib/agent/form-dom.ts`（收集）+ `lib/agent/form-render.ts`（渲染）
+- 实现：`RawScrollableContainer` 新增 `scrollLeft`/`scrollWidth`/`clientWidth`；新增纯函数
+  `toScrollableContainerDescriptor`（`lib/agent/form-schema.ts`）把四项原始指标折算成
+  `pixelsAbove`/`pixelsBelow`/`pixelsLeft`/`pixelsRight`，替换掉 `ScrollableContainerDescriptor`
+  原来的 `scrollTop`/`scrollHeight`/`clientHeight`；`renderScrollableLine` 相应改为
+  `top=… bottom=… left=… right=…`
 
 #### 3.9 按 URL 的用户自定义指令
 
