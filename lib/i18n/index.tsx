@@ -35,7 +35,12 @@ let currentLocale: ResolvedLocale = resolveLocale('auto');
 export function applyLocale(mode: LocaleMode): ResolvedLocale {
   const resolved = resolveLocale(mode);
   currentLocale = resolved;
-  document.documentElement.lang = resolved === 'zh' ? 'zh-CN' : 'en';
+  // service worker 没有 document；background 侧调用这个函数只是为了让 t()/getCurrentLocale()
+  // 读到正确的语言（describeToolActivity 等格式化函数现在跑在 background 里，见
+  // docs/superpowers/specs/2026-09-01-agent-run-in-background-design.md 的 Global Constraints）。
+  if (typeof document !== 'undefined') {
+    document.documentElement.lang = resolved === 'zh' ? 'zh-CN' : 'en';
+  }
   return resolved;
 }
 

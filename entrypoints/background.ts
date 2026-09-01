@@ -60,6 +60,9 @@ import { clearOverlayForTab, getOverlayForTab, setOverlayForTab } from '@/lib/ag
 import { clearConversationIdForTab } from '@/lib/agent/tab-conversation';
 import { clearPendingAskForTab, setPendingAskForTab } from '@/lib/agent/tab-pending-ask';
 import { clearTabSession } from '@/lib/agent/tab-session-storage';
+import { AGENT_RUN_PORT_NAME, type PanelToBackground } from '@/lib/agent/run-port-protocol';
+import { startRun, respondConfirm, respondQuestion, stopRun, attachPort, detachPort, scanForOrphans } from '@/lib/agent/run-registry';
+import { loadLocale, applyLocale, LOCALE_KEY } from '@/lib/i18n';
 import {
   SIDE_PANEL_PATH,
   clearPanelOpenedForTab,
@@ -122,6 +125,53 @@ export default defineBackground(() => {
   // 都不会再触发，而 manifest 的 side_panel.default_path 会让全局默认悄悄恢复成"所有 tab 都开"，
   // 于是在 A 标签页打开的面板会跟着切换显示到 B 标签页上。
   syncSidePanelScope().catch((err: unknown) => console.error('[Runi] sidePanel scope sync:', err));
+
+  // background 和面板是两份独立的 lib/i18n 模块实例，各自的 currentLocale 单例互不相通。
+  // describeToolActivity/describeEmptyAgentRun 等格式化函数现在跑在 background 里（见
+  // lib/agent/run-registry.ts），必须显式把 background 自己这份 currentLocale 与用户在
+  // chrome.storage.local 里的语言偏好同步，否则永远停在 service worker 冷启动那一刻的默认值。
+  loadLocale().then(applyLocale).catch((err: unknown) => console.error('[Runi] locale sync on startup:', err));
+  browser.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'local' || !changes[LOCALE_KEY]) return;
+    loadLocale().then(applyLocale).catch((err: unknown) => console.error('[Runi] locale sync on change:', err));
+  });
+
+  // 冷启动孤儿扫描：见 lib/agent/run-registry.ts 的 scanForOrphans 文档注释。这里只是触发，
+  // 不需要处理返回值——它已经把 failure 消息写进了 Dexie；面板重连时会走 attachPort 返回
+  // undefined -> 面板照常从 Dexie 读历史，自然看到这条 failure 消息，不需要额外的 orphanResolved
+  // 推送路径（Task 6 的面板实现相应地不需要特殊处理 orphanResolved 消息类型）。
+  scanForOrphans().catch((err: unknown) => console.error('[Runi] scanForOrphans:', err));
+
+  browser.runtime.onConnect.addListener((port) => {
+    if (port.name !== AGENT_RUN_PORT_NAME) return;
+    let boundTabId: number | undefined;
+    port.onMessage.addListener((raw: unknown) => {
+      const message = raw as PanelToBackground;
+      switch (message.type) {
+        case 'hello': {
+          boundTabId = message.tabId;
+          const snapshot = attachPort(message.tabId, port);
+          if (snapshot) port.postMessage({ type: 'snapshot', ...snapshot });
+          break;
+        }
+        case 'startRun':
+          void startRun(message);
+          break;
+        case 'respondConfirm':
+          respondConfirm(message.tabId, message.toolCallId, message.approved);
+          break;
+        case 'respondQuestion':
+          respondQuestion(message.tabId, message.toolCallId, message.answer);
+          break;
+        case 'stop':
+          stopRun(message.tabId);
+          break;
+      }
+    });
+    port.onDisconnect.addListener(() => {
+      if (typeof boundTabId === 'number') detachPort(boundTabId, port);
+    });
+  });
 
   // 切换标签页时按记录逐个下发 enabled：没在这个 tab 打开过面板就显式 enabled:false，
   // Chrome 会把跟过来的面板关掉（ref: chrome.sidePanel 文档的 per-tab 示例）。
