@@ -30,7 +30,21 @@ import {
   SYSTEM_PROMPT,
 } from './system-prompt';
 
-const MAX_CONTEXT_MESSAGES = 24;
+/**
+ * 上下文窗口的高水位/低水位。
+ *
+ * 旧实现是每轮 slice(-24)：窗口每轮往前挪两条，请求前缀逐轮都不一样，供应商的前缀缓存
+ * 必然全部失效。实测（2026-09-01，DeepSeek）消息数一撞到 24，命中 token 数就从逐轮增长
+ * 变成死钉在 4224——正好是静态系统提示词的大小，意味着整段对话每轮都在重新处理。
+ *
+ * 改成迟滞：只有超过高水位才重切一次到低水位，两次重切之间窗口起点固定不动，请求前缀
+ * 只增不改，缓存才有得命中。高水位同时上调到与写入预算同量级——旧的 24 条对应不到 12 次
+ * 工具调用，而写入预算是 40 次（≈80 条消息），长任务后半程会一直待在逐轮重切的状态里。
+ * 上调的代价很小：只读结果的历史内容已经被 compactAgentMessages 压成一句话摘要，实测
+ * 24 条消息也只有 600–3000 字符。
+ */
+export const MAX_CONTEXT_MESSAGES = 48;
+export const CONTEXT_RECUT_TARGET = 32;
 const MAX_TOOL_RESULT_CHARS = 30000;
 /**
  * browser_navigate/browser_open_tab 自己的结果文案已经告诉模型跳到哪了；这里只补这三个
@@ -118,6 +132,8 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
   let outcomeReported = false;
   let outcomeForceAttempted = false;
   const toolCallCounts = new Map<string, number>();
+  // 上下文窗口起点跨轮保持，两次重切之间不动，让请求前缀只增不改（见 planContextWindow）。
+  const contextWindow: ContextWindowState = { start: 0 };
   const confirmGateState = createConfirmGateState();
   let overlayTabId = options.tabId;
   // tabId -> 最后一次已知的 URL，用于识别 browser_click/fill_form/type 隐式触发的导航。
@@ -322,7 +338,7 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
       return undefined;
     },
     shouldStopAfterTurn: async () => policy.shouldStopAfterTurn(),
-    transformContext: async (messages) => compactAgentMessages(messages),
+    transformContext: async (messages) => compactAgentMessages(messages, contextWindow),
     convertToLlm: (messages) => messages.filter(isLlmMessage),
   };
 }
@@ -390,8 +406,8 @@ function sleep(ms: number): Promise<void> {
  * 摘要——否则旧 DOM dump 会一直占着上下文，模型还可能照着过期快照继续操作
  * （ref: docs/superpowers/specs/2026-08-31-page-agent-benchmark.md §3.1）。
  */
-function compactAgentMessages(messages: AgentMessage[]): AgentMessage[] {
-  const kept = windowWithIntactToolCalls(messages, MAX_CONTEXT_MESSAGES);
+function compactAgentMessages(messages: AgentMessage[], contextWindow: ContextWindowState): AgentMessage[] {
+  const kept = planContextWindow(messages, contextWindow);
   const toolCallArgs = collectToolCallArguments(kept);
 
   let lastReadResultIndex = -1;
@@ -438,11 +454,33 @@ function compactAgentMessages(messages: AgentMessage[]): AgentMessage[] {
  * 修法：切点先回退到宣告这批结果的那条 assistant；回退不到（历史本身残缺）则把仍然
  * 无主的结果丢掉，宁可少一条上下文也不能发出必然被拒的请求。
  */
-function windowWithIntactToolCalls(messages: AgentMessage[], size: number): AgentMessage[] {
-  if (messages.length <= size) return messages;
+/** 跨轮保持的窗口起点。放在 createBrowserAgentOptions 的闭包里，一次运行一份。 */
+export interface ContextWindowState {
+  start: number;
+}
 
-  let start = messages.length - size;
+/**
+ * 迟滞重切：只有窗口内消息数超过高水位才重新定起点，且一次切到低水位；否则沿用上一轮的
+ * 起点，让请求前缀保持"只增不改"。起点一旦定下就不再逐轮漂移，这正是前缀缓存能命中的前提。
+ */
+function planContextWindow(messages: AgentMessage[], state: ContextWindowState): AgentMessage[] {
+  // 历史被整体替换（换会话、载入旧记录）时绝对下标会失效，越界就重置。
+  if (state.start > messages.length) state.start = 0;
+  if (messages.length - state.start > MAX_CONTEXT_MESSAGES) {
+    state.start = alignToToolCallBoundary(messages, messages.length - CONTEXT_RECUT_TARGET);
+  }
+  return windowWithIntactToolCalls(messages, state.start);
+}
+
+/** 把切点从一串 toolResult 往前挪到宣告它们的那条 assistant 上。 */
+function alignToToolCallBoundary(messages: AgentMessage[], index: number): number {
+  let start = index;
   while (start > 0 && messages[start].role === 'toolResult') start -= 1;
+  return start;
+}
+
+function windowWithIntactToolCalls(messages: AgentMessage[], from: number): AgentMessage[] {
+  const start = alignToToolCallBoundary(messages, Math.max(0, from));
 
   const announced = new Set<string>();
   return messages.slice(start).filter((message) => {

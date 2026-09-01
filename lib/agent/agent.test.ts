@@ -13,7 +13,15 @@ import type {
   PrepareNextTurnContext,
 } from '@earendil-works/pi-agent-core';
 import type { ProviderConfig } from '@/lib/settings';
-import { buildSubmitIntentProbePayload, createBrowserAgentOptions, createModel, selectStreamFn } from './agent';
+import {
+  buildSubmitIntentProbePayload,
+  createBrowserAgentOptions,
+  createModel,
+  selectStreamFn,
+  CONTEXT_RECUT_TARGET,
+  MAX_CONTEXT_MESSAGES,
+} from './agent';
+import { DEFAULT_WRITE_TOOL_CALL_BUDGET } from './system-prompt';
 import { browserOpenAIStream } from './openai-stream';
 import { browserAnthropicStream } from './anthropic-stream';
 import { createTabSession } from './tab-session';
@@ -1033,14 +1041,21 @@ describe('上下文压缩：窗口边界不得切出无主的 toolResult', () =>
   // 严格 A/R 交替时 slice(-24) 永远落在 assistant 上；真正打破奇偶、让切点落到
   // toolResult 上的是中途插入的单条 user 消息——正是 afterToolCall 里 [系统观察]
   // 导航通知和预算软提醒这两处 steer 干的事。下面按真实形态构造。
+  // 长度取 MAX_CONTEXT_MESSAGES + 2，保证一定触发重切；前半段 12 对之后插入一条 steer
+  // user 消息打破奇偶，使重切点 length - CONTEXT_RECUT_TARGET 正好落在一条 toolResult 上。
+  // 下面的前置断言会在常量改动导致夹具失效时直接报错，而不是让测试悄悄空转。
+  const FIRST_BLOCK_PAIRS = 12;
+
   function conversationWithSteer(): AgentMessage[] {
+    const total = MAX_CONTEXT_MESSAGES + 2;
+    const secondBlockPairs = (total - 2 - FIRST_BLOCK_PAIRS * 2) / 2;
     const messages: AgentMessage[] = [userMessage('开始')];
-    for (let index = 0; index < 6; index += 1) {
+    for (let index = 0; index < FIRST_BLOCK_PAIRS; index += 1) {
       messages.push(assistantToolCallMessage(`call-a${index}`, 'browser_type', { text: `a${index}` }));
       messages.push(toolResultMessage(`call-a${index}`, 'browser_type', `已输入 a${index}。`));
     }
     messages.push(userMessage('[系统观察] 页面地址已变化。'));
-    for (let index = 0; index < 7; index += 1) {
+    for (let index = 0; index < secondBlockPairs; index += 1) {
       messages.push(assistantToolCallMessage(`call-b${index}`, 'browser_type', { text: `b${index}` }));
       messages.push(toolResultMessage(`call-b${index}`, 'browser_type', `已输入 b${index}。`));
     }
@@ -1050,10 +1065,10 @@ describe('上下文压缩：窗口边界不得切出无主的 toolResult', () =>
   it('切点落在 assistant(tool_calls) 与它的 toolResult 之间时，不把这条 toolResult 单独留在窗口开头', async () => {
     const hooks = runtimeOptions();
     const messages = conversationWithSteer();
-    // 28 条：slice(-24) 的切点正好落在 index 4，那是一条 toolResult，
-    // 它对应的 assistant 在 index 3——盲切会把 assistant 丢在窗口外。
-    expect(messages).toHaveLength(28);
-    expect((messages[4] as unknown as { role: string }).role).toBe('toolResult');
+    // 前置条件：重切点确实落在一条 toolResult 上，盲切会把它对应的 assistant 丢在窗口外。
+    const recutIndex = messages.length - CONTEXT_RECUT_TARGET;
+    expect(messages.length).toBeGreaterThan(MAX_CONTEXT_MESSAGES);
+    expect((messages[recutIndex] as unknown as { role: string }).role).toBe('toolResult');
 
     const compacted = await hooks.transformContext!(messages);
     const first = compacted[0] as unknown as { role: string };
@@ -1081,5 +1096,67 @@ describe('上下文压缩：窗口边界不得切出无主的 toolResult', () =>
         expect(announced.has(message.toolCallId!)).toBe(true);
       }
     }
+  });
+});
+
+// 实测（2026-09-01 perf 采样，DeepSeek 前缀缓存）：消息数一撞到窗口上限，命中 token 数
+// 就从逐轮增长变成死死钉在 4224——那正好是静态系统提示词的大小，意味着整段对话每轮都在
+// 重新处理。原因是 slice(-N) 每轮都把窗口往前挪两条，请求前缀逐轮都不一样，缓存必然全失效。
+// 修法是给窗口加迟滞：只在超过高水位时重切一次到低水位，两次重切之间起点固定不动，
+// 请求前缀只增不改，缓存才有得命中。
+describe('上下文窗口：迟滞重切，保证前缀在两次重切之间只增不改', () => {
+  function pairs(count: number, prefix: string): AgentMessage[] {
+    const messages: AgentMessage[] = [];
+    for (let index = 0; index < count; index += 1) {
+      messages.push(assistantToolCallMessage(`${prefix}-${index}`, 'browser_type', { text: `${index}` }));
+      messages.push(toolResultMessage(`${prefix}-${index}`, 'browser_type', `已输入 ${index}。`));
+    }
+    return messages;
+  }
+
+  function firstText(message: AgentMessage): string {
+    return JSON.stringify((message as unknown as { content: unknown }).content);
+  }
+
+  it('未超过高水位时一条都不切', async () => {
+    const hooks = runtimeOptions();
+    const messages = pairs(MAX_CONTEXT_MESSAGES / 2, 'call');
+
+    const compacted = await hooks.transformContext!(messages);
+
+    expect(compacted).toHaveLength(messages.length);
+  });
+
+  it('超过高水位后重切到低水位，而不是只切掉溢出的那两条', async () => {
+    const hooks = runtimeOptions();
+    const messages = pairs(MAX_CONTEXT_MESSAGES, 'call'); // 2×MAX 条，远超高水位
+
+    const compacted = await hooks.transformContext!(messages);
+
+    expect(compacted.length).toBeLessThanOrEqual(CONTEXT_RECUT_TARGET);
+  });
+
+  it('重切之后连续多轮追加消息，窗口起点保持不动（前缀只增不改）', async () => {
+    const hooks = runtimeOptions();
+    const messages = pairs(MAX_CONTEXT_MESSAGES, 'call');
+
+    const firstWindow = await hooks.transformContext!(messages);
+    const anchor = firstText(firstWindow[0]);
+
+    // 再追加若干轮，只要没再次撞到高水位，窗口开头必须还是同一条消息。
+    for (let round = 0; round < 3; round += 1) {
+      messages.push(...pairs(1, `later-${round}`));
+      const next = await hooks.transformContext!(messages);
+      expect(firstText(next[0])).toBe(anchor);
+      // 而且是纯追加：旧窗口的每一条都还在，位置不变。
+      expect(next.length).toBeGreaterThan(firstWindow.length);
+    }
+  });
+
+  it('高水位与写入预算匹配，不会让长任务后半程一直待在滑动窗口里', () => {
+    // 写入预算 40 次工具调用 ≈ 80 条消息；窗口高水位至少要能覆盖预算的一半，
+    // 否则任务刚过半就进入逐轮重切、缓存全失效的状态。
+    expect(MAX_CONTEXT_MESSAGES).toBeGreaterThanOrEqual(DEFAULT_WRITE_TOOL_CALL_BUDGET);
+    expect(CONTEXT_RECUT_TARGET).toBeLessThan(MAX_CONTEXT_MESSAGES);
   });
 });
