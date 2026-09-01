@@ -650,6 +650,10 @@ describe('隐式导航的 <sys> 观察通道', () => {
   });
 });
 
+function userMessage(text: string): AgentMessage {
+  return { role: 'user', content: [{ type: 'text', text }], timestamp: Date.now() } as unknown as AgentMessage;
+}
+
 function assistantToolCallMessage(id: string, name: string, args: Record<string, unknown>): AgentMessage {
   return {
     role: 'assistant',
@@ -1017,5 +1021,65 @@ describe('多标签页：session 可选，且遮罩跟随当前操作目标', ()
     onSessionChange.mockClear();
     await hooks.afterToolCall?.(afterContext('browser_switch_tab', { tabId: 2 }, true));
     expect(onSessionChange).not.toHaveBeenCalled();
+  });
+});
+
+// 实测复现（2026-09-01 侧边栏 perf 采样）：一次 19 轮的运行在最后一轮收到
+// DeepSeek 400 —— "Messages with role 'tool' must be a response to a preceding
+// message with 'tool_calls'"，整轮运行没有产出任何回答。原因是 slice(-MAX_CONTEXT_MESSAGES)
+// 是按条数盲切的，切点可能落在「带 tool_calls 的 assistant 消息」和它的 toolResult 之间，
+// 于是窗口以一条无主的 toolResult 开头，OpenAI 兼容协议一律判 400。
+describe('上下文压缩：窗口边界不得切出无主的 toolResult', () => {
+  // 严格 A/R 交替时 slice(-24) 永远落在 assistant 上；真正打破奇偶、让切点落到
+  // toolResult 上的是中途插入的单条 user 消息——正是 afterToolCall 里 [系统观察]
+  // 导航通知和预算软提醒这两处 steer 干的事。下面按真实形态构造。
+  function conversationWithSteer(): AgentMessage[] {
+    const messages: AgentMessage[] = [userMessage('开始')];
+    for (let index = 0; index < 6; index += 1) {
+      messages.push(assistantToolCallMessage(`call-a${index}`, 'browser_type', { text: `a${index}` }));
+      messages.push(toolResultMessage(`call-a${index}`, 'browser_type', `已输入 a${index}。`));
+    }
+    messages.push(userMessage('[系统观察] 页面地址已变化。'));
+    for (let index = 0; index < 7; index += 1) {
+      messages.push(assistantToolCallMessage(`call-b${index}`, 'browser_type', { text: `b${index}` }));
+      messages.push(toolResultMessage(`call-b${index}`, 'browser_type', `已输入 b${index}。`));
+    }
+    return messages;
+  }
+
+  it('切点落在 assistant(tool_calls) 与它的 toolResult 之间时，不把这条 toolResult 单独留在窗口开头', async () => {
+    const hooks = runtimeOptions();
+    const messages = conversationWithSteer();
+    // 28 条：slice(-24) 的切点正好落在 index 4，那是一条 toolResult，
+    // 它对应的 assistant 在 index 3——盲切会把 assistant 丢在窗口外。
+    expect(messages).toHaveLength(28);
+    expect((messages[4] as unknown as { role: string }).role).toBe('toolResult');
+
+    const compacted = await hooks.transformContext!(messages);
+    const first = compacted[0] as unknown as { role: string };
+
+    expect(first.role).not.toBe('toolResult');
+  });
+
+  it('每一条 toolResult 在窗口内都能找到它对应的 tool_calls', async () => {
+    const hooks = runtimeOptions();
+    const messages = conversationWithSteer();
+
+    const compacted = await hooks.transformContext!(messages);
+    const announced = new Set<string>();
+    for (const message of compacted as unknown as {
+      role: string;
+      toolCallId?: string;
+      content?: { type: string; id?: string }[];
+    }[]) {
+      if (message.role === 'assistant') {
+        for (const part of message.content ?? []) {
+          if (part.type === 'toolCall' && part.id) announced.add(part.id);
+        }
+      }
+      if (message.role === 'toolResult') {
+        expect(announced.has(message.toolCallId!)).toBe(true);
+      }
+    }
   });
 });

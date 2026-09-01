@@ -391,7 +391,7 @@ function sleep(ms: number): Promise<void> {
  * （ref: docs/superpowers/specs/2026-08-31-page-agent-benchmark.md §3.1）。
  */
 function compactAgentMessages(messages: AgentMessage[]): AgentMessage[] {
-  const kept = messages.slice(-MAX_CONTEXT_MESSAGES);
+  const kept = windowWithIntactToolCalls(messages, MAX_CONTEXT_MESSAGES);
   const toolCallArgs = collectToolCallArguments(kept);
 
   let lastReadResultIndex = -1;
@@ -422,6 +422,38 @@ function compactAgentMessages(messages: AgentMessage[]): AgentMessage[] {
     });
 
     return { ...message, content: compactedContent };
+  });
+}
+
+/**
+ * 按条数盲切（slice(-size)）会把「带 tool_calls 的 assistant」和它的 toolResult 切散。
+ * 窗口一旦以无主的 tool 消息开头，OpenAI 兼容协议一律判 400——实测 DeepSeek 回的是
+ * "Messages with role 'tool' must be a response to a preceding message with 'tool_calls'"，
+ * 整轮运行当场失败，用户等了一分多钟却拿不到任何回答。
+ *
+ * 严格 assistant/toolResult 交替时切点永远落在 assistant 上，所以这个坑长期没暴露；
+ * 是 afterToolCall 里的 steer（[系统观察] 导航通知、预算软提醒）插入单条 user 消息
+ * 打破了奇偶，才让切点有机会落到 toolResult 上。
+ *
+ * 修法：切点先回退到宣告这批结果的那条 assistant；回退不到（历史本身残缺）则把仍然
+ * 无主的结果丢掉，宁可少一条上下文也不能发出必然被拒的请求。
+ */
+function windowWithIntactToolCalls(messages: AgentMessage[], size: number): AgentMessage[] {
+  if (messages.length <= size) return messages;
+
+  let start = messages.length - size;
+  while (start > 0 && messages[start].role === 'toolResult') start -= 1;
+
+  const announced = new Set<string>();
+  return messages.slice(start).filter((message) => {
+    if (message.role === 'assistant') {
+      for (const part of message.content) {
+        if (part.type === 'toolCall') announced.add(part.id);
+      }
+      return true;
+    }
+    if (message.role === 'toolResult') return announced.has(message.toolCallId);
+    return true;
   });
 }
 
