@@ -2,6 +2,7 @@
 import { createAssistantMessageEventStream, type Api, type AssistantMessageEvent, type Context, type Model, type ToolCall, type Usage, type UserMessage } from '@earendil-works/pi-ai';
 import type { StreamFn } from '@earendil-works/pi-agent-core';
 import { buildPartial, createAssistantMessage, describeHttpFailure, extractImageParts, finishStream, stringifyContent, type ToolCallAccumulator } from './stream-shared';
+import { isPerfTraceEnabled, readOpenAiUsage, recordPerfUsage } from './perf-trace';
 
 // OpenAI 生态的约定与 Anthropic 相反：版本段写在 base_url 里，客户端只补 `/chat/completions`
 // （参见 anthropicMessagesUrl 的反向说明）。这里不替用户补版本段——各厂商版本段互不相同
@@ -89,6 +90,9 @@ async function runOpenAIStream(
         temperature: options?.temperature ?? 0.7,
         max_tokens: options?.maxTokens,
         stream: true,
+        // 只在耗时画像开启时索取 usage：部分 OpenAI 兼容供应商对未知字段是严格的，
+        // 生产请求体保持原样不冒这个险。
+        ...(isPerfTraceEnabled() ? { stream_options: { include_usage: true } } : {}),
       }),
       signal: options?.signal,
     });
@@ -126,6 +130,10 @@ async function runOpenAIStream(
           return;
         }
         const chunk = JSON.parse(data) as OpenAIStreamChunk;
+        // 纯观测：把供应商回报的 usage（含 DeepSeek 的前缀缓存命中数）记进耗时画像。
+        // finishStream 仍然写 ZERO_USAGE，这里不改变任何既有行为。
+        const usage = readOpenAiUsage(chunk);
+        if (usage) recordPerfUsage(usage);
         if (chunk.choices?.[0]?.finish_reason) finishReason = chunk.choices[0].finish_reason;
         processChunk(chunk, model, push, startedAt, text, toolCalls, (delta) => {
           if (!textStarted) {

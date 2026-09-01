@@ -38,6 +38,7 @@ import {
 import { buildShortcutExecution } from '@/lib/chat/shortcut-prompts';
 import { summarizeToolCallForConfirmation } from '@/lib/agent/confirm-summary';
 import { describeToolActivity } from '@/lib/agent/activity-description';
+import { flushPerfTrace, recordPerfFirstToken, recordPerfMark } from '@/lib/agent/perf-trace';
 import { finishActivityStep, markActivityStepSlow, upsertActivityStep, type ActivityStep } from '@/lib/agent/activity-steps';
 import { getConversationIdForTab, setConversationIdForTab } from '@/lib/agent/tab-conversation';
 import { clearTabSession, loadTabSession, saveTabSession } from '@/lib/agent/tab-session-storage';
@@ -1119,6 +1120,24 @@ async function runAgent(
   let acc = '';
   const unsubscribe = agent.subscribe((event) => {
     if (!isCurrentRun(run, get)) return;
+
+    // 耗时画像埋点（默认只在 dev 构建下生效，见 lib/agent/perf-trace.ts）：这里把
+    // agent 事件流上的边界原样转记下来，运行结束时在控制台输出一份分桶统计。
+    if (event.type === 'agent_start') recordPerfMark('agent_start');
+    if (event.type === 'turn_start') recordPerfMark('turn_start');
+    if (event.type === 'message_update') recordPerfFirstToken();
+    // ⚠️ message_end 不只在助手消息结束时发：pi-agent-core 给用户 prompt
+    // (agent-loop.js:52)、steer 注入的消息 (:98) 和每一条工具结果 (:508) 都会发一遍。
+    // 不过滤的话，turn_start 之后紧跟的那条 prompt/工具结果 message_end 会把这一轮
+    // 从 turn_start 到首 token 的等待整段从 LLM 桶里切掉，严重低估模型往返占比。
+    if (event.type === 'message_end' && event.message.role === 'assistant') recordPerfMark('message_end');
+    if (event.type === 'tool_execution_start') recordPerfMark('tool_start', event.toolName);
+    if (event.type === 'tool_execution_end') recordPerfMark('tool_end', event.toolName);
+    if (event.type === 'agent_end') {
+      recordPerfMark('agent_end');
+      flushPerfTrace();
+    }
+
     if (event.type === 'message_update' && event.assistantMessageEvent.type === 'text_delta') {
       acc += event.assistantMessageEvent.delta;
       replaceLastAssistant(set, acc);

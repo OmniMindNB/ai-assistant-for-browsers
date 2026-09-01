@@ -24,6 +24,7 @@ import { createBrowserTools, type BrowserAgentTool } from './tools';
 import { createTabSession, type TabSessionController } from './tab-session';
 import { createAgentToolPolicy } from './tool-policy';
 import { describeToolActivity } from './activity-description';
+import { recordPerfContext } from './perf-trace';
 import {
   DEFAULT_READ_TOOL_CALL_BUDGET,
   DEFAULT_WRITE_TOOL_CALL_BUDGET,
@@ -405,6 +406,12 @@ function sleep(ms: number): Promise<void> {
  * 不需要压缩。只让最新一份只读结果保留完整内容，更早的一律压成 describeToolActivity 的
  * 摘要——否则旧 DOM dump 会一直占着上下文，模型还可能照着过期快照继续操作
  * （ref: docs/superpowers/specs/2026-08-31-page-agent-benchmark.md §3.1）。
+ *
+ * ⚠️ 已知的残留代价：新的只读结果一到，上一份就被就地改写成摘要，请求前缀会在那个位置
+ * 断一次，供应商前缀缓存从那里往后失效。这是"不让模型照着过期快照操作"必须付的代价——
+ * 要消掉它就得让旧快照原样留在上下文里，反而把窗口撑大。好在只读工具在一次运行里通常
+ * 只调几次（实测 24 次工具调用里只有 3 次只读），比窗口逐轮漂移那个每轮都断的问题小一个
+ * 量级，后者已由 planContextWindow 的迟滞修掉。
  */
 function compactAgentMessages(messages: AgentMessage[], contextWindow: ContextWindowState): AgentMessage[] {
   const kept = planContextWindow(messages, contextWindow);
@@ -415,10 +422,14 @@ function compactAgentMessages(messages: AgentMessage[], contextWindow: ContextWi
     if (message.role === 'toolResult' && READ_ONLY_TOOL_NAMES.has(message.toolName)) lastReadResultIndex = index;
   });
 
-  return kept.map((message, index) => {
+  let summarizedReadResults = 0;
+  let keptReadResultChars = 0;
+
+  const compacted: AgentMessage[] = kept.map((message, index) => {
     if (message.role !== 'toolResult' || !READ_ONLY_TOOL_NAMES.has(message.toolName)) return message;
 
     if (index !== lastReadResultIndex) {
+      summarizedReadResults += 1;
       const summary = describeToolActivity(
         message.toolName,
         toolCallArgs.get(message.toolCallId),
@@ -437,8 +448,39 @@ function compactAgentMessages(messages: AgentMessage[], contextWindow: ContextWi
       };
     });
 
+    keptReadResultChars = compactedContent.reduce(
+      (total, part) => total + (part.type === 'text' ? part.text.length : 0),
+      0,
+    );
     return { ...message, content: compactedContent };
   });
+
+  recordPerfContext({
+    messages: compacted.length,
+    chars: countMessageChars(compacted),
+    summarizedReadResults,
+    keptReadResultChars,
+  });
+  return compacted;
+}
+
+/** 粗略的上下文规模代理量：只数文本部分的字符数，图片/工具调用参数忽略不计。 */
+function countMessageChars(messages: AgentMessage[]): number {
+  let total = 0;
+  for (const message of messages) {
+    const content = (message as { content?: unknown }).content;
+    if (typeof content === 'string') {
+      total += content.length;
+      continue;
+    }
+    if (!Array.isArray(content)) continue;
+    for (const part of content) {
+      if (part && typeof part === 'object' && (part as { type?: string }).type === 'text') {
+        total += String((part as { text?: string }).text ?? '').length;
+      }
+    }
+  }
+  return total;
 }
 
 /**
