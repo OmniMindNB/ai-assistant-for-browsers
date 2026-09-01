@@ -722,14 +722,17 @@ export const useChat = create<ChatState>((set, get) => ({
   },
 
   // stop/respondToConfirmation/respondToQuestion 不再本地 resolve 任何东西——那些 resolver
-  // 现在活在 background 的 run-registry.ts 里。这里只把用户的动作转发成 Port 消息；
-  // background 处理完之后会重新广播一份 snapshot，UI 状态更新走 applySnapshot 那条统一路径
+  // 现在活在 background 的 run-registry.ts 里。这里把用户的动作转发成 Port 消息，并顺带做一次
+  // 乐观的本地 UI 清理（清空 pending 状态/活动步骤），让按钮反馈是即时的；权威状态仍然是随后
+  // 推回来的 snapshot，走 applySnapshot 那条统一路径覆盖
   // （ref: lib/agent/run-registry.ts 的 respondConfirm/respondQuestion/stopRun，它们处理完
   // 都会 broadcast(tabId, snapshotOf(state))）。
   stop: () => {
     const run = activeRun;
     if (!run || !isCurrentRun(run, get)) return;
     postToRunPort({ type: 'stop', tabId: run.tabId });
+    clearAllSlowActivityTimers();
+    set({ pendingConfirmation: null, pendingQuestion: null, activitySteps: [] });
   },
 
   respondToConfirmation: (approved) => {
@@ -743,6 +746,7 @@ export const useChat = create<ChatState>((set, get) => ({
       toolCallId: pending.toolCallId,
       approved,
     });
+    set({ pendingConfirmation: null });
   },
 
   respondToQuestion: (answer) => {
@@ -756,6 +760,7 @@ export const useChat = create<ChatState>((set, get) => ({
       toolCallId: pending.toolCallId,
       answer,
     });
+    set({ pendingQuestion: null });
   },
 
   clear: () => {

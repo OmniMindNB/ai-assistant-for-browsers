@@ -561,6 +561,8 @@ describe('chat store page context', () => {
 
     useChat.getState().respondToConfirmation(false);
     expect(mocks.runPortPostMessage).toHaveBeenCalledWith({ type: 'respondConfirm', tabId: 7, toolCallId: 'call-1', approved: false });
+    // optimistic local update happens immediately, before any snapshot round-trip.
+    expect(useChat.getState().pendingConfirmation).toBeNull();
 
     // background 处理完 respondConfirm 后广播的 snapshot：activity step 标记失败，pendingConfirmation 清空。
     emitSnapshot({
@@ -592,6 +594,8 @@ describe('chat store page context', () => {
 
     useChat.getState().respondToQuestion('用工作账号');
     expect(mocks.runPortPostMessage).toHaveBeenCalledWith({ type: 'respondQuestion', tabId: 7, toolCallId: 'call-ask-1', answer: '用工作账号' });
+    // optimistic local update happens immediately, before any snapshot round-trip.
+    expect(useChat.getState().pendingQuestion).toBeNull();
 
     emitSnapshot({ tabId: 7, conversationId, busy: true, pendingQuestion: null });
     expect(useChat.getState().pendingQuestion).toBeNull();
@@ -651,6 +655,9 @@ describe('chat store page context', () => {
 
     useChat.getState().stop();
     expect(mocks.runPortPostMessage).toHaveBeenCalledWith({ type: 'stop', tabId: 7 });
+    // optimistic local update happens immediately, before any snapshot round-trip.
+    expect(useChat.getState().pendingQuestion).toBeNull();
+    expect(useChat.getState().activitySteps).toEqual([]);
 
     emitSnapshot({ tabId: 7, conversationId, busy: false, pendingQuestion: null, activitySteps: [] });
     expect(useChat.getState().pendingQuestion).toBeNull();
@@ -673,6 +680,8 @@ describe('chat store page context', () => {
 
     useChat.getState().stop();
     expect(mocks.runPortPostMessage).toHaveBeenCalledWith({ type: 'stop', tabId: 7 });
+    // optimistic local update happens immediately, before any snapshot round-trip.
+    expect(useChat.getState().activitySteps).toEqual([]);
 
     emitSnapshot({ tabId: 7, conversationId, busy: false, activitySteps: [] });
     expect(useChat.getState().activitySteps).toEqual([]);
