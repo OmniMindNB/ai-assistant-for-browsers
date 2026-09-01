@@ -20,7 +20,7 @@ vi.mock('./run-state-storage', () => ({
   listOrphanRunTabIds: vi.fn(async () => []),
 }));
 
-import { startRun, getRunState } from './run-registry';
+import { startRun, getRunState, respondConfirm, respondQuestion, stopRun, attachPort, detachPort } from './run-registry';
 import type { StartRunRequest } from './run-port-protocol';
 
 function makeFakeAgent(events: unknown[]) {
@@ -67,10 +67,10 @@ describe('run-registry startRun', () => {
       { type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'Hello' }] } },
     ]);
     mocks.createBrowserAgent.mockReturnValue(agent);
-    const pushed: unknown[] = [];
-    const ports = { push: (_tabId: number, snapshot: unknown) => pushed.push(snapshot) };
+    const posted: unknown[] = [];
+    attachPort(7, { postMessage: (m) => posted.push(m) });
 
-    await startRun(makeRequest(), ports);
+    await startRun(makeRequest());
     // startRun 不等待 agent.prompt() 跑完再返回；这里等一次微任务队列排空，
     // 让 fire-and-forget 的 prompt() 内部同步触发的事件先落地。
     await vi.waitFor(() => expect(mocks.replaceConversationMessages).toHaveBeenCalled());
@@ -85,16 +85,16 @@ describe('run-registry startRun', () => {
     expect(state?.busy).toBe(false);
     const lastMessage = state?.messages[state.messages.length - 1];
     expect(lastMessage?.content).toBe('Hello');
+    expect(posted.length).toBeGreaterThan(0);
   });
 
   it('aborts an existing run for the same tab before starting a new one', async () => {
     const firstAgent = makeFakeAgent([]);
     const secondAgent = makeFakeAgent([]);
     mocks.createBrowserAgent.mockReturnValueOnce(firstAgent).mockReturnValueOnce(secondAgent);
-    const ports = { push: () => undefined };
 
-    await startRun(makeRequest(), ports);
-    await startRun(makeRequest({ conversationId: 'conv-2', displayMessage: { id: 'u2', role: 'user', content: 'again', createdAt: 2 } }), ports);
+    await startRun(makeRequest());
+    await startRun(makeRequest({ conversationId: 'conv-2', displayMessage: { id: 'u2', role: 'user', content: 'again', createdAt: 2 } }));
 
     expect(firstAgent.abort).toHaveBeenCalledOnce();
   });
@@ -119,9 +119,8 @@ describe('run-registry startRun', () => {
       };
       mocks.createBrowserAgent.mockReturnValue(agent);
       mocks.replaceConversationMessages.mockClear();
-      const ports = { push: () => undefined };
 
-      await startRun(makeRequest({ tabId: 8 }), ports);
+      await startRun(makeRequest({ tabId: 8 }));
       // Let the fire-and-forget prompt() run
       await vi.runAllTimersAsync();
 
@@ -183,11 +182,10 @@ describe('run-registry startRun', () => {
 
     mocks.createBrowserAgent.mockReturnValueOnce(firstAgent).mockReturnValueOnce(secondAgent);
 
-    const ports = { push: () => undefined };
     const tabId = 9;
 
     // Start first run
-    await startRun(makeRequest({ tabId }), ports);
+    await startRun(makeRequest({ tabId }));
 
     // Start second run (aborts the first)
     mocks.replaceConversationMessages.mockClear();
@@ -196,8 +194,7 @@ describe('run-registry startRun', () => {
         tabId,
         conversationId: 'conv-2',
         displayMessage: { id: 'u2', role: 'user', content: 'second', createdAt: 2 },
-      }),
-      ports
+      })
     );
 
     // Give the second run's async prompt a microtask to start
@@ -222,5 +219,71 @@ describe('run-registry startRun', () => {
     // Clean up: let the second run finish
     secondPromptResolve?.();
     await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+});
+
+describe('run-registry confirm/question/stop/port', () => {
+  it('resolves a pending confirmation and clears it from the snapshot', async () => {
+    const agent = makeFakeAgent([]);
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    await startRun(makeRequest({ tabId: 20 }));
+    const state = getRunState(20)!;
+    let resolved: boolean | undefined;
+    // 真实场景下这个字段是 agent.ts 内部调用 onConfirm 时设置的；makeFakeAgent 的
+    // prompt() 不模拟 beforeToolCall/onConfirm 那条路径（agent.ts 本身已经有测试覆盖
+    // onConfirm 何时被调用），这里直接摆好"正在等待确认"这个前置状态来测 respondConfirm
+    // 自己的行为。
+    state.pendingConfirmation = { toolCallId: 'call-1', toolName: 'browser_click', summary: 'x' };
+    state.resolveConfirmation = (approved) => { resolved = approved; };
+
+    respondConfirm(20, 'call-1', true);
+
+    expect(resolved).toBe(true);
+    expect(getRunState(20)?.pendingConfirmation).toBeNull();
+  });
+
+  it('resolves a pending question', async () => {
+    const agent = makeFakeAgent([]);
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    await startRun(makeRequest({ tabId: 21 }));
+    const state = getRunState(21)!;
+    let answered: string | undefined;
+    state.pendingQuestion = { toolCallId: 'ask-1', question: 'which one?' };
+    state.resolveQuestion = (answer) => { answered = answer; };
+
+    respondQuestion(21, 'ask-1', 'the first one');
+
+    expect(answered).toBe('the first one');
+    expect(getRunState(21)?.pendingQuestion).toBeNull();
+  });
+
+  it('stop aborts the agent and clears pending confirmation/question', async () => {
+    const agent = makeFakeAgent([]);
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    await startRun(makeRequest({ tabId: 22 }));
+    const state = getRunState(22)!;
+    state.pendingConfirmation = { toolCallId: 'call-2', toolName: 'browser_click', summary: 'x' };
+
+    stopRun(22);
+
+    expect(agent.abort).toHaveBeenCalledOnce();
+    expect(getRunState(22)?.pendingConfirmation).toBeNull();
+  });
+
+  it('attachPort replies with the current snapshot for a live run, and detachPort never cancels the run', async () => {
+    const agent = makeFakeAgent([]);
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    await startRun(makeRequest({ tabId: 23 }));
+
+    const snapshot = attachPort(23, { postMessage: () => undefined });
+    expect(snapshot?.tabId).toBe(23);
+
+    detachPort(23, { postMessage: () => undefined });
+    expect(agent.abort).not.toHaveBeenCalled();
+    expect(getRunState(23)).toBeDefined();
+  });
+
+  it('attachPort returns undefined when there is no live run for the tab', () => {
+    expect(attachPort(999, { postMessage: () => undefined })).toBeUndefined();
   });
 });

@@ -24,10 +24,6 @@ import { setOverlayForTab, clearOverlayForTab } from './tab-overlay-state';
 import { sendToContentScript } from './content-script-messaging';
 import { newMessageId, type SetAgentOverlayPayload } from '@/lib/messaging';
 
-export interface PortRegistry {
-  push(tabId: number, snapshot: RunSnapshot): void;
-}
-
 interface RunState {
   tabId: number;
   conversationId: string;
@@ -47,6 +43,16 @@ interface RunState {
 
 const runs = new Map<number, RunState>();
 
+export interface PortLike {
+  postMessage(message: unknown): void;
+}
+
+const listeners = new Map<number, PortLike>();
+
+function broadcast(tabId: number, snapshot: RunSnapshot): void {
+  listeners.get(tabId)?.postMessage({ type: 'snapshot', ...snapshot });
+}
+
 export function getRunState(tabId: number): RunState | undefined {
   return runs.get(tabId);
 }
@@ -62,9 +68,9 @@ function snapshotOf(state: RunState): RunSnapshot {
   };
 }
 
-function pushAndPersist(state: RunState, ports: PortRegistry): void {
+function pushAndPersist(state: RunState): void {
   const snapshot = snapshotOf(state);
-  ports.push(state.tabId, snapshot);
+  broadcast(state.tabId, snapshot);
   void saveRunStateSnapshot(state.tabId, snapshot);
 }
 
@@ -151,7 +157,7 @@ function replaceLastAssistant(state: RunState, content: string): void {
 
 const STREAM_FLUSH_INTERVAL_MS = 48;
 
-export async function startRun(request: StartRunRequest, ports: PortRegistry): Promise<void> {
+export async function startRun(request: StartRunRequest): Promise<void> {
   const existing = runs.get(request.tabId);
   if (existing) {
     existing.agent.abort();
@@ -182,20 +188,20 @@ export async function startRun(request: StartRunRequest, ports: PortRegistry): P
   // bug：过去只在整轮结束的 finally 里持久化一次，面板中途被销毁时刚发出去的
   // 用户消息会跟着丢。
   await persistMessages(state);
-  pushAndPersist(state, ports);
+  pushAndPersist(state);
 
   const onConfirm = async (toolCallId: string, toolName: string, args: unknown): Promise<boolean> => {
     const { summary, codePreview } = summarizeToolCallForConfirmation(toolName, args, undefined);
     state.pendingToolArgs.set(toolCallId, { toolName, args });
     state.pendingConfirmation = { toolCallId, toolName, summary, codePreview };
-    pushAndPersist(state, ports);
+    pushAndPersist(state);
     return new Promise<boolean>((resolve) => { state.resolveConfirmation = resolve; });
   };
 
   const onAskUser = async (toolCallId: string, question: string, signal?: AbortSignal): Promise<string> => {
     if (signal?.aborted) return '';
     state.pendingQuestion = { toolCallId, question };
-    pushAndPersist(state, ports);
+    pushAndPersist(state);
     return new Promise<string>((resolve) => { state.resolveQuestion = resolve; });
   };
 
@@ -223,7 +229,7 @@ export async function startRun(request: StartRunRequest, ports: PortRegistry): P
   const flush = () => {
     if (flushTimer !== null) { clearTimeout(flushTimer); flushTimer = null; }
     replaceLastAssistant(state, acc);
-    pushAndPersist(state, ports);
+    pushAndPersist(state);
   };
 
   const unsubscribe = agent.subscribe((event: AgentEvent) => {
@@ -239,7 +245,7 @@ export async function startRun(request: StartRunRequest, ports: PortRegistry): P
         description: describeToolActivity(event.toolName, event.args, 'running'),
         status: 'running',
       });
-      pushAndPersist(state, ports);
+      pushAndPersist(state);
     }
 
     if (event.type === 'tool_execution_update' && !state.terminatedToolCallIds.has(event.toolCallId)) {
@@ -251,7 +257,7 @@ export async function startRun(request: StartRunRequest, ports: PortRegistry): P
         status: 'running',
         slow: existingStep?.slow,
       });
-      pushAndPersist(state, ports);
+      pushAndPersist(state);
     }
 
     if (event.type === 'tool_execution_end') {
@@ -265,7 +271,7 @@ export async function startRun(request: StartRunRequest, ports: PortRegistry): P
           finalStatus,
           describeToolActivity(event.toolName, info?.args, finalStatus),
         );
-        pushAndPersist(state, ports);
+        pushAndPersist(state);
       }
     }
 
@@ -303,12 +309,73 @@ export async function startRun(request: StartRunRequest, ports: PortRegistry): P
         state.pendingConfirmation = null;
         state.pendingQuestion = null;
         await persistMessages(state);
-        pushAndPersist(state, ports);
+        pushAndPersist(state);
         await clearRunStateSnapshot(state.tabId).catch(() => undefined);
         runs.delete(state.tabId);
       }
     }
   })();
+}
+
+export function attachPort(tabId: number, port: PortLike): RunSnapshot | undefined {
+  listeners.set(tabId, port);
+  const state = runs.get(tabId);
+  return state ? snapshotOf(state) : undefined;
+}
+
+/** Port 断开只表示"暂时没人在看"，绝不能连带清理 RunState 或调用 agent.abort()——
+ * 这正是本次迁移要修的 bug 本身，不能在这里重犯（ref: 设计文档 §4）。*/
+export function detachPort(tabId: number, port: PortLike): void {
+  if (listeners.get(tabId) === port) listeners.delete(tabId);
+}
+
+export function respondConfirm(tabId: number, toolCallId: string, approved: boolean): void {
+  const state = runs.get(tabId);
+  if (!state || state.pendingConfirmation?.toolCallId !== toolCallId) return;
+  const resolve = state.resolveConfirmation;
+  state.resolveConfirmation = null;
+  if (!approved) {
+    state.terminatedToolCallIds.add(toolCallId);
+    const info = state.pendingToolArgs.get(toolCallId);
+    state.activitySteps = upsertActivityStep(state.activitySteps, {
+      id: toolCallId,
+      description: describeToolActivity(state.pendingConfirmation.toolName, info?.args, 'failed'),
+      status: 'failed',
+    });
+  }
+  state.pendingConfirmation = null;
+  broadcast(tabId, snapshotOf(state));
+  void saveRunStateSnapshot(tabId, snapshotOf(state));
+  resolve?.(approved);
+}
+
+export function respondQuestion(tabId: number, toolCallId: string, answer: string): void {
+  const state = runs.get(tabId);
+  if (!state || state.pendingQuestion?.toolCallId !== toolCallId) return;
+  const resolve = state.resolveQuestion;
+  state.resolveQuestion = null;
+  state.pendingQuestion = null;
+  broadcast(tabId, snapshotOf(state));
+  void saveRunStateSnapshot(tabId, snapshotOf(state));
+  resolve?.(answer);
+}
+
+export function stopRun(tabId: number): void {
+  const state = runs.get(tabId);
+  if (!state) return;
+  state.resolveConfirmation?.(false);
+  state.resolveConfirmation = null;
+  state.resolveQuestion?.('');
+  state.resolveQuestion = null;
+  state.agent.abort();
+  for (const step of state.activitySteps) state.terminatedToolCallIds.add(step.id);
+  const pendingId = state.pendingConfirmation?.toolCallId ?? state.pendingQuestion?.toolCallId;
+  if (pendingId) state.terminatedToolCallIds.add(pendingId);
+  state.pendingConfirmation = null;
+  state.pendingQuestion = null;
+  state.activitySteps = [];
+  broadcast(tabId, snapshotOf(state));
+  void saveRunStateSnapshot(tabId, snapshotOf(state));
 }
 
 // 遮罩的真正落地逻辑（entrypoints/background.ts 里的 setAgentOverlay）本身就只是拼装
