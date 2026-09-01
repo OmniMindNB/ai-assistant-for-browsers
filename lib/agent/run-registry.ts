@@ -19,7 +19,12 @@ import type {
   RunSnapshot,
   StartRunRequest,
 } from './run-port-protocol';
-import { saveRunStateSnapshot, clearRunStateSnapshot } from './run-state-storage';
+import {
+  saveRunStateSnapshot,
+  clearRunStateSnapshot,
+  loadRunStateSnapshot,
+  listOrphanRunTabIds,
+} from './run-state-storage';
 import { setOverlayForTab, clearOverlayForTab } from './tab-overlay-state';
 import { sendToContentScript } from './content-script-messaging';
 import { newMessageId, type SetAgentOverlayPayload } from '@/lib/messaging';
@@ -60,6 +65,7 @@ export function getRunState(tabId: number): RunState | undefined {
 function snapshotOf(state: RunState): RunSnapshot {
   return {
     tabId: state.tabId,
+    conversationId: state.conversationId,
     busy: state.busy,
     messages: state.messages,
     activitySteps: state.activitySteps,
@@ -155,6 +161,20 @@ function replaceLastAssistant(state: RunState, content: string): void {
   state.messages = [...state.messages.slice(0, -1), { ...last, content }];
 }
 
+function keepaliveAlarmName(tabId: number): string {
+  return `runi:agent-keepalive:${tabId}`;
+}
+
+const KEEPALIVE_PERIOD_MINUTES = 20 / 60; // chrome.alarms 的周期单位是分钟；20 秒 ≈ 1/3 分钟
+
+function startKeepalive(tabId: number): void {
+  browser.alarms?.create?.(keepaliveAlarmName(tabId), { periodInMinutes: KEEPALIVE_PERIOD_MINUTES });
+}
+
+function stopKeepalive(tabId: number): void {
+  void browser.alarms?.clear?.(keepaliveAlarmName(tabId));
+}
+
 const STREAM_FLUSH_INTERVAL_MS = 48;
 
 export async function startRun(request: StartRunRequest): Promise<void> {
@@ -183,6 +203,7 @@ export async function startRun(request: StartRunRequest): Promise<void> {
     taskOutcome: null,
   };
   runs.set(request.tabId, state);
+  startKeepalive(request.tabId);
 
   // 用户消息必须在这里、agent.prompt() 开始之前就落盘——这正是本次迁移要修的
   // bug：过去只在整轮结束的 finally 里持久化一次，面板中途被销毁时刚发出去的
@@ -311,6 +332,7 @@ export async function startRun(request: StartRunRequest): Promise<void> {
         await persistMessages(state);
         pushAndPersist(state);
         await clearRunStateSnapshot(state.tabId).catch(() => undefined);
+        stopKeepalive(state.tabId);
         runs.delete(state.tabId);
       }
     }
@@ -327,6 +349,32 @@ export function attachPort(tabId: number, port: PortLike): RunSnapshot | undefin
  * 这正是本次迁移要修的 bug 本身，不能在这里重犯（ref: 设计文档 §4）。*/
 export function detachPort(tabId: number, port: PortLike): void {
   if (listeners.get(tabId) === port) listeners.delete(tabId);
+}
+
+/** 冷启动时调用一次：找出 storage.session 里残留的、内存中已经没有对应存活 run 的
+ * 运行态快照——这正是"上次 service worker 中途死掉，run 没能走到自己的 finally 清理"
+ * 的信号。把它们标成失败消息写回 Dexie，并清掉 storage.session 里的残留条目，避免
+ * 下次冷启动重复处理。真正推给 Port 的动作在 Task 5 的 attachPort 调用处。 */
+export async function scanForOrphans(): Promise<import('./run-port-protocol').OrphanResolvedMessage[]> {
+  const tabIds = await listOrphanRunTabIds();
+  const resolved: import('./run-port-protocol').OrphanResolvedMessage[] = [];
+  for (const tabId of tabIds) {
+    if (runs.has(tabId)) continue; // 这个 tab 已经有存活的 run，说明这条快照是它自己刚写的，不是孤儿
+    const snapshot = await loadRunStateSnapshot(tabId);
+    if (!snapshot) continue;
+    const last = snapshot.messages[snapshot.messages.length - 1];
+    const messages: ChatMessage[] = last && last.role === 'assistant' && !last.content
+      ? [...snapshot.messages.slice(0, -1), { ...last, content: t('store.interruptedByRestart') }]
+      : [...snapshot.messages, { id: `orphan-${tabId}-${Date.now()}`, role: 'assistant' as const, content: t('store.interruptedByRestart'), createdAt: Date.now() }];
+    await replaceConversationMessages(
+      snapshot.conversationId,
+      toMessageRecords(snapshot.conversationId, messages),
+      conversationTitle(messages),
+    ).catch((e: unknown) => console.error('[Runi] 孤儿 run 恢复失败', e));
+    resolved.push({ type: 'orphanResolved', tabId, messages });
+    await clearRunStateSnapshot(tabId);
+  }
+  return resolved;
 }
 
 export function respondConfirm(tabId: number, toolCallId: string, approved: boolean): void {

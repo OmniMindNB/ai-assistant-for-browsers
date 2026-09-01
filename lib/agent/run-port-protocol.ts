@@ -73,6 +73,7 @@ export type PanelToBackground =
 /** background 侧运行态的完整快照——格式化好、可以直接渲染，面板不做任何 i18n/文案拼接。 */
 export interface RunSnapshot {
   tabId: number;
+  conversationId: string;
   busy: boolean;
   messages: ChatMessage[];
   activitySteps: ActivityStep[];

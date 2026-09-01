@@ -287,3 +287,70 @@ describe('run-registry confirm/question/stop/port', () => {
     expect(attachPort(999, { postMessage: () => undefined })).toBeUndefined();
   });
 });
+
+describe('run-registry keepalive alarm', () => {
+  beforeEach(() => {
+    (globalThis as any).browser = {
+      ...(globalThis as any).browser,
+      alarms: {
+        create: vi.fn(),
+        clear: vi.fn(async () => true),
+        onAlarm: { addListener: vi.fn() },
+      },
+    };
+  });
+
+  it('registers a keepalive alarm while a run is in-flight and clears it when the run settles', async () => {
+    const agent = makeFakeAgent([]);
+    let resolvePrompt!: () => void;
+    agent.prompt = vi.fn(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
+    mocks.createBrowserAgent.mockReturnValue(agent);
+
+    const runPromise = startRun(makeRequest({ tabId: 30 }));
+    await vi.waitFor(() => expect((globalThis as any).browser.alarms.create).toHaveBeenCalled());
+    expect((globalThis as any).browser.alarms.create.mock.calls[0][0]).toBe('runi:agent-keepalive:30');
+
+    resolvePrompt();
+    await runPromise;
+    // startRun() itself resolves right after kicking off the fire-and-forget
+    // agent.prompt() IIFE, well before that IIFE's own finally block (which calls
+    // stopKeepalive) has actually run — so, like the db-persistence assertions
+    // elsewhere in this file, waiting on the alarm clear must poll rather than
+    // assume `await runPromise` already covered it.
+    await vi.waitFor(() => expect((globalThis as any).browser.alarms.clear).toHaveBeenCalledWith('runi:agent-keepalive:30'));
+  });
+});
+
+describe('run-registry orphan scan', () => {
+  it('marks a stale storage.session run-state entry as failure and clears it, without touching live runs', async () => {
+    const { listOrphanRunTabIds, loadRunStateSnapshot } = await import('./run-state-storage');
+    vi.mocked(listOrphanRunTabIds).mockResolvedValueOnce([99]);
+    vi.mocked(loadRunStateSnapshot).mockResolvedValueOnce({
+      tabId: 99,
+      conversationId: 'conv-1',
+      busy: true,
+      messages: [{ id: 'u1', role: 'user', content: 'hi', createdAt: 1 }],
+      activitySteps: [],
+      pendingConfirmation: null,
+      pendingQuestion: null,
+    });
+    // 冷启动场景：内存里的 runs Map 对 tabId 99 必然是空的（这正是 orphan 的定义）。
+    expect(getRunState(99)).toBeUndefined();
+
+    const { scanForOrphans } = await import('./run-registry');
+    const resolved = await scanForOrphans();
+
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0].tabId).toBe(99);
+    expect(resolved[0].messages.at(-1)?.role).toBe('assistant');
+    expect(mocks.replaceConversationMessages).toHaveBeenCalled();
+    expect(mocks.replaceConversationMessages).toHaveBeenCalledWith('conv-1', expect.any(Array), expect.any(String));
+  });
+
+  it('does nothing when there is no stale storage.session entry', async () => {
+    const { listOrphanRunTabIds } = await import('./run-state-storage');
+    vi.mocked(listOrphanRunTabIds).mockResolvedValueOnce([]);
+    const { scanForOrphans } = await import('./run-registry');
+    expect(await scanForOrphans()).toEqual([]);
+  });
+});

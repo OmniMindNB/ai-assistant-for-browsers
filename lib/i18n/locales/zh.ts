@@ -282,6 +282,7 @@ export const zh = {
   'store.unknownError': '未知错误',
   'store.tokenLimitReached': '模型在生成过程中达到了 token 上限（可能是思考阶段耗尽了预算），未能给出正式回复。请重试或简化问题。',
   'store.generationAborted': '本次生成已被中止。',
+  'store.interruptedByRestart': '任务因浏览器或扩展重启被中断，请重新发起。',
   'store.onlyToolCalls': '模型只发起了工具调用就结束了本轮，没有给出文字回答。请再问一次，或换一个更具体的问题。',
   'store.noTextResult': '本次 Agent 运行没有生成文本结果。详情见侧边栏控制台日志（右键「检查」）。',
   'privacy.pageDataTitle': '网页数据会发送给 AI Provider',

@@ -285,6 +285,7 @@ export const en: Record<keyof typeof zh, string> = {
   'store.tokenLimitReached':
     'The model hit its token limit while generating (possibly exhausted during reasoning) and did not produce a final reply. Please retry or simplify your question.',
   'store.generationAborted': 'This generation was aborted.',
+  'store.interruptedByRestart': 'The task was interrupted by a browser or extension restart. Please try again.',
   'store.onlyToolCalls':
     'The model only made tool calls and ended the turn without a text reply. Please ask again, or try a more specific question.',
   'store.noTextResult': 'This agent run produced no text result. See the side panel console log for details (right-click → Inspect).',

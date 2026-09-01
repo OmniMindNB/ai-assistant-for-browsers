@@ -36,6 +36,7 @@ beforeEach(() => {
 function makeSnapshot(tabId: number): RunSnapshot {
   return {
     tabId,
+    conversationId: 'conv-1',
     busy: true,
     messages: [],
     activitySteps: [],

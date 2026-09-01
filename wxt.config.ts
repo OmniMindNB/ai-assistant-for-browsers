@@ -34,7 +34,7 @@ export default defineConfig({
     default_locale: 'en',
     name: '__MSG_extName__',
     description: '__MSG_extDescription__',
-    permissions: ['sidePanel', 'storage', 'scripting', 'activeTab', 'tabs'],
+    permissions: ['sidePanel', 'storage', 'scripting', 'activeTab', 'tabs', 'alarms'],
     host_permissions: ['<all_urls>'],
     minimum_chrome_version: '138',
     icons: {
