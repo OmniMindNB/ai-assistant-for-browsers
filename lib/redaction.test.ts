@@ -4,6 +4,7 @@ import {
   REDACTION_STORAGE_KEY,
   defaultRedactionSettings,
   loadRedactionSettings,
+  previewRedactionMatches,
   redactText,
   saveRedactionSettings,
   type RedactionSettings,
@@ -77,6 +78,61 @@ describe('redactText', () => {
 
   it('returns empty text unchanged', () => {
     expect(redactText('', defaultRedactionSettings())).toBe('');
+  });
+});
+
+describe('previewRedactionMatches', () => {
+  it('marks the matched substrings and counts them', () => {
+    const result = previewRedactionMatches('EMP-\\d{4}', '工号 EMP-1234 和 EMP-5678');
+    expect(result).toEqual({
+      ok: true,
+      matchCount: 2,
+      segments: [
+        { text: '工号 ', matched: false },
+        { text: 'EMP-1234', matched: true },
+        { text: ' 和 ', matched: false },
+        { text: 'EMP-5678', matched: true },
+      ],
+    });
+  });
+
+  it('returns one unmatched segment when the pattern matches nothing', () => {
+    const result = previewRedactionMatches('EMP-\\d{4}', '这段文本里没有工号');
+    expect(result).toEqual({
+      ok: true,
+      matchCount: 0,
+      segments: [{ text: '这段文本里没有工号', matched: false }],
+    });
+  });
+
+  it('flags an unparsable pattern instead of throwing', () => {
+    const result = previewRedactionMatches('(unclosed', '任意文本');
+    expect(result.ok).toBe(false);
+    expect(() => previewRedactionMatches('(unclosed', '任意文本')).not.toThrow();
+  });
+
+  it('returns no segments for empty sample text regardless of the pattern', () => {
+    expect(previewRedactionMatches('\\d+', '')).toEqual({ ok: true, matchCount: 0, segments: [] });
+  });
+
+  it('treats an empty/whitespace-only pattern as matching nothing', () => {
+    expect(previewRedactionMatches('', '你好')).toEqual({
+      ok: true,
+      matchCount: 0,
+      segments: [{ text: '你好', matched: false }],
+    });
+    expect(previewRedactionMatches('   ', '你好')).toEqual({
+      ok: true,
+      matchCount: 0,
+      segments: [{ text: '你好', matched: false }],
+    });
+  });
+
+  it('does not hang on a pattern that can produce zero-length matches, and does not count them', () => {
+    // 'x*' 在没有 'x' 的地方也能匹配到长度 0 的字符串——每个位置都会命中一次空字符串。
+    // 这些零宽命中不计入 matchCount、也不拆分片段，只是被跳过，否则会在真实浏览器里卡死。
+    const result = previewRedactionMatches('x*', 'abc');
+    expect(result).toEqual({ ok: true, matchCount: 0, segments: [{ text: 'abc', matched: false }] });
   });
 });
 

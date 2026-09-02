@@ -4,6 +4,7 @@ import {
   REDACTION_STORAGE_KEY,
   loadRedactionSettings,
   newRedactionRuleId,
+  previewRedactionMatches,
   saveRedactionSettings,
   type RedactionRule,
   type RedactionSettings as RedactionSettingsData,
@@ -28,6 +29,8 @@ export default function RedactionSettings() {
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<RuleDraft | null>(null);
   const [draftErrors, setDraftErrors] = useState<DraftErrors>({});
+  // 用户粘贴的样例文本，只用于实时预览，不落盘、不随规则一起保存。
+  const [previewSample, setPreviewSample] = useState('');
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const confirmTimeoutRef = useRef<number | null>(null);
 
@@ -119,12 +122,14 @@ export default function RedactionSettings() {
   function beginAdd() {
     setDraft({ ...EMPTY_DRAFT });
     setDraftErrors({});
+    setPreviewSample('');
     setError(null);
   }
 
   function cancelAdd() {
     setDraft(null);
     setDraftErrors({});
+    setPreviewSample('');
     setError(null);
   }
 
@@ -153,6 +158,7 @@ export default function RedactionSettings() {
     await persist({ ...settings, rules: [...settings.rules, newRule] });
     setDraft(null);
     setDraftErrors({});
+    setPreviewSample('');
   }
 
   if (!settings) {
@@ -299,6 +305,7 @@ export default function RedactionSettings() {
                 <span className="mt-1 block text-xs text-red-600 dark:text-red-400">{draftErrors.pattern}</span>
               )}
             </label>
+            <RulePreview pattern={draft.pattern} sample={previewSample} onSampleChange={setPreviewSample} />
           </div>
           <div className="mt-3 flex justify-end gap-2">
             <button
@@ -320,5 +327,63 @@ export default function RedactionSettings() {
         </form>
       )}
     </section>
+  );
+}
+
+// 保存前的实时预览：把草稿里的正则套到用户粘贴的样例文本上，高亮出命中片段——
+// 直接复用 lib/redaction.ts 里跟 redactText() 同一套 new RegExp(pattern, 'g') 逻辑，
+// 保证"预览看到的"和"保存后实际生效的"不会走两套不同实现而对不上。
+function RulePreview({
+  pattern,
+  sample,
+  onSampleChange,
+}: {
+  pattern: string;
+  sample: string;
+  onSampleChange: (value: string) => void;
+}) {
+  const { t } = useTranslation();
+  const preview = previewRedactionMatches(pattern, sample);
+
+  return (
+    <div className="rounded-md border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-950">
+      <label className="block text-xs text-neutral-600 dark:text-neutral-300">
+        <span className="mb-1 block">{t('privacy.redaction.previewSampleLabel')}</span>
+        <textarea
+          value={sample}
+          onChange={(event) => onSampleChange(event.target.value)}
+          rows={2}
+          placeholder={t('privacy.redaction.previewSamplePlaceholder')}
+          className="w-full resize-y rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+        />
+      </label>
+      <div className="mt-2 text-xs">
+        {!sample ? (
+          <p className="text-neutral-400 dark:text-neutral-500">{t('privacy.redaction.previewEmpty')}</p>
+        ) : !preview.ok ? (
+          <p className="text-neutral-400 dark:text-neutral-500">{t('privacy.redaction.previewInvalidPattern')}</p>
+        ) : (
+          <>
+            <p className="mb-1 font-medium text-neutral-500 dark:text-neutral-400">
+              {t('privacy.redaction.previewMatchCount', { count: preview.matchCount })}
+            </p>
+            <p className="whitespace-pre-wrap break-words rounded border border-neutral-200 bg-neutral-50 p-2 text-neutral-700 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">
+              {preview.segments.map((segment, index) =>
+                segment.matched ? (
+                  <mark
+                    key={index}
+                    className="rounded bg-amber-200 px-0.5 text-neutral-900 dark:bg-amber-500/40 dark:text-amber-100"
+                  >
+                    {segment.text}
+                  </mark>
+                ) : (
+                  <span key={index}>{segment.text}</span>
+                ),
+              )}
+            </p>
+          </>
+        )}
+      </div>
+    </div>
   );
 }

@@ -167,6 +167,19 @@ export function WorkbenchComposer({
     textareaRef.current?.focus();
   }
 
+  // 唯一学会"/"能唤出命令菜单的方式过去只有用户自己偶然敲出"/"——这里给一个常驻可见的
+  // 按钮入口，点击等效于敲了"/"（复用同一套 commands 列表/键盘导航），焦点仍留在输入框，
+  // 这样弹出后箭头键/Enter 照常可用（ref: [[project-design-audit-2026-09-02]] 发现1）。
+  function toggleSlashCommands() {
+    if (requestBlocked) return;
+    setOpenPopover((current) => {
+      if (current === 'commands') return null;
+      setHighlightedCommand(0);
+      return 'commands';
+    });
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }
+
   function focusModelItem(index: number) {
     setOpenPopover('models');
     requestAnimationFrame(() => modelItemRefs.current[index]?.focus());
@@ -434,6 +447,19 @@ export function WorkbenchComposer({
               event.target.value = '';
             }}
           />
+          <button
+            type="button"
+            disabled={requestBlocked}
+            onClick={toggleSlashCommands}
+            aria-label={t('chat.slashCommandMenuAriaLabel')}
+            title={t('chat.slashCommandMenuAriaLabel')}
+            aria-haspopup="menu"
+            aria-expanded={openPopover === 'commands'}
+            aria-controls={openPopover === 'commands' ? 'workbench-slash-commands' : undefined}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-base font-semibold text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
+          >
+            /
+          </button>
           <button
             type="button"
             disabled={busy}

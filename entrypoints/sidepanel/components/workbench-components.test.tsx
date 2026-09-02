@@ -654,6 +654,40 @@ describe('workbench composer', () => {
     expect(onSend).not.toHaveBeenCalled();
   });
 
+  it('opens the slash-command menu from the dedicated trigger button and keeps focus on the textarea for keyboard nav', async () => {
+    const user = userEvent.setup();
+    const onRunShortcut = vi.fn();
+    render(<ComposerHarness onRunShortcut={onRunShortcut} />);
+
+    const trigger = screen.getByRole('button', { name: 'Slash commands' });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+
+    await user.click(trigger);
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    const menu = screen.getByRole('menu', { name: 'Slash commands' });
+    expect(within(menu).getByText('阅读页面')).toBeVisible();
+    expect(screen.getByRole('textbox')).toHaveValue('');
+    await waitFor(() => expect(screen.getByRole('textbox')).toHaveFocus());
+
+    // 焦点回到输入框，说明键盘导航（这里是直接 Enter 选中高亮的第一项）照常可用。
+    await user.keyboard('{Enter}');
+    expect(onRunShortcut).toHaveBeenCalledWith(readingShortcut.config);
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
+  it('toggles the slash-command menu closed on a second click of the trigger button', async () => {
+    const user = userEvent.setup();
+    render(<ComposerHarness />);
+
+    const trigger = screen.getByRole('button', { name: 'Slash commands' });
+    await user.click(trigger);
+    expect(screen.getByRole('menu', { name: 'Slash commands' })).toBeVisible();
+
+    await user.click(trigger);
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
   it('closes slash commands with Escape without clearing the input', async () => {
     const user = userEvent.setup();
     render(<ComposerHarness />);
@@ -760,6 +794,7 @@ describe('workbench composer', () => {
     await waitFor(() => expect(screen.getByRole('menuitem', { name: 'model-one' })).toHaveFocus());
     await user.keyboard('{ArrowDown}');
     await waitFor(() => expect(screen.getByRole('menuitem', { name: 'model-two' })).toHaveFocus());
+    await user.tab();
     await user.tab();
     await user.tab();
     await user.tab();

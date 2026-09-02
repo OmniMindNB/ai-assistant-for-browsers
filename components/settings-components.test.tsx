@@ -595,6 +595,36 @@ describe('grouped options settings', () => {
     });
   });
 
+  it('previews matches against pasted sample text while drafting a rule', async () => {
+    const user = userEvent.setup();
+    renderWithLocale(<RedactionSettings />);
+
+    await screen.findByRole('checkbox', { name: 'Enable page content redaction' });
+    await user.click(screen.getByRole('button', { name: 'Add custom rule' }));
+    fireEvent.change(screen.getByLabelText('Regular expression'), { target: { value: 'EMP-\\d{4}' } });
+
+    expect(screen.getByText('Enter sample text to preview what this rule matches')).toBeVisible();
+
+    await user.type(screen.getByLabelText('Preview: paste sample text'), '工号 EMP-1234 和 EMP-5678');
+
+    expect(screen.getByText('Matches: 2')).toBeVisible();
+    const marks = document.querySelectorAll('mark');
+    expect(Array.from(marks).map((mark) => mark.textContent)).toEqual(['EMP-1234', 'EMP-5678']);
+  });
+
+  it('shows an unparsable-pattern hint in the preview instead of a match count', async () => {
+    const user = userEvent.setup();
+    renderWithLocale(<RedactionSettings />);
+
+    await screen.findByRole('checkbox', { name: 'Enable page content redaction' });
+    await user.click(screen.getByRole('button', { name: 'Add custom rule' }));
+    await user.type(screen.getByLabelText('Regular expression'), '(unclosed');
+    await user.type(screen.getByLabelText('Preview: paste sample text'), '任意文本');
+
+    expect(screen.getByText("This pattern can't be parsed yet — fix the expression above first")).toBeVisible();
+    expect(screen.queryByText(/^Matches:/)).not.toBeInTheDocument();
+  });
+
   it('rejects an invalid regular expression without saving', async () => {
     const user = userEvent.setup();
     const set = (globalThis as any).browser.storage.local.set as ReturnType<typeof vi.fn>;

@@ -60,6 +60,56 @@ export function newRedactionRuleId(): string {
   return `redaction-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+export interface RedactionPreviewSegment {
+  text: string;
+  matched: boolean;
+}
+
+export interface RedactionPreviewResult {
+  /** false 仅表示正则语法当前不合法（用户还在输入）；跟保存时的校验是同一套 `new RegExp`。 */
+  ok: boolean;
+  segments: RedactionPreviewSegment[];
+  matchCount: number;
+}
+
+/**
+ * 给设置页"添加自定义规则"表单用的实时预览：把 pattern 套到用户粘贴的样例文本上，
+ * 标出命中的片段，让用户在保存前就能看出规则是不是匹配到了预期之外/之内的内容——
+ * 不复用 redactText() 是因为那里返回的是替换后的占位符文本，看不出"具体命中了哪一段"。
+ */
+export function previewRedactionMatches(pattern: string, sample: string): RedactionPreviewResult {
+  if (!sample) return { ok: true, segments: [], matchCount: 0 };
+  if (!pattern.trim()) return { ok: true, segments: [{ text: sample, matched: false }], matchCount: 0 };
+
+  let regex: RegExp;
+  try {
+    regex = new RegExp(pattern, 'g');
+  } catch {
+    return { ok: false, segments: [{ text: sample, matched: false }], matchCount: 0 };
+  }
+
+  const segments: RedactionPreviewSegment[] = [];
+  let lastIndex = 0;
+  let matchCount = 0;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(sample)) !== null) {
+    if (match[0].length === 0) {
+      // 零宽匹配（比如误写成只含前瞻，或像 'x*' 在没有 x 的位置也能命中空串）既不推进
+      // lastIndex 也不计入结果，只手动步进一位避免死循环——否则每次重复检测到同一个
+      // 位置都会当成"新的未匹配片段"重复入队，产生重叠、错误的分段。
+      regex.lastIndex += 1;
+      continue;
+    }
+    if (match.index > lastIndex) segments.push({ text: sample.slice(lastIndex, match.index), matched: false });
+    segments.push({ text: match[0], matched: true });
+    matchCount += 1;
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < sample.length) segments.push({ text: sample.slice(lastIndex), matched: false });
+
+  return { ok: true, segments, matchCount };
+}
+
 function isValidRedactionSettings(value: unknown): value is RedactionSettings {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Record<string, unknown>;
