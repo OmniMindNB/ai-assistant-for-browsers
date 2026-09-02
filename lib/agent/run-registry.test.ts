@@ -1,8 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { ChatMessageRecord } from '@/lib/db';
 
 const mocks = vi.hoisted(() => ({
   createBrowserAgent: vi.fn(),
-  replaceConversationMessages: vi.fn(async () => undefined),
+  replaceConversationMessages: vi.fn(
+    async (_conversationId: string, _records: ChatMessageRecord[], _title: string) => undefined,
+  ),
   loadTabSession: vi.fn(async (tabId: number) => ({ panelTabId: tabId, currentTabId: tabId, trackedTabs: [], snapshot: () => ({}) })),
   saveTabSession: vi.fn(async () => undefined),
 }));
@@ -302,6 +305,41 @@ describe('run-registry confirm/question/stop/port', () => {
 
     expect(agent.abort).toHaveBeenCalledOnce();
     expect(getRunState(22)?.pendingConfirmation).toBeNull();
+  });
+
+  it('archives activity steps and marks the message stopped once the aborted run settles', async () => {
+    const agent = makeFakeAgent([]);
+    let rejectPrompt!: (e: unknown) => void;
+    // makeFakeAgent 默认的 prompt() 同步跑完 events 就 resolve，不会真的被 abort() 打断；
+    // 这里换成一个受控 promise，好让 stopRun() 之后再手动模拟 agent.prompt() 因为
+    // AbortError 而 reject，从而真正跑到 startRun 里 isUserAbortError 那条分支。
+    agent.prompt = vi.fn(() => new Promise<void>((_resolve, reject) => { rejectPrompt = reject; }));
+    mocks.createBrowserAgent.mockReturnValue(agent);
+
+    // startRun() 本身不等待 agent.prompt() 的 fire-and-forget IIFE（同 keepalive 测试里的
+    // 注释），所以可以放心 await：它只会等到 runs.set(...) 等同步设置完成为止。
+    await startRun(makeRequest({ tabId: 41 }));
+    const state = getRunState(41)!;
+    // 模拟"点击提交按钮"这个工具调用在被打断时仍处于 running：真实场景下它是
+    // tool_execution_start 事件写进去的，这里直接摆好前置状态，跟上面 respondConfirm
+    // 测试摆 pendingConfirmation 前置状态是同一种做法。
+    state.activitySteps = [{ id: 'call-5', description: '点击了提交按钮', status: 'running' }];
+
+    stopRun(41);
+    expect(agent.abort).toHaveBeenCalledOnce();
+    // stopRun 为了让 UI 立即反馈，会同步清空 state.activitySteps；存档快照必须在这之前已经拍下。
+    expect(getRunState(41)?.activitySteps).toEqual([]);
+
+    rejectPrompt(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+    await vi.waitFor(() => expect(getRunState(41)).toBeUndefined());
+
+    const persistedRecords = mocks.replaceConversationMessages.mock.calls.at(-1)?.[1];
+    const lastRecord = persistedRecords?.at(-1);
+    expect(lastRecord?.stopped).toBe(true);
+    // 被打断时仍是 running 的步骤要降级成 failed，不能让存档里永远停着一个"进行中"的步骤。
+    expect(lastRecord?.activitySteps).toEqual([
+      { id: 'call-5', description: '点击了提交按钮', status: 'failed' },
+    ]);
   });
 
   it('attachPort replies with the current snapshot for a live run, and detachPort never cancels the run', async () => {

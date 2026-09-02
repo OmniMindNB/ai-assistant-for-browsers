@@ -1,6 +1,7 @@
 import Dexie, { type Table } from 'dexie';
 import type { MessageAttachment } from './chat/attachments';
 import type { TaskOutcome } from './agent/task-outcome';
+import type { ActivityStep } from './agent/activity-steps';
 
 // 本地持久化（ref: technical-plan.md §2.4）
 // 对话历史 / Skill 定义存 IndexedDB；API Key 等配置走 chrome.storage（见 settings.ts）。
@@ -32,6 +33,16 @@ export interface ChatMessageRecord {
    * 不建索引，同 kind/quotedText/attachments 一样无需 Dexie 版本迁移；存量记录无此字段即视为没有信号。
    */
   taskOutcome?: TaskOutcome;
+  /**
+   * 本轮是否被用户主动停止；仅 assistant 消息可能为 true。
+   * 不建索引，同上无需 Dexie 版本迁移；存量记录无此字段即视为未被停止。
+   */
+  stopped?: boolean;
+  /**
+   * 本轮实际跑过的工具步骤存档（成功/失败/被中断都保留），随该轮一起落库供历史回看渲染。
+   * 不建索引，同上无需 Dexie 版本迁移；存量记录无此字段即视为没有步骤可回看。
+   */
+  activitySteps?: ActivityStep[];
 }
 
 export interface ConversationRecord {

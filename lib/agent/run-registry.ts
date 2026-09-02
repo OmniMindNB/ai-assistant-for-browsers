@@ -44,6 +44,12 @@ interface RunState {
   pendingToolArgs: Map<string, { toolName: string; args: unknown }>;
   terminatedToolCallIds: Set<string>;
   taskOutcome: TaskOutcome | null;
+  /**
+   * stopRun 会立刻清空 state.activitySteps 换来即时的 UI 反馈（见 stopRun 注释），
+   * 这里存一份被清空前的快照，好让 finally 里的存档逻辑仍能拿到"停止那一刻跑到哪了"。
+   * null 表示这一轮没有被用户停止过，此时以 finally 里当场读到的 state.activitySteps 为准。
+   */
+  stoppedActivitySteps: ActivityStep[] | null;
 }
 
 const runs = new Map<number, RunState>();
@@ -84,6 +90,33 @@ const listeners = new Map<number, PortLike>();
 
 function broadcast(tabId: number, snapshot: RunSnapshot): void {
   listeners.get(tabId)?.postMessage({ type: 'snapshot', ...snapshot });
+  updateActionBadge(tabId, snapshot);
+}
+
+/**
+ * agent 主循环搬进 background 之后，一个正在运行的 run 不再依赖侧边栏面板文档存活——
+ * 但用户把面板切走（Chrome 会连带把 per-tab 面板收起来）时，运行状态和待确认卡片
+ * 就完全没有任何外部信号了。用 action 图标的徽标顶替：待确认/待回答优先级最高（用户
+ * 现在就要处理），其次是"正在运行"，都没有则清空。tabId 显式传入，徽标只作用于
+ * 触发这次运行的那个标签页，不影响其它标签页的图标。
+ *
+ * 这里跟着 broadcast() 一起调用而不是散落在各个状态迁移点：broadcast 已经是所有状态变化
+ * （运行开始/流式输出/工具步骤/待确认待回答的设置与清除/运行结束）共同收敛的唯一出口。
+ */
+function updateActionBadge(tabId: number, snapshot: RunSnapshot): void {
+  try {
+    const action = browser.action;
+    if (!action) return;
+    const needsAttention = Boolean(snapshot.pendingConfirmation || snapshot.pendingQuestion);
+    const text = needsAttention ? '!' : snapshot.busy ? '●' : '';
+    void action.setBadgeText({ tabId, text })?.catch?.(() => undefined);
+    if (text) {
+      const color = needsAttention ? '#d97706' : '#2563eb';
+      void action.setBadgeBackgroundColor?.({ tabId, color })?.catch?.(() => undefined);
+    }
+  } catch {
+    // 徽标是纯提示：tab 可能已经关闭，或 action API 在当前环境不可用（如单元测试），静默忽略。
+  }
 }
 
 export function getRunState(tabId: number): RunState | undefined {
@@ -256,6 +289,7 @@ export async function startRun(request: StartRunRequest): Promise<void> {
     pendingToolArgs: new Map(),
     terminatedToolCallIds: new Set(),
     taskOutcome: null,
+    stoppedActivitySteps: null,
   };
   runs.set(request.tabId, state);
   startKeepalive(request.tabId);
@@ -365,6 +399,7 @@ export async function startRun(request: StartRunRequest): Promise<void> {
   });
 
   // Fire-and-forget: don't await prompt(), just start it
+  let wasUserStopped = false;
   void (async () => {
     try {
       await agent.prompt(request.agentUserContent, request.images);
@@ -381,6 +416,9 @@ export async function startRun(request: StartRunRequest): Promise<void> {
       if (isUserAbortError(e)) {
         // 用户主动停止不是故障：保留已经流出来的部分文本（与迁移前 store.ts 的 AbortError
         // 分支行为一致）；一个字都还没出来时给一句明确的"已中止"，而不是留一条空气泡。
+        // 但即便有部分文本，也要标 stopped：不然一段中途截断的回答会跟正常说完的回答
+        // 长得一模一样，用户没法区分"模型就说到这"和"被我自己掐断了"。
+        wasUserStopped = true;
         replaceLastAssistant(state, acc.trim() ? acc : t('store.generationAborted'));
       } else {
         console.error('[Runi] agent.prompt 异常', e);
@@ -394,9 +432,22 @@ export async function startRun(request: StartRunRequest): Promise<void> {
       // If a new run was started for the same tab while this one was in flight,
       // this run's finally block should not clobber the new run's state.
       if (runs.get(state.tabId) === state) {
-        if (state.taskOutcome) {
-          const last = state.messages[state.messages.length - 1];
-          if (last) state.messages = [...state.messages.slice(0, -1), { ...last, taskOutcome: state.taskOutcome }];
+        // 存档这一轮实际跑过的步骤，而不是像迁移前那样直接清空丢弃：写/点/填表这类会动页面的
+        // 动作，用户事后应该能回看 agent 到底做了什么（ref: [[project-ux-perf-audit-2026-09-01]] P1-6）。
+        // stoppedActivitySteps 非空说明这一轮被用户停止过，stopRun 里已经把它冻结成停止那一刻的
+        // 快照（含把仍是 running 的步骤标成 failed）；否则用当场的 state.activitySteps。
+        const finishedSteps = state.stoppedActivitySteps ?? state.activitySteps;
+        const last = state.messages[state.messages.length - 1];
+        if (last) {
+          state.messages = [
+            ...state.messages.slice(0, -1),
+            {
+              ...last,
+              ...(state.taskOutcome ? { taskOutcome: state.taskOutcome } : {}),
+              ...(wasUserStopped ? { stopped: true } : {}),
+              ...(finishedSteps.length > 0 ? { activitySteps: finishedSteps } : {}),
+            },
+          ];
         }
         state.busy = false;
         state.activitySteps = [];
@@ -510,6 +561,11 @@ export function stopRun(tabId: number): void {
   state.resolveQuestion?.('');
   state.resolveQuestion = null;
   state.agent.abort();
+  // 还在 running 的步骤没等到 tool_execution_end 就被掐断，存档前把它们标成 failed——
+  // 一个永远停在"进行中"的步骤比明确标"未完成"更容易让人误以为它其实跑完了。
+  state.stoppedActivitySteps = state.activitySteps.map((step) =>
+    step.status === 'running' ? { ...step, status: 'failed' } : step,
+  );
   for (const step of state.activitySteps) state.terminatedToolCallIds.add(step.id);
   const pendingId = state.pendingConfirmation?.toolCallId ?? state.pendingQuestion?.toolCallId;
   if (pendingId) state.terminatedToolCallIds.add(pendingId);

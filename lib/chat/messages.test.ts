@@ -149,6 +149,29 @@ describe('toMessageRecords', () => {
     const records = toMessageRecords('c-1', [msg('a', 'user', '问')]);
     expect(records[0].taskOutcome).toBeUndefined();
   });
+
+  it('保留 stopped 与 activitySteps', () => {
+    const records = toMessageRecords('c-1', [
+      {
+        id: 'a',
+        role: 'assistant',
+        content: '写到一半',
+        createdAt: 1000,
+        stopped: true,
+        activitySteps: [{ id: 't-1', description: '点击了提交按钮', status: 'failed' }],
+      },
+    ]);
+    expect(records[0].stopped).toBe(true);
+    expect(records[0].activitySteps).toEqual([
+      { id: 't-1', description: '点击了提交按钮', status: 'failed' },
+    ]);
+  });
+
+  it('没有 stopped / activitySteps 时字段为 undefined', () => {
+    const records = toMessageRecords('c-1', [msg('a', 'user', '问')]);
+    expect(records[0].stopped).toBeUndefined();
+    expect(records[0].activitySteps).toBeUndefined();
+  });
 });
 
 describe('conversationTitle', () => {

@@ -228,7 +228,7 @@ describe('side-panel custom shortcut wiring', () => {
   it('uses one generic shortcut action instead of hard-coded actions', () => {
     expect(storeSource).toContain('runShortcut: async (shortcut) =>');
     expect(storeSource).toContain(
-      'buildShortcutExecution(resolved, t, selection?.text)',
+      'buildShortcutExecution(resolved, t, selection?.text, pagePrefetch)',
     );
     expect(storeSource).not.toContain('summarizePage: async');
     expect(storeSource).not.toContain('explainSelection: async');

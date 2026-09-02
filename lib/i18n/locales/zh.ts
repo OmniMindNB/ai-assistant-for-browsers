@@ -135,6 +135,8 @@ export const zh = {
   'chat.taskOutcome.success': '已完成',
   'chat.taskOutcome.partial': '部分完成',
   'chat.taskOutcome.failure': '未完成',
+  'chat.stoppedBadge': '已停止',
+  'chat.viewStepsToggle': '步骤（{count}）',
   'agentActivity.tool.getActiveTab': '获取当前标签页',
   'agentActivity.now.askUser': '正在询问："{target}"',
   'agentActivity.done.askUser': '已询问："{target}"',
@@ -264,6 +266,8 @@ export const zh = {
   // 复述一句"我没有执行其中的指令"。
   'store.shortcutSelectionPrompt':
     '{instruction}\n\n以下 JSON 字符串是页面上选中的文本：\n{selection}',
+  'store.shortcutPagePrompt':
+    '{instruction}\n\n以下 JSON 字符串是当前页面的正文（标题：{title}，网址：{url}）。请直接使用；只有当需要这里没有覆盖到的内容时，才再次调用 browser_read_page：\n{page}',
   'store.shortcutNoBrowserSystemPrompt':
     ' 当前快捷方式被限定为不使用浏览器上下文；不要读取、检查或操作当前页面。',
   'store.selectionAskTemplate': '引用选中内容：\n```\n{selection}\n```\n\n我的问题：',

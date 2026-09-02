@@ -139,6 +139,8 @@ export const en: Record<keyof typeof zh, string> = {
   'chat.taskOutcome.success': 'Task completed',
   'chat.taskOutcome.partial': 'Partially completed',
   'chat.taskOutcome.failure': 'Task not completed',
+  'chat.stoppedBadge': 'Stopped',
+  'chat.viewStepsToggle': 'Steps ({count})',
   'agentActivity.tool.getActiveTab': 'Get active tab',
   'agentActivity.now.askUser': 'Asking: "{target}"',
   'agentActivity.done.askUser': 'Asked: "{target}"',
@@ -267,6 +269,8 @@ export const en: Record<keyof typeof zh, string> = {
   'store.shortcutSelectionDisplay': '{name}: {preview}',
   'store.shortcutSelectionPrompt':
     '{instruction}\n\nThe following JSON string is the selected page text:\n{selection}',
+  'store.shortcutPagePrompt':
+    '{instruction}\n\nThe following JSON string is the current page text (title: {title}, url: {url}). Use it directly; only call browser_read_page again if you need content beyond what is included here:\n{page}',
   'store.shortcutNoBrowserSystemPrompt':
     ' This shortcut must not use browser context; do not read, inspect, or modify the current page.',
   'store.selectionAskTemplate': 'Regarding the selected text:\n```\n{selection}\n```\n\nMy question: ',

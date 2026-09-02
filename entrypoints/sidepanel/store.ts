@@ -3,6 +3,7 @@ import {
   sendMessage,
   type ActiveTabInfo,
   type MessageResponse,
+  type PageContent,
   type PageSelection,
 } from '@/lib/messaging';
 import {
@@ -28,7 +29,7 @@ import {
   DEFAULT_READ_TOOL_CALL_BUDGET,
   DEFAULT_WRITE_TOOL_CALL_BUDGET,
 } from '@/lib/agent/system-prompt';
-import { buildShortcutExecution } from '@/lib/chat/shortcut-prompts';
+import { buildShortcutExecution, type PagePrefetch } from '@/lib/chat/shortcut-prompts';
 import { type ActivityStep } from '@/lib/agent/activity-steps';
 import { getConversationIdForTab, setConversationIdForTab } from '@/lib/agent/tab-conversation';
 import { clearTabSession, loadTabSession, saveTabSession } from '@/lib/agent/tab-session-storage';
@@ -172,6 +173,9 @@ const HELLO_REPLY_TIMEOUT_MS = 300;
 /** 断线后重连的延迟：给 Chrome 一点时间把 service worker 拉起来，也避免背景真的不可达时
  * 变成一个紧凑的重连热循环。 */
 const RECONNECT_DELAY_MS = 250;
+/** page-scope 快捷方式预取正文的长度上限，与 browser_read_page 工具的默认 maxChars 保持一致
+ * （lib/agent/tools.ts makeReadPageTool）。 */
+const PAGE_PREFETCH_MAX_CHARS = 12000;
 
 function flushPendingPortMessages(): void {
   if (!runPort) return;
@@ -822,6 +826,7 @@ export const useChat = create<ChatState>((set, get) => ({
     const resolved = resolveShortcut({ ...shortcut }, t);
     let tab: ActiveTabInfo | undefined;
     let selection: PageSelection | undefined;
+    let pagePrefetch: PagePrefetch | undefined;
 
     if (resolved.scope === 'selection') {
       set({ busy: true, error: null });
@@ -844,11 +849,46 @@ export const useChat = create<ChatState>((set, get) => ({
         return;
       }
       set({ busy: false });
+    } else if (resolved.scope === 'page') {
+      // 预取页面正文并直接塞进首轮 user turn：不预取的话，"总结本页"这类最高频 page-scope
+      // 快捷方式要先让模型发起 browser_read_page 才能拿到内容，白白多花一整轮 LLM 往返
+      // （ref: [[project-sidepanel-perf-profile]]，减少轮数是目前唯一真正的提速杠杆）。
+      // resolveActiveTab 失败是真错误，走跟 selection 分支一致的失败路径；EXTRACT_PAGE
+      // 本身失败（受限页、内容脚本未注入等）则静默降级——不设置 pagePrefetch，
+      // buildShortcutExecution 退回原本"不预取"的路径，模型仍可自己调用 browser_read_page 兜底。
+      set({ busy: true, error: null });
+      try {
+        tab = await resolveActiveTab();
+      } catch (error) {
+        if (!isCurrentOrigin(origin, get)) return;
+        set({ busy: false, error: errMsg(error) });
+        return;
+      }
+      if (!isCurrentOrigin(origin, get)) return;
+      try {
+        const response = (await sendMessage(
+          'EXTRACT_PAGE',
+          undefined,
+          tab.id,
+        )) as MessageResponse<PageContent>;
+        if (!isCurrentOrigin(origin, get)) return;
+        if (response.ok && response.data) {
+          pagePrefetch = {
+            title: response.data.title,
+            url: response.data.url,
+            // 与 browser_read_page 工具的默认上限保持一致，模型认得这种量级的正文。
+            text: response.data.text.slice(0, PAGE_PREFETCH_MAX_CHARS),
+          };
+        }
+      } catch {
+        // 静默降级，见上方注释。
+      }
+      set({ busy: false });
     }
 
     let execution;
     try {
-      execution = buildShortcutExecution(resolved, t, selection?.text);
+      execution = buildShortcutExecution(resolved, t, selection?.text, pagePrefetch);
     } catch (error) {
       if (!isCurrentOrigin(origin, get)) return;
       set({ busy: false, error: errMsg(error) });
@@ -953,6 +993,8 @@ export const useChat = create<ChatState>((set, get) => ({
         quotedText: r.quotedText,
         attachments: r.attachments,
         taskOutcome: r.taskOutcome,
+        stopped: r.stopped,
+        activitySteps: r.activitySteps,
       }));
     set({
       messages,
@@ -1062,6 +1104,16 @@ browser.storage.onChanged.addListener((changes, areaName) => {
   // 跳过删除侧的变化——那正是本函数自己 clearPendingAskForTab 触发的回声。
   if (!change || !change.newValue) return;
   void consumePendingAskForTab(panelTabId);
+});
+
+// pageContext 只在面板挂载时取过一次快照；submitMessage 用它的 status 决定
+// withoutBrowserTools（见 App.tsx 的 resolvePageAttached）。面板绑定的 tab 导航后不刷新的话，
+// 快照会一直停在旧页面上，导致新页面的这一轮 browser_* 工具被静默摘掉且没有任何提示。
+// 只关心面板自己绑定的这一个 tab；其余 tab 的更新与本面板无关。
+browser.tabs?.onUpdated?.addListener((tabId, changeInfo) => {
+  if (tabId !== panelTabId) return;
+  if (changeInfo.status !== 'complete' && changeInfo.url === undefined) return;
+  void useChat.getState().refreshPageContext();
 });
 
 interface RunAgentOptions {

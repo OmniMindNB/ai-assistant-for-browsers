@@ -23,13 +23,16 @@ import { ActivityStepList } from './components/ActivityStepList';
 import { WorkbenchComposer } from './components/WorkbenchComposer';
 import { AttachmentChip } from './components/AttachmentChip';
 import type { PendingConfirmation, PendingQuestion, UIMessage } from './store';
+import type { ActivityStep } from '@/lib/agent/activity-steps';
 import { resolvePageAttached, type ResolvedShortcutCommand } from '@/lib/workbench/presentation';
 import {
   IconAlertTriangle,
   IconCheck,
   IconChevronDown,
+  IconChevronRight,
   IconClose,
   IconPencil,
+  IconStop,
 } from './icons';
 
 export default function App() {
@@ -508,10 +511,45 @@ const Message = memo(function Message({
             <span>{t(`chat.taskOutcome.${message.taskOutcome.outcome}`)}</span>
           </div>
         )}
+        {message.stopped && (
+          <div className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">
+            <IconStop className="h-3.5 w-3.5" />
+            <span>{t('chat.stoppedBadge')}</span>
+          </div>
+        )}
+        {message.activitySteps && message.activitySteps.length > 0 && (
+          <ArchivedActivitySteps steps={message.activitySteps} />
+        )}
       </div>
     </div>
   );
 });
+
+// 一轮结束后，运行期间的实时步骤条（ActivityStepList，渲染在消息列表下方）就被清空了——
+// 这里是它在消息里的存档版本：默认折叠，避免每条历史消息都摊开一截步骤明细，
+// 但保留"事后能看到 agent 到底做了什么"的能力（ref: [[project-ux-perf-audit-2026-09-01]] P1-6）。
+function ArchivedActivitySteps({ steps }: { steps: ActivityStep[] }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        aria-expanded={open}
+        className="inline-flex items-center gap-1 text-xs font-medium text-neutral-500 transition-colors hover:text-neutral-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-neutral-400 dark:hover:text-neutral-200"
+      >
+        <IconChevronRight className={`h-3 w-3 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`} />
+        {t('chat.viewStepsToggle', { count: steps.length })}
+      </button>
+      {open && (
+        <div className="mt-1.5">
+          <ActivityStepList steps={steps} />
+        </div>
+      )}
+    </div>
+  );
+}
 
 function TypingDots() {
   const { t } = useTranslation();
