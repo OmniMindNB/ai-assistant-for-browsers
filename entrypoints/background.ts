@@ -76,6 +76,7 @@ import {
 import { loadLocale, applyLocale, LOCALE_KEY } from '@/lib/i18n';
 import {
   SIDE_PANEL_PATH,
+  enableAndOpenPanelForTab,
   clearPanelOpenedForTab,
   decideTabPanelOptions,
   isPanelOpenedForTab,
@@ -349,19 +350,24 @@ async function handleAskSelection(sender: MessageSender | undefined, payload: As
   const text = payload?.text?.trim();
   if (!text) return;
 
-  // 两次 sidePanel 调用必须在这里同步发起、不经过任何 await/.then 链，否则 Chrome 会认为已经
-  // 脱离了触发本次消息的用户手势，抛出
-  // "sidePanel.open() may only be called in response to a user gesture."
-  // ——与上方 action.onClicked 监听器（第 91-100 行）的写法保持一致。
-  browser.sidePanel
-    ?.setOptions?.({ tabId, path: SIDE_PANEL_PATH, enabled: true })
-    .catch((err: unknown) => console.error('[Runi] sidePanel setOptions (ask-selection):', err));
-  browser.sidePanel
-    ?.open?.({ tabId })
-    .catch((err: unknown) => console.error('[Runi] sidePanel open (ask-selection):', err));
+  // 启用 + 打开必须在这一段同步执行里发起，中间不能插入任何 await——手势的有效期只覆盖
+  // 监听器的同步执行段，跨过一次 await 就会拿到
+  // "`sidePanel.open()` may only be called in response to a user gesture."
+  // （2026-09-02 实测：await 只花了 1ms 也照样失效）。约束与理由见
+  // lib/tab-panel-scope.ts 的 enableAndOpenPanelForTab。
+  const outcome = await enableAndOpenPanelForTab(browser.sidePanel, tabId);
+  if (outcome.setOptionsError) {
+    console.error('[Runi] sidePanel setOptions (ask-selection):', outcome.setOptionsError);
+  }
+  if (!outcome.opened) {
+    console.error('[Runi] sidePanel open (ask-selection):', outcome.error);
+  }
 
-  // 划词提问同样算"用户在这个 tab 打开了面板"，否则切走再切回来会被当成未打开过而关掉。
-  await markPanelOpenedForTab(tabId);
+  // 只有真的打开了才记账。失败时若照样记成"这个 tab 开过面板"，这个 tab 就会一直保持
+  // enabled:true，用户切到它时面板会跟过来显示——正是 lib/tab-panel-scope.ts 要挡的那个问题。
+  if (outcome.opened) await markPanelOpenedForTab(tabId);
+
+  // 待提问的选中文本无论如何都留下：即使这次没打开成功，用户手动点开面板时仍能接上。
   await setPendingAskForTab(tabId, text);
 }
 

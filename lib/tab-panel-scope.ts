@@ -78,3 +78,59 @@ export async function listPanelOpenedTabs(): Promise<number[]> {
   }
   return tabIds;
 }
+
+/** browser.sidePanel 里本模块用到的那一小块，避免依赖 polyfill 的具体类型名。 */
+export interface SidePanelApi {
+  setOptions?: (options: TabPanelOptions) => Promise<void>;
+  open?: (options: { tabId: number }) => Promise<void>;
+}
+
+/** 打开尝试的结果：opened 为 false 时 error 带上原始错误文本，供调用方打日志/降级。 */
+export interface OpenPanelOutcome {
+  opened: boolean;
+  error?: string;
+  setOptionsError?: string;
+}
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * 为某个标签页启用并打开侧边栏。
+ *
+ * **两个调用必须在同一个同步执行段里发起，中间不能有任何 await。** Chrome 只在触发这次
+ * 调用的用户手势仍然有效时才允许 sidePanel.open()，而这份有效期只覆盖事件监听器的同步
+ * 执行段，不是一个按时间计的窗口。实测（2026-09-02，"划词提问打不开侧边栏"）：在 open()
+ * 之前插入一次 await setOptions() 的往返，即使全程只花了 1ms，open() 也照样抛
+ * "`sidePanel.open()` may only be called in response to a user gesture."。
+ *
+ * 顺序不需要靠 await 保证：两个调用走同一条通道发到浏览器进程，按发起顺序处理，
+ * setOptions 必定先于 open 落地。所以这里先同步发起、拿到 promise，之后再一起 await。
+ */
+export async function enableAndOpenPanelForTab(
+  sidePanel: SidePanelApi | undefined,
+  tabId: number,
+): Promise<OpenPanelOutcome> {
+  const setting = sidePanel?.setOptions?.(decideTabPanelOptions(tabId, true));
+  const opening = sidePanel?.open?.({ tabId });
+
+  const outcome: OpenPanelOutcome = { opened: false };
+  try {
+    await setting;
+  } catch (err: unknown) {
+    // 不提前返回：open() 已经发起了，它的结果才是"面板到底开没开"的事实来源。
+    outcome.setOptionsError = errorText(err);
+  }
+  if (!opening) {
+    outcome.error = 'sidePanel.open 不可用';
+    return outcome;
+  }
+  try {
+    await opening;
+    outcome.opened = true;
+  } catch (err: unknown) {
+    outcome.error = errorText(err);
+  }
+  return outcome;
+}

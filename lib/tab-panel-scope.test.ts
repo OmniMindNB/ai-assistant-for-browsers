@@ -9,6 +9,8 @@ import {
   markPanelOpenedForTab,
   panelScopeStorageKey,
 } from './tab-panel-scope';
+import type { SidePanelApi } from './tab-panel-scope';
+import { enableAndOpenPanelForTab } from './tab-panel-scope';
 
 (globalThis as any).browser = fakeBrowser;
 
@@ -120,5 +122,73 @@ describe('tab-panel-scope', () => {
 
   it('exposes a per-tab storage key', () => {
     expect(panelScopeStorageKey(TAB_ID)).toBe('runi:tab-panel-open:1');
+  });
+});
+
+describe('enableAndOpenPanelForTab', () => {
+  const TAB_ID = 7;
+
+  /** setOptions 停在未决状态，用来证明 open() 没有等它。 */
+  function makeSidePanel() {
+    const calls: string[] = [];
+    let settleSetOptions!: (err?: Error) => void;
+    const sidePanel: SidePanelApi = {
+      setOptions: vi.fn((options) => {
+        calls.push(`setOptions:${JSON.stringify(options)}`);
+        return new Promise<void>((resolve, reject) => {
+          settleSetOptions = (err) => (err ? reject(err) : resolve());
+        });
+      }),
+      open: vi.fn(() => {
+        calls.push('open');
+        return Promise.resolve();
+      }),
+    };
+    return { sidePanel, calls, settleSetOptions: (err?: Error) => settleSetOptions(err) };
+  }
+
+  // 本项目最容易复发的一条：只要在 open() 前面插入任何 await，Chrome 就判定用户手势已失效，
+  // 抛 "`sidePanel.open()` may only be called in response to a user gesture."（2026-09-02 实测）。
+  // 所以这里同步断言——函数还没被 await 过，open() 就必须已经发起。
+  it('dispatches open() in the same synchronous turn, without awaiting setOptions', async () => {
+    const { sidePanel, calls, settleSetOptions } = makeSidePanel();
+
+    const pending = enableAndOpenPanelForTab(sidePanel, TAB_ID);
+
+    expect(calls).toEqual([
+      `setOptions:${JSON.stringify({ tabId: TAB_ID, path: SIDE_PANEL_PATH, enabled: true })}`,
+      'open',
+    ]);
+    settleSetOptions();
+    await expect(pending).resolves.toEqual({ opened: true });
+  });
+
+  it('reports the raw error when open() is rejected', async () => {
+    const sidePanel: SidePanelApi = {
+      setOptions: vi.fn(() => Promise.resolve()),
+      open: vi.fn(() => Promise.reject(new Error('`sidePanel.open()` may only be called in response to a user gesture.'))),
+    };
+
+    await expect(enableAndOpenPanelForTab(sidePanel, TAB_ID)).resolves.toEqual({
+      opened: false,
+      error: '`sidePanel.open()` may only be called in response to a user gesture.',
+    });
+  });
+
+  // setOptions 失败不代表面板没开（它可能只是重复设置同样的值），open() 的结果才算数。
+  it('still reports opened when setOptions fails but open succeeds', async () => {
+    const { sidePanel, settleSetOptions } = makeSidePanel();
+
+    const pending = enableAndOpenPanelForTab(sidePanel, TAB_ID);
+    settleSetOptions(new Error('boom'));
+
+    await expect(pending).resolves.toEqual({ opened: true, setOptionsError: 'boom' });
+  });
+
+  it('reports a failure instead of throwing when the API is unavailable', async () => {
+    await expect(enableAndOpenPanelForTab(undefined, TAB_ID)).resolves.toEqual({
+      opened: false,
+      error: 'sidePanel.open 不可用',
+    });
   });
 });
