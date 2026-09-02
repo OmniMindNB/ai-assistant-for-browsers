@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   ),
   loadTabSession: vi.fn(async (tabId: number) => ({ panelTabId: tabId, currentTabId: tabId, trackedTabs: [], snapshot: () => ({}) })),
   saveTabSession: vi.fn(async () => undefined),
+  clearOverlayForTab: vi.fn(async () => undefined),
+  setOverlayForTab: vi.fn(async () => undefined),
 }));
 
 vi.mock('./agent', () => ({ createBrowserAgent: mocks.createBrowserAgent }));
@@ -15,6 +17,10 @@ vi.mock('@/lib/db', () => ({ replaceConversationMessages: mocks.replaceConversat
 vi.mock('./tab-session-storage', () => ({
   loadTabSession: mocks.loadTabSession,
   saveTabSession: mocks.saveTabSession,
+}));
+vi.mock('./tab-overlay-state', () => ({
+  clearOverlayForTab: mocks.clearOverlayForTab,
+  setOverlayForTab: mocks.setOverlayForTab,
 }));
 vi.mock('./run-state-storage', () => ({
   saveRunStateSnapshot: vi.fn(async () => undefined),
@@ -94,6 +100,8 @@ function makeOrphanSnapshot(tabId: number, conversationId: string) {
 beforeEach(() => {
   mocks.createBrowserAgent.mockReset();
   mocks.replaceConversationMessages.mockClear();
+  mocks.clearOverlayForTab.mockClear();
+  mocks.setOverlayForTab.mockClear();
 });
 
 describe('run-registry startRun', () => {
@@ -368,6 +376,37 @@ describe('run-registry confirm/question/stop/port', () => {
     expect(lastRecord?.activitySteps).toEqual([
       { id: 'call-5', description: '点击了提交按钮', status: 'failed' },
     ]);
+  });
+
+  it('clears the operating tab\'s agent overlay once a stopped run settles', async () => {
+    const agent = makeFakeAgent([]);
+    let rejectPrompt!: (e: unknown) => void;
+    agent.prompt = vi.fn(() => new Promise<void>((_resolve, reject) => { rejectPrompt = reject; }));
+    mocks.createBrowserAgent.mockReturnValue(agent);
+
+    await startRun(makeRequest({ tabId: 42 }));
+    expect(mocks.clearOverlayForTab).not.toHaveBeenCalled();
+
+    stopRun(42);
+    rejectPrompt(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+    await vi.waitFor(() => expect(getRunState(42)).toBeUndefined());
+
+    // 用户中途停止后，操作过的标签页不该继续挂着一个陈旧的执行期遮罩——它既不会
+    // 自己消失，页面刷新时 background 的 tabs.onUpdated 监听器还会把它重新推回去
+    // （根因：storage.session 里的遮罩状态从没被清过，见 tab-overlay-state.ts）。
+    expect(mocks.clearOverlayForTab).toHaveBeenCalledWith(42);
+  });
+
+  it('clears the operating tab\'s agent overlay once a normally-completed run settles', async () => {
+    const agent = makeFakeAgent([
+      { type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'done' }] } },
+    ]);
+    mocks.createBrowserAgent.mockReturnValue(agent);
+
+    await startRun(makeRequest({ tabId: 43 }));
+    await vi.waitFor(() => expect(getRunState(43)).toBeUndefined());
+
+    expect(mocks.clearOverlayForTab).toHaveBeenCalledWith(43);
   });
 
   it('attachPort replies with the current snapshot for a live run, and detachPort never cancels the run', async () => {

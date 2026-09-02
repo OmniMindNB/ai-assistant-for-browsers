@@ -475,6 +475,11 @@ export async function startRun(request: StartRunRequest): Promise<void> {
         await persistMessages(state);
         pushAndPersist(state);
         await clearRunStateSnapshot(state.tabId).catch(() => undefined);
+        // 遮罩状态只在这里统一收尾：不论正常结束、报错还是被用户停止，操作过的标签页
+        // 都不该继续挂着一个陈旧的"正在填写 N 个字段"——它既不会自己消失，页面刷新时
+        // background 的 tabs.onUpdated 监听器还会把 storage.session 里这份残留状态重新
+        // 推回页面（ref: 用户反馈——停止生成后遮罩卡死，刷新页面也不消失）。
+        await sendAgentOverlay({ active: false }, state.session.currentTabId);
         stopKeepalive(state.tabId);
         runs.delete(state.tabId);
       }
