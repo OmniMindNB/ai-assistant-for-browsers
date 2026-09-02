@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from '@/lib/i18n';
 import { IconCheck, IconClose } from '../icons';
 import type { ActivityStep } from '../store';
@@ -41,31 +41,41 @@ export function ActivityStepList({ steps }: { steps: ActivityStep[] }) {
   );
 }
 
+// 每行默认单行截断（title 悬浮兜底），点击可展开成多行显示完整文字——这是当前唯一能
+// 看到写操作具体做了什么的入口（auto_allow 的写工具没有确认卡也没有撤销，是有意为之的
+// 产品决定，见 [[decision_write_tools_no_confirm]]），所以不能只靠“精确悬停某一行”才能看全。
 function ActivityStepRow({ step, showTabLabel }: { step: ActivityStep; showTabLabel: boolean }) {
+  const [expanded, setExpanded] = useState(false);
   const text = showTabLabel ? `《${step.tabLabel}》${step.description}` : step.description;
-
-  if (step.status === 'running') {
-    return (
-      <div className="flex items-center gap-2 text-neutral-500 dark:text-neutral-400">
-        <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-blue-500" aria-hidden="true" />
-        <span className="min-w-0 flex-1 truncate" title={text}>{text}</span>
-      </div>
-    );
-  }
-
-  if (step.status === 'failed') {
-    return (
-      <div className="flex items-center gap-2 text-red-700 dark:text-red-300">
-        <IconClose className="h-3 w-3 shrink-0" />
-        <span className="min-w-0 flex-1 truncate" title={text}>{text}</span>
-      </div>
-    );
-  }
+  const colorClass =
+    step.status === 'failed'
+      ? 'text-red-700 dark:text-red-300'
+      : step.status === 'running'
+        ? 'text-neutral-500 dark:text-neutral-400'
+        : 'text-neutral-400 dark:text-neutral-500';
 
   return (
-    <div className="flex items-center gap-2 text-neutral-400 dark:text-neutral-500">
-      <IconCheck className="h-3 w-3 shrink-0" />
-      <span className="min-w-0 flex-1 truncate" title={text}>{text}</span>
+    <div className={`flex gap-2 ${expanded ? 'items-start' : 'items-center'} ${colorClass}`}>
+      <span className="mt-0.5 flex h-3 w-3 shrink-0 items-center justify-center">
+        {step.status === 'running' ? (
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" aria-hidden="true" />
+        ) : step.status === 'failed' ? (
+          <IconClose className="h-3 w-3" />
+        ) : (
+          <IconCheck className="h-3 w-3" />
+        )}
+      </span>
+      <button
+        type="button"
+        onClick={() => setExpanded((prev) => !prev)}
+        title={expanded ? undefined : text}
+        aria-expanded={expanded}
+        className={`min-w-0 flex-1 rounded-sm text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+          expanded ? 'whitespace-pre-wrap break-words' : 'truncate'
+        }`}
+      >
+        {text}
+      </button>
     </div>
   );
 }

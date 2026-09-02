@@ -120,15 +120,6 @@ export function IconMessage({ className }: IconProps) {
   );
 }
 
-export function IconSparkles({ className }: IconProps) {
-  return (
-    <Svg className={className}>
-      <path d="M12 3l1.7 4.8L18.5 9.5 13.7 11.2 12 16l-1.7-4.8L5.5 9.5l4.8-1.7z" />
-      <path d="M5 16l.8 2.2L8 19l-2.2.8L5 22l-.8-2.2L2 19l2.2-.8z" />
-    </Svg>
-  );
-}
-
 export function IconChevronRight({ className }: IconProps) {
   return (
     <Svg className={className}>

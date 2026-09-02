@@ -1,6 +1,5 @@
 import type { ShortcutConfig } from '@/lib/shortcuts';
 import { isUsableShortcutCommand, type ResolvedShortcutCommand } from '@/lib/workbench/presentation';
-import { IconSparkles } from '../icons';
 import { useTranslation } from '@/lib/i18n';
 
 export interface WorkbenchEmptyStateProps {
@@ -15,8 +14,10 @@ export function WorkbenchEmptyState({ shortcuts, busy, onRunShortcut }: Workbenc
 
   return (
     <div className="m-auto flex w-full max-w-md flex-col items-center text-center">
-      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-neutral-900 text-white dark:bg-neutral-800">
-        <IconSparkles className="h-6 w-6" />
+      {/* 跟消息列表里助手头像（App.tsx 的 "R" 方块）用同一个符号，避免用户在
+          "还没开始对话" 和 "已经在对话" 两个相邻状态里看到两套不同的品牌图形。 */}
+      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-neutral-900 text-xl font-bold text-white dark:bg-neutral-800">
+        R
       </div>
       <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
         {t('workbench.emptyTitle')}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from '@/lib/i18n';
 import {
   REDACTION_STORAGE_KEY,
@@ -28,6 +28,14 @@ export default function RedactionSettings() {
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<RuleDraft | null>(null);
   const [draftErrors, setDraftErrors] = useState<DraftErrors>({});
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const confirmTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (confirmTimeoutRef.current !== null) window.clearTimeout(confirmTimeoutRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -87,9 +95,24 @@ export default function RedactionSettings() {
     await persist({ ...settings, rules });
   }
 
+  // 原生 window.confirm 跟其余自定义 UI 风格割裂（无暗色模式、无法 Tab 走查焦点环）——
+  // 换成 HistoryDrawer.tsx / ProviderSettings.tsx 同款的二次点击确认模式。
+  function requestDeleteRule(id: string) {
+    if (confirmTimeoutRef.current !== null) window.clearTimeout(confirmTimeoutRef.current);
+    setConfirmingId(id);
+    confirmTimeoutRef.current = window.setTimeout(() => {
+      setConfirmingId(null);
+      confirmTimeoutRef.current = null;
+    }, 3000);
+  }
+
   async function removeRule(rule: RedactionRule) {
     if (!settings || saving) return;
-    if (!window.confirm(t('privacy.redaction.confirmDeleteRule'))) return;
+    if (confirmTimeoutRef.current !== null) {
+      window.clearTimeout(confirmTimeoutRef.current);
+      confirmTimeoutRef.current = null;
+    }
+    setConfirmingId(null);
     await persist({ ...settings, rules: settings.rules.filter((candidate) => candidate.id !== rule.id) });
   }
 
@@ -211,11 +234,21 @@ export default function RedactionSettings() {
                 <button
                   type="button"
                   disabled={saving}
-                  onClick={() => void removeRule(rule)}
-                  aria-label={t('privacy.redaction.deleteRuleAria', { label: rule.label })}
-                  className="shrink-0 rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/40"
+                  onClick={() =>
+                    confirmingId === rule.id ? void removeRule(rule) : requestDeleteRule(rule.id)
+                  }
+                  aria-label={
+                    confirmingId === rule.id
+                      ? t('privacy.redaction.confirmDeleteRuleAria', { label: rule.label })
+                      : t('privacy.redaction.deleteRuleAria', { label: rule.label })
+                  }
+                  className={
+                    confirmingId === rule.id
+                      ? 'shrink-0 rounded border border-red-600 bg-red-600 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50'
+                      : 'shrink-0 rounded px-2 py-1 text-xs text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/40'
+                  }
                 >
-                  {t('common.delete')}
+                  {confirmingId === rule.id ? t('provider.confirmDelete') : t('common.delete')}
                 </button>
               )}
             </div>

@@ -295,7 +295,7 @@ export function WorkbenchComposer({
     <div ref={rootRef} onBlur={handleComposerBlur} className="relative border-t border-neutral-200 bg-neutral-50 px-3 py-3 dark:border-neutral-800 dark:bg-neutral-950">
       <div className="mx-auto max-w-3xl">
         {pageContextNotice && (
-          <div role={pageContextNotice.retryable ? 'alert' : 'status'} aria-live={pageContextNotice.retryable ? 'assertive' : 'polite'} className="mb-2 flex flex-wrap items-center gap-2 text-xs text-amber-800 dark:text-amber-300">
+          <div role={pageContextNotice.retryable ? 'alert' : 'status'} aria-live={pageContextNotice.retryable ? 'assertive' : 'polite'} className="mb-2 flex flex-wrap items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
             <span className="min-w-0 break-words">{pageContextNotice.message}</span>
             {pageContextNotice.retryable && (
               <button

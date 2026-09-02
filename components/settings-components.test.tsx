@@ -642,37 +642,25 @@ describe('grouped options settings', () => {
     expect(screen.getByText('Enter a regular expression')).toBeVisible();
   });
 
-  it('deletes a custom rule after confirmation', async () => {
+  it('only deletes a custom rule after a second confirming click, not the first', async () => {
     storageData['runi:redaction'] = {
       enabled: true,
       rules: [{ id: 'custom-1', label: '工号', pattern: 'EMP-\\d{4}', enabled: true, builtin: false }],
     };
     const user = userEvent.setup();
     const set = (globalThis as any).browser.storage.local.set as ReturnType<typeof vi.fn>;
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
-    renderWithLocale(<RedactionSettings />);
-
-    await user.click(await screen.findByRole('button', { name: 'Delete rule 工号' }));
-
-    expect(screen.queryByRole('checkbox', { name: '工号' })).not.toBeInTheDocument();
-    const persisted = set.mock.calls.at(-1)?.[0]['runi:redaction'];
-    expect(persisted.rules).toHaveLength(0);
-  });
-
-  it('does not delete a custom rule when confirmation is declined', async () => {
-    storageData['runi:redaction'] = {
-      enabled: true,
-      rules: [{ id: 'custom-1', label: '工号', pattern: 'EMP-\\d{4}', enabled: true, builtin: false }],
-    };
-    const user = userEvent.setup();
-    const set = (globalThis as any).browser.storage.local.set as ReturnType<typeof vi.fn>;
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
     renderWithLocale(<RedactionSettings />);
 
     await user.click(await screen.findByRole('button', { name: 'Delete rule 工号' }));
 
     expect(set).not.toHaveBeenCalled();
     expect(screen.getByRole('checkbox', { name: '工号' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Confirm delete rule 工号? Click again to delete.' }));
+
+    expect(screen.queryByRole('checkbox', { name: '工号' })).not.toBeInTheDocument();
+    const persisted = set.mock.calls.at(-1)?.[0]['runi:redaction'];
+    expect(persisted.rules).toHaveLength(0);
   });
 
   it('does not offer a delete button for built-in rules', async () => {

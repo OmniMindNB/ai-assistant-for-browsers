@@ -88,6 +88,7 @@ function Harness() {
     <LocaleProvider>
       <WorkbenchHeader
         historyOpen={historyOpen}
+        themeResolved="light"
         onToggleHistory={() => setHistoryOpen((open) => !open)}
         onNewChat={vi.fn()}
         onOpenSettings={vi.fn()}
@@ -900,6 +901,29 @@ describe('activity step list', () => {
     expect(screen.getByText('Reading page')).toBeVisible();
   });
 
+  it('expands a truncated row to full text on click, and collapses again on a second click', async () => {
+    const user = userEvent.setup();
+    const long = 'Filled "input[name=account-number-really-long-selector]" with "1234567890123456"';
+    render(
+      <LocaleProvider>
+        <ActivityStepList steps={[{ id: 'call-1', description: long, status: 'done' }]} />
+      </LocaleProvider>,
+    );
+
+    const row = screen.getByRole('button', { name: long });
+    expect(row.className).toContain('truncate');
+    expect(row).toHaveAttribute('aria-expanded', 'false');
+
+    await user.click(row);
+    expect(row.className).not.toContain('truncate');
+    expect(row.className).toContain('whitespace-pre-wrap');
+    expect(row).toHaveAttribute('aria-expanded', 'true');
+
+    await user.click(row);
+    expect(row.className).toContain('truncate');
+    expect(row).toHaveAttribute('aria-expanded', 'false');
+  });
+
   it('hides the activity step list while a confirmation is pending, but keeps approval working', async () => {
     const user = userEvent.setup();
     (chatStore as any).activitySteps = [{ id: 'call-1', description: 'Clicking "button.buy"', status: 'running' }];
@@ -1297,6 +1321,7 @@ describe('workbench history', () => {
       <LocaleProvider>
         <WorkbenchHeader
           historyOpen={false}
+          themeResolved="light"
           onToggleHistory={vi.fn()}
           onNewChat={vi.fn()}
           onOpenSettings={vi.fn()}

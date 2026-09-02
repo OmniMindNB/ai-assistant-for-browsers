@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { useTranslation } from '@/lib/i18n';
-import { IconGear, IconMenu, IconMoon, IconMore, IconPlus } from '../icons';
+import type { ResolvedTheme } from '@/lib/theme';
+import { IconGear, IconMenu, IconMoon, IconMore, IconPlus, IconSun } from '../icons';
 
 export interface WorkbenchHeaderProps {
   historyOpen: boolean;
+  /** 决定"切换主题"菜单项显示太阳还是月亮——反映当前实际生效的外观，而不是固定图标。 */
+  themeResolved: ResolvedTheme;
   onToggleHistory(): void;
   onNewChat(): void;
   onOpenSettings(): void;
@@ -13,6 +16,7 @@ export interface WorkbenchHeaderProps {
 
 export function WorkbenchHeader({
   historyOpen,
+  themeResolved,
   onToggleHistory,
   onNewChat,
   onOpenSettings,
@@ -115,7 +119,7 @@ export function WorkbenchHeader({
                 onClick={toggleTheme}
                 className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-neutral-200 dark:hover:bg-neutral-800"
               >
-                <IconMoon className="h-4 w-4" />
+                {themeResolved === 'dark' ? <IconSun className="h-4 w-4" /> : <IconMoon className="h-4 w-4" />}
                 {t('workbench.toggleTheme')}
               </button>
             </div>

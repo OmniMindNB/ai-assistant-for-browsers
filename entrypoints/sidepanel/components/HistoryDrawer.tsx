@@ -49,6 +49,10 @@ export function HistoryDrawer({
   const searchRef = useRef<HTMLInputElement>(null);
   const wasOpenRef = useRef(false);
   const confirmTimeoutRef = useRef<number | null>(null);
+  // 打开的第一帧先按"关闭态"（透明/偏移）渲染，下一帧翻到"打开态"，靠 transition-* 类
+  // 过渡出滑入效果。关闭不做退场动画——直接卸载，保持"焦点立刻还给触发按钮、对话框
+  // 立刻从 DOM 消失"的既有行为（测试对此有强断言，退场动画得配合延迟卸载会破坏它）。
+  const [entered, setEntered] = useState(false);
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const visibleConversations = normalizedQuery
     ? conversations.filter((conversation) => conversation.title.toLocaleLowerCase().includes(normalizedQuery))
@@ -59,10 +63,13 @@ export function HistoryDrawer({
     if (!open) {
       if (wasOpenRef.current) returnFocusRef?.current?.focus();
       wasOpenRef.current = false;
+      setEntered(false);
       return;
     }
     wasOpenRef.current = true;
     searchRef.current?.focus();
+    const raf = requestAnimationFrame(() => setEntered(true));
+    return () => cancelAnimationFrame(raf);
   }, [open, returnFocusRef]);
 
   useEffect(() => {
@@ -119,14 +126,19 @@ export function HistoryDrawer({
 
   return (
     <div className="fixed inset-0 z-40" onMouseDown={onClose}>
-      <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
+      <div
+        className={`absolute inset-0 bg-black/40 transition-opacity duration-200 ${entered ? 'opacity-100' : 'opacity-0'}`}
+        aria-hidden="true"
+      />
       <aside
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={t('workbench.history')}
         onMouseDown={(event) => event.stopPropagation()}
-        className="relative flex h-full w-[min(22rem,calc(100vw-2rem))] flex-col bg-white text-neutral-700 shadow-xl dark:bg-neutral-900 dark:text-neutral-300"
+        className={`relative flex h-full w-[min(22rem,calc(100vw-2rem))] flex-col bg-white text-neutral-700 shadow-xl transition-transform duration-200 ease-out dark:bg-neutral-900 dark:text-neutral-300 ${
+          entered ? 'translate-x-0' : '-translate-x-full'
+        }`}
       >
         <div className="flex items-center gap-2 border-b border-neutral-200 px-3 py-3 dark:border-neutral-800">
           <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">{t('workbench.history')}</h2>

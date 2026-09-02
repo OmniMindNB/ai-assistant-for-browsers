@@ -256,6 +256,7 @@ export default function App() {
       <div className="relative flex min-w-0 flex-1 flex-col">
           <WorkbenchHeader
             historyOpen={historyOpen}
+            themeResolved={themeResolved}
             onToggleHistory={toggleHistory}
             onNewChat={newChat}
             onOpenSettings={openSettings}
@@ -340,7 +341,7 @@ export default function App() {
                 {shortcutErrors.length > 0 && (
                   <div
                     role="alert"
-                    className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300"
+                    className="rounded-lg border border-neutral-200 bg-neutral-100 p-3 text-sm text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300"
                   >
                     {t('chat.shortcutConfigError')}
                   </div>

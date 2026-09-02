@@ -132,8 +132,6 @@ export const en: Record<keyof typeof zh, string> = {
   'settings.openOptionsFailed': 'Could not open Settings. Please try again.',
   'settings.descriptionSuffix':
     ', and is sent only to your configured provider when you initiate a request.',
-  'chat.emptyTitle': 'Chat with Runi',
-  'chat.emptySubtitle': 'I can read pages, explain content, or run your custom tasks.',
   'chat.moreShortcuts': 'More · {count}',
   'chat.moreShortcutsAriaLabel': '{count} more shortcuts',
   'chat.shortcutConfigError': 'Some shortcut settings are invalid. Open Settings to fix them.',
@@ -272,7 +270,6 @@ export const en: Record<keyof typeof zh, string> = {
     'Remove invalid shortcuts and keep valid ones? This cannot be undone.',
   'shortcut.repaired': 'Invalid items removed',
   'chat.composerAriaLabel': 'Message input',
-  'chat.composerPlaceholder': 'Type a message. Enter to send, Shift+Enter for a new line',
   'chat.stopGenerating': 'Stop generating',
   'chat.sendMessage': 'Send message',
   'chat.selectProviderModelAriaLabel': 'Select provider and model',
@@ -332,8 +329,8 @@ export const en: Record<keyof typeof zh, string> = {
   'privacy.redaction.ruleLabelRequired': 'Enter a rule label',
   'privacy.redaction.rulePatternRequired': 'Enter a regular expression',
   'privacy.redaction.invalidPattern': 'Invalid regular expression: {message}',
-  'privacy.redaction.confirmDeleteRule': 'Delete this custom rule?',
   'privacy.redaction.deleteRuleAria': 'Delete rule {label}',
+  'privacy.redaction.confirmDeleteRuleAria': 'Confirm delete rule {label}? Click again to delete.',
   'privacy.redaction.save': 'Save',
   'privacy.redaction.cancel': 'Cancel',
 };
