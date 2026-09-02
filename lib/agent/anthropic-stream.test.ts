@@ -413,4 +413,21 @@ describe('browserAnthropicStream', () => {
       expect(errorEvent.error.errorMessage).toContain('claude-test');
     }
   });
+
+  // fetch() 从未拿到响应（DNS/连接被拒/CORS）时抛的是 TypeError，跟上面 404 那类"拿到了响应
+  // 但状态非 2xx"是不同的失败层级；这里确认它也带着请求地址，而不是一句裸的 "Failed to fetch"。
+  it('explains a network-layer failure (fetch() itself rejecting) with the request URL', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+
+    const context = { messages: [{ role: 'user', content: 'hi' }] } as unknown as Context;
+    const stream = browserAnthropicStream(makeModel(), context, { apiKey: 'k' }) as AssistantMessageEventStream;
+    const events = await collectEvents(stream);
+
+    const errorEvent = events.at(-1);
+    expect(errorEvent?.type).toBe('error');
+    if (errorEvent?.type === 'error') {
+      expect(errorEvent.error.errorMessage).toContain('https://example.com/v1/messages');
+      expect(errorEvent.error.errorMessage).toContain('Failed to fetch');
+    }
+  });
 });

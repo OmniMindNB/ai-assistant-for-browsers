@@ -125,6 +125,23 @@ describe('browserOpenAIStream', () => {
     }
   });
 
+  // fetch() 从未拿到响应（DNS/连接被拒/CORS）时抛的是 TypeError，跟上面 404 那类"拿到了响应
+  // 但状态非 2xx"是不同的失败层级；这里确认它也带着请求地址，而不是一句裸的 "Failed to fetch"。
+  it('explains a network-layer failure (fetch() itself rejecting) with the request URL', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+
+    const context = { messages: [{ role: 'user', content: 'hi' }] } as unknown as Context;
+    const stream = browserOpenAIStream(makeModel(), context, { apiKey: 'k' }) as AssistantMessageEventStream;
+    const events = await collectEvents(stream);
+
+    const errorEvent = events.at(-1);
+    expect(errorEvent?.type).toBe('error');
+    if (errorEvent?.type === 'error') {
+      expect(errorEvent.error.errorMessage).toContain('https://ark.example.com/api/coding/v3/chat/completions');
+      expect(errorEvent.error.errorMessage).toContain('Failed to fetch');
+    }
+  });
+
   // 弱模型兼容（ref: lib/agent/tool-call-repair.ts）。修复前这两种畸形分别退化成
   // 「工具收到空参数」和「工具压根不执行、用户看到一坨裸 JSON」。
   it('repairs double-stringified tool arguments instead of dropping them', async () => {

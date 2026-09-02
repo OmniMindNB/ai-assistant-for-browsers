@@ -1,9 +1,9 @@
 // lib/agent/anthropic-stream.ts
 import { createAssistantMessageEventStream, type Api, type AssistantMessageEvent, type Context, type Model } from '@earendil-works/pi-ai';
 import type { StreamFn } from '@earendil-works/pi-agent-core';
-import { buildPartial, createAssistantMessage, describeHttpFailure, extractImageParts, finishStream, stringifyContent, type ToolCallAccumulator } from './stream-shared';
+import { buildPartial, createAssistantMessage, describeHttpFailure, describeStreamError, extractImageParts, finishStream, stringifyContent, type ToolCallAccumulator } from './stream-shared';
 
-const ANTHROPIC_VERSION = '2023-06-01';
+export const ANTHROPIC_VERSION = '2023-06-01';
 
 // OpenAI 与 Anthropic 两个生态对 base_url 的约定相反：OpenAI 把版本段写在 base_url 里
 // （客户端只补 `/chat/completions`），Anthropic 则约定 base_url 不带版本段、由客户端补
@@ -59,6 +59,8 @@ async function runAnthropicStream(
   let anthropicStopReason: string | undefined;
   // 弱模型兜底：模型没走 tool_use 而把调用写进正文时，finishStream 据此把它捞回来。
   const toolNames = context.tools?.map((tool) => tool.name) ?? [];
+  // catch 块要用它拼网络层失败的提示，声明在 try 外面才能跨块读到。
+  let url = model.baseUrl;
 
   function toolContentIndex(blockIndex: number): number {
     return (text ? 1 : 0) + [...toolCalls.keys()].sort((a, b) => a - b).indexOf(blockIndex);
@@ -67,7 +69,7 @@ async function runAnthropicStream(
   push({ type: 'start', partial });
 
   try {
-    const url = anthropicMessagesUrl(model.baseUrl);
+    url = anthropicMessagesUrl(model.baseUrl);
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -199,7 +201,7 @@ async function runAnthropicStream(
     }
     finishStream(model, push, startedAt, text, toolCalls, mapAnthropicStopReason(anthropicStopReason, toolCalls.size > 0), toolNames);
   } catch (error) {
-    const message = createAssistantMessage(model, startedAt, 'error', error instanceof Error ? error.message : String(error));
+    const message = createAssistantMessage(model, startedAt, 'error', describeStreamError(error, url, model.id));
     push({ type: 'error', reason: options?.signal?.aborted ? 'aborted' : 'error', error: message });
   }
 }

@@ -24,6 +24,10 @@ function plain(status: ActivityStatus, labelKey: TranslationKey): string {
   return status === 'failed' ? t('agentActivity.actionFailed', { action: label }) : label;
 }
 
+function statusKey(status: ActivityStatus, nowKey: TranslationKey, doneKey: TranslationKey, failedKey: TranslationKey): TranslationKey {
+  return status === 'running' ? nowKey : status === 'done' ? doneKey : failedKey;
+}
+
 export function describeToolActivity(toolName: string, args: unknown, status: ActivityStatus): string {
   const record = args && typeof args === 'object' ? (args as Record<string, unknown>) : {};
   const str = (key: string): string => (typeof record[key] === 'string' ? (record[key] as string) : '');
@@ -76,8 +80,10 @@ export function describeToolActivity(toolName: string, args: unknown, status: Ac
       return withTarget(status, 'agentActivity.now.modifyDom', 'agentActivity.done.modifyDom', 'agentActivity.failed.modifyDom', str('selector'));
     case 'browser_click':
       return withTarget(status, 'agentActivity.now.click', 'agentActivity.done.click', 'agentActivity.failed.click', str('selector') || str('fieldId'));
-    case 'browser_type':
-      return withTarget(status, 'agentActivity.now.type', 'agentActivity.done.type', 'agentActivity.failed.type', str('selector'));
+    case 'browser_type': {
+      const key = statusKey(status, 'agentActivity.now.type', 'agentActivity.done.type', 'agentActivity.failed.type');
+      return t(key, { selector: truncate(str('selector')), text: truncate(str('text')) });
+    }
     case 'browser_select':
       return withTarget(status, 'agentActivity.now.select', 'agentActivity.done.select', 'agentActivity.failed.select', str('selector'));
     case 'browser_scroll': {

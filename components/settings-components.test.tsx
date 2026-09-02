@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocaleProvider } from '@/lib/i18n';
 import OptionsApp from '@/entrypoints/options/App';
 import ProviderSettings from './ProviderSettings';
@@ -88,6 +88,10 @@ describe('grouped options settings', () => {
       removeEventListener: vi.fn(),
       matches: false,
     });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('defaults to the Model providers section and highlights it in the nav', async () => {
@@ -180,6 +184,41 @@ describe('grouped options settings', () => {
 
     expect(screen.getByRole('form', { name: 'Provider editor' })).toBeVisible();
     expect(screen.getByLabelText('Name')).toHaveValue('DeepSeek');
+  });
+
+  it('tests the connection using the current unsaved draft, showing success or a formatted failure', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    renderWithLocale(<ProviderSettings />);
+
+    await user.click(await screen.findByRole('button', { name: 'Edit DeepSeek' }));
+    await user.click(screen.getByRole('button', { name: 'Test connection' }));
+
+    expect(await screen.findByText('✓ Connected successfully')).toBeVisible();
+    const [url] = fetchMock.mock.calls[0] as [string];
+    expect(url).toBe('https://api.deepseek.com/chat/completions');
+
+    fetchMock.mockResolvedValue(new Response('bad key', { status: 401 }));
+    await user.click(screen.getByRole('button', { name: 'Test connection' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Connection test failed');
+    expect(alert).toHaveTextContent('401');
+  });
+
+  it('flashes a fill-required message instead of testing when the API key is blank', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    renderWithLocale(<ProviderSettings />);
+
+    await user.click(await screen.findByRole('button', { name: 'Add provider' }));
+    await user.selectOptions(screen.getByLabelText('Quick preset'), 'OpenAI');
+    await user.click(screen.getByRole('button', { name: 'Test connection' }));
+
+    expect(await screen.findByText('Please fill in Base URL, model, and API key first')).toBeVisible();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('resets API key reveal state when switching provider editors', async () => {

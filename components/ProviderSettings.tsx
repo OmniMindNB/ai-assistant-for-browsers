@@ -3,6 +3,7 @@
 // 配置存于 chrome.storage.local（ref: lib/settings.ts）。
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from '@/lib/i18n';
+import { testProviderConnection } from '@/lib/agent/provider-test';
 import {
   loadSettings,
   saveSettings,
@@ -61,6 +62,8 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
   const [editingRemoved, setEditingRemoved] = useState(false);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // 独立于 saveError：测试连接不依赖保存，用当前草稿（未必已保存）直接探测。
+  const [testState, setTestState] = useState<'idle' | 'testing' | 'ok' | { error: string }>('idle');
   const confirmTimeoutRef = useRef<number | null>(null);
   const loadRequestRef = useRef(0);
   const addButtonRef = useRef<HTMLButtonElement>(null);
@@ -130,6 +133,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
     setEditingRemoved(false);
     setEditorOpen(true);
     setSaveError(null);
+    setTestState('idle');
   }
 
   function resetDraft({ restoreAddFocus = false }: { restoreAddFocus?: boolean } = {}) {
@@ -140,6 +144,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
     setEditingRemoved(false);
     setEditorOpen(false);
     setSaveError(null);
+    setTestState('idle');
   }
 
   function beginAdd() {
@@ -202,6 +207,18 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
     } finally {
       setSaving(false);
     }
+  }
+
+  async function testConnection() {
+    if (testState === 'testing') return;
+    const trimmed = trimProviderDraft(draft);
+    if (!trimmed.baseURL || !trimmed.model || !trimmed.apiKey) {
+      flash(t('provider.testFillRequired'));
+      return;
+    }
+    setTestState('testing');
+    const result = await testProviderConnection(trimmed);
+    setTestState(result.ok ? 'ok' : { error: result.error });
   }
 
   async function remove(id: string) {
@@ -450,7 +467,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
             onChange={(v) => setDraft((d) => ({ ...d, apiKey: v }))}
           />
 
-          <div className="mt-4 flex items-center gap-2">
+          <div className="mt-4 flex flex-wrap items-center gap-2">
             <button
               type="submit"
               disabled={saving}
@@ -465,8 +482,26 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
             >
               {t('common.cancel')}
             </button>
+            <button
+              type="button"
+              disabled={testState === 'testing'}
+              onClick={() => void testConnection()}
+              className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 transition-colors hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+            >
+              {testState === 'testing' ? t('provider.testing') : t('provider.testConnection')}
+            </button>
             {toast && <span role="status" className="text-xs text-green-600 dark:text-green-400">{toast}</span>}
           </div>
+          {testState === 'ok' && (
+            <p role="status" className="mt-2 text-xs text-green-600 dark:text-green-400">
+              {t('provider.testOk')}
+            </p>
+          )}
+          {typeof testState === 'object' && (
+            <p role="alert" className="mt-2 whitespace-pre-wrap break-words text-xs text-red-700 dark:text-red-300">
+              {t('provider.testFailed')}：{testState.error}
+            </p>
+          )}
         </form>
       </section>}
     </>

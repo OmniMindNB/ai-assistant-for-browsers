@@ -21,7 +21,6 @@ describe('describeToolActivity', () => {
   });
 
   it('describes running type/select/setStyle/modifyDom/getHtml/getComputedStyle/queryDom by selector', () => {
-    expect(describeToolActivity('browser_type', { selector: 'input.name' }, 'running')).toBe('Typing into "input.name"');
     expect(describeToolActivity('browser_select', { selector: 'select.country' }, 'running')).toBe('Selecting an option in "select.country"');
     expect(describeToolActivity('browser_set_style', { selector: '.ad' }, 'running')).toBe('Styling ".ad"');
     expect(describeToolActivity('browser_modify_dom', { selector: '.ad' }, 'running')).toBe('Modifying ".ad"');
@@ -92,7 +91,6 @@ describe('describeToolActivity', () => {
 
   it('describes done click/type/select/setStyle/modifyDom/getHtml/getComputedStyle/queryDom by selector', () => {
     expect(describeToolActivity('browser_click', { selector: 'button.buy' }, 'done')).toBe('Clicked "button.buy"');
-    expect(describeToolActivity('browser_type', { selector: 'input.name' }, 'done')).toBe('Typed into "input.name"');
     expect(describeToolActivity('browser_select', { selector: 'select.country' }, 'done')).toBe('Selected an option in "select.country"');
     expect(describeToolActivity('browser_set_style', { selector: '.ad' }, 'done')).toBe('Styled ".ad"');
     expect(describeToolActivity('browser_modify_dom', { selector: '.ad' }, 'done')).toBe('Modified ".ad"');
@@ -115,6 +113,22 @@ describe('describeToolActivity', () => {
     expect(describeToolActivity('browser_read_page', {}, 'done')).toBe('Read page');
     expect(describeToolActivity('browser_scroll', {}, 'done')).toBe('Scroll');
     expect(describeToolActivity('browser_something_new', {}, 'done')).toBe('Browser action');
+  });
+
+  it('describes browser_type with both the selector and the typed text, truncating each independently', () => {
+    expect(describeToolActivity('browser_type', { selector: 'input.name', text: '张三' }, 'running')).toBe(
+      'Typing "张三" into "input.name"',
+    );
+    expect(describeToolActivity('browser_type', { selector: 'input.name', text: '张三' }, 'done')).toBe(
+      'Typed "张三" into "input.name"',
+    );
+    expect(describeToolActivity('browser_type', { selector: 'input.name', text: '张三' }, 'failed')).toBe(
+      'Failed to type "张三" into "input.name"',
+    );
+    const longText = 'x'.repeat(200);
+    const result = describeToolActivity('browser_type', { selector: 'input.name', text: longText }, 'running');
+    expect(result).toContain('…');
+    expect(result.length).toBeLessThan(longText.length);
   });
 
   it('describes open_tab/switch_tab/close_tab by their target, and list_tabs as a plain label', () => {

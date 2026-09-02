@@ -1,7 +1,7 @@
 // lib/agent/openai-stream.ts
 import { createAssistantMessageEventStream, type Api, type AssistantMessageEvent, type Context, type Model, type ToolCall, type Usage, type UserMessage } from '@earendil-works/pi-ai';
 import type { StreamFn } from '@earendil-works/pi-agent-core';
-import { buildPartial, createAssistantMessage, describeHttpFailure, extractImageParts, finishStream, stringifyContent, type ToolCallAccumulator } from './stream-shared';
+import { buildPartial, createAssistantMessage, describeHttpFailure, describeStreamError, extractImageParts, finishStream, stringifyContent, type ToolCallAccumulator } from './stream-shared';
 import { isPerfTraceEnabled, readOpenAiUsage, recordPerfUsage } from './perf-trace';
 
 // OpenAI 生态的约定与 Anthropic 相反：版本段写在 base_url 里，客户端只补 `/chat/completions`
@@ -63,11 +63,13 @@ async function runOpenAIStream(
   const toolCalls = new Map<number, ToolCallAccumulator>();
   // 弱模型兜底：模型没走 tool_calls 而把调用写进正文时，finishStream 据此把它捞回来。
   const toolNames = context.tools?.map((tool) => tool.name) ?? [];
+  // catch 块要用它拼网络层失败的提示，声明在 try 外面才能跨块读到。
+  let url = model.baseUrl;
 
   push({ type: 'start', partial });
 
   try {
-    const url = openAiCompletionsUrl(model.baseUrl);
+    url = openAiCompletionsUrl(model.baseUrl);
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -151,7 +153,7 @@ async function runOpenAIStream(
     }
     finishStream(model, push, startedAt, text, toolCalls, mapOpenAiFinishReason(finishReason, toolCalls.size > 0), toolNames);
   } catch (error) {
-    const message = createAssistantMessage(model, startedAt, 'error', error instanceof Error ? error.message : String(error));
+    const message = createAssistantMessage(model, startedAt, 'error', describeStreamError(error, url, model.id));
     push({ type: 'error', reason: options?.signal?.aborted ? 'aborted' : 'error', error: message });
   }
 }

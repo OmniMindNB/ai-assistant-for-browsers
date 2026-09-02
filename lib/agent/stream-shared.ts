@@ -120,6 +120,20 @@ export function describeHttpFailure(
   return `${head}${body}\n请求地址：${url}\n模型：${modelId}${hint}`;
 }
 
+/**
+ * describeHttpFailure 处理的是"拿到了 HTTP 响应，但状态码非 2xx"；这里补的是更底层的一类——
+ * fetch() 自身失败，从未拿到过响应（DNS 解析失败、连接被拒绝、CORS 拦截等），两个浏览器引擎
+ * 都以 TypeError 形式抛出，原始文案通常只有一句 "Failed to fetch"，既不说往哪儿发的请求，
+ * 也不给排查方向。AbortError 走的是另一条路径（options.signal 触发的正常停止），不在这里处理，
+ * 调用方已经用 options?.signal?.aborted 单独判断。
+ */
+export function describeStreamError(error: unknown, url: string, modelId: string): string {
+  if (error instanceof Error && error.name === 'TypeError') {
+    return `无法连接到 LLM 服务：${error.message}\n请求地址：${url}\n模型：${modelId}\n请检查网络连接、Base URL 是否正确，以及该地址是否允许来自浏览器扩展的跨域请求。`;
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
 export function stringifyContent(content: unknown): string {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
