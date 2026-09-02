@@ -31,7 +31,9 @@ import {
   IconChevronDown,
   IconChevronRight,
   IconClose,
+  IconCopy,
   IconPencil,
+  IconRefresh,
   IconStop,
 } from './icons';
 
@@ -67,6 +69,7 @@ export default function App() {
     selectProviderAndModel,
     send,
     editMessage,
+    regenerate,
     runShortcut,
     stop,
     clear,
@@ -170,6 +173,14 @@ export default function App() {
 
   const handleBeginEdit = useCallback((id: string) => setEditingId(id), []);
   const handleCancelEdit = useCallback(() => setEditingId(null), []);
+  const handleRegenerate = useCallback(
+    (id: string) => {
+      if (requestBlocked) return;
+      resetToFollowing();
+      void regenerate(id);
+    },
+    [requestBlocked, resetToFollowing, regenerate],
+  );
 
   useEffect(() => {
     if (atBottomRef.current) {
@@ -288,9 +299,11 @@ export default function App() {
                       }
                       editing={editingId === m.id}
                       discardCount={editingId === m.id ? discardedCount(messages, m.id) : 0}
+                      isLastMessage={i === messages.length - 1}
                       onBeginEdit={handleBeginEdit}
                       onCancelEdit={handleCancelEdit}
                       onSubmitEdit={submitEdit}
+                      onRegenerate={handleRegenerate}
                     />
                   ))
                 )}
@@ -400,9 +413,11 @@ const Message = memo(function Message({
   showThinkingIndicator,
   editing,
   discardCount,
+  isLastMessage,
   onBeginEdit,
   onCancelEdit,
   onSubmitEdit,
+  onRegenerate,
 }: {
   message: UIMessage;
   busy: boolean;
@@ -410,9 +425,11 @@ const Message = memo(function Message({
   showThinkingIndicator: boolean;
   editing: boolean;
   discardCount: number;
+  isLastMessage: boolean;
   onBeginEdit: (id: string) => void;
   onCancelEdit: () => void;
   onSubmitEdit: (id: string, content: string) => void;
+  onRegenerate: (id: string) => void;
 }) {
   const { t } = useTranslation();
   const { role, content } = message;
@@ -479,7 +496,7 @@ const Message = memo(function Message({
   // busy && !content（当前这一轮还没收到首个 token）必须继续走下面的 TypingDots 分支。
   if (!busy && !content) return null;
   return (
-    <div className="flex gap-3">
+    <div className="group flex gap-3">
       <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-neutral-900 text-[11px] font-bold text-white dark:bg-neutral-800">
         R
       </div>
@@ -532,10 +549,59 @@ const Message = memo(function Message({
         {message.activitySteps && message.activitySteps.length > 0 && (
           <ArchivedActivitySteps steps={message.activitySteps} />
         )}
+        {content && (!busy || !isLastMessage) && (
+          <div className="mt-2 flex items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+            <CopyMessageButton content={content} />
+            {isLastMessage && !requestBlocked && (
+              <button
+                type="button"
+                onClick={() => onRegenerate(message.id)}
+                aria-label={t('chat.regenerateAriaLabel')}
+                title={t('chat.regenerateAriaLabel')}
+                className="inline-flex items-center gap-1 rounded-md p-1.5 text-neutral-400 transition-colors hover:text-neutral-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:hover:text-neutral-200"
+              >
+                <IconRefresh className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
 });
+
+function CopyMessageButton({ content }: { content: string }) {
+  const { t } = useTranslation();
+  const [copied, setCopied] = useState(false);
+  const timeoutRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (timeoutRef.current !== null) window.clearTimeout(timeoutRef.current);
+  }, []);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(content);
+    } catch {
+      return;
+    }
+    setCopied(true);
+    if (timeoutRef.current !== null) window.clearTimeout(timeoutRef.current);
+    timeoutRef.current = window.setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => void copy()}
+      aria-label={t(copied ? 'chat.copiedLabel' : 'chat.copyMessageAriaLabel')}
+      title={t(copied ? 'chat.copiedLabel' : 'chat.copyMessageAriaLabel')}
+      className="inline-flex items-center gap-1 rounded-md p-1.5 text-neutral-400 transition-colors hover:text-neutral-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:hover:text-neutral-200"
+    >
+      {copied ? <IconCheck className="h-3.5 w-3.5" /> : <IconCopy className="h-3.5 w-3.5" />}
+    </button>
+  );
+}
 
 // 一轮结束后，运行期间的实时步骤条（ActivityStepList，渲染在消息列表下方）就被清空了——
 // 这里是它在消息里的存档版本：默认折叠，避免每条历史消息都摊开一截步骤明细，

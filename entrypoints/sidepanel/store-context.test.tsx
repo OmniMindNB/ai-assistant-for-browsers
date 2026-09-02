@@ -1287,6 +1287,37 @@ describe('chat store page context', () => {
     expect(useChat.getState().messages).toEqual([message]);
   });
 
+  it('regenerates by resending the nearest preceding user message', async () => {
+    await connectPort();
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    useChat.setState({
+      messages: [
+        { id: 'u1', role: 'user', content: 'original question', createdAt: 1, kind: 'input' },
+        { id: 'a1', role: 'assistant', content: 'first answer', createdAt: 2 },
+      ],
+    });
+
+    await expect(useChat.getState().regenerate('a1')).resolves.toBe(true);
+
+    expect(lastStartRunCall().agentUserContent).toBe('original question');
+  });
+
+  it('skips regenerate when the assistant message has no preceding user message', async () => {
+    useChat.setState({
+      messages: [{ id: 'a1', role: 'assistant', content: 'stray answer', createdAt: 1 }],
+    });
+
+    await expect(useChat.getState().regenerate('a1')).resolves.toBe(false);
+    expect(mocks.runPortPostMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'startRun' }));
+  });
+
+  it('skips regenerate for an unknown assistant message id', async () => {
+    useChat.setState({ messages: [] });
+
+    await expect(useChat.getState().regenerate('missing')).resolves.toBe(false);
+    expect(mocks.runPortPostMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'startRun' }));
+  });
+
   describe('attachment composition on send', () => {
     beforeEach(async () => {
       mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });

@@ -52,6 +52,7 @@ const chatStore = {
   selectProviderAndModel: vi.fn(),
   send: vi.fn(),
   editMessage: vi.fn(),
+  regenerate: vi.fn(),
   runShortcut: vi.fn(),
   stop: vi.fn(),
   clear: vi.fn(),
@@ -1008,6 +1009,64 @@ describe('activity step list', () => {
     expect(screen.getByText('Task not completed')).toBeVisible();
   });
 
+  it('copies an assistant message to the clipboard and shows transient "Copied" feedback', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    (chatStore as any).messages = [
+      { id: 'm1', role: 'user', content: 'Do something', createdAt: 1 },
+      { id: 'm2', role: 'assistant', content: 'Here is the answer', createdAt: 2 },
+    ];
+    (chatStore as any).busy = false;
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Copy message' }));
+
+    expect(writeText).toHaveBeenCalledWith('Here is the answer');
+    expect(await screen.findByRole('button', { name: 'Copied' })).toBeVisible();
+  });
+
+  it('offers regenerate only on the last assistant message, and calls regenerate(id) on click', async () => {
+    const user = userEvent.setup();
+    (chatStore as any).messages = [
+      { id: 'm1', role: 'user', content: 'first', createdAt: 1 },
+      { id: 'm2', role: 'assistant', content: 'first answer', createdAt: 2 },
+      { id: 'm3', role: 'user', content: 'second', createdAt: 3 },
+      { id: 'm4', role: 'assistant', content: 'second answer', createdAt: 4 },
+    ];
+    (chatStore as any).busy = false;
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    expect(screen.getAllByRole('button', { name: 'Regenerate response' })).toHaveLength(1);
+
+    await user.click(screen.getByRole('button', { name: 'Regenerate response' }));
+    expect(chatStore.regenerate).toHaveBeenCalledWith('m4');
+  });
+
+  it('hides regenerate while a request is in flight', () => {
+    (chatStore as any).messages = [
+      { id: 'm1', role: 'user', content: 'first', createdAt: 1 },
+      { id: 'm2', role: 'assistant', content: 'first answer', createdAt: 2 },
+    ];
+    (chatStore as any).busy = false;
+    (chatStore as any).pendingAttachments = [parsingPdf];
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    expect(screen.queryByRole('button', { name: 'Regenerate response' })).not.toBeInTheDocument();
+  });
+
   it('does not render a badge when the message has no taskOutcome', () => {
     (chatStore as any).messages = [
       { id: 'm1', role: 'user', content: 'Do something', createdAt: 1 },
@@ -1202,15 +1261,15 @@ describe('workbench history', () => {
     expect(screen.queryByRole('heading', { name: 'Yesterday' })).not.toBeInTheDocument();
   });
 
-  it('only removes a conversation after the deletion confirmation', async () => {
+  it('only removes a conversation after a second confirming click, not the first', async () => {
     const user = userEvent.setup();
     const onRemove = vi.fn();
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     renderDrawer(onRemove);
 
     await user.click(screen.getByRole('button', { name: 'Delete conversation Shopping comparison' }));
+    expect(onRemove).not.toHaveBeenCalled();
 
-    expect(confirm).toHaveBeenCalledWith('Delete this conversation?');
+    await user.click(screen.getByRole('button', { name: 'Confirm delete conversation Shopping comparison? Click again to delete.' }));
     expect(onRemove).toHaveBeenCalledWith('shopping');
   });
 

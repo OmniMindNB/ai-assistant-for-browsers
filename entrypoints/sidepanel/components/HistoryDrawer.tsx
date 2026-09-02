@@ -44,9 +44,11 @@ export function HistoryDrawer({
 }: HistoryDrawerProps) {
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const dialogRef = useRef<HTMLElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const wasOpenRef = useRef(false);
+  const confirmTimeoutRef = useRef<number | null>(null);
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const visibleConversations = normalizedQuery
     ? conversations.filter((conversation) => conversation.title.toLocaleLowerCase().includes(normalizedQuery))
@@ -87,8 +89,30 @@ export function HistoryDrawer({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [onClose, open]);
 
+  useEffect(() => {
+    return () => {
+      if (confirmTimeoutRef.current !== null) window.clearTimeout(confirmTimeoutRef.current);
+    };
+  }, []);
+
+  // 原生 window.confirm 弹窗与其余自定义 UI 风格割裂（无暗色模式、无法 Tab 走查焦点环），
+  // 换成组件内的二次点击确认——跟 ProviderSettings.tsx 删除 Provider 用的是同一套模式。
+  function requestDelete(id: string) {
+    if (confirmTimeoutRef.current !== null) window.clearTimeout(confirmTimeoutRef.current);
+    setConfirmingId(id);
+    confirmTimeoutRef.current = window.setTimeout(() => {
+      setConfirmingId(null);
+      confirmTimeoutRef.current = null;
+    }, 3000);
+  }
+
   function removeConversation(conversation: ConversationRecord) {
-    if (window.confirm(t('sidebar.confirmDeleteConversation'))) onRemove(conversation.id);
+    if (confirmTimeoutRef.current !== null) {
+      window.clearTimeout(confirmTimeoutRef.current);
+      confirmTimeoutRef.current = null;
+    }
+    setConfirmingId(null);
+    onRemove(conversation.id);
   }
 
   if (!open) return null;
@@ -161,9 +185,21 @@ export function HistoryDrawer({
                         </button>
                         <button
                           type="button"
-                          onClick={() => removeConversation(conversation)}
-                          aria-label={t('sidebar.deleteConversationAriaLabel', { title: conversation.title || '' })}
-                          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-neutral-400 opacity-0 transition-opacity hover:bg-neutral-200 hover:text-red-600 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 group-hover:opacity-100 dark:text-neutral-500 dark:hover:bg-neutral-700 dark:hover:text-red-400"
+                          onClick={() =>
+                            confirmingId === conversation.id
+                              ? removeConversation(conversation)
+                              : requestDelete(conversation.id)
+                          }
+                          aria-label={
+                            confirmingId === conversation.id
+                              ? t('sidebar.confirmDeleteConversationAriaLabel', { title: conversation.title || '' })
+                              : t('sidebar.deleteConversationAriaLabel', { title: conversation.title || '' })
+                          }
+                          className={
+                            confirmingId === conversation.id
+                              ? 'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-red-600 text-white opacity-100 transition-colors hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500'
+                              : 'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-neutral-400 opacity-0 transition-opacity hover:bg-neutral-200 hover:text-red-600 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 group-hover:opacity-100 dark:text-neutral-500 dark:hover:bg-neutral-700 dark:hover:text-red-400'
+                          }
                         >
                           <IconTrash className="h-4 w-4" />
                         </button>

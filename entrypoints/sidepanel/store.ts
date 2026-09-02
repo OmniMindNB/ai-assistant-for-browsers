@@ -125,6 +125,8 @@ interface ChatState {
   send: (text: string, options?: { withoutBrowserTools?: boolean }) => Promise<boolean>;
   /** 成功发起（截断+提交）返回 true；任一前置校验失败返回 false，调用方据此决定是否关闭编辑框。 */
   editMessage: (id: string, newContent: string) => Promise<boolean>;
+  /** 重新生成某条 assistant 回复：找到它前面最近一条 user 消息，原样重发（等价于免打开编辑框的 editMessage）。 */
+  regenerate: (assistantId: string) => Promise<boolean>;
   runShortcut: (shortcut: ShortcutConfig) => Promise<void>;
   stop: () => void;
   clear: () => void;
@@ -819,6 +821,17 @@ export const useChat = create<ChatState>((set, get) => ({
       truncateToId: id,
       retry: () => { void get().editMessage(id, newContent); },
     });
+  },
+
+  regenerate: async (assistantId) => {
+    const messages = get().messages;
+    const assistantIndex = findMessageIndex(messages, assistantId);
+    if (assistantIndex < 0) return false;
+    let userIndex = assistantIndex - 1;
+    while (userIndex >= 0 && messages[userIndex].role !== 'user') userIndex -= 1;
+    if (userIndex < 0) return false;
+    const userMessage = messages[userIndex];
+    return get().editMessage(userMessage.id, userMessage.content);
   },
 
   runShortcut: async (shortcut) => {
