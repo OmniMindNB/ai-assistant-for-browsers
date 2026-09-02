@@ -6,5 +6,9 @@
   "extDescription": {
     "message": "可控的网页 AI 助手：理解、改造与自动化当前页面，修改前由你确认",
     "description": "Extension description shown in the Chrome Web Store"
+  },
+  "commandOpenPanel": {
+    "message": "打开 Runi 侧边栏",
+    "description": "Keyboard shortcut label shown on chrome://extensions/shortcuts"
   }
 }

@@ -52,5 +52,17 @@ export default defineConfig({
         128: 'icons/icon-128.png',
       },
     },
+    // _execute_action 是保留命令名：触发时复用 background.ts 里已有的 action.onClicked
+    // 监听器（同一条用户手势路径，ref: 28cb9e7 关于 sidePanel.open() 手势时效的教训），
+    // 不需要额外的 commands.onCommand 监听器。
+    commands: {
+      _execute_action: {
+        suggested_key: {
+          default: 'Ctrl+Shift+Y',
+          mac: 'Command+Shift+Y',
+        },
+        description: '__MSG_commandOpenPanel__',
+      },
+    },
   },
 });

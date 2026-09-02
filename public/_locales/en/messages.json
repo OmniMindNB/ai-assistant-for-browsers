@@ -6,5 +6,9 @@
   "extDescription": {
     "message": "AI sidebar agent to understand, transform, and automate the current page—with your approval",
     "description": "Extension description shown in the Chrome Web Store"
+  },
+  "commandOpenPanel": {
+    "message": "Open Runi panel",
+    "description": "Keyboard shortcut label shown on chrome://extensions/shortcuts"
   }
 }
