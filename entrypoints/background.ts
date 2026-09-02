@@ -51,6 +51,7 @@ import {
   type TypeTextPayload,
   type TypeTextResult,
   newMessageId,
+  registerLocalDispatcher,
 } from '@/lib/messaging';
 import { loadRedactionSettings, redactText } from '@/lib/redaction';
 import { fetchPageResourceText } from '@/lib/page-resource-fetch';
@@ -130,6 +131,12 @@ const SUPPORTED_MESSAGE_TYPES = [
 
 // Service Worker：消息路由中心（ref: technical-plan.md §3.2）
 export default defineBackground(() => {
+  // agent 主循环现在跑在 background 自己的执行上下文里，lib/agent/tools.ts、agent.ts 的
+  // browser_* 工具调用的 sendMessage() 因此变成了"自己给自己发运行时消息"——按 WebExtensions
+  // 规范，runtime.onMessage 不会派发给发消息的那个 frame 自己，继续走消息总线会让这些调用
+  // 全部等不到响应。这里注册本地直连出口，让 sendMessage() 绕开总线直接调用 handleMessage。
+  registerLocalDispatcher((message) => handleMessage(message, undefined));
+
   // 每次 Service Worker 启动都重新确立"面板按 tab 绑定"这条约束（见 lib/tab-panel-scope.ts）。
   // 不能只挂在 runtime.onInstalled 上：那只在安装/更新时触发一次，浏览器重启、扩展重新启用
   // 都不会再触发，而 manifest 的 side_panel.default_path 会让全局默认悄悄恢复成"所有 tab 都开"，

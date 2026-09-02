@@ -487,6 +487,25 @@ export function newMessageId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+type LocalDispatcher = (message: Message) => Promise<unknown>;
+let localDispatcher: LocalDispatcher | null = null;
+
+/**
+ * 仅由 background.ts 在自己的模块初始化时调用一次，把 handleMessage 注册为进程内直连出口。
+ *
+ * 背景：agent 主循环迁移进 background 之后（ref: docs/superpowers/specs/
+ * 2026-09-01-agent-run-in-background-design.md §7），lib/agent/tools.ts、agent.ts 里的
+ * browser_* 工具仍然通过这里的 sendMessage() 发消息，但发送方现在和 handleMessage 的
+ * onMessage 监听器同处一个执行上下文——按 WebExtensions 规范，runtime.onMessage 明确
+ * "不会派发给发出这条消息的那个 frame 自己"（MDN, runtime.sendMessage），继续走
+ * browser.runtime.sendMessage 会导致这些调用永远等不到响应，所有 browser_* 工具在总结/
+ * 执行任务时统一失败。注册了本地直连后，sendMessage() 绕开消息总线，在同一个调用栈里
+ * 直接调用 handleMessage，行为等价于一次成功往返。传 null 取消注册（测试用）。
+ */
+export function registerLocalDispatcher(dispatcher: LocalDispatcher | null): void {
+  localDispatcher = dispatcher;
+}
+
 /** 类型安全地发送一条运行时消息并等待响应 */
 export async function sendMessage<TReq = unknown, TRes = unknown>(
   type: MessageType,
@@ -494,5 +513,17 @@ export async function sendMessage<TReq = unknown, TRes = unknown>(
   tabId?: number,
 ): Promise<MessageResponse<TRes>> {
   const message: Message<TReq> = { id: newMessageId(), type, payload, tabId };
+  if (localDispatcher) {
+    try {
+      const data = await localDispatcher(message);
+      return { id: message.id, ok: true, data } as MessageResponse<TRes>;
+    } catch (error) {
+      return {
+        id: message.id,
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
   return browser.runtime.sendMessage(message) as Promise<MessageResponse<TRes>>;
 }
