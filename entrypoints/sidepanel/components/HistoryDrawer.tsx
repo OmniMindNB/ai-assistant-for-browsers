@@ -197,11 +197,14 @@ export function HistoryDrawer({
                           }
                           className={
                             confirmingId === conversation.id
-                              ? 'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-red-600 text-white opacity-100 transition-colors hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500'
+                              ? 'inline-flex h-7 shrink-0 items-center gap-1 rounded-md bg-red-600 px-2 text-xs font-medium text-white opacity-100 transition-colors hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500'
                               : 'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-neutral-400 opacity-0 transition-opacity hover:bg-neutral-200 hover:text-red-600 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 group-hover:opacity-100 dark:text-neutral-500 dark:hover:bg-neutral-700 dark:hover:text-red-400'
                           }
                         >
-                          <IconTrash className="h-4 w-4" />
+                          <IconTrash className="h-4 w-4 shrink-0" />
+                          {confirmingId === conversation.id && (
+                            <span className="whitespace-nowrap">{t('provider.confirmDelete')}</span>
+                          )}
                         </button>
                       </div>
                     </li>
