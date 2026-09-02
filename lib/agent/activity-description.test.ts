@@ -116,4 +116,22 @@ describe('describeToolActivity', () => {
     expect(describeToolActivity('browser_scroll', {}, 'done')).toBe('Scroll');
     expect(describeToolActivity('browser_something_new', {}, 'done')).toBe('Browser action');
   });
+
+  it('describes open_tab/switch_tab/close_tab by their target, and list_tabs as a plain label', () => {
+    expect(describeToolActivity('browser_open_tab', { url: 'https://example.com' }, 'running')).toBe(
+      'Opening new tab "https://example.com"',
+    );
+    expect(describeToolActivity('browser_open_tab', { url: 'https://example.com' }, 'done')).toBe(
+      'Opened new tab "https://example.com"',
+    );
+    expect(describeToolActivity('browser_open_tab', { url: 'https://example.com' }, 'failed')).toBe(
+      'Failed to open new tab "https://example.com"',
+    );
+    expect(describeToolActivity('browser_switch_tab', { tabId: 7 }, 'running')).toBe('Switching to tab 7');
+    expect(describeToolActivity('browser_switch_tab', { tabId: 7 }, 'done')).toBe('Switched to tab 7');
+    expect(describeToolActivity('browser_close_tab', { tabId: 7 }, 'running')).toBe('Closing tab 7');
+    expect(describeToolActivity('browser_close_tab', { tabId: 7 }, 'done')).toBe('Closed tab 7');
+    expect(describeToolActivity('browser_list_tabs', {}, 'running')).toBe('List tabs');
+    expect(describeToolActivity('browser_list_tabs', {}, 'done')).toBe('List tabs');
+  });
 });

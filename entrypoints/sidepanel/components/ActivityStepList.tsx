@@ -25,13 +25,13 @@ export function ActivityStepList({ steps }: { steps: ActivityStep[] }) {
 }
 
 function ActivityStepRow({ step }: { step: ActivityStep }) {
-  const text = step.description;
+  const text = step.tabLabel ? `《${step.tabLabel}》${step.description}` : step.description;
 
   if (step.status === 'running') {
     return (
       <div className="flex items-center gap-2 text-neutral-500 dark:text-neutral-400">
         <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-blue-500" aria-hidden="true" />
-        <span className="min-w-0 flex-1 truncate">{text}</span>
+        <span className="min-w-0 flex-1 truncate" title={text}>{text}</span>
       </div>
     );
   }
@@ -40,7 +40,7 @@ function ActivityStepRow({ step }: { step: ActivityStep }) {
     return (
       <div className="flex items-center gap-2 text-red-700 dark:text-red-300">
         <IconClose className="h-3 w-3 shrink-0" />
-        <span className="min-w-0 flex-1 truncate">{text}</span>
+        <span className="min-w-0 flex-1 truncate" title={text}>{text}</span>
       </div>
     );
   }
@@ -48,7 +48,7 @@ function ActivityStepRow({ step }: { step: ActivityStep }) {
   return (
     <div className="flex items-center gap-2 text-neutral-400 dark:text-neutral-500">
       <IconCheck className="h-3 w-3 shrink-0" />
-      <span className="min-w-0 flex-1 truncate">{text}</span>
+      <span className="min-w-0 flex-1 truncate" title={text}>{text}</span>
     </div>
   );
 }

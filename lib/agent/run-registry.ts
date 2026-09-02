@@ -4,7 +4,7 @@
 import type { Agent, AgentEvent } from '@earendil-works/pi-agent-core';
 import type { AssistantMessage, Message as AgentLlmMessage } from '@earendil-works/pi-ai';
 import { createBrowserAgent } from './agent';
-import { createTabSession, type TabSessionController } from './tab-session';
+import { createTabSession, type TabSessionController, type TrackedTab } from './tab-session';
 import { loadTabSession, saveTabSession } from './tab-session-storage';
 import { summarizeToolCallForConfirmation } from './confirm-summary';
 import { describeToolActivity } from './activity-description';
@@ -267,6 +267,21 @@ export function stopKeepalive(tabId: number): void {
 
 const STREAM_FLUSH_INTERVAL_MS = 48;
 
+/**
+ * 当前操作目标 tab，仅当它不是面板自己绑定的 tab 时才返回（同一 tab 上的操作不需要标注，
+ * 见 onConfirm/confirm-summary.ts 的既有约定）。供确认卡片和活动步骤标签共用同一份判断。
+ */
+function currentTargetTab(state: RunState): TrackedTab | undefined {
+  if (state.session.currentTabId === state.tabId) return undefined;
+  return state.session.trackedTabs.find((tab) => tab.id === state.session.currentTabId);
+}
+
+/** 供活动步骤展示用的标签文本；未命名页面兜底文案与 confirm-summary.ts 保持一致。 */
+function currentTabLabel(state: RunState): string | undefined {
+  const targetTab = currentTargetTab(state);
+  return targetTab ? targetTab.title || '未命名页面' : undefined;
+}
+
 export async function startRun(request: StartRunRequest): Promise<void> {
   const existing = runs.get(request.tabId);
   if (existing) {
@@ -308,10 +323,7 @@ export async function startRun(request: StartRunRequest): Promise<void> {
     // "将操作标签页：《本页》"只是噪音（ref: confirm-summary.ts 的 targetTab 参数说明）。
     // 读的是 state.session 的实时字段而不是 startRun 那一刻的值：browser_open_tab /
     // browser_switch_tab 会在一轮之内改变 currentTabId。
-    const targetTab =
-      state.session.currentTabId !== state.tabId
-        ? state.session.trackedTabs.find((tab) => tab.id === state.session.currentTabId)
-        : undefined;
+    const targetTab = currentTargetTab(state);
     const { summary, codePreview } = summarizeToolCallForConfirmation(toolName, args, targetTab);
     state.pendingToolArgs.set(toolCallId, { toolName, args });
     state.pendingConfirmation = { toolCallId, toolName, summary, codePreview };
@@ -366,6 +378,7 @@ export async function startRun(request: StartRunRequest): Promise<void> {
         id: event.toolCallId,
         description: describeToolActivity(event.toolName, event.args, 'running'),
         status: 'running',
+        tabLabel: currentTabLabel(state),
       });
       pushAndPersist(state);
     }
@@ -376,6 +389,7 @@ export async function startRun(request: StartRunRequest): Promise<void> {
         id: event.toolCallId,
         description: describeToolActivity(event.toolName, event.args, 'running'),
         status: 'running',
+        tabLabel: currentTabLabel(state),
       });
       pushAndPersist(state);
     }
@@ -539,6 +553,7 @@ export function respondConfirm(tabId: number, toolCallId: string, approved: bool
       id: toolCallId,
       description: describeToolActivity(state.pendingConfirmation.toolName, info?.args, 'failed'),
       status: 'failed',
+      tabLabel: currentTabLabel(state),
     });
   }
   state.pendingConfirmation = null;

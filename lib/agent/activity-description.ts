@@ -27,10 +27,19 @@ function plain(status: ActivityStatus, labelKey: TranslationKey): string {
 export function describeToolActivity(toolName: string, args: unknown, status: ActivityStatus): string {
   const record = args && typeof args === 'object' ? (args as Record<string, unknown>) : {};
   const str = (key: string): string => (typeof record[key] === 'string' ? (record[key] as string) : '');
+  const num = (key: string): string => (typeof record[key] === 'number' ? String(record[key]) : '');
 
   switch (toolName) {
     case 'browser_get_active_tab':
       return plain(status, 'agentActivity.tool.getActiveTab');
+    case 'browser_open_tab':
+      return withTarget(status, 'agentActivity.now.openTab', 'agentActivity.done.openTab', 'agentActivity.failed.openTab', str('url'));
+    case 'browser_switch_tab':
+      return withTarget(status, 'agentActivity.now.switchTab', 'agentActivity.done.switchTab', 'agentActivity.failed.switchTab', num('tabId'));
+    case 'browser_close_tab':
+      return withTarget(status, 'agentActivity.now.closeTab', 'agentActivity.done.closeTab', 'agentActivity.failed.closeTab', num('tabId'));
+    case 'browser_list_tabs':
+      return plain(status, 'agentActivity.tool.listTabs');
     case 'ask_user':
       return withTarget(status, 'agentActivity.now.askUser', 'agentActivity.done.askUser', 'agentActivity.failed.askUser', str('question'));
     case 'wait': {
