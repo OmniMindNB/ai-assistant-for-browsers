@@ -229,7 +229,7 @@ export const en: Record<keyof typeof zh, string> = {
   'chat.explainChipLabel': 'Explain selection',
   'shortcut.builtinSummarizeName': 'Summarize page',
   'shortcut.builtinSummarizePrompt':
-    'Summarize the current page in 3-5 key points followed by a short overview. Respond in English.',
+    "Summarize the current page: first identify the page type (news/article, product, documentation/reference, forum/Q&A, listing/search results, etc.) and tailor the summary to it. Lead with a one-sentence takeaway or main point, then list 3-5 supporting points with concrete specifics (numbers, conclusions, names) rather than vague filler like \"this page discusses...\". If the extracted text is clearly incomplete or dominated by navigation/ads with too little real content, say so instead of guessing. Don't open with process narration like \"I read the page\". Respond in English.",
   'shortcut.builtinExplainName': 'Explain selection',
   'shortcut.builtinExplainPrompt':
     "Explain the selected text: first identify whether it's a term/abbreviation, a name (person/product), a hard-to-parse sentence, or a code snippet, then explain it accordingly (definition and typical usage for a term, the expansion and meaning for an abbreviation, a plain-language rephrasing for a hard sentence, what it does for code). If the selection is ambiguous without more context, list the plausible readings instead of guessing one. Keep the answer to two or three sentences unless the selection itself is long enough to warrant more; don't restate the original text. Respond in English.",
