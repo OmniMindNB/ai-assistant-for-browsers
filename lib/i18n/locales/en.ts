@@ -232,7 +232,7 @@ export const en: Record<keyof typeof zh, string> = {
     'Summarize the current page in 3-5 key points followed by a short overview. Respond in English.',
   'shortcut.builtinExplainName': 'Explain selection',
   'shortcut.builtinExplainPrompt':
-    'Explain the selected text, adding background, definitions, or a plain-language explanation when useful. Respond in English.',
+    "Explain the selected text: first identify whether it's a term/abbreviation, a name (person/product), a hard-to-parse sentence, or a code snippet, then explain it accordingly (definition and typical usage for a term, the expansion and meaning for an abbreviation, a plain-language rephrasing for a hard sentence, what it does for code). If the selection is ambiguous without more context, list the plausible readings instead of guessing one. Keep the answer to two or three sentences unless the selection itself is long enough to warrant more; don't restate the original text. Respond in English.",
   'shortcut.builtinTranslateName': 'Translate selection',
   'shortcut.builtinTranslatePrompt':
     'Translate the selected text into English; if it is already in English, translate it into Chinese instead. Keep the tone and meaning faithful.',
