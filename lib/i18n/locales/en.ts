@@ -235,7 +235,7 @@ export const en: Record<keyof typeof zh, string> = {
     "Explain the selected text: first identify whether it's a term/abbreviation, a name (person/product), a hard-to-parse sentence, or a code snippet, then explain it accordingly (definition and typical usage for a term, the expansion and meaning for an abbreviation, a plain-language rephrasing for a hard sentence, what it does for code). If the selection is ambiguous without more context, list the plausible readings instead of guessing one. Keep the answer to two or three sentences unless the selection itself is long enough to warrant more; don't restate the original text. Respond in English.",
   'shortcut.builtinTranslateName': 'Translate selection',
   'shortcut.builtinTranslatePrompt':
-    'Translate the selected text into English; if it is already in English, translate it into Chinese instead. Keep the tone and meaning faithful.',
+    "Translate the selected text into English; if it is already in English, translate it into Chinese instead. Preserve the original meaning, tone, and formatting (line breaks, list structure); keep proper nouns, code, and formulas as-is when they shouldn't be translated. Output only the translation itself, without a preamble like \"Here's the translation:\" or extra commentary.",
   'shortcut.selectionAskBubbleLabel': SELECTION_ASK_BUBBLE_LABEL.en,
   'shortcut.selectionAskToggleLabel': 'Enable selection-ask bubble',
   'shortcut.heading': 'Shortcuts',

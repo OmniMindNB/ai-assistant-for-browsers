@@ -230,7 +230,7 @@ export const zh = {
     '请解释选中的内容：先判断它是术语/缩写、人名/产品名、一句难懂的话，还是一段代码，再按对应方式给出简明解释（术语给定义和适用场景，缩写给全称和含义，难句给大白话翻译，代码说明其作用）。如果选中内容脱离上下文有歧义，直接说明可能的几种含义，不要臆测唯一答案。回答控制在两三句话内，除非内容本身较长确实需要展开；不要复述选中的原文。请使用中文回答。',
   'shortcut.builtinTranslateName': '翻译划词',
   'shortcut.builtinTranslatePrompt':
-    '将选中文本翻译成中文；如果原文本身已经是中文，则翻译成英文。请保持原意和语气。',
+    '将选中文本翻译成中文；如果原文本身已经是中文，则翻译成英文。翻译时保持原意、语气和格式（如换行、列表结构），专有名词、代码、公式等不适合翻译的内容原样保留。只输出翻译结果本身，不要加"翻译如下"之类的开场白或额外说明。',
   'shortcut.selectionAskBubbleLabel': SELECTION_ASK_BUBBLE_LABEL.zh,
   'shortcut.selectionAskToggleLabel': '启用划词提问气泡',
   'shortcut.heading': '快捷方式',
