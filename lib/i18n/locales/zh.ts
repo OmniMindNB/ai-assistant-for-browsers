@@ -139,6 +139,7 @@ export const zh = {
   'chat.contextTruncatedNotice': '对话较长，本轮已省略部分早期消息。',
   'chat.viewStepsToggle': '步骤（{count}）',
   'agentActivity.tool.getActiveTab': '获取当前标签页',
+  'agentActivity.currentTab': '当前操作标签页：《{target}》',
   'agentActivity.tool.listTabs': '查看标签页列表',
   'agentActivity.now.openTab': '正在打开新标签页 "{target}"',
   'agentActivity.done.openTab': '已打开新标签页 "{target}"',

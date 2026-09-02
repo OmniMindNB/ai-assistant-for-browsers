@@ -143,6 +143,7 @@ export const en: Record<keyof typeof zh, string> = {
   'chat.contextTruncatedNotice': 'This conversation is long, so some earlier messages were omitted for this reply.',
   'chat.viewStepsToggle': 'Steps ({count})',
   'agentActivity.tool.getActiveTab': 'Get active tab',
+  'agentActivity.currentTab': 'Currently operating on "{target}"',
   'agentActivity.tool.listTabs': 'List tabs',
   'agentActivity.now.openTab': 'Opening new tab "{target}"',
   'agentActivity.done.openTab': 'Opened new tab "{target}"',

@@ -863,6 +863,42 @@ describe('activity step list', () => {
     expect(screen.getByText('Reading page')).toBeVisible();
   });
 
+  it('shows a persistent current-tab banner taken from the last step, and omits it when operating on the panel tab', () => {
+    const { rerender } = render(
+      <LocaleProvider>
+        <ActivityStepList
+          steps={[{ id: 'call-1', description: 'Clicking "#pay"', status: 'running', tabLabel: '网上银行' }]}
+        />
+      </LocaleProvider>,
+    );
+    expect(screen.getByText('Currently operating on "网上银行"')).toBeVisible();
+
+    rerender(
+      <LocaleProvider>
+        <ActivityStepList steps={[{ id: 'call-1', description: 'Reading page', status: 'running' }]} />
+      </LocaleProvider>,
+    );
+    expect(screen.queryByText(/Currently operating on/)).not.toBeInTheDocument();
+  });
+
+  it('only prefixes a row with the tab label when it differs from the previous row', () => {
+    render(
+      <LocaleProvider>
+        <ActivityStepList
+          steps={[
+            { id: 'call-1', description: 'Clicking "#a"', status: 'done', tabLabel: '网上银行' },
+            { id: 'call-2', description: 'Clicking "#b"', status: 'done', tabLabel: '网上银行' },
+            { id: 'call-3', description: 'Reading page', status: 'done' },
+          ]}
+        />
+      </LocaleProvider>,
+    );
+    expect(screen.getByText('《网上银行》Clicking "#a"')).toBeVisible();
+    expect(screen.getByText('Clicking "#b"')).toBeVisible();
+    expect(screen.queryByText('《网上银行》Clicking "#b"')).not.toBeInTheDocument();
+    expect(screen.getByText('Reading page')).toBeVisible();
+  });
+
   it('hides the activity step list while a confirmation is pending, but keeps approval working', async () => {
     const user = userEvent.setup();
     (chatStore as any).activitySteps = [{ id: 'call-1', description: 'Clicking "button.buy"', status: 'running' }];
