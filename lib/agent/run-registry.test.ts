@@ -125,6 +125,34 @@ describe('run-registry startRun', () => {
     expect(posted.length).toBeGreaterThan(0);
   });
 
+  it('marks the final assistant message contextTruncated when the agent reports its context window was recut', async () => {
+    const agent = makeFakeAgent([]);
+    agent.prompt = vi.fn(async () => {
+      const options = mocks.createBrowserAgent.mock.calls.at(-1)?.[0] as { onContextTruncated?: () => void };
+      options.onContextTruncated?.();
+    });
+    mocks.createBrowserAgent.mockReturnValue(agent);
+
+    await startRun(makeRequest({ tabId: 9 }));
+    await vi.waitFor(() => expect(getRunState(9)?.busy).toBe(false));
+
+    const state = getRunState(9);
+    const lastMessage = state?.messages[state.messages.length - 1];
+    expect(lastMessage?.contextTruncated).toBe(true);
+  });
+
+  it('leaves contextTruncated unset when the agent never reports a context recut', async () => {
+    const agent = makeFakeAgent([]);
+    mocks.createBrowserAgent.mockReturnValue(agent);
+
+    await startRun(makeRequest({ tabId: 10 }));
+    await vi.waitFor(() => expect(getRunState(10)?.busy).toBe(false));
+
+    const state = getRunState(10);
+    const lastMessage = state?.messages[state.messages.length - 1];
+    expect(lastMessage?.contextTruncated).toBeUndefined();
+  });
+
   it('aborts an existing run for the same tab before starting a new one', async () => {
     const firstAgent = makeFakeAgent([]);
     const secondAgent = makeFakeAgent([]);

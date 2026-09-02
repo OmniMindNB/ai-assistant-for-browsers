@@ -39,12 +39,12 @@ export default function App() {
   const {
     messages,
     activitySteps,
-    input,
     pendingFocusToken,
     quotedSelection,
     pendingAttachments,
     busy,
     error,
+    retryAction,
     pendingConfirmation,
     pendingQuestion,
     providers,
@@ -55,7 +55,6 @@ export default function App() {
     shortcuts,
     shortcutErrors,
     pageContext,
-    setInput,
     clearQuotedSelection,
     addAttachmentFiles,
     removeAttachment,
@@ -184,10 +183,10 @@ export default function App() {
     setShowJumpToBottom(false);
   }
 
-  async function submitMessage() {
+  async function submitMessage(text: string): Promise<boolean> {
     resetToFollowing();
     const attached = resolvePageAttached(pageContext.status);
-    await send(undefined, { withoutBrowserTools: !attached });
+    return send(text, { withoutBrowserTools: !attached });
   }
 
   function executeShortcut(shortcut: ShortcutConfig) {
@@ -311,9 +310,18 @@ export default function App() {
                 {error && (
                   <div
                     role="alert"
-                    className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300"
+                    className="flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300"
                   >
-                    {error}
+                    <span>{error}</span>
+                    {retryAction && (
+                      <button
+                        type="button"
+                        onClick={retryAction}
+                        className="shrink-0 rounded-full px-1 font-medium underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                      >
+                        {t('common.retry')}
+                      </button>
+                    )}
                   </div>
                 )}
                 {shortcutErrors.length > 0 && (
@@ -339,7 +347,6 @@ export default function App() {
           </div>
 
           <WorkbenchComposer
-            input={input}
             busy={busy}
             pageContext={pageContext}
             providers={providers}
@@ -348,7 +355,6 @@ export default function App() {
             pendingFocusToken={pendingFocusToken}
             quotedSelection={quotedSelection}
             attachments={pendingAttachments}
-            onInput={setInput}
             onSend={submitMessage}
             onStop={stop}
             shortcuts={resolvedShortcuts}
@@ -515,6 +521,12 @@ const Message = memo(function Message({
           <div className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">
             <IconStop className="h-3.5 w-3.5" />
             <span>{t('chat.stoppedBadge')}</span>
+          </div>
+        )}
+        {message.contextTruncated && (
+          <div className="mt-2 inline-flex items-center gap-1.5 text-xs text-neutral-400 dark:text-neutral-500">
+            <IconAlertTriangle className="h-3.5 w-3.5" />
+            <span>{t('chat.contextTruncatedNotice')}</span>
           </div>
         )}
         {message.activitySteps && message.activitySteps.length > 0 && (

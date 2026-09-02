@@ -87,7 +87,6 @@ export type PageContextState =
 interface ChatState {
   messages: UIMessage[];
   activitySteps: ActivityStep[];
-  input: string;
   /** 每次消费一条划词提问 pending ask 后设为 Date.now()；WorkbenchComposer 据此判断"该聚焦输入框了"。 */
   pendingFocusToken: number;
   /** 划词提问消费到的待引用文字（裁剪后）；作为独立卡片显示在输入框上方，不混入 input。 */
@@ -96,6 +95,8 @@ interface ChatState {
   pendingAttachments: PendingAttachment[];
   busy: boolean;
   error: string | null;
+  /** 重试上一次导致 `error` 的动作（重新解析 tab/取选区/发送等前置失败），供顶部错误横幅的重试按钮调用；无可重试动作或 error 已清空时为 null。 */
+  retryAction: (() => void) | null;
   pendingConfirmation: PendingConfirmation | null;
   pendingQuestion: PendingQuestion | null;
   provider: ProviderConfig | null;
@@ -110,7 +111,6 @@ interface ChatState {
   shortcuts: ShortcutConfig[];
   shortcutErrors: string[];
   pageContext: PageContextState;
-  setInput: (v: string) => void;
   clearQuotedSelection: () => void;
   addAttachmentFiles: (files: FileList | File[]) => Promise<void>;
   removeAttachment: (id: string) => void;
@@ -122,7 +122,7 @@ interface ChatState {
   setSelectedProvider: (id: string) => void;
   setSelectedModel: (model: string) => void;
   selectProviderAndModel: (providerId: string, model: string) => void;
-  send: (text?: string, options?: { withoutBrowserTools?: boolean }) => Promise<boolean>;
+  send: (text: string, options?: { withoutBrowserTools?: boolean }) => Promise<boolean>;
   /** 成功发起（截断+提交）返回 true；任一前置校验失败返回 false，调用方据此决定是否关闭编辑框。 */
   editMessage: (id: string, newContent: string) => Promise<boolean>;
   runShortcut: (shortcut: ShortcutConfig) => Promise<void>;
@@ -581,12 +581,12 @@ function makeMessage(
 export const useChat = create<ChatState>((set, get) => ({
   messages: [],
   activitySteps: [],
-  input: '',
   pendingFocusToken: 0,
   quotedSelection: null,
   pendingAttachments: [],
   busy: false,
   error: null,
+  retryAction: null,
   pendingConfirmation: null,
   pendingQuestion: null,
   provider: null,
@@ -599,7 +599,6 @@ export const useChat = create<ChatState>((set, get) => ({
   shortcutErrors: [],
   pageContext: { status: 'loading' },
 
-  setInput: (v) => set({ input: v }),
   clearQuotedSelection: () => set({ quotedSelection: null }),
 
   addAttachmentFiles: async (files) => {
@@ -785,7 +784,7 @@ export const useChat = create<ChatState>((set, get) => ({
     const pending = get().pendingAttachments;
     if (hasBusyAttachments(pending) || get().busy) return false;
     const ready = pending.filter(isAttachmentReady);
-    const question = (text ?? get().input).trim();
+    const question = text.trim();
     if (!question && ready.length === 0) return false;
     const displayText = question || t('store.attachmentOnlyPrompt');
     const quoted = get().quotedSelection;
@@ -803,6 +802,7 @@ export const useChat = create<ChatState>((set, get) => ({
           quoted,
           attachmentIds: ready.map((item) => item.id),
         },
+        retry: () => { void get().send(text, options); },
       },
     );
   },
@@ -817,6 +817,7 @@ export const useChat = create<ChatState>((set, get) => ({
     // 才会真正截断，届时会用 id 重新解析下标，避免下标跨 await 失效（见 runAgent 内注释）。
     return runAgent(set, get, makeMessage('user', trimmed, 'input'), trimmed, {
       truncateToId: id,
+      retry: () => { void get().editMessage(id, newContent); },
     });
   },
 
@@ -845,7 +846,7 @@ export const useChat = create<ChatState>((set, get) => ({
         selection = response.data;
       } catch (error) {
         if (!isCurrentOrigin(origin, get)) return;
-        set({ busy: false, error: errMsg(error) });
+        set({ busy: false, error: errMsg(error), retryAction: () => { void get().runShortcut(shortcut); } });
         return;
       }
       set({ busy: false });
@@ -861,7 +862,7 @@ export const useChat = create<ChatState>((set, get) => ({
         tab = await resolveActiveTab();
       } catch (error) {
         if (!isCurrentOrigin(origin, get)) return;
-        set({ busy: false, error: errMsg(error) });
+        set({ busy: false, error: errMsg(error), retryAction: () => { void get().runShortcut(shortcut); } });
         return;
       }
       if (!isCurrentOrigin(origin, get)) return;
@@ -891,7 +892,7 @@ export const useChat = create<ChatState>((set, get) => ({
       execution = buildShortcutExecution(resolved, t, selection?.text, pagePrefetch);
     } catch (error) {
       if (!isCurrentOrigin(origin, get)) return;
-      set({ busy: false, error: errMsg(error) });
+      set({ busy: false, error: errMsg(error), retryAction: () => { void get().runShortcut(shortcut); } });
       return;
     }
 
@@ -905,6 +906,7 @@ export const useChat = create<ChatState>((set, get) => ({
         withoutBrowserTools: execution.browserTools === 'none',
         systemPromptSuffix: execution.systemPromptSuffix,
         origin,
+        retry: () => { void get().runShortcut(shortcut); },
       },
     );
   },
@@ -995,6 +997,7 @@ export const useChat = create<ChatState>((set, get) => ({
         taskOutcome: r.taskOutcome,
         stopped: r.stopped,
         activitySteps: r.activitySteps,
+        contextTruncated: r.contextTruncated,
       }));
     set({
       messages,
@@ -1123,6 +1126,8 @@ interface RunAgentOptions {
   withoutBrowserTools?: boolean;
   systemPromptSuffix?: string;
   origin?: ConversationOrigin;
+  /** 本轮若在前置校验阶段失败，赋给 `retryAction` 供错误横幅的重试按钮重新发起同一个动作。 */
+  retry?: () => void;
   /** 提交本轮时是否顺带清空 quotedSelection；只有主输入框发送需要，编辑历史消息/运行快捷指令时不动它。 */
   clearQuotedSelection?: boolean;
   images?: ImageContent[];
@@ -1167,12 +1172,12 @@ async function runAgent(
     null;
   if (!isCurrentRun(run, get)) return false;
   if (!provider) {
-    set({ error: t('store.noProviderConfigured') });
+    set({ error: t('store.noProviderConfigured'), retryAction: options.retry ?? null });
     settleRun(run);
     return false;
   }
   if (!provider.apiKey) {
-    set({ error: t('store.missingApiKey') });
+    set({ error: t('store.missingApiKey'), retryAction: options.retry ?? null });
     settleRun(run);
     return false;
   }
@@ -1186,7 +1191,7 @@ async function runAgent(
   try {
     tab = options.presetTab ?? (await resolveActiveTab());
   } catch (e) {
-    if (isCurrentRun(run, get)) set({ error: errMsg(e) });
+    if (isCurrentRun(run, get)) set({ error: errMsg(e), retryAction: options.retry ?? null });
     settleRun(run);
     return false;
   }
@@ -1211,7 +1216,7 @@ async function runAgent(
   if (options.truncateToId !== undefined) {
     const index = findMessageIndex(current, options.truncateToId);
     if (index < 0) {
-      set({ error: t('store.messageNotFound') });
+      set({ error: t('store.messageNotFound'), retryAction: options.retry ?? null });
       settleRun(run);
       return false;
     }
@@ -1252,11 +1257,11 @@ async function runAgent(
   set({
     messages: [...history, committedDisplay, makeMessage('assistant', '')],
     activitySteps: [],
-    input: '',
     ...(options.clearQuotedSelection ? { quotedSelection: null } : {}),
     ...(options.clearAttachments ? { pendingAttachments: [] } : {}),
     busy: true,
     error: null,
+    retryAction: null,
     pendingConfirmation: null,
     pendingQuestion: null,
   });

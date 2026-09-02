@@ -140,6 +140,7 @@ export const en: Record<keyof typeof zh, string> = {
   'chat.taskOutcome.partial': 'Partially completed',
   'chat.taskOutcome.failure': 'Task not completed',
   'chat.stoppedBadge': 'Stopped',
+  'chat.contextTruncatedNotice': 'This conversation is long, so some earlier messages were omitted for this reply.',
   'chat.viewStepsToggle': 'Steps ({count})',
   'agentActivity.tool.getActiveTab': 'Get active tab',
   'agentActivity.now.askUser': 'Asking: "{target}"',

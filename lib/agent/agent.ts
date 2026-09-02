@@ -84,6 +84,12 @@ export interface BrowserAgentOptions {
   /** report_task_outcome 工具被调用时转发给外层，用于把成败信号落到对应的 assistant 消息上。 */
   onTaskOutcome?: (outcome: TaskOutcome) => void;
   /**
+   * 上下文窗口首次被重切（早期历史被摘要/移出上下文）时转发给外层，用于告知用户
+   * 本轮回答可能已经看不到会话最早期的部分内容（ref: [[project-ux-audit-2026-09-02]]）。
+   * 一旦触发就会跨轮持续调用（`contextWindow.start` 不会再退回 0），调用方按幂等处理即可。
+   */
+  onContextTruncated?: () => void;
+  /**
    * 写操作获批、或当前操作目标切换时通知外层同步执行期遮罩。第二个参数是这次遮罩状态
    * 要作用的 tabId——遮罩必须跟随当前实际被操作的 tab，不再总是面板自己绑定的那个
    * （ref: 设计文档 §3.4）。
@@ -339,7 +345,11 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
       return undefined;
     },
     shouldStopAfterTurn: async () => policy.shouldStopAfterTurn(),
-    transformContext: async (messages) => compactAgentMessages(messages, contextWindow),
+    transformContext: async (messages) => {
+      const compacted = compactAgentMessages(messages, contextWindow);
+      if (contextWindow.start > 0) options.onContextTruncated?.();
+      return compacted;
+    },
     convertToLlm: (messages) => messages.filter(isLlmMessage),
   };
 }

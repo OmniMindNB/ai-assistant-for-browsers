@@ -184,7 +184,6 @@ describe('chat store page context', () => {
     (globalThis as typeof globalThis & { browser: any }).browser.storage.local.get = vi.fn().mockResolvedValue({});
     useChat.setState({
       messages: [],
-      input: '',
       busy: false,
       error: null,
       providers: [],
@@ -841,9 +840,58 @@ describe('chat store page context', () => {
     await expect(useChat.getState().send('   ', { withoutBrowserTools: true })).resolves.toBe(false);
     expect(mocks.runPortPostMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'startRun' }));
 
-    useChat.setState({ input: 'Hello', busy: true });
-    await expect(useChat.getState().send(undefined, { withoutBrowserTools: true })).resolves.toBe(false);
+    useChat.setState({ busy: true });
+    await expect(useChat.getState().send('Hello', { withoutBrowserTools: true })).resolves.toBe(false);
     expect(mocks.runPortPostMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'startRun' }));
+  });
+
+  describe('error banner retryAction', () => {
+    it('exposes a retryAction when resolving the active tab fails on send, and it resends the same message', async () => {
+      await connectPort();
+      mocks.sendMessage.mockResolvedValueOnce({ ok: false, error: 'No active tab' });
+
+      await expect(useChat.getState().send('hello')).resolves.toBe(false);
+
+      expect(useChat.getState().error).toBe('No active tab');
+      expect(useChat.getState().retryAction).toBeInstanceOf(Function);
+
+      mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+      useChat.getState().retryAction!();
+
+      await vi.waitFor(() => expect(lastStartRunCall()).toEqual(expect.objectContaining({ type: 'startRun' })));
+      expect(useChat.getState().error).toBeNull();
+      expect(useChat.getState().retryAction).toBeNull();
+    });
+
+    it('clears a stale retryAction once a run starts successfully', async () => {
+      await connectPort();
+      mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+      useChat.setState({ error: 'stale error', retryAction: () => undefined });
+
+      await useChat.getState().send('hello');
+
+      expect(useChat.getState().error).toBeNull();
+      expect(useChat.getState().retryAction).toBeNull();
+    });
+
+    it('exposes a retryAction when a selection-scope shortcut fails to read the selection, and it re-runs the shortcut', async () => {
+      mocks.sendMessage
+        .mockResolvedValueOnce({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } })
+        .mockResolvedValueOnce({ ok: false, error: 'no selection' });
+      const shortcut = {
+        id: 'builtin:explain-selection', origin: 'builtin' as const, scope: 'selection' as const, customized: false,
+      };
+
+      await useChat.getState().runShortcut(shortcut);
+
+      expect(useChat.getState().error).toBe('no selection');
+      expect(useChat.getState().retryAction).toBeInstanceOf(Function);
+
+      useChat.getState().retryAction!();
+
+      // runShortcut's selection-scope preflight clears error synchronously before its first await.
+      expect(useChat.getState().error).toBeNull();
+    });
   });
 
   describe('restoreTabConversation pending ask', () => {
@@ -854,17 +902,16 @@ describe('chat store page context', () => {
         set: vi.fn().mockResolvedValue(undefined),
         remove: vi.fn().mockResolvedValue(undefined),
       };
-      useChat.setState({ input: '', quotedSelection: null, pendingFocusToken: 0 });
+      useChat.setState({ quotedSelection: null, pendingFocusToken: 0 });
     });
 
-    it('sets quotedSelection and bumps the focus token when a pending ask exists for this tab, without touching input', async () => {
+    it('sets quotedSelection and bumps the focus token when a pending ask exists for this tab', async () => {
       const key = 'runi:tab-pending-ask:42';
       (globalThis as any).browser.storage.session.get = vi.fn().mockResolvedValue({ [key]: 'selected text' });
 
       await useChat.getState().restoreTabConversation();
 
       expect(useChat.getState().quotedSelection).toBe('selected text');
-      expect(useChat.getState().input).toBe('');
       expect(useChat.getState().pendingFocusToken).toBeGreaterThan(0);
       expect((globalThis as any).browser.storage.session.remove).toHaveBeenCalledWith(key);
     });
@@ -872,7 +919,6 @@ describe('chat store page context', () => {
     it('leaves the composer untouched when there is no pending ask for this tab', async () => {
       await useChat.getState().restoreTabConversation();
 
-      expect(useChat.getState().input).toBe('');
       expect(useChat.getState().quotedSelection).toBeNull();
       expect(useChat.getState().pendingFocusToken).toBe(0);
     });
@@ -955,7 +1001,7 @@ describe('chat store page context', () => {
     beforeEach(async () => {
       mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
       await connectPort();
-      useChat.setState({ input: '', quotedSelection: null });
+      useChat.setState({ quotedSelection: null });
     });
 
     it('sends the quote-formatted template plus the question to background, but stores only the question as the displayed message', async () => {
@@ -1245,7 +1291,7 @@ describe('chat store page context', () => {
     beforeEach(async () => {
       mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
       await connectPort();
-      useChat.setState({ input: '', pendingAttachments: [] });
+      useChat.setState({ pendingAttachments: [] });
     });
 
     it('folds a text attachment into the prompt text, clears pendingAttachments, and stores it on the message', async () => {
@@ -1308,7 +1354,7 @@ describe('chat store page context', () => {
         kind: 'pdf', reason: 'invalid-pdf', retryable: false,
       }] });
 
-      await expect(useChat.getState().send()).resolves.toBe(false);
+      await expect(useChat.getState().send('')).resolves.toBe(false);
     });
 
     it('uses the localized default prompt for attachment-only send', async () => {
@@ -1318,7 +1364,7 @@ describe('chat store page context', () => {
       });
       await useChat.getState().addAttachmentFiles([new File(['%PDF-x'], 'a.pdf')]);
 
-      await expect(useChat.getState().send()).resolves.toBe(true);
+      await expect(useChat.getState().send('')).resolves.toBe(true);
 
       const startRun = lastStartRunCall();
       expect(startRun.agentUserContent).toContain('Analyze the attached file.');

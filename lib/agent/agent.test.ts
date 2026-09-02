@@ -69,7 +69,7 @@ function toolCallStillPendingMessage(name: string) {
   return { content: [{ type: 'toolCall', id: `${name}-id`, name, arguments: {} }] };
 }
 
-function runtimeOptions(overrides: { onConfirm?: () => Promise<boolean> } = {}) {
+function runtimeOptions(overrides: { onConfirm?: () => Promise<boolean>; onContextTruncated?: () => void } = {}) {
   return createBrowserAgentOptions({
     provider: baseProvider,
     tabId: 1,
@@ -1158,5 +1158,28 @@ describe('上下文窗口：迟滞重切，保证前缀在两次重切之间只�
     // 否则任务刚过半就进入逐轮重切、缓存全失效的状态。
     expect(MAX_CONTEXT_MESSAGES).toBeGreaterThanOrEqual(DEFAULT_WRITE_TOOL_CALL_BUDGET);
     expect(CONTEXT_RECUT_TARGET).toBeLessThan(MAX_CONTEXT_MESSAGES);
+  });
+
+  it('未超过高水位时不通知外层发生过重切', async () => {
+    const onContextTruncated = vi.fn();
+    const hooks = runtimeOptions({ onContextTruncated });
+    const messages = pairs(MAX_CONTEXT_MESSAGES / 2, 'call');
+
+    await hooks.transformContext!(messages);
+
+    expect(onContextTruncated).not.toHaveBeenCalled();
+  });
+
+  it('超过高水位重切后通知外层，并且此后每一轮都继续通知', async () => {
+    const onContextTruncated = vi.fn();
+    const hooks = runtimeOptions({ onContextTruncated });
+    const messages = pairs(MAX_CONTEXT_MESSAGES, 'call');
+
+    await hooks.transformContext!(messages);
+    expect(onContextTruncated).toHaveBeenCalledTimes(1);
+
+    messages.push(...pairs(1, 'later'));
+    await hooks.transformContext!(messages);
+    expect(onContextTruncated).toHaveBeenCalledTimes(2);
   });
 });

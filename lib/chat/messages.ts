@@ -27,6 +27,8 @@ export interface ChatMessage {
    * 运行期间的实时步骤条（ActivityStepList）是另一份易失状态，这里是它在轮次结束时的存档快照。
    */
   activitySteps?: ActivityStep[];
+  /** 本轮是否触发过上下文窗口重切（早期历史被摘要/移出上下文）；仅 assistant 消息可能为 true。 */
+  contextTruncated?: boolean;
 }
 
 const TITLE_MAX_CHARS = 40;
@@ -76,6 +78,7 @@ export function toMessageRecords(
     taskOutcome: message.taskOutcome,
     stopped: message.stopped,
     activitySteps: message.activitySteps,
+    contextTruncated: message.contextTruncated,
   }));
 }
 

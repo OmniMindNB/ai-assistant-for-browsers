@@ -22,7 +22,6 @@ import { AttachmentChip } from './AttachmentChip';
 const chatStore = {
   messages: [],
   activitySteps: [],
-  input: '',
   busy: false,
   error: null,
   pendingConfirmation: null,
@@ -41,7 +40,6 @@ const chatStore = {
   } as PageContextState,
   quotedSelection: null,
   pendingAttachments: [],
-  setInput: vi.fn(),
   clearQuotedSelection: vi.fn(),
   addAttachmentFiles: vi.fn(),
   removeAttachment: vi.fn(),
@@ -156,7 +154,6 @@ beforeEach(() => {
   Object.assign(chatStore, {
     messages: [],
     activitySteps: [],
-    input: '',
     busy: false,
     error: null,
     pendingConfirmation: null,
@@ -221,7 +218,6 @@ const readingShortcut: ResolvedShortcutCommand = {
 };
 
 const composerProps: WorkbenchComposerProps = {
-  input: '',
   busy: false,
   pageContext: availableContext,
   providers: [],
@@ -230,7 +226,6 @@ const composerProps: WorkbenchComposerProps = {
   shortcuts: [readingShortcut],
   pendingFocusToken: 0,
   quotedSelection: null,
-  onInput: vi.fn(),
   onSend: vi.fn(),
   onStop: vi.fn(),
   onRetryPageContext: vi.fn(),
@@ -297,19 +292,10 @@ const parsingPdf: PendingAttachment = {
   pageCount: 4,
 };
 
-function ComposerHarness({ initialInput = '', ...props }: Partial<WorkbenchComposerProps> & { initialInput?: string }) {
-  const [input, setInput] = useState(initialInput);
+function ComposerHarness(props: Partial<WorkbenchComposerProps>) {
   return (
     <LocaleProvider>
-      <WorkbenchComposer
-        {...composerProps}
-        {...props}
-        input={input}
-        onInput={(value) => {
-          setInput(value);
-          props.onInput?.(value);
-        }}
-      />
+      <WorkbenchComposer {...composerProps} {...props} />
     </LocaleProvider>
   );
 }
@@ -318,7 +304,6 @@ describe('workbench composer', () => {
   it('shows PDF progress and disables send while parsing', () => {
     render(
       <ComposerHarness
-        initialInput="summarize"
         attachments={[{
           status: 'parsing',
           id: 'a',
@@ -344,7 +329,6 @@ describe('workbench composer', () => {
     const onSend = vi.fn();
     render(
       <ComposerHarness
-        initialInput="summarize"
         attachments={[parsingPdf]}
         onSend={onSend}
       />,
@@ -357,7 +341,7 @@ describe('workbench composer', () => {
   });
 
   it('enables attachment-only send for a ready PDF', () => {
-    render(<ComposerHarness initialInput="" attachments={[readyPdf]} />);
+    render(<ComposerHarness attachments={[readyPdf]} />);
 
     expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled();
     expect(screen.getByText('2 pages')).toBeVisible();
@@ -386,21 +370,15 @@ describe('workbench composer', () => {
     expect(screen.getAllByRole('alert')).toHaveLength(2);
   });
 
-  it('lets valid text bypass an error attachment but will not send the error alone', () => {
-    const { rerender } = render(
-      <ComposerHarness initialInput="summarize" attachments={[retryablePdfError]} />,
-    );
+  it('lets valid text bypass an error attachment but will not send the error alone', async () => {
+    const user = userEvent.setup();
+    render(<ComposerHarness attachments={[retryablePdfError]} />);
+    const textbox = screen.getByRole('textbox');
+
+    await user.type(textbox, 'summarize');
     expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled();
 
-    rerender(
-      <LocaleProvider>
-        <WorkbenchComposer
-          {...composerProps}
-          input=""
-          attachments={[retryablePdfError]}
-        />
-      </LocaleProvider>,
-    );
+    await user.clear(textbox);
     expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
   });
 
@@ -555,15 +533,19 @@ describe('workbench composer', () => {
   it('focuses the textarea and moves the cursor to the end when pendingFocusToken advances', async () => {
     const { rerender } = render(
       <LocaleProvider>
-        <WorkbenchComposer {...composerProps} input="quoted selection" pendingFocusToken={0} />
+        <WorkbenchComposer {...composerProps} pendingFocusToken={0} />
       </LocaleProvider>,
     );
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    // fireEvent.change (unlike userEvent.type) does not focus the element, matching the scenario
+    // this guards: text already sitting in the draft (e.g. restored across a panel remount)
+    // before pendingFocusToken tells the composer to focus and place the cursor.
+    fireEvent.change(textarea, { target: { value: 'quoted selection' } });
     expect(textarea).not.toHaveFocus();
 
     rerender(
       <LocaleProvider>
-        <WorkbenchComposer {...composerProps} input="quoted selection" pendingFocusToken={12345} />
+        <WorkbenchComposer {...composerProps} pendingFocusToken={12345} />
       </LocaleProvider>,
     );
 
@@ -575,7 +557,7 @@ describe('workbench composer', () => {
   it('renders the quoted selection as a dismissible card, separate from the (empty) textarea', () => {
     render(
       <LocaleProvider>
-        <WorkbenchComposer {...composerProps} input="" quotedSelection="the selected text" />
+        <WorkbenchComposer {...composerProps} quotedSelection="the selected text" />
       </LocaleProvider>,
     );
 
@@ -648,9 +630,9 @@ describe('workbench composer', () => {
   it('sends on Enter and inserts a newline on Shift+Enter', async () => {
     const user = userEvent.setup();
     const onSend = vi.fn();
-    render(<ComposerHarness initialInput="hello" onSend={onSend} />);
+    render(<ComposerHarness onSend={onSend} />);
 
-    await user.click(screen.getByRole('textbox'));
+    await user.type(screen.getByRole('textbox'), 'hello');
     await user.keyboard('{Enter}');
     expect(onSend).toHaveBeenCalledOnce();
     await user.keyboard('{Shift>}{Enter}{/Shift}');
@@ -661,9 +643,11 @@ describe('workbench composer', () => {
 
   it('does not send while composing with an IME', () => {
     const onSend = vi.fn();
-    render(<ComposerHarness initialInput="你好" onSend={onSend} />);
+    render(<ComposerHarness onSend={onSend} />);
+    const textbox = screen.getByRole('textbox');
+    fireEvent.change(textbox, { target: { value: '你好' } });
 
-    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter', isComposing: true });
+    fireEvent.keyDown(textbox, { key: 'Enter', isComposing: true });
 
     expect(onSend).not.toHaveBeenCalled();
   });
@@ -699,9 +683,9 @@ describe('workbench composer', () => {
   it('does not invoke sending for an empty input', async () => {
     const user = userEvent.setup();
     const onSend = vi.fn();
-    render(<ComposerHarness initialInput="   " onSend={onSend} />);
+    render(<ComposerHarness onSend={onSend} />);
 
-    await user.click(screen.getByRole('textbox'));
+    await user.type(screen.getByRole('textbox'), '   ');
     await user.keyboard('{Enter}');
 
     expect(onSend).not.toHaveBeenCalled();
@@ -1068,17 +1052,16 @@ describe('workbench context controls', () => {
   });
   it('sends with browser tools on an available page by default', async () => {
     const user = userEvent.setup();
-    chatStore.input = 'Summarize this';
     render(
       <LocaleProvider>
         <App />
       </LocaleProvider>,
     );
 
-    await user.click(screen.getByRole('textbox', { name: 'Message input' }));
+    await user.type(screen.getByRole('textbox', { name: 'Message input' }), 'Summarize this');
     await user.keyboard('{Enter}');
 
-    await waitFor(() => expect(chatStore.send).toHaveBeenCalledWith(undefined, { withoutBrowserTools: false }));
+    await waitFor(() => expect(chatStore.send).toHaveBeenCalledWith('Summarize this', { withoutBrowserTools: false }));
   });
 
   it('automatically sends restricted-page messages without browser tools, with no click required', async () => {
@@ -1089,23 +1072,21 @@ describe('workbench context controls', () => {
       title: 'Extensions',
       url: 'chrome://extensions/',
     };
-    chatStore.input = 'Open settings';
     render(
       <LocaleProvider>
         <App />
       </LocaleProvider>,
     );
 
-    await user.click(screen.getByRole('textbox', { name: 'Message input' }));
+    await user.type(screen.getByRole('textbox', { name: 'Message input' }), 'Open settings');
     await user.keyboard('{Enter}');
 
-    await waitFor(() => expect(chatStore.send).toHaveBeenCalledWith(undefined, { withoutBrowserTools: true }));
+    await waitFor(() => expect(chatStore.send).toHaveBeenCalledWith('Open settings', { withoutBrowserTools: true }));
   });
 
   it('automatically sends error-status messages without browser tools, with no click required', async () => {
     const user = userEvent.setup();
     chatStore.pageContext = { status: 'error', message: 'Offline' };
-    chatStore.input = 'Open settings';
     render(
       <LocaleProvider>
         <App />
@@ -1114,10 +1095,10 @@ describe('workbench context controls', () => {
 
     expect(screen.getByText('Page context unavailable: Offline')).toBeVisible();
 
-    await user.click(screen.getByRole('textbox', { name: 'Message input' }));
+    await user.type(screen.getByRole('textbox', { name: 'Message input' }), 'Open settings');
     await user.keyboard('{Enter}');
 
-    await waitFor(() => expect(chatStore.send).toHaveBeenCalledWith(undefined, { withoutBrowserTools: true }));
+    await waitFor(() => expect(chatStore.send).toHaveBeenCalledWith('Open settings', { withoutBrowserTools: true }));
   });
 
   it('shows a single unified empty-state message regardless of intent', () => {

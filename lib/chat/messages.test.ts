@@ -172,6 +172,18 @@ describe('toMessageRecords', () => {
     expect(records[0].stopped).toBeUndefined();
     expect(records[0].activitySteps).toBeUndefined();
   });
+
+  it('保留 contextTruncated', () => {
+    const records = toMessageRecords('c-1', [
+      { id: 'a', role: 'assistant', content: '已完成', createdAt: 1000, contextTruncated: true },
+    ]);
+    expect(records[0].contextTruncated).toBe(true);
+  });
+
+  it('没有 contextTruncated 时字段为 undefined', () => {
+    const records = toMessageRecords('c-1', [msg('a', 'user', '问')]);
+    expect(records[0].contextTruncated).toBeUndefined();
+  });
 });
 
 describe('conversationTitle', () => {

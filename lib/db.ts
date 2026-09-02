@@ -43,6 +43,11 @@ export interface ChatMessageRecord {
    * 不建索引，同上无需 Dexie 版本迁移；存量记录无此字段即视为没有步骤可回看。
    */
   activitySteps?: ActivityStep[];
+  /**
+   * 本轮是否触发过上下文窗口重切（早期历史被摘要/移出上下文），仅 assistant 消息可能为 true。
+   * 不建索引，同上无需 Dexie 版本迁移；存量记录无此字段即视为未触发过。
+   */
+  contextTruncated?: boolean;
 }
 
 export interface ConversationRecord {

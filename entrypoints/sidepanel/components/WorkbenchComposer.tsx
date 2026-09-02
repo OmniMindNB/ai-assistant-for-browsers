@@ -20,7 +20,6 @@ import { AttachmentChip } from './AttachmentChip';
 import { IconCheck, IconChevronDown, IconClose, IconPaperclip, IconSend, IconStop } from '../icons';
 
 export interface WorkbenchComposerProps {
-  input: string;
   busy: boolean;
   pageContext: PageContextState;
   providers: ProviderConfig[];
@@ -33,8 +32,8 @@ export interface WorkbenchComposerProps {
   quotedSelection: string | null;
   /** 待发送附件的完整生命周期；历史附件由消息列表单独只读渲染。 */
   attachments: PendingAttachment[];
-  onInput(value: string): void;
-  onSend(): void;
+  /** 返回值真值时才清空输入框，与 store.send() 的"是否真的发起了这一轮"语义对齐。 */
+  onSend(text: string): void | Promise<boolean>;
   onStop(): void;
   onRetryPageContext(): void;
   onRunShortcut(shortcut: ShortcutConfig): void;
@@ -52,7 +51,6 @@ function startsSlashCommand(input: string): boolean {
 }
 
 export function WorkbenchComposer({
-  input,
   busy,
   pageContext,
   providers,
@@ -62,7 +60,6 @@ export function WorkbenchComposer({
   pendingFocusToken,
   quotedSelection,
   attachments,
-  onInput,
   onSend,
   onStop,
   onRetryPageContext,
@@ -74,6 +71,9 @@ export function WorkbenchComposer({
   onRetryAttachment,
 }: WorkbenchComposerProps) {
   const { t } = useTranslation();
+  // 按键级别的草稿只有这个组件自己需要：留在全局 store 里会导致每次按键都触发整个 App
+  // 重渲染（ref: [[project-ux-audit-2026-09-02]] 输入框全局态一条）。
+  const [input, setInput] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -151,8 +151,11 @@ export function WorkbenchComposer({
     return () => document.removeEventListener('mousedown', closeOnOutsideClick);
   }, [openPopover]);
 
-  function updateInput(value: string) {
-    onInput(value);
+  async function handleSend() {
+    if (!canSend) return;
+    const text = input;
+    const started = await onSend(text);
+    if (started) setInput('');
   }
 
   function runCommand(index: number) {
@@ -160,7 +163,7 @@ export function WorkbenchComposer({
     if (!command || requestBlocked) return;
     onRunShortcut(command.config);
     setOpenPopover(null);
-    if (startsSlashCommand(input)) onInput('');
+    if (startsSlashCommand(input)) setInput('');
     textareaRef.current?.focus();
   }
 
@@ -251,7 +254,7 @@ export function WorkbenchComposer({
 
     if (event.key === 'Enter' && !event.shiftKey && canSend) {
       event.preventDefault();
-      onSend();
+      void handleSend();
     }
   }
 
@@ -444,7 +447,7 @@ export function WorkbenchComposer({
           <textarea
             ref={textareaRef}
             value={input}
-            onChange={(event) => updateInput(event.target.value)}
+            onChange={(event) => setInput(event.target.value)}
             onKeyDown={handleTextareaKeyDown}
             onCompositionStart={() => setComposing(true)}
             onCompositionEnd={() => setComposing(false)}
@@ -462,7 +465,7 @@ export function WorkbenchComposer({
               <IconStop className="h-5 w-5" />
             </button>
           ) : (
-            <button type="button" onClick={onSend} disabled={!canSend} aria-label={t('chat.sendMessage')} title={t('chat.sendMessage')} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white transition-colors hover:bg-indigo-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-400 dark:disabled:bg-neutral-800 dark:disabled:text-neutral-600">
+            <button type="button" onClick={() => void handleSend()} disabled={!canSend} aria-label={t('chat.sendMessage')} title={t('chat.sendMessage')} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white transition-colors hover:bg-indigo-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-400 dark:disabled:bg-neutral-800 dark:disabled:text-neutral-600">
               <IconSend className="h-5 w-5" />
             </button>
           )}

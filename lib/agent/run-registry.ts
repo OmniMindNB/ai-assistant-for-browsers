@@ -44,6 +44,8 @@ interface RunState {
   pendingToolArgs: Map<string, { toolName: string; args: unknown }>;
   terminatedToolCallIds: Set<string>;
   taskOutcome: TaskOutcome | null;
+  /** 本轮上下文窗口是否被重切过；true 时早期历史已被摘要/移出上下文（见 agent.ts 的 onContextTruncated）。 */
+  contextTruncated: boolean;
   /**
    * stopRun 会立刻清空 state.activitySteps 换来即时的 UI 反馈（见 stopRun 注释），
    * 这里存一份被清空前的快照，好让 finally 里的存档逻辑仍能拿到"停止那一刻跑到哪了"。
@@ -289,6 +291,7 @@ export async function startRun(request: StartRunRequest): Promise<void> {
     pendingToolArgs: new Map(),
     terminatedToolCallIds: new Set(),
     taskOutcome: null,
+    contextTruncated: false,
     stoppedActivitySteps: null,
   };
   runs.set(request.tabId, state);
@@ -339,6 +342,7 @@ export async function startRun(request: StartRunRequest): Promise<void> {
     },
     onSessionChange: (updated) => { void saveTabSession(updated).catch(() => undefined); },
     onTaskOutcome: (outcome) => { state.taskOutcome = outcome; },
+    onContextTruncated: () => { state.contextTruncated = true; },
   });
   state.agent = agent;
 
@@ -446,6 +450,7 @@ export async function startRun(request: StartRunRequest): Promise<void> {
               ...(state.taskOutcome ? { taskOutcome: state.taskOutcome } : {}),
               ...(wasUserStopped ? { stopped: true } : {}),
               ...(finishedSteps.length > 0 ? { activitySteps: finishedSteps } : {}),
+              ...(state.contextTruncated ? { contextTruncated: true } : {}),
             },
           ];
         }
