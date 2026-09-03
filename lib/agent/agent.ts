@@ -20,6 +20,8 @@ import { browserAnthropicStream } from './anthropic-stream';
 import { beforeToolCallPermissionGate, READ_ONLY_TOOL_NAMES, WRITE_TOOL_NAMES } from './permissions';
 import { REPORT_TASK_OUTCOME_TOOL_NAME, type TaskOutcome } from './task-outcome';
 import { createConfirmGateState, type ConfirmFn } from './confirm-gate';
+import { createTakeoverGateState, resolveTakeoverGate, type TakeoverPromptFn } from './takeover-gate';
+import { getTakeoverForTab } from './tab-takeover';
 import { createBrowserTools, type BrowserAgentTool } from './tools';
 import { createTabSession, type TabSessionController } from './tab-session';
 import { createAgentToolPolicy } from './tool-policy';
@@ -80,6 +82,11 @@ export interface BrowserAgentOptions {
   readToolCallBudget?: number;
   writeToolCallBudget?: number;
   onConfirm?: ConfirmFn;
+  /**
+   * 检测到用户在 agent 执行期间自己动了手，且 agent 又要写时调用；返回 true 表示继续。
+   * 省略时不打断（接管提示是体贴，不是安全边界，见 takeover-gate.ts）。
+   */
+  onTakeover?: TakeoverPromptFn;
   onAskUser?: (toolCallId: string, question: string, signal?: AbortSignal) => Promise<string>;
   /** report_task_outcome 工具被调用时转发给外层，用于把成败信号落到对应的 assistant 消息上。 */
   onTaskOutcome?: (outcome: TaskOutcome) => void;
@@ -142,6 +149,7 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
   // 上下文窗口起点跨轮保持，两次重切之间不动，让请求前缀只增不改（见 planContextWindow）。
   const contextWindow: ContextWindowState = { start: 0 };
   const confirmGateState = createConfirmGateState();
+  const takeoverGateState = createTakeoverGateState();
   let overlayTabId = options.tabId;
   // tabId -> 最后一次已知的 URL，用于识别 browser_click/fill_form/type 隐式触发的导航。
   const lastKnownUrl = new Map<number, string>();
@@ -217,6 +225,20 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
       if (permissionBlock) return recordPreExecutionBlock(permissionBlock);
 
       if (isWriteTool) {
+        // 只在写之前查：读操作不会和用户抢页面，为它停下来只是拖慢。
+        // 放在权限门之后、写预算记账之前——被权限拦下的调用根本不该惊动用户。
+        const takeoverBlock = await resolveTakeoverGate(
+          takeoverGateState,
+          context.toolCall.id,
+          context.toolCall.name,
+          context.toolCall.arguments,
+          session.currentTabId,
+          await getTakeoverForTab(session.currentTabId),
+          options.onTakeover,
+          signal,
+        );
+        if (takeoverBlock) return recordPreExecutionBlock(takeoverBlock);
+
         policy.approveWrite();
         const approvedPolicyBlock = policy.preflight(context.toolCall.name, context.args, isWriteTool);
         if (approvedPolicyBlock) return recordPreExecutionBlock(approvedPolicyBlock);

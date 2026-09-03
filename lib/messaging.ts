@@ -6,6 +6,7 @@ export type MessageType =
   | 'EXTRACT_PAGE'
   | 'GET_SELECTION'
   | 'ASK_SELECTION'
+  | 'AGENT_TAKEOVER'
   | 'GET_ACTIVE_TAB'
   | 'GET_TAB_URL'
   | 'QUERY_DOM'
@@ -81,6 +82,21 @@ export interface PageSelection {
 /** ASK_SELECTION：content script 主动上报"用户点击了划词提问气泡"，携带选中的文本。 */
 export interface AskSelectionPayload {
   text: string;
+}
+
+/**
+ * AGENT_TAKEOVER：content script 主动上报"执行期遮罩还挂着时，用户自己点了/敲了页面"。
+ * 与 ASK_SELECTION 一样不携带 tabId——语义就是"当前这个 tab"，身份取自 sender.tab.id。
+ * 没有 payload：需要的信息只有"哪个 tab、什么时候"，后者由 background 记录，
+ * 免得把页面里可被伪造的时间戳当权威。
+ */
+export interface AgentTakeoverPayload {
+  /** 触发接管的输入类型，仅用于日志/未来的文案区分；不参与任何判定。 */
+  via?: 'click' | 'keydown';
+}
+
+export interface AgentTakeoverResult {
+  recorded: boolean;
 }
 
 export interface QueryDomPayload {

@@ -1252,6 +1252,61 @@ describe('confirmation card', () => {
     expect(deny.className).toContain('px-3');
     expect(approve.className).toContain('px-3');
   });
+
+  // 接管暂停复用同一条应答通道，但问的是完全不同的问题：不是"这次提交放不放行"，
+  // 而是"人已经插手了，还接着做吗"。文案和按钮必须跟着换，否则用户会以为要提交表单。
+  it('以接管变体呈现 kind=takeover，而不是表单提交文案', () => {
+    (chatStore as any).pendingConfirmation = { ...pendingConfirmation, kind: 'takeover' };
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog).toHaveAccessibleName('✋ You took over this page');
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Stop here' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Submit form' })).not.toBeInTheDocument();
+  });
+
+  it('接管变体同样会滚动到可见并取焦', () => {
+    (chatStore as any).pendingConfirmation = { ...pendingConfirmation, kind: 'takeover' };
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog.scrollIntoView).toHaveBeenCalled();
+    expect(dialog).toHaveFocus();
+  });
+
+  it('“到此为止”走的是拒绝那条应答', async () => {
+    const user = userEvent.setup();
+    (chatStore as any).pendingConfirmation = { ...pendingConfirmation, kind: 'takeover' };
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Stop here' }));
+    expect(chatStore.respondToConfirmation).toHaveBeenCalledWith(false);
+  });
+
+  // kind 缺省必须按表单提交处理：已经落盘的旧快照里没有这个字段。
+  it('缺少 kind 的旧快照仍按表单提交呈现', () => {
+    (chatStore as any).pendingConfirmation = pendingConfirmation;
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    expect(screen.getByRole('alertdialog')).toHaveAccessibleName('🔒 Confirm form submission');
+  });
 });
 
 describe('workbench context controls', () => {

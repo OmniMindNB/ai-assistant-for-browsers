@@ -281,31 +281,31 @@ describe('clickElementInPage 的命中测试与 hover 收尾', () => {
 describe('typeTextInPage', () => {
   beforeEach(() => { document.body.innerHTML = ''; });
 
-  it('refuses to write into a password field', () => {
+  it('refuses to write into a password field', async () => {
     document.body.innerHTML = `<input type="password" name="pw" />`;
-    const result = typeTextInPage({ selector: 'input', index: 0, text: 'hunter2', replace: true });
+    const result = await typeTextInPage({ selector: 'input', index: 0, text: 'hunter2', replace: true });
     expect(result.status).toBe('blocked_sensitive');
     expect((document.querySelector('input') as HTMLInputElement).value).toBe('');
   });
 
-  it('targets the nth match when index is given', () => {
+  it('targets the nth match when index is given', async () => {
     document.body.innerHTML = `<input type="text" /><input type="text" />`;
-    typeTextInPage({ selector: 'input', index: 1, text: '第二个', replace: true });
+    await typeTextInPage({ selector: 'input', index: 1, text: '第二个', replace: true });
     const inputs = document.querySelectorAll('input');
     expect((inputs[0] as HTMLInputElement).value).toBe('');
     expect((inputs[1] as HTMLInputElement).value).toBe('第二个');
   });
 
-  it('reports invalid_value instead of throwing on a contenteditable', () => {
+  it('reports invalid_value instead of throwing on a contenteditable', async () => {
     document.body.innerHTML = `<div contenteditable="true"></div>`;
-    const result = typeTextInPage({ selector: 'div', index: 0, text: '内容', replace: true });
+    const result = await typeTextInPage({ selector: 'div', index: 0, text: '内容', replace: true });
     expect(['ok', 'invalid_value']).toContain(result.status);
     expect(result.status).not.toBe('error');
   });
 
   // 与 applyFormFill 的 contenteditable 分支同一条兜底：Slate.js / Quill 一类编辑器
   // 会吞掉直接写 textContent 的操作，回读不符时必须降级到 execCommand。
-  it('falls back to execCommand when the editor swallows the direct contenteditable write', () => {
+  it('falls back to execCommand when the editor swallows the direct contenteditable write', async () => {
     document.body.innerHTML = `<div contenteditable="true"></div>`;
     const host = document.querySelector('div')! as HTMLElement;
     let stored = '';
@@ -326,7 +326,7 @@ describe('typeTextInPage', () => {
     };
 
     try {
-      const result = typeTextInPage({ selector: 'div', index: 0, text: '内容', replace: true });
+      const result = await typeTextInPage({ selector: 'div', index: 0, text: '内容', replace: true });
       expect(calls).toEqual(['delete', 'insertText']);
       expect(result.status).toBe('ok');
       expect(result.actualValue).toBe('内容');
@@ -388,6 +388,96 @@ describe('selectOptionInPage 的光标事件', () => {
     const result = await selectOptionInPage({ selector: '#s', index: 0, value: '不存在' });
 
     expect(result.status).toBe('invalid_value');
+    expect(seen).toHaveLength(0);
+  });
+});
+
+// 点击涟漪必须与真正的 click 同刻派发：涟漪画在 A、点击落在 B 会直接破坏这个功能想
+// 建立的信任。所以断言的是「顺序」，不只是「发过」。
+describe('点击涟漪信号', () => {
+  beforeEach(() => { document.body.innerHTML = ''; });
+
+  it('clickElementInPage 在派发 click 之前发出 runi:cursor-click', async () => {
+    document.body.innerHTML = '<button id="b">点我</button>';
+    const button = document.getElementById('b')!;
+    button.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 10, height: 10, right: 10, bottom: 10, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+    document.elementFromPoint = () => button;
+
+    const order: string[] = [];
+    const onPulse = () => order.push('pulse');
+    window.addEventListener('runi:cursor-click', onPulse);
+    window.addEventListener('runi:cursor-move', () => order.push('cursor'));
+    button.addEventListener('mousedown', () => order.push('mousedown'));
+    button.addEventListener('click', () => order.push('click'));
+
+    try {
+      await clickElementInPage({ selector: '#b', index: 0 });
+    } finally {
+      window.removeEventListener('runi:cursor-click', onPulse);
+    }
+
+    // 光标先滑到位 → 涟漪 → 真实事件序列
+    expect(order).toEqual(['cursor', 'pulse', 'mousedown', 'click']);
+  });
+
+  it('点不成的目标不发涟漪', async () => {
+    document.body.innerHTML = '<button id="b" disabled>点我</button>';
+    const seen: unknown[] = [];
+    const onPulse = () => seen.push(1);
+    window.addEventListener('runi:cursor-click', onPulse);
+
+    try {
+      const result = await clickElementInPage({ selector: '#b', index: 0 });
+      expect(result.status).toBe('not_clickable');
+    } finally {
+      window.removeEventListener('runi:cursor-click', onPulse);
+    }
+
+    expect(seen).toHaveLength(0);
+  });
+});
+
+// browser_type 之前没有任何视觉信号：值凭空出现，用户对不上「是它在打字」。
+describe('typeTextInPage 的光标与高亮', () => {
+  beforeEach(() => { document.body.innerHTML = ''; });
+
+  it('写入前把光标移到输入框中心并画出高亮框', async () => {
+    document.body.innerHTML = '<input type="text" />';
+    const input = document.querySelector('input')!;
+    input.getBoundingClientRect = () =>
+      ({ left: 20, top: 60, width: 80, height: 24, right: 100, bottom: 84, x: 20, y: 60, toJSON: () => ({}) }) as DOMRect;
+
+    const seen: Array<{ x: number; y: number }> = [];
+    const onMove = (e: Event) => seen.push((e as CustomEvent<{ x: number; y: number }>).detail);
+    window.addEventListener('runi:cursor-move', onMove);
+
+    try {
+      const result = await typeTextInPage({ selector: 'input', index: 0, text: 'hi', replace: true });
+      expect(result.status).toBe('ok');
+    } finally {
+      window.removeEventListener('runi:cursor-move', onMove);
+    }
+
+    expect(seen).toEqual([{ x: 60, y: 72 }]);
+    const highlight = document.body.lastElementChild as HTMLElement;
+    expect(highlight.style.position).toBe('fixed');
+    expect(highlight.style.pointerEvents).toBe('none');
+  });
+
+  it('被拒绝的写入（密码字段）不发光标信号', async () => {
+    document.body.innerHTML = '<input type="password" name="pw" />';
+    const seen: unknown[] = [];
+    const onMove = () => seen.push(1);
+    window.addEventListener('runi:cursor-move', onMove);
+
+    try {
+      const result = await typeTextInPage({ selector: 'input', index: 0, text: 'x', replace: true });
+      expect(result.status).toBe('blocked_sensitive');
+    } finally {
+      window.removeEventListener('runi:cursor-move', onMove);
+    }
+
     expect(seen).toHaveLength(0);
   });
 });

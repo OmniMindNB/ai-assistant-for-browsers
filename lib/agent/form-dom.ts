@@ -537,6 +537,46 @@ export async function applyFormFill(input: ApplyFillInput): Promise<ApplyFillOut
     element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data }));
   };
 
+  // 逐字段扫光：一次 fill_form 可能改十几个字段，若值瞬间全部出现，用户根本看不出
+  // 「到底动了哪几个」——而这正是银行/政务代填最需要看清的一件事。高亮框停留 600ms
+  // 再淡出，所以后面的字段亮起时前面的还在，最终能看到完整的一组。
+  // 停顿总开销固定在 ~800ms 以内（字段越多每格越短），不随字段数线性膨胀；单字段时取
+  // 250ms，与 CURSOR_MOVE_MS 对齐，行为和 browser_type / browser_click 一致。
+  const dwellMs = Math.max(40, Math.min(250, Math.round(800 / (input.items.length || 1))));
+
+  /** 返回是否真的画了东西——没有可见布局盒就没什么可看，也就不值得为它停顿。 */
+  const spotlight = (element: Element): boolean => {
+    const host = element as HTMLElement;
+    // 视口外的字段先滚进来，否则高亮框（position:fixed + rect）画在屏幕外，等于没画。
+    // typeof 守卫是给未实现 scrollIntoView 的 jsdom 留的。
+    const before = host.getBoundingClientRect();
+    if ((before.bottom < 0 || before.top > window.innerHeight) && typeof host.scrollIntoView === 'function') {
+      host.scrollIntoView({ block: 'center', inline: 'nearest' });
+    }
+    const rect = host.getBoundingClientRect();
+    if (rect.width <= 0 && rect.height <= 0) return false;
+
+    // ⚠️ 与 clickElementInPage / 下方 submit 分支的高亮样式重复：都是被 executeScript
+    // 序列化注入的独立函数，引用不到共享 helper，只能各自内联。
+    const highlight = document.createElement('div');
+    highlight.style.cssText =
+      `position:fixed;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;` +
+      'box-sizing:border-box;border:2px solid #4f46e5;border-radius:4px;box-shadow:0 0 0 4px rgba(79,70,229,0.35);' +
+      'pointer-events:none;z-index:2147483647;transition:opacity 300ms ease;';
+    document.body.appendChild(highlight);
+    setTimeout(() => {
+      highlight.style.opacity = '0';
+      setTimeout(() => highlight.remove(), 300);
+    }, 600);
+
+    window.dispatchEvent(
+      new CustomEvent('runi:cursor-move', {
+        detail: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
+      }),
+    );
+    return true;
+  };
+
   const outcomes: ApplyFillOutcome[] = [];
 
   for (const item of input.items) {
@@ -560,6 +600,9 @@ export async function applyFormFill(input: ApplyFillInput): Promise<ApplyFillOut
         outcomes.push({ fieldId: item.fieldId, status: 'not_writable', detail: '字段处于禁用或只读状态。' });
         continue;
       }
+
+      // 只对真正要写的字段扫光：上面 not_found / mismatch / 只读的分支都已经 continue 掉了。
+      if (spotlight(element)) await new Promise((done) => setTimeout(done, dwellMs));
 
       const wantsChecked = typeof item.checked === 'boolean';
       const wantsValue = typeof item.value === 'string';
@@ -733,6 +776,9 @@ export async function applyFormFill(input: ApplyFillInput): Promise<ApplyFillOut
           lastClicked.dispatchEvent(new MouseEvent('mouseleave', { bubbles: false, cancelable: true }));
           (lastClicked as HTMLElement).blur?.();
         }
+
+        // 涟漪与 click 同刻派发。⚠️ 与 clickElementInPage 重复，不能共用 helper。
+        window.dispatchEvent(new CustomEvent('runi:cursor-click'));
 
         const pointerOpts = { bubbles: true, cancelable: true, clientX: centerX, clientY: centerY, pointerId: 1, pointerType: 'mouse', isPrimary: true };
         const mouseOpts = { bubbles: true, cancelable: true, clientX: centerX, clientY: centerY, button: 0 };
@@ -1127,6 +1173,10 @@ export async function clickElementInPage(input: { selector: string; index: numbe
     (lastClicked as HTMLElement).blur?.();
   }
 
+  // 涟漪与 click 在同一刻派发：用户看到的「点了一下」和页面真正收到的点击是同一件事。
+  // ⚠️ 与 applyFormFill 的 submit 分支重复，两处都是序列化注入的独立函数，不能共用 helper。
+  window.dispatchEvent(new CustomEvent('runi:cursor-click'));
+
   const pointerOpts = { bubbles: true, cancelable: true, clientX: centerX, clientY: centerY, pointerId: 1, pointerType: 'mouse', isPrimary: true };
   const mouseOpts = { bubbles: true, cancelable: true, clientX: centerX, clientY: centerY, button: 0 };
   dispatchTarget.dispatchEvent(new PointerEvent('pointerover', pointerOpts));
@@ -1151,7 +1201,10 @@ export async function clickElementInPage(input: { selector: string; index: numbe
   };
 }
 
-export function typeTextInPage(input: { selector: string; index: number; text: string; replace: boolean }): LegacyWriteStatus {
+// ⚠️ 序列化注入，禁止引用模块作用域绑定（包括本文件的其它函数）。
+// async 是为了在写入前等模拟光标滑到落点——同 clickElementInPage，值先于光标出现会让
+// 用户对不上「是它在打字」这件事。executeScript 会自动展开返回的 Promise。
+export async function typeTextInPage(input: { selector: string; index: number; text: string; replace: boolean }): Promise<LegacyWriteStatus> {
   const nodes = Array.from(document.querySelectorAll<HTMLElement>(input.selector));
   const target = nodes[input.index ?? 0];
   if (!target) return { status: 'not_found', detail: `没有匹配 "${input.selector}" 的第 ${input.index ?? 0} 个元素。` };
@@ -1180,6 +1233,33 @@ export function typeTextInPage(input: { selector: string; index: number; text: s
   const nextValue = editable
     ? (input.replace === false ? `${target.textContent ?? ''}${input.text}` : input.text)
     : (input.replace === false ? `${asInput.value}${input.text}` : input.text);
+
+  // 高亮 + 光标：和点击走同一套视觉语言，让"它在往这个框里打字"可见。
+  // ⚠️ 与 clickElementInPage / applyFormFill 的高亮重复：序列化注入，不能共用 helper。
+  // typeof 守卫是给未实现 scrollIntoView 的 jsdom 留的。
+  if (typeof target.scrollIntoView === 'function') target.scrollIntoView({ block: 'center', inline: 'nearest' });
+  const rect = target.getBoundingClientRect();
+  if (rect.width > 0 || rect.height > 0) {
+    const highlight = document.createElement('div');
+    highlight.style.cssText =
+      `position:fixed;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;` +
+      'box-sizing:border-box;border:2px solid #4f46e5;border-radius:4px;box-shadow:0 0 0 4px rgba(79,70,229,0.35);' +
+      'pointer-events:none;z-index:2147483647;transition:opacity 300ms ease;';
+    document.body.appendChild(highlight);
+    setTimeout(() => {
+      highlight.style.opacity = '0';
+      setTimeout(() => highlight.remove(), 300);
+    }, 250);
+
+    // ⚠️ 这里的 250 必须与 lib/agent/agent-overlay.ts 的 CURSOR_MOVE_MS 一致（注入函数
+    // 被序列化，引用不到那个常量，只能内联——改一处必须同步另一处）。
+    window.dispatchEvent(
+      new CustomEvent('runi:cursor-move', {
+        detail: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
+      }),
+    );
+    await new Promise((done) => setTimeout(done, 250));
+  }
 
   target.focus();
   if (editable) {

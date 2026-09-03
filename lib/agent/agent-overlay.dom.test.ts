@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CURSOR_MOVE_MS,
+  CURSOR_PULSE_MS,
   OVERLAY_HOST_ID,
   OVERLAY_WATCHDOG_MS,
   clampCursorPosition,
   getOverlayState,
   moveOverlayCursor,
   mountOverlay,
+  pulseOverlayCursor,
   renewOverlayWatchdog,
   unmountOverlay,
   updateOverlayLabel,
@@ -155,6 +157,59 @@ describe('moveOverlayCursor', () => {
     mountOverlay('x');
     vi.advanceTimersByTime(OVERLAY_WATCHDOG_MS - 1);
     moveOverlayCursor(10, 10);
+    vi.advanceTimersByTime(OVERLAY_WATCHDOG_MS - 1);
+    expect(document.getElementById(OVERLAY_HOST_ID)).not.toBeNull();
+  });
+});
+
+// 点击涟漪：没有它的话用户看到的是「光标停住 → 页面变了」，中间那一帧是缺的。
+// shadow root 是 closed，测不到元素本身，因此从 element.animate 的调用参数上断言——
+// 这同时守住了「动画一律走 Web Animations、不注入 <style>」这条 CSP 硬约束。
+describe('pulseOverlayCursor', () => {
+  afterEach(() => {
+    delete (Element.prototype as { animate?: unknown }).animate;
+  });
+
+  function stubAnimate(): ReturnType<typeof vi.fn> {
+    const animate = vi.fn();
+    (Element.prototype as { animate?: unknown }).animate = animate;
+    return animate;
+  }
+
+  it('用 element.animate 播放一圈扩散淡出的涟漪', () => {
+    const animate = stubAnimate();
+    mountOverlay('x');
+    animate.mockClear(); // 挂载时 glow 的呼吸动画也走 animate，先清掉
+
+    pulseOverlayCursor();
+
+    expect(animate).toHaveBeenCalledTimes(1);
+    const [keyframes, options] = animate.mock.calls[0] as [
+      Array<{ transform: string; opacity: number }>,
+      { duration: number },
+    ];
+    expect(keyframes[0].opacity).toBe(1);
+    expect(keyframes[1].opacity).toBe(0);
+    expect(keyframes[1].transform).toContain('scale(2.4)');
+    expect(options.duration).toBe(CURSOR_PULSE_MS);
+  });
+
+  it('遮罩未挂载时静默忽略', () => {
+    const animate = stubAnimate();
+    expect(() => pulseOverlayCursor()).not.toThrow();
+    expect(animate).not.toHaveBeenCalled();
+  });
+
+  it('缺少 Web Animations API 时静默跳过', () => {
+    mountOverlay('x');
+    expect(() => pulseOverlayCursor()).not.toThrow();
+  });
+
+  it('播放涟漪也算一次看门狗续期', () => {
+    stubAnimate();
+    mountOverlay('x');
+    vi.advanceTimersByTime(OVERLAY_WATCHDOG_MS - 1);
+    pulseOverlayCursor();
     vi.advanceTimersByTime(OVERLAY_WATCHDOG_MS - 1);
     expect(document.getElementById(OVERLAY_HOST_ID)).not.toBeNull();
   });

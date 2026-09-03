@@ -151,6 +151,9 @@ export const en: Record<keyof typeof zh, string> = {
   'chat.viewStepsToggle': 'Steps ({count})',
   'agentActivity.tool.getActiveTab': 'Get active tab',
   'agentActivity.currentTab': 'Currently operating on "{target}"',
+  'agentActivity.takeoverPaused': 'You took over — paused, waiting for you',
+  'agentActivity.takeoverResumed': 'You took over the page; resumed on your confirmation',
+  'agentActivity.takeoverStopped': 'You took over the page; automation stopped',
   'agentActivity.tool.listTabs': 'List tabs',
   'agentActivity.now.openTab': 'Opening new tab "{target}"',
   'agentActivity.done.openTab': 'Opened new tab "{target}"',
@@ -221,6 +224,12 @@ export const en: Record<keyof typeof zh, string> = {
   'confirm.deny': 'Deny',
   'confirm.approveHint':
     'Detected form submissions ask every time to prevent page data from being sent accidentally.',
+  'confirm.takeoverTitle': '✋ You took over this page',
+  'confirm.takeoverBody':
+    'You clicked or typed on the page while the agent was working, so it stopped before its next change:',
+  'confirm.takeoverResume': 'Continue',
+  'confirm.takeoverStop': 'Stop here',
+  'confirm.takeoverHint': 'Runi never blocks your input — it pauses and asks instead.',
   'askUser.title': '🤔 The agent has a question before continuing',
   'askUser.placeholder': 'Type your answer…',
   'askUser.submit': 'Send answer',

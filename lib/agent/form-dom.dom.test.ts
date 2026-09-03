@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { collectFormFields } from './form-dom';
 import { applyFormFill, type ApplyFillItem } from './form-dom';
 import { scrollContainerInPage, scrollPageInPage } from './form-dom';
@@ -1236,5 +1236,108 @@ describe('collectFormFields root container exclusion', () => {
   it('does not exclude an unrelated div that merely has an id containing "root"', () => {
     render('<div id="root-panel" role="button" tabindex="0">内容</div>');
     expect(collectFormFields(INPUT).raws).toHaveLength(1);
+  });
+});
+
+// 逐字段扫光：fill_form 一次可能改十几个字段，值瞬间全部出现的话，用户看不出到底动了哪几个。
+describe('applyFormFill 逐字段扫光', () => {
+  const listeners: Array<() => void> = [];
+
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  afterEach(() => {
+    while (listeners.length) listeners.pop()!();
+  });
+
+  function watchCursorMoves(): Array<{ x: number; y: number }> {
+    const seen: Array<{ x: number; y: number }> = [];
+    const handler = (e: Event) => seen.push((e as CustomEvent<{ x: number; y: number }>).detail);
+    window.addEventListener('runi:cursor-move', handler);
+    listeners.push(() => window.removeEventListener('runi:cursor-move', handler));
+    return seen;
+  }
+
+  function stubRect(el: Element, rect: Partial<DOMRect>): void {
+    el.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 0, height: 0, right: 0, bottom: 0, x: 0, y: 0, ...rect, toJSON: () => ({}) }) as DOMRect;
+  }
+
+  it('写入前把光标移到字段中心，并在页面上画出高亮框', async () => {
+    document.body.innerHTML = `<form><input type="text" name="email" /></form>`;
+    const input = document.querySelector('input')!;
+    stubRect(input, { left: 100, top: 40, width: 60, height: 20, right: 160, bottom: 60 });
+    const seen = watchCursorMoves();
+
+    const output = await applyFormFill({ url: location.href, items: [item({ value: 'a@b.c' })] });
+
+    expect(output.outcomes[0].status).toBe('ok');
+    expect(seen).toEqual([{ x: 130, y: 50 }]);
+
+    const highlight = document.body.lastElementChild as HTMLElement;
+    expect(highlight.tagName).toBe('DIV');
+    expect(highlight.style.position).toBe('fixed');
+    expect(highlight.style.left).toBe('100px');
+    expect(highlight.style.top).toBe('40px');
+    // 高亮不拦截输入：与执行期遮罩同一条硬约束，用户随时可以接管。
+    expect(highlight.style.pointerEvents).toBe('none');
+  });
+
+  it('没有可见布局盒的字段不画高亮，也不为它停顿', async () => {
+    document.body.innerHTML = `<form><input type="text" name="email" /></form>`;
+    // 本文件顶部把 Element.prototype.getBoundingClientRect 统一 stub 成非零盒，
+    // 这里显式覆盖回 0×0，才是真正的"不可见字段"这一情形（display:none、尚未展开的折叠区）。
+    stubRect(document.querySelector('input')!, {});
+    const seen = watchCursorMoves();
+
+    const output = await applyFormFill({ url: location.href, items: [item({ value: 'a@b.c' })] });
+
+    expect(output.outcomes[0].status).toBe('ok');
+    expect(seen).toHaveLength(0);
+    expect(document.body.querySelectorAll('div')).toHaveLength(0);
+  });
+
+  it('压根没写成的字段不扫光', async () => {
+    document.body.innerHTML = `<form><input type="text" name="phone" /></form>`;
+    const input = document.querySelector('input')!;
+    stubRect(input, { left: 10, top: 10, width: 50, height: 20, right: 60, bottom: 30 });
+    const seen = watchCursorMoves();
+
+    const output = await applyFormFill({ url: location.href, items: [item({ value: 'x' })] });
+
+    expect(output.outcomes[0].status).toBe('mismatch');
+    expect(seen).toHaveLength(0);
+    expect(document.body.querySelectorAll('div')).toHaveLength(0);
+  });
+
+  it('多字段依次点亮，每个字段一次光标移动', async () => {
+    document.body.innerHTML = `<form><input type="text" name="email" /><input type="text" name="city" /></form>`;
+    const [first, second] = Array.from(document.querySelectorAll('input'));
+    stubRect(first, { left: 0, top: 0, width: 40, height: 20, right: 40, bottom: 20 });
+    stubRect(second, { left: 0, top: 100, width: 40, height: 20, right: 40, bottom: 120 });
+    const seen = watchCursorMoves();
+
+    const output = await applyFormFill({
+      url: location.href,
+      items: [
+        item({ fieldId: 'f1', value: 'a@b.c' }),
+        item({
+          fieldId: 'f2',
+          value: '北京',
+          path: [
+            { kind: 'selector', selector: 'body', index: 0 },
+            { kind: 'selector', selector: 'form', index: 0 },
+            { kind: 'selector', selector: 'input', index: 1 },
+          ],
+          expect: { tag: 'input', type: 'text', name: 'city', label: '城市' },
+        }),
+      ],
+    });
+
+    expect(output.outcomes.map((o) => o.status)).toEqual(['ok', 'ok']);
+    expect(seen).toEqual([{ x: 20, y: 10 }, { x: 20, y: 110 }]);
+    // 两个高亮框同时在场：后一个亮起时前一个还没淡出，用户才能看到完整的一组改动。
+    expect(document.body.querySelectorAll('div')).toHaveLength(2);
   });
 });

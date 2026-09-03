@@ -654,6 +654,8 @@ function ConfirmationCard({
   const cardRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const summaryId = useId();
+  // kind 缺省按 'submit' 处理：已持久化的旧快照里没有这个字段。
+  const takeover = confirmation.kind === 'takeover';
 
   // 依赖 toolCallId 而不是只跑一次：同一轮里可能连着来第二个待确认的提交
   // （confirm-gate 逐次询问），换了一张卡就要重新把人带过来。
@@ -684,8 +686,11 @@ function ConfirmationCard({
       className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:border-amber-900/60 dark:bg-amber-950/30"
     >
       <div id={titleId} className="mb-2 flex items-center gap-2 font-medium text-amber-900 dark:text-amber-200">
-        {t('confirm.title')}
+        {t(takeover ? 'confirm.takeoverTitle' : 'confirm.title')}
       </div>
+      {takeover && (
+        <p className="mb-1 text-amber-900/90 dark:text-amber-200/90">{t('confirm.takeoverBody')}</p>
+      )}
       <p id={summaryId} className="mb-2 whitespace-pre-line text-amber-900/90 dark:text-amber-200/90">
         {confirmation.summary}
       </p>
@@ -701,17 +706,17 @@ function ConfirmationCard({
           onClick={onApprove}
           className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-700"
         >
-          {t('confirm.approve')}
+          {t(takeover ? 'confirm.takeoverResume' : 'confirm.approve')}
         </button>
         <button
           onClick={onDeny}
           className="rounded-lg border border-neutral-400 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-700 dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
         >
-          {t('confirm.deny')}
+          {t(takeover ? 'confirm.takeoverStop' : 'confirm.deny')}
         </button>
       </div>
       <p className="mt-2 text-[11px] text-amber-800 dark:text-amber-300/80">
-        {t('confirm.approveHint')}
+        {t(takeover ? 'confirm.takeoverHint' : 'confirm.approveHint')}
       </p>
     </div>
   );

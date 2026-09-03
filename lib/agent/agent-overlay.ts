@@ -20,11 +20,15 @@ export const CURSOR_MOVE_MS = 250;
 
 const ACCENT = '#4f46e5';
 
+/** 点击涟漪时长。只是视觉收尾，不参与任何 await，改它不影响点击时序。 */
+export const CURSOR_PULSE_MS = 320;
+
 interface OverlayRefs {
   host: HTMLElement;
   shadow: ShadowRoot;
   label: HTMLElement;
   cursor: HTMLElement;
+  ripple: HTMLElement;
 }
 
 let refs: OverlayRefs | null = null;
@@ -80,6 +84,25 @@ export function clampCursorPosition(
 ): { x: number; y: number } {
   const clamp = (value: number, max: number) => Math.min(Math.max(value, 0), Math.max(max, 0));
   return { x: clamp(x, viewport.width), y: clamp(y, viewport.height) };
+}
+
+/**
+ * 点击瞬间在光标落点画一圈涟漪。
+ * 没有它的话，用户看到的是「光标停住 → 页面变了」，中间那一帧是缺的，无法把这次变化
+ * 和 agent 的这一次点击对应起来。同样走 element.animate()，不引入 <style>（见文件头约束）。
+ */
+export function pulseOverlayCursor(): void {
+  if (!refs) return;
+  renewOverlayWatchdog();
+  // jsdom 没有 Web Animations API；缺失时静默跳过（测试只断结构与状态）。
+  if (typeof refs.ripple.animate !== 'function') return;
+  refs.ripple.animate(
+    [
+      { transform: 'translate(-50%, -50%) scale(0.2)', opacity: 1 },
+      { transform: 'translate(-50%, -50%) scale(2.4)', opacity: 0 },
+    ],
+    { duration: CURSOR_PULSE_MS, easing: 'cubic-bezier(.2, .8, .3, 1)' },
+  );
 }
 
 export function moveOverlayCursor(x: number, y: number): void {
@@ -147,6 +170,24 @@ function createOverlay(): OverlayRefs {
     '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">' +
     `<path d="M5 2 L19 12 L12.5 13 L16 20 L13 21.5 L9.5 14.5 L5 18 Z" fill="${ACCENT}" stroke="#ffffff" stroke-width="1.5" stroke-linejoin="round"/>` +
     '</svg>';
+
+  // 涟漪环挂在光标内部，圆心对齐箭头尖（svg path 起点约在 24×24 盒子的 (5,2)），
+  // 这样它跟着光标的 transform 一起走，不需要第二份坐标。
+  const ripple = document.createElement('div');
+  ripple.style.position = 'absolute';
+  ripple.style.left = '5px';
+  ripple.style.top = '2px';
+  ripple.style.width = '28px';
+  ripple.style.height = '28px';
+  ripple.style.borderRadius = '50%';
+  ripple.style.border = `2px solid ${ACCENT}`;
+  ripple.style.boxSizing = 'border-box';
+  ripple.style.pointerEvents = 'none';
+  // 静息态不可见：关键帧自带 opacity，动画结束后自然回到这里，不需要 fill:forwards。
+  ripple.style.opacity = '0';
+  ripple.style.transform = 'translate(-50%, -50%)';
+  cursor.appendChild(ripple);
+
   shadow.appendChild(cursor);
 
   document.documentElement.appendChild(host);
@@ -161,5 +202,5 @@ function createOverlay(): OverlayRefs {
     });
   }
 
-  return { host, shadow, label, cursor };
+  return { host, shadow, label, cursor, ripple };
 }

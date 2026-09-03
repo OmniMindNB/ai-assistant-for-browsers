@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   saveTabSession: vi.fn(async () => undefined),
   clearOverlayForTab: vi.fn(async () => undefined),
   setOverlayForTab: vi.fn(async () => undefined),
+  clearTakeoverForTab: vi.fn(async () => undefined),
 }));
 
 vi.mock('./agent', () => ({ createBrowserAgent: mocks.createBrowserAgent }));
@@ -21,6 +22,9 @@ vi.mock('./tab-session-storage', () => ({
 vi.mock('./tab-overlay-state', () => ({
   clearOverlayForTab: mocks.clearOverlayForTab,
   setOverlayForTab: mocks.setOverlayForTab,
+}));
+vi.mock('./tab-takeover', () => ({
+  clearTakeoverForTab: mocks.clearTakeoverForTab,
 }));
 vi.mock('./run-state-storage', () => ({
   saveRunStateSnapshot: vi.fn(async () => undefined),
@@ -714,5 +718,78 @@ describe('run-registry confirmation summary target tab', () => {
 
     const pending = lastPendingConfirmation(posted);
     expect(pending.summary).toBe('AI 想要点击 "#pay"。');
+  });
+});
+
+// 用户接管：与提交确认共用 pendingConfirmation 通道，靠 kind 区分。
+describe('用户接管暂停', () => {
+  function lastOnTakeover(): (toolCallId: string, toolName: string, args: unknown, tabId: number) => Promise<boolean> {
+    const options = (mocks.createBrowserAgent.mock.calls.at(-1) as unknown[])[0] as {
+      onTakeover: (toolCallId: string, toolName: string, args: unknown, tabId: number) => Promise<boolean>;
+    };
+    return options.onTakeover;
+  }
+
+  function lastPending(posted: any[]): any {
+    return posted.map((message) => message?.pendingConfirmation).filter(Boolean).at(-1);
+  }
+
+  function lastSteps(posted: any[]): any[] {
+    return posted.map((message) => message?.activitySteps).filter(Boolean).at(-1) ?? [];
+  }
+
+  it('标记为 takeover，让面板能换一套文案而不是问"要不要提交表单"', async () => {
+    mocks.createBrowserAgent.mockReturnValue(makeFakeAgent([]));
+    const posted: any[] = [];
+    attachPort(80, { postMessage: (message) => posted.push(message) });
+
+    await startRun(makeRequest({ tabId: 80 }));
+    void lastOnTakeover()('call-takeover', 'browser_click', { selector: '#pay' }, 80);
+
+    const pending = lastPending(posted);
+    expect(pending.kind).toBe('takeover');
+    expect(pending.summary).toBe('AI 想要点击 "#pay"。');
+  });
+
+  // 这是原先缺的那一环：接管发生过，事后却无迹可寻。
+  it('用户选择继续后留下一条接管痕迹', async () => {
+    mocks.createBrowserAgent.mockReturnValue(makeFakeAgent([]));
+    const posted: any[] = [];
+    attachPort(81, { postMessage: (message) => posted.push(message) });
+
+    await startRun(makeRequest({ tabId: 81 }));
+    void lastOnTakeover()('call-takeover', 'browser_click', {}, 81);
+    respondConfirm(81, 'call-takeover', true);
+
+    const steps = lastSteps(posted);
+    const trace = steps.find((step) => step.id === 'takeover-call-takeover');
+    expect(trace?.status).toBe('done');
+    // 步骤文案走 i18n，测试环境解析出的是英文；这里断的是"说的是接管这件事"，
+    // 与本文件其它断言里的中文不同——那些来自 confirm-summary.ts 的硬编码中文。
+    expect(trace?.description).toContain('took over');
+  });
+
+  it('用户选择到此为止时痕迹记为失败，并终止该工具调用', async () => {
+    mocks.createBrowserAgent.mockReturnValue(makeFakeAgent([]));
+    const posted: any[] = [];
+    attachPort(82, { postMessage: (message) => posted.push(message) });
+
+    await startRun(makeRequest({ tabId: 82 }));
+    const decision = lastOnTakeover()('call-takeover', 'browser_click', {}, 82);
+    respondConfirm(82, 'call-takeover', false);
+
+    await expect(decision).resolves.toBe(false);
+    const trace = lastSteps(posted).find((step) => step.id === 'takeover-call-takeover');
+    expect(trace?.status).toBe('failed');
+  });
+
+  // 上一轮的接管记录不能带进新一轮，否则新任务第一个写操作就会莫名其妙停下来问。
+  it('开新一轮时清掉遗留的接管记录', async () => {
+    mocks.createBrowserAgent.mockReturnValue(makeFakeAgent([]));
+    attachPort(83, { postMessage: () => {} });
+
+    await startRun(makeRequest({ tabId: 83 }));
+
+    expect(mocks.clearTakeoverForTab).toHaveBeenCalledWith(83);
   });
 });

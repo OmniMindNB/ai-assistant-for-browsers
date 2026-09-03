@@ -28,6 +28,7 @@ import {
   type OpenNewTabPayload,
   type OpenNewTabResult,
   type CloseTabResult,
+  type AgentTakeoverResult,
   type AskSelectionPayload,
   type PageContent,
   type PageMetaResult,
@@ -60,6 +61,7 @@ import { sendToContentScript } from '@/lib/agent/content-script-messaging';
 import { clearOverlayForTab, getOverlayForTab, setOverlayForTab } from '@/lib/agent/tab-overlay-state';
 import { clearConversationIdForTab } from '@/lib/agent/tab-conversation';
 import { clearPendingAskForTab, setPendingAskForTab } from '@/lib/agent/tab-pending-ask';
+import { setTakeoverForTab } from '@/lib/agent/tab-takeover';
 import { clearTabSession } from '@/lib/agent/tab-session-storage';
 import { AGENT_RUN_PORT_NAME, type PanelToBackground } from '@/lib/agent/run-port-protocol';
 import {
@@ -371,6 +373,17 @@ async function handleAskSelection(sender: MessageSender | undefined, payload: As
   await setPendingAskForTab(tabId, text);
 }
 
+/**
+ * 与 ASK_SELECTION 同类：content script 主动发起、不带 tabId，身份取自 sender.tab.id。
+ * 时间戳由这里生成而不是采信页面传上来的值——页面里的一切都是不可信输入。
+ */
+async function handleAgentTakeover(sender: MessageSender | undefined): Promise<AgentTakeoverResult> {
+  const tabId = sender?.tab?.id;
+  if (typeof tabId !== 'number') return { recorded: false };
+  await setTakeoverForTab(tabId, Date.now());
+  return { recorded: true };
+}
+
 async function handleMessage(message: Message, sender?: MessageSender): Promise<unknown> {
   switch (message.type) {
     case 'PING':
@@ -390,6 +403,9 @@ async function handleMessage(message: Message, sender?: MessageSender): Promise<
 
     case 'ASK_SELECTION':
       return handleAskSelection(sender, message.payload as AskSelectionPayload | undefined);
+
+    case 'AGENT_TAKEOVER':
+      return handleAgentTakeover(sender);
 
     case 'QUERY_DOM':
       return queryDom(message.payload as QueryDomPayload, requireTabId(message));

@@ -26,6 +26,7 @@ import {
   listOrphanRunTabIds,
 } from './run-state-storage';
 import { setOverlayForTab, clearOverlayForTab } from './tab-overlay-state';
+import { clearTakeoverForTab } from './tab-takeover';
 import { sendToContentScript } from './content-script-messaging';
 import { newMessageId, type SetAgentOverlayPayload } from '@/lib/messaging';
 
@@ -289,6 +290,10 @@ export async function startRun(request: StartRunRequest): Promise<void> {
     runs.delete(request.tabId);
   }
 
+  // 上一轮遗留的接管记录不能带进这一轮：用户几分钟前在别的任务里插过手，
+  // 不该让新任务的第一个写操作就停下来问"要继续吗"。
+  await clearTakeoverForTab(request.tabId).catch(() => undefined);
+
   const session = await loadTabSession(request.tabId).catch(() => createTabSession(request.tabId));
   const placeholder: ChatMessage = { id: `a-${Date.now()}`, role: 'assistant', content: '', createdAt: Date.now() };
   const state: RunState = {
@@ -331,6 +336,20 @@ export async function startRun(request: StartRunRequest): Promise<void> {
     return new Promise<boolean>((resolve) => { state.resolveConfirmation = resolve; });
   };
 
+  // 用户在 agent 操作期间自己点了/敲了页面，而 agent 又要写：停下来问一次。
+  // 复用 pendingConfirmation 这条通道（应答走同一个 respondConfirm），靠 kind 区分文案与语义——
+  // 另起一套 pending/resolver/快照字段只会把同构的东西写两遍。
+  const onTakeover = async (toolCallId: string, toolName: string, args: unknown): Promise<boolean> => {
+    const targetTab = currentTargetTab(state);
+    const { summary } = summarizeToolCallForConfirmation(toolName, args, targetTab);
+    state.pendingConfirmation = { toolCallId, toolName, summary, kind: 'takeover' };
+    // 页面上的遮罩也要跟着改口：用户此刻眼睛多半在页面上而不是侧边栏上，
+    // 让它还挂着"正在点击…"会与"其实已经停下来等你了"直接矛盾。
+    void sendAgentOverlay({ active: true, label: t('agentActivity.takeoverPaused') }, state.session.currentTabId);
+    pushAndPersist(state);
+    return new Promise<boolean>((resolve) => { state.resolveConfirmation = resolve; });
+  };
+
   const onAskUser = async (toolCallId: string, question: string, signal?: AbortSignal): Promise<string> => {
     if (signal?.aborted) return '';
     state.pendingQuestion = { toolCallId, question };
@@ -348,6 +367,7 @@ export async function startRun(request: StartRunRequest): Promise<void> {
     readToolCallBudget: request.readToolCallBudget,
     writeToolCallBudget: request.writeToolCallBudget,
     onConfirm,
+    onTakeover,
     onAskUser,
     onOverlay: (payload, targetTabId) => {
       void sendAgentOverlay(payload, targetTabId);
@@ -550,8 +570,20 @@ export function respondConfirm(tabId: number, toolCallId: string, approved: bool
   const state = runs.get(tabId);
   if (!state || state.pendingConfirmation?.toolCallId !== toolCallId) return;
   const resolve = state.resolveConfirmation;
+  const kind = state.pendingConfirmation.kind ?? 'submit';
   state.resolveConfirmation = null;
-  if (!approved) {
+
+  if (kind === 'takeover') {
+    // 继续也好结束也好，都留一条痕迹：回合结束时它会被归档进 assistant 消息的步骤明细，
+    // 用户事后翻回来能看到"这里我插过手"。这正是原先缺的那一环——接管发生过却无迹可寻。
+    state.activitySteps = upsertActivityStep(state.activitySteps, {
+      id: `takeover-${toolCallId}`,
+      description: t(approved ? 'agentActivity.takeoverResumed' : 'agentActivity.takeoverStopped'),
+      status: approved ? 'done' : 'failed',
+      tabLabel: currentTabLabel(state),
+    });
+    if (!approved) state.terminatedToolCallIds.add(toolCallId);
+  } else if (!approved) {
     state.terminatedToolCallIds.add(toolCallId);
     const info = state.pendingToolArgs.get(toolCallId);
     state.activitySteps = upsertActivityStep(state.activitySteps, {

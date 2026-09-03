@@ -1,6 +1,7 @@
 import { Readability } from '@mozilla/readability';
 import {
   sendMessage,
+  type AgentTakeoverPayload,
   type AskSelectionPayload,
   type Message,
   type MessageResponse,
@@ -9,7 +10,14 @@ import {
   type SetAgentOverlayPayload,
   type SetAgentOverlayResult,
 } from '@/lib/messaging';
-import { mountOverlay, moveOverlayCursor, unmountOverlay } from '@/lib/agent/agent-overlay';
+import { shouldReportTakeover } from '@/lib/agent/takeover-detect';
+import {
+  getOverlayState,
+  mountOverlay,
+  moveOverlayCursor,
+  pulseOverlayCursor,
+  unmountOverlay,
+} from '@/lib/agent/agent-overlay';
 import {
   isExtensionContextInvalidatedError,
   runIgnoringOrphanContext,
@@ -60,6 +68,7 @@ export default defineContentScript({
       // 就会在人家网站的控制台留一条红色报错。里面的 storage/i18n 读取都会在扩展重载后失败。
       void initSelectionAskBubble().catch(handleAsyncFailure);
       initAgentCursorBridge();
+      initTakeoverWatch();
     });
   },
 });
@@ -252,4 +261,26 @@ function initAgentCursorBridge(): void {
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
     moveOverlayCursor(x, y);
   });
+
+  // 点击涟漪走同一条桥：注入函数在真正派发 click 的那一刻发这个事件，所以涟漪与
+  // 事件派发是同一个时刻、同一个落点，不会出现"涟漪在 A、点击在 B"。
+  window.addEventListener('runi:cursor-click', () => pulseOverlayCursor());
+}
+
+// ---- 用户接管检测 ----
+// 遮罩全程不拦输入（这是有意的：侧边栏形态下用户随时接管是正常预期），但"不阻断"不等于
+// "当没发生"。这里只观察、不拦截：捕获阶段 + passive，绝不 preventDefault，绝不 stopPropagation。
+// 判定条件与理由都在 lib/agent/takeover-detect.ts。
+function initTakeoverWatch(): void {
+  let lastReportedAt = -Infinity;
+
+  const observe = (via: 'click' | 'keydown') => (event: Event) => {
+    if (!shouldReportTakeover(event, getOverlayState().mounted, Date.now(), lastReportedAt)) return;
+    lastReportedAt = Date.now();
+    // addEventListener 不接住回调返回的 Promise，必须自己收尾（同 handleBubbleClick）。
+    void sendMessage('AGENT_TAKEOVER', { via } satisfies AgentTakeoverPayload).catch(handleAsyncFailure);
+  };
+
+  window.addEventListener('click', observe('click'), { capture: true, passive: true });
+  window.addEventListener('keydown', observe('keydown'), { capture: true, passive: true });
 }

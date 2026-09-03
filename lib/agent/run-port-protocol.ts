@@ -13,6 +13,13 @@ export interface PendingConfirmation {
   toolName: string;
   summary: string;
   codePreview?: string;
+  /**
+   * 这次询问属于哪一类。'submit'（默认，可缺省以兼容已持久化的旧快照）是结构检测出的
+   * 表单提交，问的是"要不要放行这次提交"；'takeover' 是用户在执行期间自己动了手，
+   * 问的是"人已经插手了，还要不要接着做"。两者共用同一条应答通道（respondConfirm），
+   * 但文案、配色和按钮语义完全不同，所以必须由这个字段区分而不是靠 toolName 猜。
+   */
+  kind?: 'submit' | 'takeover';
 }
 
 export interface PendingQuestion {
