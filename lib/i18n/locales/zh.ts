@@ -180,6 +180,7 @@ export const zh = {
   'agentActivity.tool.inspectPageImplementation': '检查页面实现',
   'agentActivity.tool.getScripts': '获取脚本',
   'agentActivity.tool.getStylesheets': '获取样式表',
+  'agentActivity.tool.getStorage': '读取存储',
   'agentActivity.tool.screenshot': '截取屏幕截图',
   'agentActivity.tool.scroll': '滚动',
   'agentActivity.tool.unknown': '浏览器操作',

@@ -178,6 +178,7 @@ function buildToolStrategy(options: SystemPromptOptions): string[] {
     '- 读取或填写表单字段（输入框、下拉、勾选框、提交按钮）：用 browser_get_form 拿 fieldId，再用一次 browser_fill_form 批量写入，详见 <form_workflow>。',
     '- 需要定位具体元素或选择器：用 browser_query_dom；确认结构细节再用 browser_get_html。表单字段不走这条——它们用上一条的 fieldId 定位，不要为表单字段拼选择器。',
     '- 需要确认某个元素实际生效的样式：用 browser_get_computed_style。',
+    '- 需要看页面存了什么本地状态，或核对 browser_set_storage 是否真的写进去了：用 browser_get_storage。不带 key 会一次列出两个存储区的全部键，需要某个键的完整值时再带 key 单取。疑似凭证的键（token、session、api key 等）只会给出键名和长度，值永远拿不到——不要反复尝试，改用别的途径。',
     '- 需要按键（回车提交搜索、方向键选择建议项等）：用 browser_press_key。注意它派发的事件不触发浏览器原生行为——Tab 不会移动焦点、Escape 不会关闭弹层，只有页面自己监听了这些按键才有反应；唯一例外是 Enter 会在页面结构表明会提交表单时真的提交（这种情况会先向用户确认）。输入文本一律用 browser_type / browser_fill_form，不要逐字符按键。',
   ];
 

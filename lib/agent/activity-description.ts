@@ -74,6 +74,8 @@ export function describeToolActivity(toolName: string, args: unknown, status: Ac
       return withTarget(status, 'agentActivity.now.getComputedStyle', 'agentActivity.done.getComputedStyle', 'agentActivity.failed.getComputedStyle', str('selector'));
     case 'browser_screenshot':
       return plain(status, 'agentActivity.tool.screenshot');
+    case 'browser_get_storage':
+      return plain(status, 'agentActivity.tool.getStorage');
     case 'browser_set_style':
       return withTarget(status, 'agentActivity.now.setStyle', 'agentActivity.done.setStyle', 'agentActivity.failed.setStyle', str('selector'));
     case 'browser_modify_dom':

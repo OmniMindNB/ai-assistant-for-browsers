@@ -184,6 +184,7 @@ export const en: Record<keyof typeof zh, string> = {
   'agentActivity.tool.inspectPageImplementation': 'Inspect page implementation',
   'agentActivity.tool.getScripts': 'Get scripts',
   'agentActivity.tool.getStylesheets': 'Get stylesheets',
+  'agentActivity.tool.getStorage': 'Read storage',
   'agentActivity.tool.screenshot': 'Take screenshot',
   'agentActivity.tool.scroll': 'Scroll',
   'agentActivity.tool.unknown': 'Browser action',

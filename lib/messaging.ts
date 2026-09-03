@@ -31,6 +31,7 @@ export type MessageType =
   | 'OPEN_NEW_TAB'
   | 'CLOSE_TAB'
   | 'SET_STORAGE'
+  | 'GET_STORAGE'
   | 'SET_AGENT_OVERLAY'
   | 'CHAT';
 
@@ -360,6 +361,26 @@ export interface SetStoragePayload {
 export interface SetStorageResult {
   area: 'local' | 'session';
   key: string;
+}
+
+export interface GetStoragePayload {
+  /** 缺省两个存储区都读——多数情况下一次往返就够，省掉"先猜在哪个区"的额外一轮。 */
+  area?: 'local' | 'session';
+  /** 传了就是取值模式：只返回这一个键的完整值；不传则列出全部键（值按清单上限截断）。 */
+  key?: string;
+  maxChars?: number;
+}
+
+/**
+ * 页面里读出来的原始键值。敏感判定与截断都在扩展侧完成（lib/agent/storage-read.ts），
+ * 因此这里是未经处理的原文，绝不能直接交给模型。
+ */
+export interface GetStorageResult {
+  areas: {
+    area: 'local' | 'session';
+    entries: { key: string; value: string }[];
+    error?: string;
+  }[];
 }
 
 /**

@@ -49,6 +49,8 @@ import {
   type SetAgentOverlayPayload,
   type SetAgentOverlayResult,
   type SetStoragePayload,
+  type GetStoragePayload,
+  type GetStorageResult,
   type SetStorageResult,
   type SetStylePayload,
   type SetStyleResult,
@@ -137,6 +139,7 @@ const SUPPORTED_MESSAGE_TYPES = [
   'OPEN_NEW_TAB',
   'CLOSE_TAB',
   'SET_STORAGE',
+  'GET_STORAGE',
   'CHAT',
 ] as const;
 
@@ -480,6 +483,9 @@ async function handleMessage(message: Message, sender?: MessageSender): Promise<
 
     case 'SET_STORAGE':
       return setStorage(message.payload as SetStoragePayload, requireTabId(message));
+
+    case 'GET_STORAGE':
+      return getStorage(message.payload as GetStoragePayload, requireTabId(message));
 
     case 'SET_AGENT_OVERLAY':
       return setAgentOverlay(message.payload as SetAgentOverlayPayload, requireTabId(message));
@@ -1386,6 +1392,32 @@ async function setStorage(payload: SetStoragePayload, tabId: number): Promise<Se
     if (input?.value === null || input?.value === undefined) store.removeItem(key);
     else store.setItem(key, input.value);
     return { area: input?.area ?? 'local', key };
+  });
+}
+
+/**
+ * 注入函数只把 key/value 原样搬出来，一个判断都不做——它会被 executeScript 序列化，
+ * 引用不到 lib/agent/storage-read.ts 里的敏感词表。敏感屏蔽、截断、渲染全在工具层完成。
+ */
+async function getStorage(payload: GetStoragePayload, tabId: number): Promise<GetStorageResult> {
+  return executeInTab(tabId, payload, (input): GetStorageResult => {
+    const wanted = input?.area ? [input.area] : (['local', 'session'] as const);
+    const areas = wanted.map((area) => {
+      try {
+        const store = area === 'session' ? sessionStorage : localStorage;
+        const entries: { key: string; value: string }[] = [];
+        for (let i = 0; i < store.length; i += 1) {
+          const key = store.key(i);
+          if (key === null) continue;
+          entries.push({ key, value: store.getItem(key) ?? '' });
+        }
+        return { area, entries };
+      } catch (err) {
+        // 隐私模式或第三方 cookie 拦截下访问 storage 会直接抛错，另一个区可能仍然可读。
+        return { area, entries: [], error: err instanceof Error ? err.message : String(err) };
+      }
+    });
+    return { areas };
   });
 }
 

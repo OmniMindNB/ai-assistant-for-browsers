@@ -6,6 +6,7 @@ import { loadRedactionSettings, redactText } from '@/lib/redaction';
 import { REPORT_TASK_OUTCOME_TOOL_NAME, type TaskOutcome, type TaskOutcomeValue } from './task-outcome';
 import { formatTabList, type TabSessionController } from './tab-session';
 import { resolveKeyDescriptor } from './key-dispatch';
+import { DEFAULT_STORAGE_MAX_CHARS, buildStorageView, renderStorageView } from './storage-read';
 import {
   sendMessage,
   type CaptureScreenshotPayload,
@@ -23,6 +24,8 @@ import {
   type GetHtmlResult,
   type GetScriptsPayload,
   type GetScriptsResult,
+  type GetStoragePayload,
+  type GetStorageResult,
   type GetStylesheetsPayload,
   type GetStylesheetsResult,
   type MessageResponse,
@@ -92,6 +95,7 @@ export function createBrowserTools(session: TabSessionController, config: Browse
     makeScrollTool(session),
     makeNavigateTool(session),
     makeSetStorageTool(session),
+    makeGetStorageTool(session),
     makeOpenTabTool(session),
     makeSwitchTabTool(session),
     makeCloseTabTool(session),
@@ -837,6 +841,39 @@ function makeSetStorageTool(session: TabSessionController): BrowserAgentTool {
         `已写入 ${response.data.area}Storage 的 "${response.data.key}"。`,
         response.data as unknown as Record<string, unknown>,
       );
+    },
+  };
+}
+
+function makeGetStorageTool(session: TabSessionController): BrowserAgentTool {
+  return {
+    name: 'browser_get_storage',
+    label: 'Read Storage',
+    description:
+      'Read localStorage and sessionStorage on the current page. Without key, lists every key in both areas with its value truncated to a preview — one call is usually enough. With key, returns that one key in full. Values that look like credentials (token, jwt, session, api key, or a JWT-shaped value) are listed by name with their length, but their contents are never returned.',
+    parameters: Type.Object({
+      area: Type.Optional(
+        Type.Union([Type.Literal('local'), Type.Literal('session')], {
+          description: 'Which storage area to read. Defaults to both.',
+        }),
+      ),
+      key: Type.Optional(
+        Type.String({ description: 'Read only this key, and return its value in full instead of a preview.' }),
+      ),
+      maxChars: Type.Optional(
+        Type.Number({ description: `Total character budget across all values. Defaults to ${DEFAULT_STORAGE_MAX_CHARS}.` }),
+      ),
+    }),
+    execute: async (_toolCallId, params) => {
+      const payload = params as GetStoragePayload;
+      const response = (await sendMessage<GetStoragePayload, GetStorageResult>('GET_STORAGE', payload, session.currentTabId)) as MessageResponse<GetStorageResult>;
+      if (!response.ok || !response.data) throw new Error(response.error ?? '读取存储失败');
+
+      const view = buildStorageView(response.data.areas, { key: payload.key, maxChars: payload.maxChars });
+      const redactionSettings = await loadRedactionSettings();
+      // details 会跟着 tool result 留在 agent 的消息里，因此这里放的是屏蔽后的 view，
+      // 而不是 response.data——原始值里可能就是用户的登录态。
+      return textResult(redactText(renderStorageView(view), redactionSettings), view as unknown as Record<string, unknown>);
     },
   };
 }

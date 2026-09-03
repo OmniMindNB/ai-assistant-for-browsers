@@ -25,6 +25,10 @@ describe('decideToolPermission', () => {
     expect(decideToolPermission('wait', { seconds: 2 })).toEqual({ level: 'always_allow' });
   });
 
+  it('always allows browser_get_storage — reading storage does not mutate anything', () => {
+    expect(decideToolPermission('browser_get_storage', { area: 'local' })).toEqual({ level: 'always_allow' });
+  });
+
   it('denies an unknown tool', () => {
     expect(decideToolPermission('browser_made_up', {}).level).toBe('deny');
   });
