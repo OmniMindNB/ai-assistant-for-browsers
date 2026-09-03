@@ -10,6 +10,7 @@ import {
   type SetAgentOverlayResult,
 } from '@/lib/messaging';
 import { mountOverlay, moveOverlayCursor, unmountOverlay } from '@/lib/agent/agent-overlay';
+import { isExtensionContextInvalidatedError } from '@/lib/extension-context';
 import { loadLocale, resolveLocale } from '@/lib/i18n/core';
 import { SELECTION_ASK_BUBBLE_LABEL } from '@/lib/i18n/locales/selection-ask-bubble-label';
 import {
@@ -48,7 +49,9 @@ export default defineContentScript({
       },
     );
 
-    initSelectionAskBubble();
+    // 不能让这个 Promise 裸奔：内容脚本跑在用户访问的每一个页面里，一次 unhandled rejection
+    // 就会在人家网站的控制台留一条红色报错。里面的 storage/i18n 读取都会在扩展重载后失败。
+    void initSelectionAskBubble().catch(handleAsyncFailure);
     initAgentCursorBridge();
   },
 });
@@ -184,11 +187,27 @@ function showBubble(rect: DOMRect): void {
   bubbleHost = host;
 }
 
-async function handleBubbleClick(): Promise<void> {
+function handleBubbleClick(): void {
   const text = bubbleSelectionText;
   removeBubble();
   if (!text) return;
-  await sendMessage('ASK_SELECTION', { text } satisfies AskSelectionPayload);
+  // addEventListener 不会接住回调返回的 Promise，所以这里必须自己收尾。
+  void sendMessage('ASK_SELECTION', { text } satisfies AskSelectionPayload).catch(
+    handleAsyncFailure,
+  );
+}
+
+// 孤儿内容脚本（扩展已重载、这个页面还没刷新）唯一正确的反应是安静下来：重试没有意义，
+// 它的 runtime 通道不会再恢复。继续挂着监听器只会让用户每点一次气泡就多一条控制台报错，
+// 而且气泡看起来能点、点了却什么都不发生。摘掉监听器后划词不再冒气泡，与「扩展未启用」
+// 的表现一致，用户刷新页面即可恢复（新页面会由新扩展实例重新注入内容脚本）。
+function handleAsyncFailure(error: unknown): void {
+  if (isExtensionContextInvalidatedError(error)) {
+    detachSelectionAskListeners();
+    removeBubble();
+    return;
+  }
+  console.error('[Runi] content script error:', error);
 }
 
 function handleOutsideMouseDown(event: MouseEvent): void {

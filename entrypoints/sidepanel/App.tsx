@@ -1,9 +1,5 @@
-import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { useChat } from './store';
-
-// react-markdown + rehype-highlight 拉入较大的解析/高亮代码，单独分包，
-// 避免其阻塞侧边栏首次渲染（消息为空时完全不需要加载）。
-const Markdown = lazy(() => import('./Markdown'));
 import { nextThemeMode, useTheme } from '@/lib/theme';
 import { useTranslation } from '@/lib/i18n';
 import { discardedCount, isEditableMessage } from '@/lib/chat/messages';
@@ -22,6 +18,7 @@ import { WorkbenchHeader } from './components/WorkbenchHeader';
 import { ActivityStepList } from './components/ActivityStepList';
 import { WorkbenchComposer } from './components/WorkbenchComposer';
 import { AttachmentChip } from './components/AttachmentChip';
+import { MarkdownBlock } from './components/MarkdownBlock';
 import type { PendingConfirmation, PendingQuestion, UIMessage } from './store';
 import type { ActivityStep } from '@/lib/agent/activity-steps';
 import { resolvePageAttached, type ResolvedShortcutCommand } from '@/lib/workbench/presentation';
@@ -503,9 +500,7 @@ const Message = memo(function Message({
       </div>
       <div className="min-w-0 flex-1 rounded-2xl rounded-tl-md bg-white px-4 py-3 shadow-sm ring-1 ring-neutral-200/70 dark:bg-neutral-900 dark:ring-neutral-800">
         {content ? (
-          <Suspense fallback={<span className="whitespace-pre-wrap">{content}</span>}>
-            <Markdown content={content} />
-          </Suspense>
+          <MarkdownBlock content={content} />
         ) : busy ? (
           <TypingDots />
         ) : null}
