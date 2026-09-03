@@ -89,7 +89,7 @@ export const zh = {
   'sidebar.deleteConversationAriaLabel': '删除会话 {title}',
   'sidebar.confirmDeleteConversationAriaLabel': '确认删除会话 {title}？再次点击即删除。',
   'workbench.history': '对话历史',
-  'workbench.composerPlaceholder': '提问，或描述一件要在这个页面上做的事…',
+  'workbench.composerPlaceholder': '提问，或让我直接动手…',
   'workbench.examplesLabel': '也可以让我直接动手：',
   'workbench.exampleFillForm': '帮我把这个页面上的表单填好',
   'workbench.exampleReadable': '把正文调成适合阅读的样式，去掉干扰元素',
