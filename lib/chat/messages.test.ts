@@ -21,6 +21,13 @@ function msg(
   return { id, role, content, createdAt: 1000, kind, quotedText };
 }
 
+function shortcutRerun(scope: 'page' | 'selection' | 'none' = 'page', selection?: string) {
+  return {
+    shortcut: { id: 'builtin:summarize', origin: 'builtin' as const, scope, customized: false, name: '总结当前网页', prompt: '总结这个页面' },
+    selection,
+  };
+}
+
 describe('isEditableMessage', () => {
   it('普通输入的用户消息可编辑', () => {
     expect(isEditableMessage(msg('a', 'user', '你好', 'input'))).toBe(true);
@@ -102,9 +109,14 @@ describe('canRegenerateMessage', () => {
     expect(canRegenerateMessage(messages, 'a1')).toBe(true);
   });
 
-  // 快捷操作展示的是标签（如「📄 总结当前网页」），真正发给模型的 prompt 是另一段文字且
-  // 未持久化——原样重发标签文本语义就是错的，所以这类回复不该展示"能重新生成"的假象。
-  it('前一条是快捷操作产生的 user 消息时不可以重新生成', () => {
+  // 快捷操作消息不可编辑（标签≠真实 prompt），但带了重放配方就能按配方重跑一遍。
+  it('前一条是带重放配方的快捷操作消息时可以重新生成', () => {
+    const shortcutMessage = { ...msg('u1', 'user', '📄 总结当前网页', 'action'), rerun: shortcutRerun() };
+    expect(canRegenerateMessage([shortcutMessage, msg('a1', 'assistant', '摘要')], 'a1')).toBe(true);
+  });
+
+  // 存量历史里的快捷操作消息没有重放配方，重跑不出来，只能不展示按钮。
+  it('前一条是没有重放配方的快捷操作消息时不可以重新生成', () => {
     const messages = [msg('u1', 'user', '📄 总结当前网页', 'action'), msg('a1', 'assistant', '摘要')];
     expect(canRegenerateMessage(messages, 'a1')).toBe(false);
   });
@@ -128,6 +140,13 @@ describe('toMessageRecords', () => {
       msg('c', 'user', '再问'),
     ]);
     expect(records).toHaveLength(3);
+  });
+
+  // 重放配方要跟着落库，否则重开会话后快捷操作的回复就再也重新生成不了了。
+  it('保留快捷操作消息的重放配方', () => {
+    const shortcutMessage = { ...msg('a', 'user', '📄 总结当前网页', 'action'), rerun: shortcutRerun('selection', '选中的文字') };
+    const records = toMessageRecords('c-1', [shortcutMessage, msg('b', 'assistant', '摘要')]);
+    expect(records[0].rerun).toEqual(shortcutRerun('selection', '选中的文字'));
   });
 
   it('不丢弃有内容的末尾 assistant 消息', () => {

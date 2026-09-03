@@ -2,6 +2,7 @@ import Dexie, { type Table } from 'dexie';
 import type { MessageAttachment } from './chat/attachments';
 import type { TaskOutcome } from './agent/task-outcome';
 import type { ActivityStep } from './agent/activity-steps';
+import type { ShortcutRerun } from './chat/shortcut-rerun';
 
 // 本地持久化（ref: technical-plan.md §2.4）
 // 对话历史 / Skill 定义存 IndexedDB；API Key 等配置走 chrome.storage（见 settings.ts）。
@@ -48,6 +49,12 @@ export interface ChatMessageRecord {
    * 不建索引，同上无需 Dexie 版本迁移；存量记录无此字段即视为未触发过。
    */
   contextTruncated?: boolean;
+  /**
+   * 快捷操作消息的重放配方，供「重新生成」按当时的定义重跑一遍（见 chat/shortcut-rerun.ts）。
+   * 只有几个短字符串——页面正文不在其中，仍然不落库。
+   * 不建索引，同上无需 Dexie 版本迁移；存量记录无此字段即视为不能重新生成。
+   */
+  rerun?: ShortcutRerun;
 }
 
 export interface ConversationRecord {

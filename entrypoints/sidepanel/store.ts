@@ -30,7 +30,7 @@ import {
   DEFAULT_READ_TOOL_CALL_BUDGET,
   DEFAULT_WRITE_TOOL_CALL_BUDGET,
 } from '@/lib/agent/system-prompt';
-import { buildShortcutExecution, type PagePrefetch } from '@/lib/chat/shortcut-prompts';
+import { buildShortcutExecution, MAX_SHORTCUT_SELECTION_CHARS, type PagePrefetch } from '@/lib/chat/shortcut-prompts';
 import { type ActivityStep } from '@/lib/agent/activity-steps';
 import { getConversationIdForTab, setConversationIdForTab } from '@/lib/agent/tab-conversation';
 import { clearTabSession, loadTabSession, saveTabSession } from '@/lib/agent/tab-session-storage';
@@ -62,6 +62,7 @@ import { isCurrentTabReadable } from '@/lib/current-tab-readability';
 import {
   loadShortcutConfigs,
   resolveShortcut,
+  type ResolvedShortcut,
   type ShortcutConfig,
 } from '@/lib/shortcuts';
 import {
@@ -827,97 +828,23 @@ export const useChat = create<ChatState>((set, get) => ({
   regenerate: async (assistantId) => {
     const userMessage = findPrecedingUserMessage(get().messages, assistantId);
     if (!userMessage) return false;
+    // 快捷操作按配方重跑：消息上存的是标签，原样重发标签语义就是错的（见 shortcut-rerun.ts）。
+    // 选区用当时存下来的那份——这会儿页面上的选区多半已经没了；页面正文则重新预取。
+    const rerun = userMessage.rerun;
+    if (rerun) {
+      return runResolvedShortcut(set, get, rerun.shortcut, {
+        presetSelection: rerun.selection,
+        truncateToId: userMessage.id,
+        retry: () => { void get().regenerate(assistantId); },
+      });
+    }
     return get().editMessage(userMessage.id, userMessage.content);
   },
 
   runShortcut: async (shortcut) => {
-    if (get().busy || hasBusyAttachments(get().pendingAttachments)) return;
-    const origin = captureConversationOrigin(get);
-    const resolved = resolveShortcut({ ...shortcut }, t);
-    let tab: ActiveTabInfo | undefined;
-    let selection: PageSelection | undefined;
-    let pagePrefetch: PagePrefetch | undefined;
-
-    if (resolved.scope === 'selection') {
-      set({ busy: true, error: null });
-      try {
-        tab = await resolveActiveTab();
-        if (!isCurrentOrigin(origin, get)) return;
-        const response = (await sendMessage(
-          'GET_SELECTION',
-          undefined,
-          tab.id,
-        )) as MessageResponse<PageSelection>;
-        if (!isCurrentOrigin(origin, get)) return;
-        if (!response.ok || !response.data) {
-          throw new Error(response.error ?? t('store.getSelectionFailed'));
-        }
-        selection = response.data;
-      } catch (error) {
-        if (!isCurrentOrigin(origin, get)) return;
-        set({ busy: false, error: errMsg(error), retryAction: () => { void get().runShortcut(shortcut); } });
-        return;
-      }
-      set({ busy: false });
-    } else if (resolved.scope === 'page') {
-      // 预取页面正文并直接塞进首轮 user turn：不预取的话，"总结本页"这类最高频 page-scope
-      // 快捷方式要先让模型发起 browser_read_page 才能拿到内容，白白多花一整轮 LLM 往返
-      // （ref: [[project-sidepanel-perf-profile]]，减少轮数是目前唯一真正的提速杠杆）。
-      // resolveActiveTab 失败是真错误，走跟 selection 分支一致的失败路径；EXTRACT_PAGE
-      // 本身失败（受限页、内容脚本未注入等）则静默降级——不设置 pagePrefetch，
-      // buildShortcutExecution 退回原本"不预取"的路径，模型仍可自己调用 browser_read_page 兜底。
-      set({ busy: true, error: null });
-      try {
-        tab = await resolveActiveTab();
-      } catch (error) {
-        if (!isCurrentOrigin(origin, get)) return;
-        set({ busy: false, error: errMsg(error), retryAction: () => { void get().runShortcut(shortcut); } });
-        return;
-      }
-      if (!isCurrentOrigin(origin, get)) return;
-      try {
-        const response = (await sendMessage(
-          'EXTRACT_PAGE',
-          undefined,
-          tab.id,
-        )) as MessageResponse<PageContent>;
-        if (!isCurrentOrigin(origin, get)) return;
-        if (response.ok && response.data) {
-          pagePrefetch = {
-            title: response.data.title,
-            url: response.data.url,
-            // 与 browser_read_page 工具的默认上限保持一致，模型认得这种量级的正文。
-            text: response.data.text.slice(0, PAGE_PREFETCH_MAX_CHARS),
-          };
-        }
-      } catch {
-        // 静默降级，见上方注释。
-      }
-      set({ busy: false });
-    }
-
-    let execution;
-    try {
-      execution = buildShortcutExecution(resolved, t, selection?.text, pagePrefetch);
-    } catch (error) {
-      if (!isCurrentOrigin(origin, get)) return;
-      set({ busy: false, error: errMsg(error), retryAction: () => { void get().runShortcut(shortcut); } });
-      return;
-    }
-
-    await runAgent(
-      set,
-      get,
-      makeMessage('user', execution.display, 'action'),
-      execution.agentUserContent,
-      {
-        presetTab: tab,
-        withoutBrowserTools: execution.browserTools === 'none',
-        systemPromptSuffix: execution.systemPromptSuffix,
-        origin,
-        retry: () => { void get().runShortcut(shortcut); },
-      },
-    );
+    await runResolvedShortcut(set, get, resolveShortcut({ ...shortcut }, t), {
+      retry: () => { void get().runShortcut(shortcut); },
+    });
   },
 
   // stop/respondToConfirmation/respondToQuestion 不再本地 resolve 任何东西——那些 resolver
@@ -1007,6 +934,7 @@ export const useChat = create<ChatState>((set, get) => ({
         stopped: r.stopped,
         activitySteps: r.activitySteps,
         contextTruncated: r.contextTruncated,
+        rerun: r.rerun,
       }));
     set({
       messages,
@@ -1152,6 +1080,120 @@ interface RunAgentOptions {
     quoted: string | null;
     attachmentIds: string[];
   };
+}
+
+interface RunShortcutOptions {
+  /** 重新生成时用当时存下的选区，跳过读取页面当前选区——那会儿的选区多半已经没了。 */
+  presetSelection?: string;
+  /** 重新生成时截断到这条消息之前，替换掉原来那一轮，而不是在末尾再追加一轮。 */
+  truncateToId?: string;
+  retry: () => void;
+}
+
+/**
+ * 跑一条已解析的快捷方式：按 scope 取选区 / 预取页面正文，拼出 prompt 后交给 runAgent。
+ *
+ * 首次执行（runShortcut）和重新生成（regenerate 走 rerun 配方）共用这里：两条路必须拼出
+ * 同样的 prompt，各写一份迟早会分叉。差别只有 presetSelection 与 truncateToId 两个参数。
+ */
+async function runResolvedShortcut(
+  set: (partial: Partial<ChatState> | ((s: ChatState) => Partial<ChatState>)) => void,
+  get: () => ChatState,
+  resolved: ResolvedShortcut,
+  options: RunShortcutOptions,
+): Promise<boolean> {
+  if (get().busy || hasBusyAttachments(get().pendingAttachments)) return false;
+  const origin = captureConversationOrigin(get);
+  let tab: ActiveTabInfo | undefined;
+  let selectionText: string | undefined = options.presetSelection;
+  let pagePrefetch: PagePrefetch | undefined;
+
+  if (resolved.scope === 'selection' && selectionText === undefined) {
+    set({ busy: true, error: null });
+    try {
+      tab = await resolveActiveTab();
+      if (!isCurrentOrigin(origin, get)) return false;
+      const response = (await sendMessage(
+        'GET_SELECTION',
+        undefined,
+        tab.id,
+      )) as MessageResponse<PageSelection>;
+      if (!isCurrentOrigin(origin, get)) return false;
+      if (!response.ok || !response.data) {
+        throw new Error(response.error ?? t('store.getSelectionFailed'));
+      }
+      selectionText = response.data.text;
+    } catch (error) {
+      if (!isCurrentOrigin(origin, get)) return false;
+      set({ busy: false, error: errMsg(error), retryAction: options.retry });
+      return false;
+    }
+    set({ busy: false });
+  } else if (resolved.scope === 'page') {
+    // 预取页面正文并直接塞进首轮 user turn：不预取的话，"总结本页"这类最高频 page-scope
+    // 快捷方式要先让模型发起 browser_read_page 才能拿到内容，白白多花一整轮 LLM 往返
+    // （ref: [[project-sidepanel-perf-profile]]，减少轮数是目前唯一真正的提速杠杆）。
+    // resolveActiveTab 失败是真错误，走跟 selection 分支一致的失败路径；EXTRACT_PAGE
+    // 本身失败（受限页、内容脚本未注入等）则静默降级——不设置 pagePrefetch，
+    // buildShortcutExecution 退回原本"不预取"的路径，模型仍可自己调用 browser_read_page 兜底。
+    set({ busy: true, error: null });
+    try {
+      tab = await resolveActiveTab();
+    } catch (error) {
+      if (!isCurrentOrigin(origin, get)) return false;
+      set({ busy: false, error: errMsg(error), retryAction: options.retry });
+      return false;
+    }
+    if (!isCurrentOrigin(origin, get)) return false;
+    try {
+      const response = (await sendMessage(
+        'EXTRACT_PAGE',
+        undefined,
+        tab.id,
+      )) as MessageResponse<PageContent>;
+      if (!isCurrentOrigin(origin, get)) return false;
+      if (response.ok && response.data) {
+        pagePrefetch = {
+          title: response.data.title,
+          url: response.data.url,
+          // 与 browser_read_page 工具的默认上限保持一致，模型认得这种量级的正文。
+          text: response.data.text.slice(0, PAGE_PREFETCH_MAX_CHARS),
+        };
+      }
+    } catch {
+      // 静默降级，见上方注释。
+    }
+    set({ busy: false });
+  }
+
+  let execution;
+  try {
+    execution = buildShortcutExecution(resolved, t, selectionText, pagePrefetch);
+  } catch (error) {
+    if (!isCurrentOrigin(origin, get)) return false;
+    set({ busy: false, error: errMsg(error), retryAction: options.retry });
+    return false;
+  }
+
+  // 配方跟着消息走，这样这一轮之后（含重开会话）还能再重新生成一次。
+  // 选区按 buildShortcutExecution 的同一上限截断后再存：超出的部分本来就不会进 prompt，
+  // 存了只是白白把整篇选中的正文塞进 IndexedDB。
+  const display: UIMessage = {
+    ...makeMessage('user', execution.display, 'action'),
+    rerun: {
+      shortcut: resolved,
+      selection: selectionText?.slice(0, MAX_SHORTCUT_SELECTION_CHARS),
+    },
+  };
+
+  return runAgent(set, get, display, execution.agentUserContent, {
+    presetTab: tab,
+    withoutBrowserTools: execution.browserTools === 'none',
+    systemPromptSuffix: execution.systemPromptSuffix,
+    truncateToId: options.truncateToId,
+    origin,
+    retry: options.retry,
+  });
 }
 
 async function runAgent(

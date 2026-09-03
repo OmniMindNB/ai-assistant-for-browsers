@@ -1302,10 +1302,67 @@ describe('chat store page context', () => {
     expect(lastStartRunCall().agentUserContent).toBe('original question');
   });
 
-  // regenerate 底层复用 editMessage 的截断重发逻辑，原样重发标签文本对快捷操作消息来说
-  // 语义就是错的（标签≠真实 prompt），所以这里仍然预期 false——真正的修复是
-  // canRegenerateMessage 让 UI 在这种情况下不展示按钮，而不是让这条路径"假装成功"。
-  it('does not regenerate when the preceding user message came from a shortcut (kind "action")', async () => {
+  // 快捷操作消息存的是标签，不能原样重发；带上重放配方就能按当时的定义重跑一遍。
+  it('regenerates a shortcut reply by replaying its rerun recipe, not by resending the label', async () => {
+    await connectPort();
+    mocks.sendMessage.mockImplementation(async (type: string) => {
+      if (type === 'GET_ACTIVE_TAB') return { ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } };
+      if (type === 'EXTRACT_PAGE') return { ok: true, data: { title: 'Example', url: 'https://example.com/', text: 'page body' } };
+      return { ok: true, data: {} };
+    });
+    useChat.setState({
+      messages: [
+        {
+          id: 'u1',
+          role: 'user',
+          content: '📄 总结当前网页',
+          createdAt: 1,
+          kind: 'action',
+          rerun: {
+            shortcut: { id: 'builtin:summarize', origin: 'builtin', scope: 'page', customized: false, name: '总结当前网页', prompt: '总结这个页面' },
+          },
+        },
+        { id: 'a1', role: 'assistant', content: 'summary answer', createdAt: 2 },
+      ],
+    });
+
+    await expect(useChat.getState().regenerate('a1')).resolves.toBe(true);
+
+    // 发给模型的是按配方重新拼出来的 prompt（含重新预取的正文），不是标签文本。
+    const sent = lastStartRunCall().agentUserContent;
+    expect(sent).toContain('总结这个页面');
+    expect(sent).not.toBe('📄 总结当前网页');
+  });
+
+  // 划词类快捷方式重新生成时，页面上的选区多半已经没了——必须用当时存下来的那份。
+  it('replays a selection shortcut with the stored selection instead of re-reading the page', async () => {
+    await connectPort();
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    useChat.setState({
+      messages: [
+        {
+          id: 'u1',
+          role: 'user',
+          content: '解释「量子纠缠」',
+          createdAt: 1,
+          kind: 'action',
+          rerun: {
+            shortcut: { id: 'builtin:explain', origin: 'builtin', scope: 'selection', customized: false, name: '解释划词', prompt: '解释这段文字' },
+            selection: '量子纠缠',
+          },
+        },
+        { id: 'a1', role: 'assistant', content: 'explanation', createdAt: 2 },
+      ],
+    });
+
+    await expect(useChat.getState().regenerate('a1')).resolves.toBe(true);
+
+    expect(mocks.sendMessage).not.toHaveBeenCalledWith('GET_SELECTION', expect.anything(), expect.anything());
+    expect(lastStartRunCall().agentUserContent).toContain('量子纠缠');
+  });
+
+  // 存量历史里的快捷操作消息没有配方，重跑不出来——保持不动，不假装成功。
+  it('does not regenerate a legacy shortcut reply that carries no rerun recipe', async () => {
     useChat.setState({
       messages: [
         { id: 'u1', role: 'user', content: '📄 总结当前网页', createdAt: 1, kind: 'action' },

@@ -2,6 +2,7 @@ import type { ChatMessageRecord } from '@/lib/db';
 import type { MessageAttachment } from './attachments';
 import type { TaskOutcome } from '@/lib/agent/task-outcome';
 import type { ActivityStep } from '@/lib/agent/activity-steps';
+import type { ShortcutRerun } from './shortcut-rerun';
 
 // 侧边栏消息的形状与派生规则（ref: docs/superpowers/specs/2026-07-26-edit-history-message-design.md §3）。
 // 本功能的全部可测逻辑集中在这里：vitest 只覆盖 lib/**，entrypoints/ 没有测试基建。
@@ -29,6 +30,8 @@ export interface ChatMessage {
   activitySteps?: ActivityStep[];
   /** 本轮是否触发过上下文窗口重切（早期历史被摘要/移出上下文）；仅 assistant 消息可能为 true。 */
   contextTruncated?: boolean;
+  /** 快捷操作消息的重放配方，供「重新生成」按当时的定义重跑一遍（见 shortcut-rerun.ts）。 */
+  rerun?: ShortcutRerun;
 }
 
 const TITLE_MAX_CHARS = 40;
@@ -60,15 +63,17 @@ export function findPrecedingUserMessage(messages: ChatMessage[], assistantId: s
 }
 
 /**
- * regenerate 复用 editMessage 的截断重发逻辑，原样重发最近一条 user 消息的 content。
- * 这要求那条消息可编辑：快捷操作消息展示的是标签（如「📄 总结当前网页」），真正发给模型的
- * prompt 是另一段文字且未持久化，原样重发标签文本语义就是错的——isEditableMessage 已经
- * 挡住了这条路径，这里只是把同一条件也用在"要不要展示重新生成按钮"上，避免展示一个
- * 点了没反应的按钮。
+ * 这条 assistant 回复能不能重新生成——两条路各自成立即可：
+ * - 普通输入消息：原样重发 content（复用 editMessage 的截断重发逻辑）。
+ * - 快捷操作消息：按 rerun 配方重跑一遍（标签≠真实 prompt，不能原样重发，见 shortcut-rerun.ts）。
+ *
+ * 存量历史里的快捷操作消息没有 rerun 配方，重跑不出来，只能不展示按钮——展示一个点了
+ * 没反应的按钮比不展示更糟。
  */
 export function canRegenerateMessage(messages: ChatMessage[], assistantId: string): boolean {
   const userMessage = findPrecedingUserMessage(messages, assistantId);
-  return userMessage !== undefined && isEditableMessage(userMessage);
+  if (!userMessage) return false;
+  return isEditableMessage(userMessage) || userMessage.rerun !== undefined;
 }
 
 /** 编辑该条消息后将被一并丢弃的后续消息条数；id 未命中时返回 0 */
@@ -101,6 +106,7 @@ export function toMessageRecords(
     stopped: message.stopped,
     activitySteps: message.activitySteps,
     contextTruncated: message.contextTruncated,
+    rerun: message.rerun,
   }));
 }
 
