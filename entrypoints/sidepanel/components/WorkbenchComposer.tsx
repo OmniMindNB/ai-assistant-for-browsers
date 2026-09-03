@@ -30,6 +30,8 @@ export interface WorkbenchComposerProps {
   pendingFocusToken: number;
   /** 划词提问消费到的待引用文字（裁剪后）；渲染成独立卡片，null 时不显示。 */
   quotedSelection: string | null;
+  /** 外部要求把 text 填进输入框（不发送）；token 变为新的非零值时生效，0 表示从未发生。 */
+  draftSeed?: { text: string; token: number };
   /** 待发送附件的完整生命周期；历史附件由消息列表单独只读渲染。 */
   attachments: PendingAttachment[];
   /** 返回值真值时才清空输入框，与 store.send() 的"是否真的发起了这一轮"语义对齐。 */
@@ -59,6 +61,7 @@ export function WorkbenchComposer({
   shortcuts,
   pendingFocusToken,
   quotedSelection,
+  draftSeed,
   attachments,
   onSend,
   onStop,
@@ -122,6 +125,18 @@ export function WorkbenchComposer({
     element.focus();
     element.setSelectionRange(element.value.length, element.value.length);
   }, [pendingFocusToken]);
+
+  // 外部把一段文字"填进"输入框（目前只有空状态的示例按钮）。用 token 触发而不是把草稿
+  // 提升成受控 props：按键级别的状态必须留在本组件里，否则每次按键都会重渲染整个 App
+  // （同上面 input 那条注释的理由）。token 变化才写一次，之后用户照常编辑。
+  useEffect(() => {
+    if (!draftSeed || draftSeed.token === 0) return;
+    setInput(draftSeed.text);
+    const element = textareaRef.current;
+    if (!element) return;
+    element.focus();
+    element.setSelectionRange(draftSeed.text.length, draftSeed.text.length);
+  }, [draftSeed?.token]);
 
   useEffect(() => {
     if (startsSlashCommand(input)) {

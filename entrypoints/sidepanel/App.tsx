@@ -88,6 +88,7 @@ export default function App() {
   const atBottomRef = useRef(true);
   const busyRef = useRef(busy);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
+  const [draftSeed, setDraftSeed] = useState<{ text: string; token: number }>({ text: '', token: 0 });
 
   const resolvedShortcuts: ResolvedShortcutCommand[] = shortcuts.map((config) => ({
     config,
@@ -197,6 +198,12 @@ export default function App() {
     return send(text, { withoutBrowserTools: !attached });
   }
 
+  // 空状态的写操作示例只填进输入框，不直接发送：一次误点就动了用户的页面是不可接受的，
+  // 填进去也让用户能按自己的页面改措辞。用 token 传递，草稿仍留在 composer 本地。
+  function pickExample(text: string) {
+    setDraftSeed({ text, token: Date.now() });
+  }
+
   function executeShortcut(shortcut: ShortcutConfig) {
     if (requestBlocked) return;
     resetToFollowing();
@@ -292,6 +299,7 @@ export default function App() {
                     shortcuts={resolvedShortcuts}
                     busy={requestBlocked}
                     onRunShortcut={executeShortcut}
+                    onPickExample={pickExample}
                   />
                 ) : (
                   messages.map((m, i) => (
@@ -377,6 +385,7 @@ export default function App() {
             selectedModel={selectedModel}
             pendingFocusToken={pendingFocusToken}
             quotedSelection={quotedSelection}
+            draftSeed={draftSeed}
             attachments={pendingAttachments}
             onSend={submitMessage}
             onStop={stop}

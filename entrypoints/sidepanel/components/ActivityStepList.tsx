@@ -16,9 +16,15 @@ export function ActivityStepList({ steps }: { steps: ActivityStep[] }) {
   // 在面板自己的 tab 上操作时 tabLabel 为空，不显示（跟逐行前缀同一条规则）。
   const currentTabLabel = steps.at(-1)?.tabLabel;
 
-  // 运行期给更多行数：写任务的工具预算是 24 步，128px 只露 5~6 行，用户想看清刚才改了什么
-  // 得在一个小滚动区里翻。已经全部结束的列表（含消息里的存档版）保持紧凑，不占版面。
+  // 运行期给更多行数：写任务的工具预算是 40 步（system-prompt.ts），128px 只露 5~6 行，
+  // 用户想看清刚才改了什么得在一个小滚动区里翻。已经全部结束的列表（含消息里的存档版）
+  // 保持紧凑，不占版面。
   const running = steps.some((step) => step.status === 'running');
+
+  // 序号只给真正的工具调用（有 signature 的行）。流程提示和接管痕迹不是"第几步"，
+  // 给它们编号会让计数看起来比实际操作次数多。
+  let toolStepIndex = 0;
+  const numbering = steps.map((step) => (step.signature === undefined ? undefined : (toolStepIndex += 1)));
 
   return (
     <div className="flex flex-col gap-1">
@@ -39,6 +45,7 @@ export function ActivityStepList({ steps }: { steps: ActivityStep[] }) {
           <ActivityStepRow
             key={step.id}
             step={step}
+            ordinal={numbering[index]}
             showTabLabel={step.tabLabel !== undefined && step.tabLabel !== steps[index - 1]?.tabLabel}
           />
         ))}
@@ -50,7 +57,15 @@ export function ActivityStepList({ steps }: { steps: ActivityStep[] }) {
 // 每行默认单行截断（title 悬浮兜底），点击可展开成多行显示完整文字——这是当前唯一能
 // 看到写操作具体做了什么的入口（auto_allow 的写工具没有确认卡也没有撤销，是有意为之的
 // 产品决定，见 [[decision_write_tools_no_confirm]]），所以不能只靠“精确悬停某一行”才能看全。
-function ActivityStepRow({ step, showTabLabel }: { step: ActivityStep; showTabLabel: boolean }) {
+function ActivityStepRow({
+  step,
+  ordinal,
+  showTabLabel,
+}: {
+  step: ActivityStep;
+  ordinal: number | undefined;
+  showTabLabel: boolean;
+}) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const labelled = showTabLabel ? `《${step.tabLabel}》${step.description}` : step.description;
@@ -83,6 +98,13 @@ function ActivityStepRow({ step, showTabLabel }: { step: ActivityStep; showTabLa
           <IconCheck className="h-3 w-3" />
         )}
       </span>
+      {/* 序号给滚动列表一个位置感：24+ 步的写任务里，没有它用户既不知道已经走了多远，
+          也认不出合并后的重试行到底是第几步。tabular-nums 让数字不抖。 */}
+      {ordinal !== undefined && (
+        <span className="shrink-0 tabular-nums text-neutral-400 dark:text-neutral-500" aria-hidden="true">
+          {ordinal}.
+        </span>
+      )}
       <button
         type="button"
         onClick={() => setExpanded((prev) => !prev)}

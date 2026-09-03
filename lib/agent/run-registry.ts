@@ -374,6 +374,14 @@ export async function startRun(request: StartRunRequest): Promise<void> {
       void sendAgentOverlay(payload, targetTabId);
     },
     onSessionChange: (updated) => { void saveTabSession(updated).catch(() => undefined); },
+    onBudgetLow: (remaining) => {
+      state.activitySteps = upsertActivityStep(state.activitySteps, {
+        id: 'budget-low',
+        description: t('agentActivity.budgetLow', { count: String(remaining) }),
+        status: 'notice',
+      });
+      pushAndPersist(state);
+    },
     onToolPhaseEnd: (reason) => {
       state.activitySteps = upsertActivityStep(state.activitySteps, {
         id: 'tool-phase-end',

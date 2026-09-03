@@ -802,6 +802,42 @@ describe('用户接管暂停', () => {
     expect(notice?.description).toContain('Step limit reached');
   });
 
+  // 软提醒此前只发给模型，用户那边完全没有预期，收尾来得毫无征兆。
+  it('接近步骤上限时也告诉用户，并带上还剩几步', async () => {
+    mocks.createBrowserAgent.mockReturnValue(makeFakeAgent([]));
+    const posted: any[] = [];
+    attachPort(86, { postMessage: (message) => posted.push(message) });
+
+    await startRun(makeRequest({ tabId: 86 }));
+    const options = (mocks.createBrowserAgent.mock.calls.at(-1) as unknown[])[0] as {
+      onBudgetLow: (remaining: number) => void;
+    };
+    options.onBudgetLow(5);
+
+    const steps = posted.map((message) => message?.activitySteps).filter(Boolean).at(-1) ?? [];
+    const notice = steps.find((step: any) => step.id === 'budget-low');
+    expect(notice?.status).toBe('notice');
+    expect(notice?.description).toContain('5');
+  });
+
+  // 两个阈值（剩 5 / 剩 2）各触发一次，后一次覆盖前一次而不是再堆一行。
+  it('第二次软提醒覆盖同一行', async () => {
+    mocks.createBrowserAgent.mockReturnValue(makeFakeAgent([]));
+    const posted: any[] = [];
+    attachPort(87, { postMessage: (message) => posted.push(message) });
+
+    await startRun(makeRequest({ tabId: 87 }));
+    const options = (mocks.createBrowserAgent.mock.calls.at(-1) as unknown[])[0] as {
+      onBudgetLow: (remaining: number) => void;
+    };
+    options.onBudgetLow(5);
+    options.onBudgetLow(2);
+
+    const steps = posted.map((message) => message?.activitySteps).filter(Boolean).at(-1) ?? [];
+    expect(steps.filter((step: any) => step.id === 'budget-low')).toHaveLength(1);
+    expect(steps.find((step: any) => step.id === 'budget-low')?.description).toContain('2');
+  });
+
   it('连续被阻断和预算耗尽给的是不同说法', async () => {
     mocks.createBrowserAgent.mockReturnValue(makeFakeAgent([]));
     const posted: any[] = [];

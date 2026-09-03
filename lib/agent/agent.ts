@@ -92,6 +92,8 @@ export interface BrowserAgentOptions {
    * ——预算耗尽或连续被阻断，而不是它自己放弃了。
    */
   onToolPhaseEnd?: (reason: 'budget_exhausted' | 'repeatedly_blocked') => void;
+  /** 步骤预算跌到软提醒阈值时调用（每个阈值一次），带上还剩几次。用于让用户也有个收尾预期。 */
+  onBudgetLow?: (remaining: number) => void;
   onAskUser?: (toolCallId: string, question: string, signal?: AbortSignal) => Promise<string>;
   /** report_task_outcome 工具被调用时转发给外层，用于把成败信号落到对应的 assistant 消息上。 */
   onTaskOutcome?: (outcome: TaskOutcome) => void;
@@ -322,6 +324,9 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
       const budgetWarning = policy.budgetWarning();
       if (budgetWarning) {
         options.steer({ role: 'user', content: budgetWarning, timestamp: Date.now() });
+        // 同一条信号也告诉用户。此前只有模型知道快到上限了，用户那边完全没有预期，
+        // 收尾来得毫无征兆。两个阈值（剩 5 / 剩 2）各触发一次，不是持续刷新的进度条。
+        options.onBudgetLow?.(policy.remaining);
       }
       return undefined;
     },

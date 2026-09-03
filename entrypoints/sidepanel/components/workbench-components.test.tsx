@@ -966,6 +966,29 @@ describe('activity step list', () => {
     expect(screen.getByText('Clicking "#pay"')).toBeVisible();
   });
 
+  // 序号给滚动列表位置感：24+ 步的写任务里，没有它用户不知道已经走了多远。
+  it('给工具步骤编号，但跳过流程提示和接管痕迹', () => {
+    render(
+      <LocaleProvider>
+        <ActivityStepList
+          steps={[
+            { id: 'c1', description: 'Read page', status: 'done', signature: 'browser_read_page:{}' },
+            { id: 'takeover-c1', description: 'You took over', status: 'done' },
+            { id: 'c2', description: 'Clicked "#pay"', status: 'done', signature: 'browser_click:{}' },
+            { id: 'tool-phase-end', description: 'Step limit reached', status: 'notice' },
+          ]}
+        />
+      </LocaleProvider>,
+    );
+
+    const rows = screen.getAllByRole('listitem');
+    expect(rows[0]).toHaveTextContent('1.');
+    expect(rows[1]).not.toHaveTextContent('2.');
+    // 接管痕迹没占号，所以下一个工具步骤仍然是 2——编号数的是实际操作次数。
+    expect(rows[2]).toHaveTextContent('2.');
+    expect(rows[3]).not.toHaveTextContent('3.');
+  });
+
   // notice 不是一次工具调用，拿 done 的 ✓ 冒充会读成"这件事成功了"。
   it('notice 步骤用告警样式而不是完成样式', () => {
     render(
@@ -1490,6 +1513,84 @@ describe('workbench context controls', () => {
 
     expect(screen.getAllByRole('button', { name: /Shortcut/ })).toHaveLength(4);
     expect(screen.queryByRole('button', { name: 'Shortcut 5' })).not.toBeInTheDocument();
+  });
+
+  // 三个内置快捷指令全是读操作，只摆它们会把产品定位成"页面问答"，
+  // 代填表单 / 改页面这些真正的差异化能力用户根本发现不了。
+  it('展示写操作示例，让空状态不止有读操作', () => {
+    render(
+      <LocaleProvider>
+        <WorkbenchEmptyState
+          shortcuts={emptyStateShortcuts}
+          busy={false}
+          onRunShortcut={vi.fn()}
+          onPickExample={vi.fn()}
+        />
+      </LocaleProvider>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Fill in the form on this page for me' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Make the article readable — strip the distractions' })).toBeVisible();
+  });
+
+  // 一次误点就动了用户的页面是不可接受的，所以示例只填进输入框、不发送。
+  it('点击示例是交给调用方填进输入框，而不是直接执行', async () => {
+    const user = userEvent.setup();
+    const onPickExample = vi.fn();
+    const onRunShortcut = vi.fn();
+    render(
+      <LocaleProvider>
+        <WorkbenchEmptyState
+          shortcuts={emptyStateShortcuts}
+          busy={false}
+          onRunShortcut={onRunShortcut}
+          onPickExample={onPickExample}
+        />
+      </LocaleProvider>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Fill in the form on this page for me' }));
+    expect(onPickExample).toHaveBeenCalledWith('Fill in the form on this page for me');
+    expect(onRunShortcut).not.toHaveBeenCalled();
+  });
+
+  it('不传 onPickExample 时不展示示例区', () => {
+    render(
+      <LocaleProvider>
+        <WorkbenchEmptyState shortcuts={emptyStateShortcuts} busy={false} onRunShortcut={vi.fn()} />
+      </LocaleProvider>,
+    );
+    expect(screen.queryByText('Or have me act on the page:')).not.toBeInTheDocument();
+  });
+});
+
+describe('composer draftSeed', () => {
+  it('token 变化时把文字填进输入框，但不发送', () => {
+    const onSend = vi.fn();
+    const { rerender } = render(<ComposerHarness onSend={onSend} draftSeed={{ text: '', token: 0 }} />);
+    const textarea = screen.getByRole('textbox', { name: 'Message input' }) as HTMLTextAreaElement;
+    expect(textarea.value).toBe('');
+
+    rerender(<ComposerHarness onSend={onSend} draftSeed={{ text: '帮我填好这个表单', token: 1 }} />);
+
+    expect(textarea.value).toBe('帮我填好这个表单');
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  // token 为 0 表示"从未发生过"，不能在挂载时就把 text 灌进去（同 pendingFocusToken 的约定）。
+  it('token 为 0 时不动输入框', () => {
+    render(<ComposerHarness draftSeed={{ text: '不该出现', token: 0 }} />);
+    expect((screen.getByRole('textbox', { name: 'Message input' }) as HTMLTextAreaElement).value).toBe('');
+  });
+
+  it('填入后用户仍可正常编辑', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<ComposerHarness draftSeed={{ text: '前缀', token: 0 }} />);
+    rerender(<ComposerHarness draftSeed={{ text: '前缀', token: 2 }} />);
+
+    const textarea = screen.getByRole('textbox', { name: 'Message input' }) as HTMLTextAreaElement;
+    await user.type(textarea, '后缀');
+    expect(textarea.value).toBe('前缀后缀');
   });
 });
 
