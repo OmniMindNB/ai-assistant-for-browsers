@@ -96,8 +96,6 @@ export const zh = {
   'workbench.exampleExtract': '把这一页的关键信息整理成一张表',
   'workbench.emptyTitle': '可以开始了',
   'workbench.emptyDescription': '问我关于当前页面的问题，或者描述一个想让我在浏览器里完成的任务。',
-  'workbench.more': '更多选项',
-  'workbench.toggleTheme': '切换主题',
   'workbench.searchHistory': '搜索对话',
   'workbench.today': '今天',
   'workbench.yesterday': '昨天',

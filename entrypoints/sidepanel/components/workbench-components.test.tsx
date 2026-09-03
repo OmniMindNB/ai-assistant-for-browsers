@@ -91,11 +91,9 @@ function Harness() {
     <LocaleProvider>
       <WorkbenchHeader
         historyOpen={historyOpen}
-        themeResolved="light"
         onToggleHistory={() => setHistoryOpen((open) => !open)}
         onNewChat={vi.fn()}
         onOpenSettings={vi.fn()}
-        onToggleTheme={vi.fn()}
         historyTriggerRef={triggerRef}
       />
       <HistoryDrawer
@@ -1689,46 +1687,23 @@ describe('workbench history', () => {
     expect(onRemove).toHaveBeenCalledWith('shopping');
   });
 
-  it('closes the more menu with Escape, outside clicks, and opening history', async () => {
+  it('齿轮按钮直接打开设置，不再经过"更多"菜单', async () => {
     const user = userEvent.setup();
-    render(<Harness />);
-
-    await user.click(screen.getByRole('button', { name: 'More options' }));
-    expect(screen.getByRole('menu')).toBeVisible();
-    await user.keyboard('{Escape}');
-    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'More options' }));
-    await user.click(screen.getByText('Runi'));
-    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'More options' }));
-    await user.click(screen.getByRole('button', { name: 'Conversation history' }));
-    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
-  });
-
-  it('returns focus to the more-menu trigger after Escape closes the menu', async () => {
-    const user = userEvent.setup();
+    const onOpenSettings = vi.fn();
     render(
       <LocaleProvider>
         <WorkbenchHeader
           historyOpen={false}
-          themeResolved="light"
           onToggleHistory={vi.fn()}
           onNewChat={vi.fn()}
-          onOpenSettings={vi.fn()}
-          onToggleTheme={vi.fn()}
+          onOpenSettings={onOpenSettings}
         />
       </LocaleProvider>,
     );
 
-    const trigger = screen.getByRole('button', { name: 'More options' });
-    await user.click(trigger);
-    await user.tab();
-    await user.keyboard('{Escape}');
-
-    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
-    expect(trigger).toHaveFocus();
+    expect(screen.queryByRole('button', { name: 'More options' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Settings' }));
+    expect(onOpenSettings).toHaveBeenCalledOnce();
   });
 
   // 用户往上翻历史时，页面遮罩看不见、消息流底部的步骤条被滚走，此前 header 里
@@ -1739,11 +1714,9 @@ describe('workbench history', () => {
         <LocaleProvider>
           <WorkbenchHeader
             historyOpen={false}
-            themeResolved="light"
             onToggleHistory={vi.fn()}
             onNewChat={vi.fn()}
             onOpenSettings={vi.fn()}
-            onToggleTheme={vi.fn()}
             {...props}
           />
         </LocaleProvider>,
@@ -1784,12 +1757,10 @@ describe('workbench history', () => {
           <LocaleProvider>
             <WorkbenchHeader
               historyOpen={false}
-              themeResolved="light"
               runStatus="第二步"
               onToggleHistory={vi.fn()}
               onNewChat={vi.fn()}
               onOpenSettings={vi.fn()}
-              onToggleTheme={vi.fn()}
             />
           </LocaleProvider>,
         );
@@ -1843,7 +1814,7 @@ describe('workbench history', () => {
       </LocaleProvider>,
     );
 
-    await user.click(screen.getByRole('button', { name: 'Settings' }));
+    await user.click(within(screen.getByRole('banner')).getByRole('button', { name: 'Settings' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not open Settings. Please try again.');
   });

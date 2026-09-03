@@ -99,8 +99,6 @@ export const en: Record<keyof typeof zh, string> = {
   'workbench.exampleExtract': 'Pull the key details on this page into a table',
   'workbench.emptyTitle': 'Ready when you are',
   'workbench.emptyDescription': 'Ask about the current page, or describe a browser task you want me to complete.',
-  'workbench.more': 'More options',
-  'workbench.toggleTheme': 'Toggle theme',
   'workbench.searchHistory': 'Search conversations',
   'workbench.today': 'Today',
   'workbench.yesterday': 'Yesterday',

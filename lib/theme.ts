@@ -31,25 +31,6 @@ export function applyTheme(mode: ThemeMode): ResolvedTheme {
 }
 
 /**
- * "切换主题"按钮下一个模式：按 auto -> light -> dark -> auto 循环。
- * 循环中总有恰好一步的解析结果和当前解析主题相同（例如系统偏好浅色时，auto -> light
- * 视觉上没有变化）——那一步会被跳过，保证按钮每次点击都产生可见变化。
- */
-export function nextThemeMode(
-  mode: ThemeMode,
-  resolved: ResolvedTheme,
-  resolve: (m: ThemeMode) => ResolvedTheme = resolvedTheme,
-): ThemeMode {
-  const order: ThemeMode[] = ['auto', 'light', 'dark'];
-  const idx = order.indexOf(mode);
-  let next = order[(idx + 1) % order.length];
-  if (resolve(next) === resolved) {
-    next = order[(order.indexOf(next) + 1) % order.length];
-  }
-  return next;
-}
-
-/**
  * 主题 React hook：加载偏好、应用、监听系统变化，并暴露 setMode。
  * 在每个入口（侧边栏 / options）各调用一次即可；子组件通过 props 接收 mode/setMode。
  */

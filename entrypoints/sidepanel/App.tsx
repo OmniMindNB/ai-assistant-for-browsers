@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useChat } from './store';
-import { nextThemeMode, useTheme } from '@/lib/theme';
+import { useTheme } from '@/lib/theme';
 import { useTranslation } from '@/lib/i18n';
 import { canRegenerateMessage, discardedCount, isEditableMessage } from '@/lib/chat/messages';
 import { hasBusyAttachments } from '@/lib/chat/attachments';
@@ -77,7 +77,8 @@ export default function App() {
     restoreTabConversation,
   } = useChat();
 
-  const { mode: themeMode, resolved: themeResolved, setMode: setThemeMode } = useTheme();
+  // 只为在侧边栏里加载并应用主题偏好；外观在设置页里改。
+  useTheme();
   const { t } = useTranslation();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
@@ -227,10 +228,6 @@ export default function App() {
     }
   }
 
-  function toggleTheme() {
-    setThemeMode(nextThemeMode(themeMode, themeResolved));
-  }
-
   function newChat() {
     clear();
     setHistoryOpen(false);
@@ -270,13 +267,11 @@ export default function App() {
       <div className="relative flex min-w-0 flex-1 flex-col">
           <WorkbenchHeader
             historyOpen={historyOpen}
-            themeResolved={themeResolved}
             runStatus={headerRunStatus}
             onStop={stop}
             onToggleHistory={toggleHistory}
             onNewChat={newChat}
             onOpenSettings={openSettings}
-            onToggleTheme={toggleTheme}
             historyTriggerRef={historyTriggerRef}
           />
 
