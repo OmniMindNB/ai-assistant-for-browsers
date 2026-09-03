@@ -16,6 +16,10 @@ export function ActivityStepList({ steps }: { steps: ActivityStep[] }) {
   // 在面板自己的 tab 上操作时 tabLabel 为空，不显示（跟逐行前缀同一条规则）。
   const currentTabLabel = steps.at(-1)?.tabLabel;
 
+  // 运行期给更多行数：写任务的工具预算是 24 步，128px 只露 5~6 行，用户想看清刚才改了什么
+  // 得在一个小滚动区里翻。已经全部结束的列表（含消息里的存档版）保持紧凑，不占版面。
+  const running = steps.some((step) => step.status === 'running');
+
   return (
     <div className="flex flex-col gap-1">
       {currentTabLabel && (
@@ -27,7 +31,7 @@ export function ActivityStepList({ steps }: { steps: ActivityStep[] }) {
         ref={containerRef}
         role="status"
         aria-live="polite"
-        className="flex max-h-32 flex-col gap-1 overflow-y-auto px-1 text-xs"
+        className={`flex flex-col gap-1 overflow-y-auto px-1 text-xs ${running ? 'max-h-48' : 'max-h-32'}`}
       >
         {steps.map((step, index) => (
           <ActivityStepRow
@@ -47,18 +51,20 @@ export function ActivityStepList({ steps }: { steps: ActivityStep[] }) {
 function ActivityStepRow({ step, showTabLabel }: { step: ActivityStep; showTabLabel: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const text = showTabLabel ? `《${step.tabLabel}》${step.description}` : step.description;
+  // 三档都必须过 WCAG AA 4.5:1（12px 正文按普通文本算），并且“进行中”要比“已完成”更重——
+  // 之前 done=neutral-400（亮色约 2.4:1）比 running=neutral-500 还淡，整条列表读起来在褪色。
   const colorClass =
     step.status === 'failed'
       ? 'text-red-700 dark:text-red-300'
       : step.status === 'running'
-        ? 'text-neutral-500 dark:text-neutral-400'
-        : 'text-neutral-400 dark:text-neutral-500';
+        ? 'font-medium text-indigo-700 dark:text-indigo-300'
+        : 'text-neutral-600 dark:text-neutral-400';
 
   return (
     <div className={`flex gap-2 ${expanded ? 'items-start' : 'items-center'} ${colorClass}`}>
       <span className="mt-0.5 flex h-3 w-3 shrink-0 items-center justify-center">
         {step.status === 'running' ? (
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" aria-hidden="true" />
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-indigo-500" aria-hidden="true" />
         ) : step.status === 'failed' ? (
           <IconClose className="h-3 w-3" />
         ) : (

@@ -39,6 +39,8 @@ const chatStore = {
     url: 'https://example.com/article',
   } as PageContextState,
   quotedSelection: null,
+  // 必须和 store.ts 的初值一致：非 0 会让 composer 以为收到了划词提问，在挂载时抢走焦点。
+  pendingFocusToken: 0,
   pendingAttachments: [],
   clearQuotedSelection: vi.fn(),
   addAttachmentFiles: vi.fn(),
@@ -149,6 +151,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   window.matchMedia = vi.fn().mockReturnValue({ addEventListener: vi.fn(), removeEventListener: vi.fn(), matches: false });
   HTMLElement.prototype.scrollTo = vi.fn();
+  // jsdom 不实现 scrollIntoView，确认卡挂载时会调它。
+  HTMLElement.prototype.scrollIntoView = vi.fn();
   (globalThis as any).browser.storage.onChanged = {
     addListener: vi.fn((listener) => { storageChangeListener = listener; }),
     removeListener: vi.fn(),
@@ -159,6 +163,7 @@ beforeEach(() => {
     busy: false,
     error: null,
     pendingConfirmation: null,
+    pendingFocusToken: 0,
     pendingAttachments: [],
     shortcuts: [],
     pageContext: {
@@ -883,14 +888,47 @@ describe('activity step list', () => {
     expect(failedText.closest('div')?.className).toContain('text-red-700');
   });
 
-  it('gives the done row distinct (muted, checkmark) styling', () => {
+  // 完成行是写操作事后唯一的追溯入口，正文字号 12px 必须过 AA 4.5:1：
+  // 亮色下 neutral-400 只有约 2.4:1，暗色下 neutral-500 只有约 4.2:1，两边都得抬一档。
+  it('gives the done row muted-but-AA-contrast styling in both themes', () => {
     render(
       <LocaleProvider>
         <ActivityStepList steps={steps} />
       </LocaleProvider>,
     );
-    const doneText = screen.getByText('Clicked "button.buy"');
-    expect(doneText.closest('div')?.className).toContain('text-neutral-400');
+    const className = screen.getByText('Clicked "button.buy"').closest('div')?.className ?? '';
+    expect(className).toContain('text-neutral-600');
+    expect(className).toContain('dark:text-neutral-400');
+    expect(className).not.toContain(' text-neutral-400');
+  });
+
+  // 进行中必须比已完成更醒目，而不是更淡——这是列表里唯一“现在在发生”的一行。
+  it('gives the running row accent styling stronger than the done row', () => {
+    render(
+      <LocaleProvider>
+        <ActivityStepList steps={steps} />
+      </LocaleProvider>,
+    );
+    const running = screen.getByText('Typing into "input.name"').closest('div')?.className ?? '';
+    expect(running).toContain('text-indigo-700');
+    expect(running).toContain('dark:text-indigo-300');
+    expect(running).toContain('font-medium');
+  });
+
+  it('gives a running list more height than an all-done (archived) one', () => {
+    const { rerender } = render(
+      <LocaleProvider>
+        <ActivityStepList steps={steps} />
+      </LocaleProvider>,
+    );
+    expect(screen.getByRole('status').className).toContain('max-h-48');
+
+    rerender(
+      <LocaleProvider>
+        <ActivityStepList steps={steps.map((step) => ({ ...step, status: 'done' as const }))} />
+      </LocaleProvider>,
+    );
+    expect(screen.getByRole('status').className).toContain('max-h-32');
   });
 
   it('renders a running step description verbatim', () => {
@@ -1143,6 +1181,76 @@ describe('activity step list', () => {
     expect(screen.queryByText('Task completed')).toBeNull();
     expect(screen.queryByText('Partially completed')).toBeNull();
     expect(screen.queryByText('Task not completed')).toBeNull();
+  });
+});
+
+// 确认卡是全流程唯一真正停下来等人的交互，却渲染在滚动流里，很可能落在视口外。
+// 它必须自己把用户带过来（滚动 + 焦点 + 可播报的角色），否则表现出来就是「agent 卡住了」。
+describe('confirmation card', () => {
+  const pendingConfirmation = {
+    toolCallId: 'call-1',
+    toolName: 'browser_click',
+    summary: 'AI wants to submit the login form.',
+  };
+
+  it('exposes itself as an alertdialog labelled by its title and summary', () => {
+    (chatStore as any).pendingConfirmation = pendingConfirmation;
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog).toHaveAccessibleName('🔒 Confirm form submission');
+    expect(dialog).toHaveAccessibleDescription('AI wants to submit the login form.');
+  });
+
+  it('scrolls itself into view and takes focus when it appears', () => {
+    (chatStore as any).pendingConfirmation = pendingConfirmation;
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog.scrollIntoView).toHaveBeenCalled();
+    // 焦点落在卡片本身而不是「确认提交」按钮上：读屏能读到完整标题+摘要，
+    // 且用户随手一个回车不会直接把表单发出去。
+    expect(dialog).toHaveFocus();
+    expect(dialog).toHaveAttribute('tabindex', '-1');
+  });
+
+  it('denies on Escape', async () => {
+    const user = userEvent.setup();
+    (chatStore as any).pendingConfirmation = pendingConfirmation;
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    await user.keyboard('{Escape}');
+    expect(chatStore.respondToConfirmation).toHaveBeenCalledWith(false);
+  });
+
+  // 提交表单不可撤销，不该被画成一个绿色的「安全放行」按钮。
+  it('does not style the irreversible approval as a safe/go action', () => {
+    (chatStore as any).pendingConfirmation = pendingConfirmation;
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    const approve = screen.getByRole('button', { name: 'Submit form' });
+    const deny = screen.getByRole('button', { name: 'Deny' });
+    expect(approve.className).not.toContain('emerald');
+    expect(approve.className).toContain('amber');
+    // 两颗按钮同权重：拒绝不是一个需要费劲才找得到的次要选项。
+    expect(deny.className).toContain('px-3');
+    expect(approve.className).toContain('px-3');
   });
 });
 

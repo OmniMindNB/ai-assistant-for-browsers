@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useChat } from './store';
 import { nextThemeMode, useTheme } from '@/lib/theme';
 import { useTranslation } from '@/lib/i18n';
@@ -636,6 +636,11 @@ function TypingDots() {
   );
 }
 
+// 全流程唯一真正阻塞、等人做决定的交互，却和普通消息一样渲染在滚动流里——长会话下它
+// 大概率落在视口外，用户只会觉得「agent 卡住了」。所以它必须自己把人带过来：
+// 滚动到可见 + 抢焦点 + alertdialog 角色（读屏会主动播报）。
+// 注意不加 aria-modal：面板其余部分（输入框、历史）此时仍然可用，我们也没有做焦点陷阱，
+// 谎报 modal 会让读屏用户以为卡片之外的内容都不存在。
 function ConfirmationCard({
   confirmation,
   onApprove,
@@ -646,32 +651,66 @@ function ConfirmationCard({
   onDeny: () => void;
 }) {
   const { t } = useTranslation();
+  const cardRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  const summaryId = useId();
+
+  // 依赖 toolCallId 而不是只跑一次：同一轮里可能连着来第二个待确认的提交
+  // （confirm-gate 逐次询问），换了一张卡就要重新把人带过来。
+  useEffect(() => {
+    const card = cardRef.current;
+    if (!card) return;
+    // jsdom 及部分嵌入环境没有实现 scrollIntoView。
+    card.scrollIntoView?.({ block: 'nearest' });
+    // 焦点落在卡片本身而不是「确认提交」按钮上：读屏能读到完整标题+摘要，
+    // 而且用户随手一个回车不会直接把表单发出去。
+    card.focus();
+  }, [confirmation.toolCallId]);
+
   return (
-    <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-900/60 dark:bg-amber-950/30">
-      <div className="mb-2 flex items-center gap-2 font-medium text-amber-900 dark:text-amber-200">
+    <div
+      ref={cardRef}
+      role="alertdialog"
+      aria-labelledby={titleId}
+      aria-describedby={summaryId}
+      tabIndex={-1}
+      onKeyDown={(event) => {
+        // dialog 的常规约定：Esc 取消。这里的“取消”是拒绝提交，也就是安全的那一侧。
+        if (event.key === 'Escape') {
+          event.stopPropagation();
+          onDeny();
+        }
+      }}
+      className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:border-amber-900/60 dark:bg-amber-950/30"
+    >
+      <div id={titleId} className="mb-2 flex items-center gap-2 font-medium text-amber-900 dark:text-amber-200">
         {t('confirm.title')}
       </div>
-      <p className="mb-2 whitespace-pre-line text-amber-900/90 dark:text-amber-200/90">{confirmation.summary}</p>
+      <p id={summaryId} className="mb-2 whitespace-pre-line text-amber-900/90 dark:text-amber-200/90">
+        {confirmation.summary}
+      </p>
       {confirmation.codePreview && (
         <pre className="mb-2 max-h-40 overflow-auto rounded-lg bg-neutral-900/90 p-2 text-[11px] text-neutral-100">
           {confirmation.codePreview}
         </pre>
       )}
+      {/* 提交表单不可撤销，不能画成绿色的「安全放行」。改用与卡片同源的琥珀色（警示语义），
+          并让「拒绝」保持同等尺寸和实心描边——两个选项等重，而不是一主一次。 */}
       <div className="flex gap-2">
         <button
           onClick={onApprove}
-          className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-700"
         >
           {t('confirm.approve')}
         </button>
         <button
           onClick={onDeny}
-          className="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+          className="rounded-lg border border-neutral-400 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-700 dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
         >
           {t('confirm.deny')}
         </button>
       </div>
-      <p className="mt-2 text-[11px] text-amber-800/70 dark:text-amber-300/60">
+      <p className="mt-2 text-[11px] text-amber-800 dark:text-amber-300/80">
         {t('confirm.approveHint')}
       </p>
     </div>
