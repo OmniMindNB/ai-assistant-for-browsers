@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from '@/lib/i18n';
-import { IconCheck, IconClose } from '../icons';
+import { IconAlertTriangle, IconCheck, IconClose } from '../icons';
 import type { ActivityStep } from '../store';
 
 export function ActivityStepList({ steps }: { steps: ActivityStep[] }) {
   const { t } = useTranslation();
-  const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLUListElement>(null);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -27,11 +27,13 @@ export function ActivityStepList({ steps }: { steps: ActivityStep[] }) {
           {t('agentActivity.currentTab', { target: currentTabLabel })}
         </div>
       )}
-      <div
+      {/* 这里**不是** live region。曾经挂着 role="status" aria-live="polite"，但每新增一步
+          整个列表都会重排，读屏会把大段内容反复重播。现在由 header 的常驻状态行承担播报——
+          一句、经过节流、说的正是"此刻在做什么"；这份明细留给视觉阅读和事后回看。 */}
+      <ul
         ref={containerRef}
-        role="status"
-        aria-live="polite"
-        className={`flex flex-col gap-1 overflow-y-auto px-1 text-xs ${running ? 'max-h-48' : 'max-h-32'}`}
+        aria-label={t('agentActivity.stepsLabel')}
+        className={`flex list-none flex-col gap-1 overflow-y-auto px-1 text-xs ${running ? 'max-h-48' : 'max-h-32'}`}
       >
         {steps.map((step, index) => (
           <ActivityStepRow
@@ -40,7 +42,7 @@ export function ActivityStepList({ steps }: { steps: ActivityStep[] }) {
             showTabLabel={step.tabLabel !== undefined && step.tabLabel !== steps[index - 1]?.tabLabel}
           />
         ))}
-      </div>
+      </ul>
     </div>
   );
 }
@@ -49,8 +51,13 @@ export function ActivityStepList({ steps }: { steps: ActivityStep[] }) {
 // 看到写操作具体做了什么的入口（auto_allow 的写工具没有确认卡也没有撤销，是有意为之的
 // 产品决定，见 [[decision_write_tools_no_confirm]]），所以不能只靠“精确悬停某一行”才能看全。
 function ActivityStepRow({ step, showTabLabel }: { step: ActivityStep; showTabLabel: boolean }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
-  const text = showTabLabel ? `《${step.tabLabel}》${step.description}` : step.description;
+  const labelled = showTabLabel ? `《${step.tabLabel}》${step.description}` : step.description;
+  // 重试合并后的行要说清是第几次：只显示合并前的最后一次会让用户以为它只试了一次就放弃。
+  const text = step.attempt && step.attempt > 1
+    ? `${labelled}（${t('agentActivity.attempt', { count: String(step.attempt) })}）`
+    : labelled;
   // 三档都必须过 WCAG AA 4.5:1（12px 正文按普通文本算），并且“进行中”要比“已完成”更重——
   // 之前 done=neutral-400（亮色约 2.4:1）比 running=neutral-500 还淡，整条列表读起来在褪色。
   const colorClass =
@@ -58,15 +65,20 @@ function ActivityStepRow({ step, showTabLabel }: { step: ActivityStep; showTabLa
       ? 'text-red-700 dark:text-red-300'
       : step.status === 'running'
         ? 'font-medium text-indigo-700 dark:text-indigo-300'
-        : 'text-neutral-600 dark:text-neutral-400';
+        : step.status === 'notice'
+          ? 'font-medium text-amber-700 dark:text-amber-300'
+          : 'text-neutral-600 dark:text-neutral-400';
 
   return (
-    <div className={`flex gap-2 ${expanded ? 'items-start' : 'items-center'} ${colorClass}`}>
+    <li className={`flex gap-2 ${expanded ? 'items-start' : 'items-center'} ${colorClass}`}>
       <span className="mt-0.5 flex h-3 w-3 shrink-0 items-center justify-center">
         {step.status === 'running' ? (
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-indigo-500" aria-hidden="true" />
         ) : step.status === 'failed' ? (
           <IconClose className="h-3 w-3" />
+        ) : step.status === 'notice' ? (
+          // 流程提示不是一次工具调用，画 ✓ 会读成"这件事成功了"。
+          <IconAlertTriangle className="h-3 w-3" />
         ) : (
           <IconCheck className="h-3 w-3" />
         )}
@@ -82,6 +94,6 @@ function ActivityStepRow({ step, showTabLabel }: { step: ActivityStep; showTabLa
       >
         {text}
       </button>
-    </div>
+    </li>
   );
 }

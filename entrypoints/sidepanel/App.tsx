@@ -237,6 +237,16 @@ export default function App() {
 
   const hasRunningActivityStep = activitySteps.some((step) => step.status === 'running');
 
+  // header 常驻状态：优先说正在做的那一步，没有工具在跑（例如还在等首个 token）就说"思考中"。
+  // 不用 findLast：目标环境未必有，手写倒序查一次更省事也更明确。
+  const runningStep = (() => {
+    for (let i = activitySteps.length - 1; i >= 0; i -= 1) {
+      if (activitySteps[i].status === 'running') return activitySteps[i];
+    }
+    return undefined;
+  })();
+  const headerRunStatus = busy ? (runningStep?.description ?? t('chat.headerThinking')) : null;
+
   return (
     <div className="flex h-screen overflow-hidden bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
       <HistoryDrawer
@@ -254,6 +264,8 @@ export default function App() {
           <WorkbenchHeader
             historyOpen={historyOpen}
             themeResolved={themeResolved}
+            runStatus={headerRunStatus}
+            onStop={stop}
             onToggleHistory={toggleHistory}
             onNewChat={newChat}
             onOpenSettings={openSettings}

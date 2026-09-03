@@ -87,6 +87,11 @@ export interface BrowserAgentOptions {
    * 省略时不打断（接管提示是体贴，不是安全边界，见 takeover-gate.ts）。
    */
   onTakeover?: TakeoverPromptFn;
+  /**
+   * 工具调用阶段结束、进入唯一一次收尾轮时调用一次。用于向用户交代"为什么它突然不再操作了"
+   * ——预算耗尽或连续被阻断，而不是它自己放弃了。
+   */
+  onToolPhaseEnd?: (reason: 'budget_exhausted' | 'repeatedly_blocked') => void;
   onAskUser?: (toolCallId: string, question: string, signal?: AbortSignal) => Promise<string>;
   /** report_task_outcome 工具被调用时转发给外层，用于把成败信号落到对应的 assistant 消息上。 */
   onTaskOutcome?: (outcome: TaskOutcome) => void;
@@ -323,6 +328,9 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
     prepareNextTurnWithContext: async (context) => {
       const budgetExhausted = policy.exhausted;
       if (policy.prepareFinalResponse()) {
+        // 这一步此前对用户完全不可见：工具被摘掉、模型突然改口给结论，界面上没有任何交代，
+        // 看起来像是它自己放弃了。告诉外层，让步骤列表末尾留一条明确的说明。
+        options.onToolPhaseEnd?.(budgetExhausted ? 'budget_exhausted' : 'repeatedly_blocked');
         // 这是预算耗尽/连续被阻断的运行唯一一次收尾轮。如果写工具跑过却还没汇报结果，
         // 必须在这一轮把 report_task_outcome 递回去——否则最需要 failure 徽标的运行
         // 反而永远拿不到徽标（ref: 最终审查 Important）。判断条件与下面 else if 分支

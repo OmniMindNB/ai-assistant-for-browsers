@@ -9,6 +9,7 @@ import { loadTabSession, saveTabSession } from './tab-session-storage';
 import { summarizeToolCallForConfirmation } from './confirm-summary';
 import { describeToolActivity } from './activity-description';
 import { upsertActivityStep, finishActivityStep, type ActivityStep } from './activity-steps';
+import { toolSignature } from './tool-policy';
 import { replaceConversationMessages } from '@/lib/db';
 import { conversationTitle, toMessageRecords, type ChatMessage } from '@/lib/chat/messages';
 import { t } from '@/lib/i18n';
@@ -373,6 +374,14 @@ export async function startRun(request: StartRunRequest): Promise<void> {
       void sendAgentOverlay(payload, targetTabId);
     },
     onSessionChange: (updated) => { void saveTabSession(updated).catch(() => undefined); },
+    onToolPhaseEnd: (reason) => {
+      state.activitySteps = upsertActivityStep(state.activitySteps, {
+        id: 'tool-phase-end',
+        description: t(reason === 'budget_exhausted' ? 'agentActivity.budgetExhausted' : 'agentActivity.repeatedlyBlocked'),
+        status: 'notice',
+      });
+      pushAndPersist(state);
+    },
     onTaskOutcome: (outcome) => { state.taskOutcome = outcome; },
     onContextTruncated: () => { state.contextTruncated = true; },
   });
@@ -399,6 +408,8 @@ export async function startRun(request: StartRunRequest): Promise<void> {
         description: describeToolActivity(event.toolName, event.args, 'running'),
         status: 'running',
         tabLabel: currentTabLabel(state),
+        // 带上签名，让 upsertActivityStep 能把"同一个调用的又一次尝试"并成一行。
+        signature: toolSignature(event.toolName, event.args),
       });
       pushAndPersist(state);
     }
@@ -410,6 +421,7 @@ export async function startRun(request: StartRunRequest): Promise<void> {
         description: describeToolActivity(event.toolName, event.args, 'running'),
         status: 'running',
         tabLabel: currentTabLabel(state),
+        signature: toolSignature(event.toolName, event.args),
       });
       pushAndPersist(state);
     }

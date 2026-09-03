@@ -783,6 +783,40 @@ describe('用户接管暂停', () => {
     expect(trace?.status).toBe('failed');
   });
 
+  // 工具阶段结束此前对用户完全不可见：工具被摘掉、模型突然改口给结论，看起来像它自己放弃了。
+  it('预算耗尽进入收尾轮时，在步骤列表末尾留一条 notice', async () => {
+    mocks.createBrowserAgent.mockReturnValue(makeFakeAgent([]));
+    const posted: any[] = [];
+    attachPort(84, { postMessage: (message) => posted.push(message) });
+
+    await startRun(makeRequest({ tabId: 84 }));
+    const options = (mocks.createBrowserAgent.mock.calls.at(-1) as unknown[])[0] as {
+      onToolPhaseEnd: (reason: 'budget_exhausted' | 'repeatedly_blocked') => void;
+    };
+    options.onToolPhaseEnd('budget_exhausted');
+
+    const steps = posted.map((message) => message?.activitySteps).filter(Boolean).at(-1) ?? [];
+    const notice = steps.find((step: any) => step.id === 'tool-phase-end');
+    // notice 单独一档：拿 done 冒充会在旁边画一个 ✓，读起来像"这件事成功了"。
+    expect(notice?.status).toBe('notice');
+    expect(notice?.description).toContain('Step limit reached');
+  });
+
+  it('连续被阻断和预算耗尽给的是不同说法', async () => {
+    mocks.createBrowserAgent.mockReturnValue(makeFakeAgent([]));
+    const posted: any[] = [];
+    attachPort(85, { postMessage: (message) => posted.push(message) });
+
+    await startRun(makeRequest({ tabId: 85 }));
+    const options = (mocks.createBrowserAgent.mock.calls.at(-1) as unknown[])[0] as {
+      onToolPhaseEnd: (reason: 'budget_exhausted' | 'repeatedly_blocked') => void;
+    };
+    options.onToolPhaseEnd('repeatedly_blocked');
+
+    const steps = posted.map((message) => message?.activitySteps).filter(Boolean).at(-1) ?? [];
+    expect(steps.find((step: any) => step.id === 'tool-phase-end')?.description).toContain('could not run');
+  });
+
   // 上一轮的接管记录不能带进新一轮，否则新任务第一个写操作就会莫名其妙停下来问。
   it('开新一轮时清掉遗留的接管记录', async () => {
     mocks.createBrowserAgent.mockReturnValue(makeFakeAgent([]));

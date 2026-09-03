@@ -43,7 +43,12 @@ function canonicalize(value: unknown): unknown {
   return value;
 }
 
-function toolSignature(toolName: string, args: unknown): string {
+/**
+ * "同一个调用"的判据。这里同时是两处的单一事实来源：本文件的连续失败拦截，
+ * 以及 activity-steps.ts 的重试合并——两者对"算不算同一次尝试"必须给出一致的答案，
+ * 否则会出现 UI 说第 2 次尝试、策略却当成两个不同调用（或反过来）。
+ */
+export function toolSignature(toolName: string, args: unknown): string {
   return `${toolName}:${JSON.stringify(canonicalize(args))}`;
 }
 

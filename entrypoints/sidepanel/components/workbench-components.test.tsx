@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConversationRecord } from '@/lib/db';
@@ -9,6 +9,7 @@ import { en } from '@/lib/i18n/locales/en';
 import { zh } from '@/lib/i18n/locales/zh';
 import type { ProviderConfig } from '@/lib/settings';
 import type { ResolvedShortcutCommand } from '@/lib/workbench/presentation';
+import { STATUS_MIN_INTERVAL_MS } from '@/lib/workbench/status-throttle';
 import type { ActivityStep, PageContextState } from '../store';
 import App from '../App';
 import MessageEditor from '../MessageEditor';
@@ -872,7 +873,8 @@ describe('activity step list', () => {
         <ActivityStepList steps={steps} />
       </LocaleProvider>,
     );
-    expect(screen.getByRole('status')).toBeVisible();
+    expect(screen.getByRole('list', { name: 'Execution steps' })).toBeVisible();
+    expect(screen.getAllByRole('listitem')).toHaveLength(3);
     expect(screen.getByText('Clicked "button.buy"')).toBeVisible();
     expect(screen.getByText('Failed to click "button.confirm"')).toBeVisible();
     expect(screen.getByText('Typing into "input.name"')).toBeVisible();
@@ -885,7 +887,7 @@ describe('activity step list', () => {
       </LocaleProvider>,
     );
     const failedText = screen.getByText('Failed to click "button.confirm"');
-    expect(failedText.closest('div')?.className).toContain('text-red-700');
+    expect(failedText.closest('li')?.className).toContain('text-red-700');
   });
 
   // 完成行是写操作事后唯一的追溯入口，正文字号 12px 必须过 AA 4.5:1：
@@ -896,7 +898,7 @@ describe('activity step list', () => {
         <ActivityStepList steps={steps} />
       </LocaleProvider>,
     );
-    const className = screen.getByText('Clicked "button.buy"').closest('div')?.className ?? '';
+    const className = screen.getByText('Clicked "button.buy"').closest('li')?.className ?? '';
     expect(className).toContain('text-neutral-600');
     expect(className).toContain('dark:text-neutral-400');
     expect(className).not.toContain(' text-neutral-400');
@@ -909,7 +911,7 @@ describe('activity step list', () => {
         <ActivityStepList steps={steps} />
       </LocaleProvider>,
     );
-    const running = screen.getByText('Typing into "input.name"').closest('div')?.className ?? '';
+    const running = screen.getByText('Typing into "input.name"').closest('li')?.className ?? '';
     expect(running).toContain('text-indigo-700');
     expect(running).toContain('dark:text-indigo-300');
     expect(running).toContain('font-medium');
@@ -921,14 +923,60 @@ describe('activity step list', () => {
         <ActivityStepList steps={steps} />
       </LocaleProvider>,
     );
-    expect(screen.getByRole('status').className).toContain('max-h-48');
+    expect(screen.getByRole('list').className).toContain('max-h-48');
 
     rerender(
       <LocaleProvider>
         <ActivityStepList steps={steps.map((step) => ({ ...step, status: 'done' as const }))} />
       </LocaleProvider>,
     );
-    expect(screen.getByRole('status').className).toContain('max-h-32');
+    expect(screen.getByRole('list').className).toContain('max-h-32');
+  });
+
+  // 每新增一步整个列表都会重排，挂 aria-live 会让读屏反复重播大段内容。
+  // 播报改由 header 那条经过节流的常驻状态行承担，这里只保留视觉与事后回看。
+  it('不再是 live region，避免与 header 状态行重复播报', () => {
+    render(
+      <LocaleProvider>
+        <ActivityStepList steps={steps} />
+      </LocaleProvider>,
+    );
+    const list = screen.getByRole('list');
+    expect(list).not.toHaveAttribute('aria-live');
+    expect(list).not.toHaveAttribute('role', 'status');
+  });
+
+  it('把合并后的重试次数显示出来', () => {
+    render(
+      <LocaleProvider>
+        <ActivityStepList
+          steps={[{ id: 'call-3', description: 'Failed to click "#pay"', status: 'failed', attempt: 3 }]}
+        />
+      </LocaleProvider>,
+    );
+    expect(screen.getByText('Failed to click "#pay"（attempt 3）')).toBeVisible();
+  });
+
+  it('第一次尝试不显示次数后缀', () => {
+    render(
+      <LocaleProvider>
+        <ActivityStepList steps={[{ id: 'call-1', description: 'Clicking "#pay"', status: 'running' }]} />
+      </LocaleProvider>,
+    );
+    expect(screen.getByText('Clicking "#pay"')).toBeVisible();
+  });
+
+  // notice 不是一次工具调用，拿 done 的 ✓ 冒充会读成"这件事成功了"。
+  it('notice 步骤用告警样式而不是完成样式', () => {
+    render(
+      <LocaleProvider>
+        <ActivityStepList
+          steps={[{ id: 'tool-phase-end', description: 'Step limit reached', status: 'notice' }]}
+        />
+      </LocaleProvider>,
+    );
+    const row = screen.getByText('Step limit reached').closest('li');
+    expect(row?.className).toContain('text-amber-700');
   });
 
   it('renders a running step description verbatim', () => {
@@ -1537,6 +1585,81 @@ describe('workbench history', () => {
 
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     expect(trigger).toHaveFocus();
+  });
+
+  // 用户往上翻历史时，页面遮罩看不见、消息流底部的步骤条被滚走，此前 header 里
+  // 没有任何东西能告诉他"还在跑"，停止按钮也只在最底下的输入区里。
+  describe('运行状态行', () => {
+    function renderHeader(props: Partial<React.ComponentProps<typeof WorkbenchHeader>> = {}) {
+      return render(
+        <LocaleProvider>
+          <WorkbenchHeader
+            historyOpen={false}
+            themeResolved="light"
+            onToggleHistory={vi.fn()}
+            onNewChat={vi.fn()}
+            onOpenSettings={vi.fn()}
+            onToggleTheme={vi.fn()}
+            {...props}
+          />
+        </LocaleProvider>,
+      );
+    }
+
+    it('空闲时显示品牌名，没有状态行也没有停止按钮', () => {
+      renderHeader();
+      expect(screen.getByText('Runi')).toBeVisible();
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Stop generating' })).not.toBeInTheDocument();
+    });
+
+    it('运行时状态行取代品牌名，并给出停止按钮', () => {
+      renderHeader({ runStatus: 'Clicking "#pay"', onStop: vi.fn() });
+      expect(screen.getByRole('status')).toHaveTextContent('Clicking "#pay"');
+      expect(screen.queryByText('Runi')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Stop generating' })).toBeVisible();
+    });
+
+    it('停止按钮转发 onStop', async () => {
+      const user = userEvent.setup();
+      const onStop = vi.fn();
+      renderHeader({ runStatus: 'Reading page', onStop });
+
+      await user.click(screen.getByRole('button', { name: 'Stop generating' }));
+      expect(onStop).toHaveBeenCalledOnce();
+    });
+
+    // 状态文案跟着工具调用走，一次调用至少两次变化；不节流的话快工具连成一串时会一路抖动。
+    it('最小驻留时间内不换字，之后补上最新的一句', async () => {
+      vi.useFakeTimers();
+      try {
+        const { rerender } = renderHeader({ runStatus: '第一步' });
+        expect(screen.getByRole('status')).toHaveTextContent('第一步');
+
+        rerender(
+          <LocaleProvider>
+            <WorkbenchHeader
+              historyOpen={false}
+              themeResolved="light"
+              runStatus="第二步"
+              onToggleHistory={vi.fn()}
+              onNewChat={vi.fn()}
+              onOpenSettings={vi.fn()}
+              onToggleTheme={vi.fn()}
+            />
+          </LocaleProvider>,
+        );
+        expect(screen.getByRole('status')).toHaveTextContent('第一步');
+
+        // 定时器回调里的 setState 发生在 React 之外，必须包进 act 才会被冲刷到 DOM。
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(STATUS_MIN_INTERVAL_MS);
+        });
+        expect(screen.getByRole('status')).toHaveTextContent('第二步');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   it('keeps Tab and Shift+Tab focus inside the open drawer', async () => {
