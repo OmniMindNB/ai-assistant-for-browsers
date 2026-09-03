@@ -52,6 +52,14 @@ export function summarizeToolCallForConfirmation(
         }
         return { summary: `AI 想要点击 "${str('selector')}"。` };
       }
+      case 'browser_press_key': {
+        const key = str('key');
+        const fieldId = str('fieldId');
+        const target = fieldId ? `「${sanitizePageText(str('label') || fieldId, 40)}」` : `"${str('selector')}"`;
+        const formAction = str('formAction');
+        const submitTail = formAction ? `，这会提交表单到 ${sanitizePageText(formAction, 80)}` : '';
+        return { summary: `AI 想要在${target}上按下 ${key}${submitTail}。` };
+      }
       case 'browser_fill_form': {
         const rawFields = Array.isArray(record.fields) ? (record.fields as Record<string, unknown>[]) : [];
         const shown = rawFields.slice(0, MAX_CONFIRM_FIELDS).map((field) => {

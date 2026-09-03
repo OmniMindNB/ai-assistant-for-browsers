@@ -93,6 +93,35 @@ describe('summarizeToolCallForConfirmation', () => {
     expect(result.summary).toContain('f7');
   });
 
+  it('summarizes a fieldId-based press_key using the enriched label and key', () => {
+    const result = summarizeToolCallForConfirmation('browser_press_key', { fieldId: 'f7', key: 'Enter', label: '登录' });
+    expect(result.summary).toContain('登录');
+    expect(result.summary).toContain('Enter');
+    expect(result.summary).not.toContain('f7');
+  });
+
+  it('mentions the form action when a press_key submits a form', () => {
+    const result = summarizeToolCallForConfirmation('browser_press_key', {
+      fieldId: 'f7',
+      key: 'Enter',
+      label: '登录',
+      formAction: 'https://example.com/checkout',
+    });
+    expect(result.summary).toContain('提交');
+    expect(result.summary).toContain('example.com/checkout');
+  });
+
+  it('omits the submit tail for a press_key with no formAction (non-submitting key)', () => {
+    const result = summarizeToolCallForConfirmation('browser_press_key', { fieldId: 'f7', key: 'Tab', label: '登录' });
+    expect(result.summary).not.toContain('提交');
+  });
+
+  it('falls back to the selector when a press_key has no fieldId', () => {
+    const result = summarizeToolCallForConfirmation('browser_press_key', { selector: 'input.search', key: 'Escape' });
+    expect(result.summary).toContain('input.search');
+    expect(result.summary).toContain('Escape');
+  });
+
   it('summarizes type with the text being typed', () => {
     const result = summarizeToolCallForConfirmation('browser_type', { selector: 'input.name', text: 'Alice Smith' });
     expect(result.summary).toContain('input.name');

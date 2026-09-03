@@ -55,7 +55,7 @@ const MAX_TOOL_RESULT_CHARS = 30000;
  * 工具可能*隐式*触发的导航（链接点击、表单提交、回车提交），此前对模型完全不可见
  * （ref: docs/superpowers/specs/2026-08-31-page-agent-benchmark.md §3.2）。
  */
-const NAVIGATION_WATCH_TOOLS = new Set(['browser_click', 'browser_fill_form', 'browser_type']);
+const NAVIGATION_WATCH_TOOLS = new Set(['browser_click', 'browser_fill_form', 'browser_type', 'browser_press_key']);
 const POST_NAVIGATION_SETTLE_MS = 500;
 const IMPLEMENTATION_DOSSIER_TOOL = 'browser_inspect_page_implementation';
 const MAX_POST_DOSSIER_FOLLOW_UPS = 4;

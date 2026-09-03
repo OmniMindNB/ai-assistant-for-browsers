@@ -1177,6 +1177,8 @@ async function pressKey(payload: PressKeyPayload, tabId: number): Promise<PressK
   }
 
   let path: FormFieldPathStep[] | undefined;
+  let url: string | undefined;
+  let expect: { tag: string; type?: string; name?: string } | undefined;
   if (payload?.fieldId) {
     const table = await getFormFieldsForTab(tabId);
     const plan = planFieldClick(payload.fieldId, table);
@@ -1194,6 +1196,8 @@ async function pressKey(payload: PressKeyPayload, tabId: number): Promise<PressK
       };
     }
     path = plan.submit.path;
+    url = table?.url;
+    expect = plan.submit.expect;
   }
 
   // Enter 是否提交由这里决定，页面侧不自行判断：确认闸门已经在 beforeToolCall
@@ -1222,6 +1226,8 @@ async function pressKey(payload: PressKeyPayload, tabId: number): Promise<PressK
       useActiveElement: !path && !payload?.selector,
       descriptor: resolved.descriptor,
       submitOnEnter,
+      url,
+      expect,
     },
     pressKeyInPage,
   );
@@ -1232,6 +1238,7 @@ async function pressKey(payload: PressKeyPayload, tabId: number): Promise<PressK
     target: result.target,
     defaultPrevented: result.defaultPrevented,
     submitted: result.submitted,
+    fieldsTableStale: result.fieldsTableStale,
     newFields: result.status === 'ok' ? await collectNewFieldsAfterWrite(tabId) : undefined,
   };
 }

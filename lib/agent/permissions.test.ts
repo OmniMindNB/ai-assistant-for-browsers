@@ -252,4 +252,64 @@ describe('submit intent escalation', () => {
     expect((onConfirm.mock.calls[0][2] as any).label).toBe('登录');
     expect((args as any).label).toBeUndefined();
   });
+
+  // browser_press_key 的 Enter 能像 browser_click 一样触发隐式表单提交，SUBMIT_CAPABLE_TOOLS
+  // 里必须包含它——否则就是绕过「结构化检测到的提交每次都要确认」这条硬边界的后门
+  // （ref: 最终评审 finding 2）。这两个用例专门锁死这条membership，防止未来被误删而无测试报警。
+  it('escalates a press_key that submits a form to confirm_always', async () => {
+    const state = createConfirmGateState();
+    const onConfirm = vi.fn().mockResolvedValue(true);
+    state.decision = 'approved'; // 本轮早先已批准过一次写操作
+
+    const result = await beforeToolCallPermissionGate(
+      { toolCall: { id: 'call-1', name: 'browser_press_key' }, args: { key: 'Enter', fieldId: 'f1' } } as any,
+      {
+        gateState: state,
+        onConfirm,
+        targetTabId: 1,
+        resolveSubmitIntent: async () => ({ isSubmit: true, formAction: 'https://example.com/checkout', fieldCount: 12 }),
+      },
+    );
+
+    expect(result).toBeUndefined();
+    expect(onConfirm).toHaveBeenCalledTimes(1); // 尽管本轮已批准，仍然又问了一次
+  });
+
+  it('enriches a browser_press_key(fieldId) confirmation with the field label and formAction, without touching the model args', async () => {
+    const args = { fieldId: 'f7', key: 'Enter' };
+    const onConfirm = vi.fn().mockResolvedValue(true);
+
+    await beforeToolCallPermissionGate(
+      { toolCall: { id: 'call-1', name: 'browser_press_key' }, args } as any,
+      {
+        gateState: createConfirmGateState(),
+        onConfirm,
+        targetTabId: 1,
+        resolveSubmitIntent: async () => ({
+          isSubmit: true,
+          formAction: 'https://example.com/checkout',
+          fieldLabels: [{ fieldId: 'f7', label: '登录' }],
+        }),
+      },
+    );
+
+    expect((onConfirm.mock.calls[0][2] as any).label).toBe('登录');
+    expect((onConfirm.mock.calls[0][2] as any).formAction).toBe('https://example.com/checkout');
+    expect((args as any).label).toBeUndefined();
+    expect((args as any).formAction).toBeUndefined();
+  });
+
+  it('automatically allows a non-submitting press_key', async () => {
+    const state = createConfirmGateState();
+    state.decision = 'approved';
+    const onConfirm = vi.fn().mockResolvedValue(true);
+
+    const result = await beforeToolCallPermissionGate(
+      { toolCall: { id: 'call-2', name: 'browser_press_key' }, args: { key: 'Tab', fieldId: 'f1' } } as any,
+      { gateState: state, onConfirm, targetTabId: 1, resolveSubmitIntent: async () => ({ isSubmit: false }) },
+    );
+
+    expect(result).toBeUndefined();
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
 });

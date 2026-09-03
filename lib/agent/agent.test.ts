@@ -646,6 +646,24 @@ describe('隐式导航的 <sys> 观察通道', () => {
     expect(steer).toHaveBeenCalledTimes(1);
   });
 
+  // browser_press_key 的 Enter 可以像 browser_click 一样触发隐式表单提交，因此必须
+  // 同样纳入 NAVIGATION_WATCH_TOOLS（ref: 最终评审 finding 1）。
+  it('browser_press_key（回车提交）同样纳入隐式导航监听', async () => {
+    const steer = vi.fn();
+    const hooks = hooksWithSteer(steer);
+    await hooks.afterToolCall?.(
+      afterContext('browser_navigate', { url: 'https://example.com/a' }, false, { url: 'https://example.com/a' }),
+    );
+
+    sendMessageSpy.mockResolvedValueOnce({ ok: true, data: { url: 'https://example.com/pressed' } });
+    await hooks.afterToolCall?.(afterContext('browser_press_key', { fieldId: 'f1', key: 'Enter' }, false));
+    expect(steer).toHaveBeenCalledTimes(1);
+    expect(steer.mock.calls[0][0]).toMatchObject({
+      role: 'user',
+      content: expect.stringContaining('https://example.com/pressed'),
+    });
+  });
+
   it('工具执行失败时不查询 URL、也不产生观察消息', async () => {
     sendMessageSpy.mockClear();
     const steer = vi.fn();

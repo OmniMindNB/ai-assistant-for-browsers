@@ -954,6 +954,10 @@ export interface PressKeyInput {
   descriptor: KeyDescriptor;
   /** 由 background 依据探测 + 确认结果决定；页面侧不自行判断要不要提交。 */
   submitOnEnter: boolean;
+  /** 发放句柄时的页面 URL；仅 fieldId 路径（有 path 时）传入，与当前不符即认为句柄表过期。 */
+  url?: string;
+  /** fieldId 路径的结构指纹；仅 path 存在时传入，用于核对目标元素与发放句柄时是否一致。 */
+  expect?: { tag: string; type?: string; name?: string };
 }
 
 export interface PressKeyOutput {
@@ -962,6 +966,8 @@ export interface PressKeyOutput {
   target?: string;
   defaultPrevented: boolean;
   submitted: boolean;
+  /** URL 或结构指纹与句柄发放时不符——句柄表已过期。 */
+  fieldsTableStale?: boolean;
 }
 
 // ⚠️ 序列化注入，禁止引用模块作用域绑定（元素解析逻辑内联，同上）。
@@ -996,6 +1002,26 @@ export function pressKeyInPage(input: PressKeyInput): PressKeyOutput {
     };
   }
 
+  // fieldId 路径专用的过期/结构漂移校验（url/expect 只在有 path 时由 background 传入，
+  // selector/activeElement 路径这两个字段天然是 undefined，下面两处检查自然跳过）。
+  // 与 applyFormFill 的 url 早退 + matchesExpect 校验语义一致，但按本文件「序列化注入
+  // 函数之间不共享 helper」的约定内联实现，不导入/调用 applyFormFill 内部的 matchesExpect。
+  if (input.url && input.url !== location.href) {
+    return { status: 'not_found', defaultPrevented: false, submitted: false, fieldsTableStale: true };
+  }
+  if (input.expect) {
+    const actualTag = element.tagName.toLowerCase();
+    const actualType = element.getAttribute('type') || undefined;
+    const actualName = element.getAttribute('name') || undefined;
+    const mismatch =
+      actualTag !== input.expect.tag.toLowerCase() ||
+      (input.expect.type || undefined) !== actualType ||
+      (input.expect.name || undefined) !== actualName;
+    if (mismatch) {
+      return { status: 'not_found', defaultPrevented: false, submitted: false, fieldsTableStale: true };
+    }
+  }
+
   const d = input.descriptor;
   const init: KeyboardEventInit & { keyCode: number; which: number } = {
     key: d.key,
@@ -1028,7 +1054,24 @@ export function pressKeyInPage(input: PressKeyInput): PressKeyOutput {
   if (input.submitOnEnter && !defaultPrevented) {
     const owner = (element as HTMLInputElement).form ?? null;
     if (owner && typeof owner.requestSubmit === 'function') {
-      owner.requestSubmit();
+      // HTML 的隐式提交语义等同于「点击了表单的默认按钮」，服务端会收到该按钮的
+      // name/value 对；requestSubmit() 不传参就丢了这一对，与真实回车的行为不符
+      // （也与确认卡片上用户看到、批准的提交对象不符）。这里按文档序找第一个未禁用的
+      // 可提交成员，模拟浏览器自己的「默认按钮」判定。disabled 的必须跳过——
+      // HTMLFormElement.requestSubmit(submitter) 对禁用的 submitter 会抛 TypeError。
+      let submitter: HTMLButtonElement | HTMLInputElement | undefined;
+      for (const member of Array.from(owner.elements)) {
+        const tag = member.tagName.toLowerCase();
+        const type = (member.getAttribute('type') || '').toLowerCase();
+        const isSubmitButton = tag === 'button' && (type === '' || type === 'submit');
+        const isSubmitInput = tag === 'input' && (type === 'submit' || type === 'image');
+        if ((isSubmitButton || isSubmitInput) && !(member as HTMLButtonElement | HTMLInputElement).disabled) {
+          submitter = member as HTMLButtonElement | HTMLInputElement;
+          break;
+        }
+      }
+      if (submitter) owner.requestSubmit(submitter);
+      else owner.requestSubmit();
       submitted = true;
     }
   }
