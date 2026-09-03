@@ -5,6 +5,7 @@
 // 否则在页面里一律是 undefined。所有配置通过 input 参数传入。
 // 类型导入（import type）会被编译期擦除，不受此限制。
 import type { FormFieldPathStep, RawFormField, RawScrollableContainer } from './form-schema';
+import type { KeyDescriptor } from './key-dispatch';
 
 export interface CollectFormInput {
   selector?: string;
@@ -860,6 +861,184 @@ export function probeClickTarget(input: ProbeClickInput): ProbeClickOutput {
     formAction: owner?.getAttribute('action') ? owner.action : undefined,
     textContent: (element.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60),
     fieldCount: owner ? owner.elements.length : undefined,
+  };
+}
+
+export interface ProbeKeyInput {
+  path?: FormFieldPathStep[];
+  selector?: string;
+  index?: number;
+  /** 不给 path/selector 时，探测 document.activeElement。 */
+  useActiveElement?: boolean;
+}
+
+export interface ProbeKeyOutput {
+  found: boolean;
+  tag: string;
+  type?: string;
+  hasFormOwner: boolean;
+  formAction?: string;
+  fieldCount?: number;
+  hasSubmitButton: boolean;
+  textLikeFieldCount: number;
+}
+
+// ⚠️ 序列化注入，禁止引用模块作用域绑定：元素解析与文本类 type 集合都在函数体内
+// 内联一份，与 probeClickTarget / scrollContainerInPage 同一既有约定。
+export function probeKeyTarget(input: ProbeKeyInput): ProbeKeyOutput {
+  const empty: ProbeKeyOutput = {
+    found: false, tag: '', hasFormOwner: false, hasSubmitButton: false, textLikeFieldCount: 0,
+  };
+
+  let element: Element | null = null;
+  if (input.path) {
+    let scope: ParentNode | null = document;
+    for (const step of input.path) {
+      if (step.kind === 'shadow') {
+        const shadowRoot: ShadowRoot | null = (element as HTMLElement | null)?.shadowRoot ?? null;
+        if (!shadowRoot) { element = null; break; }
+        scope = shadowRoot;
+        continue;
+      }
+      if (!scope) { element = null; break; }
+      element = Array.from(scope.querySelectorAll(`:scope > ${step.selector}`))[step.index] ?? null;
+      if (!element) break;
+      scope = element;
+    }
+  } else if (input.selector) {
+    element = Array.from(document.querySelectorAll(input.selector))[input.index ?? 0] ?? null;
+  } else if (input.useActiveElement) {
+    const active = document.activeElement;
+    element = active && active !== document.body ? active : null;
+  }
+
+  if (!element) return empty;
+
+  const textLike = [
+    '', 'text', 'search', 'url', 'tel', 'email', 'password',
+    'number', 'date', 'month', 'week', 'time', 'datetime-local',
+  ];
+  const owner = (element as HTMLInputElement).form ?? null;
+
+  let hasSubmitButton = false;
+  let textLikeFieldCount = 0;
+  if (owner) {
+    for (const member of Array.from(owner.elements)) {
+      const tag = member.tagName.toLowerCase();
+      const type = (member.getAttribute('type') || '').toLowerCase();
+      if ((tag === 'button' && (type === '' || type === 'submit')) ||
+          (tag === 'input' && (type === 'submit' || type === 'image'))) {
+        hasSubmitButton = true;
+      }
+      if (tag === 'input' && textLike.indexOf(type) >= 0) textLikeFieldCount += 1;
+    }
+  }
+
+  return {
+    found: true,
+    tag: element.tagName.toLowerCase(),
+    type: element.getAttribute('type') || undefined,
+    hasFormOwner: owner != null,
+    formAction: owner?.getAttribute('action') ? owner.action : undefined,
+    fieldCount: owner ? owner.elements.length : undefined,
+    hasSubmitButton,
+    textLikeFieldCount,
+  };
+}
+
+export interface PressKeyInput {
+  path?: FormFieldPathStep[];
+  selector?: string;
+  index?: number;
+  useActiveElement?: boolean;
+  descriptor: KeyDescriptor;
+  /** 由 background 依据探测 + 确认结果决定；页面侧不自行判断要不要提交。 */
+  submitOnEnter: boolean;
+}
+
+export interface PressKeyOutput {
+  status: 'ok' | 'not_found' | 'no_focus';
+  /** 目标元素的简短描述，供模型确认自己按在了哪里。 */
+  target?: string;
+  defaultPrevented: boolean;
+  submitted: boolean;
+}
+
+// ⚠️ 序列化注入，禁止引用模块作用域绑定（元素解析逻辑内联，同上）。
+export function pressKeyInPage(input: PressKeyInput): PressKeyOutput {
+  let element: Element | null = null;
+  if (input.path) {
+    let scope: ParentNode | null = document;
+    for (const step of input.path) {
+      if (step.kind === 'shadow') {
+        const shadowRoot: ShadowRoot | null = (element as HTMLElement | null)?.shadowRoot ?? null;
+        if (!shadowRoot) { element = null; break; }
+        scope = shadowRoot;
+        continue;
+      }
+      if (!scope) { element = null; break; }
+      element = Array.from(scope.querySelectorAll(`:scope > ${step.selector}`))[step.index] ?? null;
+      if (!element) break;
+      scope = element;
+    }
+  } else if (input.selector) {
+    element = Array.from(document.querySelectorAll(input.selector))[input.index ?? 0] ?? null;
+  } else if (input.useActiveElement) {
+    const active = document.activeElement;
+    element = active && active !== document.body ? active : null;
+  }
+
+  if (!element) {
+    return {
+      status: input.useActiveElement && !input.selector && !input.path ? 'no_focus' : 'not_found',
+      defaultPrevented: false,
+      submitted: false,
+    };
+  }
+
+  const d = input.descriptor;
+  const init: KeyboardEventInit & { keyCode: number; which: number } = {
+    key: d.key,
+    code: d.code,
+    keyCode: d.keyCode,
+    which: d.keyCode,
+    ctrlKey: d.ctrlKey,
+    shiftKey: d.shiftKey,
+    altKey: d.altKey,
+    metaKey: d.metaKey,
+    bubbles: true,
+    cancelable: true,
+    composed: true,
+  };
+
+  // 派发前先聚焦：很多页面把 keydown 监听挂在元素上，但只有聚焦后才认为该
+  // 元素处于"正在输入"状态。已经是焦点时 focus() 无副作用。
+  if (typeof (element as HTMLElement).focus === 'function') (element as HTMLElement).focus();
+
+  const keydown = new KeyboardEvent('keydown', init);
+  const notPrevented = element.dispatchEvent(keydown);
+  const defaultPrevented = !notPrevented;
+
+  if (d.emitsKeypress) element.dispatchEvent(new KeyboardEvent('keypress', init));
+  element.dispatchEvent(new KeyboardEvent('keyup', init));
+
+  let submitted = false;
+  // 页面自己 preventDefault 了，说明它要自行处理这次 Enter；再强行提交就是
+  // 覆盖页面意图，可能造成双重提交。
+  if (input.submitOnEnter && !defaultPrevented) {
+    const owner = (element as HTMLInputElement).form ?? null;
+    if (owner && typeof owner.requestSubmit === 'function') {
+      owner.requestSubmit();
+      submitted = true;
+    }
+  }
+
+  const id = (element as HTMLElement).id ? `#${(element as HTMLElement).id}` : '';
+  return {
+    status: 'ok',
+    target: `${element.tagName.toLowerCase()}${id}`,
+    defaultPrevented,
+    submitted,
   };
 }
 
