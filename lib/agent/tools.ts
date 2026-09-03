@@ -1,10 +1,11 @@
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import { Type } from '@earendil-works/pi-ai';
-import { describeClickResult, describeNavigateResult, describeNewFields, describeScrollResult } from './action-result-text';
+import { describeClickResult, describeNavigateResult, describeNewFields, describePressKeyResult, describeScrollResult } from './action-result-text';
 import { renderFormResultForModel } from './form-render';
 import { loadRedactionSettings, redactText } from '@/lib/redaction';
 import { REPORT_TASK_OUTCOME_TOOL_NAME, type TaskOutcome, type TaskOutcomeValue } from './task-outcome';
 import { formatTabList, type TabSessionController } from './tab-session';
+import { resolveKeyDescriptor } from './key-dispatch';
 import {
   sendMessage,
   type CaptureScreenshotPayload,
@@ -34,6 +35,8 @@ import {
   type OpenNewTabResult,
   type PageContent,
   type PageMetaResult,
+  type PressKeyPayload,
+  type PressKeyResult,
   type QueryDomPayload,
   type QueryDomResult,
   type ScrollPagePayload,
@@ -85,6 +88,7 @@ export function createBrowserTools(session: TabSessionController, config: Browse
     makeFillFormTool(session),
     makeTypeTool(session),
     makeSelectTool(session),
+    makePressKeyTool(session),
     makeScrollTool(session),
     makeNavigateTool(session),
     makeSetStorageTool(session),
@@ -706,6 +710,57 @@ function makeSelectTool(session: TabSessionController): BrowserAgentTool {
         `已将匹配 "${response.data.selector}" 的选项设为 "${response.data.value}"。`,
         response.data as unknown as Record<string, unknown>,
       );
+    },
+  };
+}
+
+function makePressKeyTool(session: TabSessionController): BrowserAgentTool {
+  return {
+    name: 'browser_press_key',
+    label: 'Press Key',
+    description:
+      'Press a named key on a page element. Target it with the fieldId from browser_get_form (preferred), a CSS selector, or neither — in which case it goes to the currently focused element. IMPORTANT: the dispatched events do not trigger native browser behaviour, so Tab does NOT move focus and Escape does NOT close dialogs; they only reach listeners the page registered itself. The one exception is Enter, which will submit the form when the page structure implies an implicit submission (that case asks the user for confirmation first). For entering text use browser_type or browser_fill_form instead of pressing keys one at a time.',
+    parameters: Type.Object({
+      key: Type.Union([
+        Type.Literal('Enter'), Type.Literal('Tab'), Type.Literal('Escape'),
+        Type.Literal('Backspace'), Type.Literal('Delete'),
+        Type.Literal('ArrowUp'), Type.Literal('ArrowDown'),
+        Type.Literal('ArrowLeft'), Type.Literal('ArrowRight'),
+        Type.Literal('Home'), Type.Literal('End'),
+        Type.Literal('PageUp'), Type.Literal('PageDown'),
+      ]),
+      modifiers: Type.Optional(
+        Type.Object({
+          ctrl: Type.Optional(Type.Boolean()),
+          shift: Type.Optional(Type.Boolean()),
+          alt: Type.Optional(Type.Boolean()),
+          meta: Type.Optional(Type.Boolean()),
+        }),
+      ),
+      fieldId: Type.Optional(Type.String({ description: 'Field id from browser_get_form. Prefer this over selector.' })),
+      selector: Type.Optional(Type.String({ description: 'CSS selector fallback.' })),
+      index: Type.Optional(Type.Number({ description: 'Which matched element when using selector, 0-based. Defaults to 0.' })),
+    }),
+    execute: async (_toolCallId, params) => {
+      const payload = params as PressKeyPayload;
+      const resolved = resolveKeyDescriptor(payload?.key, payload?.modifiers);
+      if (!resolved.ok) throw new Error(resolved.error);
+
+      const response = (await sendMessage<PressKeyPayload, PressKeyResult>('PRESS_KEY', payload, session.currentTabId)) as MessageResponse<PressKeyResult>;
+      if (!response.ok || !response.data) throw new Error(response.error ?? '按键失败');
+      if (response.data.fieldsTableStale) {
+        throw new Error('字段表已失效（页面已变化或已导航），请重新调用 browser_get_form 获取新的 fieldId 后再按键。');
+      }
+      if (response.data.status === 'no_focus') {
+        throw new Error('当前页面没有聚焦的元素，无法确定按键目标。请先用 browser_get_form 取得 fieldId 并显式指定目标。');
+      }
+      if (response.data.status !== 'ok') {
+        throw new Error(response.data.detail ?? '未找到按键目标。');
+      }
+
+      const pressed = describePressKeyResult(response.data);
+      const appeared = describeNewFields(response.data.newFields ?? []);
+      return textResult(appeared ? `${pressed}\n${appeared}` : pressed, response.data as unknown as Record<string, unknown>);
     },
   };
 }

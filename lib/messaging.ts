@@ -24,6 +24,8 @@ export type MessageType =
   | 'CLICK_ELEMENT'
   | 'TYPE_TEXT'
   | 'SELECT_OPTION'
+  | 'PRESS_KEY'
+  | 'PROBE_KEY_TARGET'
   | 'SCROLL_PAGE'
   | 'NAVIGATE_TAB'
   | 'OPEN_NEW_TAB'
@@ -486,6 +488,42 @@ export interface ProbeClickTargetResult {
   formAction?: string;
   fieldCount?: number;
   fieldLabels?: { fieldId: string; label?: string }[];
+}
+
+/**
+ * Enter 隐式提交的结构探测载荷。不复用 PROBE_CLICK_TARGET：那个消息名的语义
+ * 是"探测一次点击的目标"，让它兼职按键探测会让名字变成假话。
+ */
+export interface ProbeKeyTargetPayload {
+  fieldId?: string;
+  selector?: string;
+  index?: number;
+  /** 不给 fieldId/selector 时探测 document.activeElement。 */
+  useActiveElement?: boolean;
+  /** 需要补齐 label 的字段，供确认卡片展示。 */
+  fieldIds?: string[];
+}
+
+export interface PressKeyPayload {
+  key: string;
+  modifiers?: { ctrl?: boolean; shift?: boolean; alt?: boolean; meta?: boolean };
+  fieldId?: string;
+  selector?: string;
+  index?: number;
+}
+
+export interface PressKeyResult {
+  status: 'ok' | 'not_found' | 'no_focus';
+  key: string;
+  /** 目标元素的简短描述。 */
+  target?: string;
+  /** 页面是否 preventDefault 了 keydown。 */
+  defaultPrevented: boolean;
+  /** 是否触发了表单提交。 */
+  submitted: boolean;
+  detail?: string;
+  fieldsTableStale?: boolean;
+  newFields?: FormFieldDescriptor[];
 }
 
 /**

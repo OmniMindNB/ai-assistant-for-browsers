@@ -4,7 +4,7 @@
 // 模型对下一步的判断几乎完全依赖这句文案：旧版的「已滚动到 (0, 800)。」不含
 // 「还剩多少没看」「有没有滚动」这类信息，模型只能盲目重复同一次调用。
 // 这里全部是纯函数，与消息通道解耦，便于单测。
-import type { ClickElementResult, FormFieldDescriptor, NavigateTabResult, ScrollPageResult } from '@/lib/messaging';
+import type { ClickElementResult, FormFieldDescriptor, NavigateTabResult, PressKeyResult, ScrollPageResult } from '@/lib/messaging';
 
 /** 新元素最多列举这么多个，其余只报个数——一次展开几十个选项时全列出来会淹没工具结果。 */
 const MAX_LISTED_NEW_FIELDS = 8;
@@ -92,4 +92,25 @@ export function describeNewFields(appeared: FormFieldDescriptor[]): string | und
   const tail = omitted > 0 ? `等，另有 ${omitted} 个未列出` : '';
 
   return `页面新出现 ${appeared.length} 个可交互元素：${listed}${tail}。可直接用 browser_click 的 fieldId 参数操作它们。`;
+}
+
+export function describePressKeyResult(result: PressKeyResult): string {
+  const target = result.target ? `在 ${result.target} 上` : '在当前焦点元素上';
+  const lines = [`已${target}按下 ${result.key}。`];
+
+  if (result.submitted) {
+    lines.push('该按键触发了表单提交。');
+  } else if (result.defaultPrevented) {
+    // 被拦截不等于失败：页面自行处理了这次按键，很可能已经生效。
+    lines.push('页面对这次按键调用了 preventDefault，已按页面自身的处理逻辑生效，未额外触发表单提交。');
+  }
+
+  if (result.key === 'Tab') {
+    lines.push('注意：焦点不会因此移动——派发的事件不触发浏览器原生行为。要操作另一个元素请直接用它的 fieldId。');
+  }
+  if (result.key === 'Escape' && !result.defaultPrevented) {
+    lines.push('注意：弹层不会因此自动关闭——派发的事件不触发浏览器原生行为。页面没有自己监听 Escape 时，这次按键没有任何效果。');
+  }
+
+  return lines.join('\n');
 }

@@ -13,6 +13,7 @@ import {
   type MessageResponse,
   type ProbeClickTargetPayload,
   type ProbeClickTargetResult,
+  type ProbeKeyTargetPayload,
   type SetAgentOverlayPayload,
 } from '@/lib/messaging';
 import { browserOpenAIStream } from './openai-stream';
@@ -124,7 +125,10 @@ export interface BrowserAgentRuntimeOptions extends BrowserAgentOptions {
  * browser_fill_form 走「句柄表批量查」；browser_click 只在带 fieldId 时走同一条路径
  * （复用 background 侧已有的 fieldIds → fieldLabels 查表逻辑），否则退回 selector/index。
  */
-export function buildSubmitIntentProbePayload(toolName: string, args: unknown): ProbeClickTargetPayload {
+export function buildSubmitIntentProbePayload(
+  toolName: string,
+  args: unknown,
+): ProbeClickTargetPayload | ProbeKeyTargetPayload {
   const record = (args ?? {}) as Record<string, unknown>;
   if (toolName === 'browser_fill_form') {
     return {
@@ -133,6 +137,16 @@ export function buildSubmitIntentProbePayload(toolName: string, args: unknown): 
         ? (record.fields as { fieldId?: string }[]).map((field) => String(field.fieldId ?? '')).filter(Boolean)
         : [],
     };
+  }
+  if (toolName === 'browser_press_key') {
+    const fieldId = typeof record.fieldId === 'string' ? record.fieldId : '';
+    // 只有 Enter 可能提交；其它按键直接给一个探不到目标的载荷，探测会返回 isSubmit:false。
+    if (record.key !== 'Enter') return { fieldIds: [] };
+    if (fieldId) return { submitFieldId: fieldId, fieldIds: [fieldId], useActiveElement: false };
+    if (typeof record.selector === 'string' && record.selector) {
+      return { selector: record.selector, index: Number(record.index ?? 0), fieldIds: [] };
+    }
+    return { useActiveElement: true, fieldIds: [] };
   }
   if (toolName === 'browser_click' && typeof record.fieldId === 'string' && record.fieldId) {
     return { submitFieldId: record.fieldId, fieldIds: [record.fieldId] };
@@ -215,11 +229,12 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
         signal,
         resolveSubmitIntent: async (toolName, args) => {
           const payload = buildSubmitIntentProbePayload(toolName, args);
+          const messageType = toolName === 'browser_press_key' ? 'PROBE_KEY_TARGET' : 'PROBE_CLICK_TARGET';
           // 只有结构探测明确识别出的提交才确认；无响应或异常不属于“已检测到提交”，
           // 按普通已知操作自动执行。
           try {
-            const response = (await sendMessage<ProbeClickTargetPayload, ProbeClickTargetResult>(
-              'PROBE_CLICK_TARGET',
+            const response = (await sendMessage<typeof payload, ProbeClickTargetResult>(
+              messageType,
               payload,
               session.currentTabId,
             )) as MessageResponse<ProbeClickTargetResult> | undefined;

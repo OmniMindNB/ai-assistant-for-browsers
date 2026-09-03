@@ -42,6 +42,7 @@ export const AUTO_APPROVE_TOOL_NAMES = new Set([
   'browser_click',
   'browser_fill_form',
   'browser_type',
+  'browser_press_key',
   'browser_scroll',
   'browser_select',
   'browser_open_tab',
@@ -116,7 +117,9 @@ export interface PermissionGateOptions {
   resolveSubmitIntent?: (toolName: string, args: unknown) => Promise<ToolWriteIntent | undefined>;
 }
 
-const SUBMIT_CAPABLE_TOOLS = new Set(['browser_click', 'browser_fill_form']);
+// Enter 能触发表单隐式提交，因此 browser_press_key 必须在列——否则它就是绕过
+// 「结构化检测到的提交每次都要确认」这条硬边界的后门。
+const SUBMIT_CAPABLE_TOOLS = new Set(['browser_click', 'browser_fill_form', 'browser_press_key']);
 
 export async function beforeToolCallPermissionGate(
   context: BeforeToolCallContext,

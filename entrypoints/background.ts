@@ -35,8 +35,11 @@ import {
   type PageScriptInfo,
   type PageStylesheetInfo,
   type PageSelection,
+  type PressKeyPayload,
+  type PressKeyResult,
   type ProbeClickTargetPayload,
   type ProbeClickTargetResult,
+  type ProbeKeyTargetPayload,
   type QueryDomPayload,
   type QueryDomResult,
   type ScrollPagePayload,
@@ -90,16 +93,19 @@ import {
   applyFormFill,
   clickElementInPage,
   collectFormFields,
+  pressKeyInPage,
   probeClickTarget,
+  probeKeyTarget,
   scrollContainerInPage,
   scrollPageInPage,
   selectOptionInPage,
   typeTextInPage,
   type ApplyFillItem,
 } from '@/lib/agent/form-dom';
-import { findNewFieldIds, sanitizeFieldText, sanitizePageText, toFieldDescriptor, toScrollableContainerDescriptor } from '@/lib/agent/form-schema';
+import { findNewFieldIds, sanitizeFieldText, sanitizePageText, toFieldDescriptor, toScrollableContainerDescriptor, type FormFieldPathStep } from '@/lib/agent/form-schema';
 import { getFormFieldsForTab, setFormFieldsForTab, type FormFieldHandle } from '@/lib/agent/tab-form-fields';
-import { decideSubmitIntent } from '@/lib/agent/form-submit';
+import { decideEnterSubmitIntent, decideSubmitIntent } from '@/lib/agent/form-submit';
+import { resolveKeyDescriptor } from '@/lib/agent/key-dispatch';
 
 const DEFAULT_TOOL_MAX_CHARS = 12000;
 // 以下为模型可见/可调用的消息类型；内部专用消息（如 SET_AGENT_OVERLAY）有意不在此列，以免暴露给模型。
@@ -124,6 +130,8 @@ const SUPPORTED_MESSAGE_TYPES = [
   'CLICK_ELEMENT',
   'TYPE_TEXT',
   'SELECT_OPTION',
+  'PRESS_KEY',
+  'PROBE_KEY_TARGET',
   'SCROLL_PAGE',
   'NAVIGATE_TAB',
   'OPEN_NEW_TAB',
@@ -452,6 +460,12 @@ async function handleMessage(message: Message, sender?: MessageSender): Promise<
     case 'SELECT_OPTION':
       return selectOption(message.payload as SelectOptionPayload, requireTabId(message));
 
+    case 'PRESS_KEY':
+      return pressKey(message.payload as PressKeyPayload, requireTabId(message));
+
+    case 'PROBE_KEY_TARGET':
+      return probeEnterSubmitIntent(message.payload as ProbeKeyTargetPayload, requireTabId(message));
+
     case 'SCROLL_PAGE':
       return scrollPage(message.payload as ScrollPagePayload, requireTabId(message));
 
@@ -736,6 +750,50 @@ async function probeSubmitIntent(payload: ProbeClickTargetPayload, tabId: number
       formAction: probe.formAction,
       textContent: probe.textContent,
       fieldCount: probe.fieldCount,
+    }),
+    fieldLabels,
+  };
+}
+
+/** Enter 的隐式提交探测。与 probeSubmitIntent 并列而非合并：判据与输入形状都不同。 */
+async function probeEnterSubmitIntent(
+  payload: ProbeKeyTargetPayload,
+  tabId: number,
+): Promise<ProbeClickTargetResult> {
+  const needsTable = Boolean(payload?.fieldId || payload?.fieldIds?.length);
+  const table = needsTable ? await getFormFieldsForTab(tabId) : undefined;
+
+  const fieldLabels = payload?.fieldIds?.map((fieldId) => ({
+    fieldId,
+    label: table?.fields[fieldId]?.expect.label,
+  }));
+
+  const handle = payload?.fieldId ? table?.fields[payload.fieldId] : undefined;
+  if (!handle && !payload?.selector && !payload?.useActiveElement) {
+    return { isSubmit: false, fieldLabels };
+  }
+
+  const probe = await executeInTab(
+    tabId,
+    {
+      path: handle?.path,
+      selector: payload?.selector,
+      index: payload?.index,
+      useActiveElement: payload?.useActiveElement,
+    },
+    probeKeyTarget,
+  );
+  if (!probe.found) return { isSubmit: false, fieldLabels };
+
+  return {
+    ...decideEnterSubmitIntent({
+      tag: probe.tag,
+      type: probe.type,
+      hasFormOwner: probe.hasFormOwner,
+      formAction: probe.formAction,
+      fieldCount: probe.fieldCount,
+      hasSubmitButton: probe.hasSubmitButton,
+      textLikeFieldCount: probe.textLikeFieldCount,
     }),
     fieldLabels,
   };
@@ -1109,6 +1167,72 @@ async function selectOption(payload: SelectOptionPayload, tabId: number): Promis
     status: result.status,
     detail: result.detail,
     actualValue: result.actualValue,
+  };
+}
+
+async function pressKey(payload: PressKeyPayload, tabId: number): Promise<PressKeyResult> {
+  const resolved = resolveKeyDescriptor(payload?.key, payload?.modifiers);
+  if (!resolved.ok) {
+    return { status: 'not_found', key: String(payload?.key ?? ''), defaultPrevented: false, submitted: false, detail: resolved.error };
+  }
+
+  let path: FormFieldPathStep[] | undefined;
+  if (payload?.fieldId) {
+    const table = await getFormFieldsForTab(tabId);
+    const plan = planFieldClick(payload.fieldId, table);
+    if (!plan.ok || !plan.submit) {
+      return {
+        status: 'not_found',
+        key: resolved.descriptor.key,
+        defaultPrevented: false,
+        submitted: false,
+        detail:
+          plan.reason === 'wrong_kind'
+            ? '该 fieldId 是一个可滚动容器，不能对它按键。'
+            : '未知的 fieldId，请重新调用 browser_get_form。',
+        fieldsTableStale: plan.reason === 'no_table',
+      };
+    }
+    path = plan.submit.path;
+  }
+
+  // Enter 是否提交由这里决定，页面侧不自行判断：确认闸门已经在 beforeToolCall
+  // 里就同一份探测结果征得用户同意，这里必须用同一份判定，否则会出现
+  // "确认时说不提交、执行时却提交了"的错位。
+  let submitOnEnter = false;
+  if (resolved.descriptor.key === 'Enter') {
+    const intent = await probeEnterSubmitIntent(
+      {
+        fieldId: payload?.fieldId,
+        selector: payload?.selector,
+        index: payload?.index,
+        useActiveElement: !payload?.fieldId && !payload?.selector,
+      },
+      tabId,
+    );
+    submitOnEnter = intent.isSubmit;
+  }
+
+  const result = await executeInTab(
+    tabId,
+    {
+      path,
+      selector: path ? undefined : payload?.selector,
+      index: payload?.index,
+      useActiveElement: !path && !payload?.selector,
+      descriptor: resolved.descriptor,
+      submitOnEnter,
+    },
+    pressKeyInPage,
+  );
+
+  return {
+    status: result.status,
+    key: resolved.descriptor.key,
+    target: result.target,
+    defaultPrevented: result.defaultPrevented,
+    submitted: result.submitted,
+    newFields: result.status === 'ok' ? await collectNewFieldsAfterWrite(tabId) : undefined,
   };
 }
 
