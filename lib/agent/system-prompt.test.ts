@@ -74,6 +74,14 @@ describe('buildSystemPrompt tool listing', () => {
   });
 });
 
+describe('按键策略引导', () => {
+  it('提示词说明 Tab/Escape 不触发原生行为', () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toContain('browser_press_key');
+    expect(prompt).toContain('Tab');
+  });
+});
+
 describe('buildSystemPrompt tool strategy', () => {
   it('warns that screenshots never reach the model', () => {
     // createModel 声明 input: ['text']，截图只进 tool result 的 details（仅用于 UI/日志），

@@ -178,6 +178,7 @@ function buildToolStrategy(options: SystemPromptOptions): string[] {
     '- 读取或填写表单字段（输入框、下拉、勾选框、提交按钮）：用 browser_get_form 拿 fieldId，再用一次 browser_fill_form 批量写入，详见 <form_workflow>。',
     '- 需要定位具体元素或选择器：用 browser_query_dom；确认结构细节再用 browser_get_html。表单字段不走这条——它们用上一条的 fieldId 定位，不要为表单字段拼选择器。',
     '- 需要确认某个元素实际生效的样式：用 browser_get_computed_style。',
+    '- 需要按键（回车提交搜索、方向键选择建议项等）：用 browser_press_key。注意它派发的事件不触发浏览器原生行为——Tab 不会移动焦点、Escape 不会关闭弹层，只有页面自己监听了这些按键才有反应；唯一例外是 Enter 会在页面结构表明会提交表单时真的提交（这种情况会先向用户确认）。输入文本一律用 browser_type / browser_fill_form，不要逐字符按键。',
   ];
 
   // 只有真的注入了页面信息，才让模型跳过 browser_get_active_tab——否则这条会指向一个不存在的分区。

@@ -86,6 +86,8 @@ export function describeToolActivity(toolName: string, args: unknown, status: Ac
     }
     case 'browser_select':
       return withTarget(status, 'agentActivity.now.select', 'agentActivity.done.select', 'agentActivity.failed.select', str('selector'));
+    case 'browser_press_key':
+      return withTarget(status, 'agentActivity.now.pressKey', 'agentActivity.done.pressKey', 'agentActivity.failed.pressKey', str('key'));
     case 'browser_scroll': {
       const selector = str('selector');
       return selector
