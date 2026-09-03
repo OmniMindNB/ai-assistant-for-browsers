@@ -17,7 +17,7 @@ import {
   type PendingAttachment,
 } from '@/lib/chat/attachments';
 import { AttachmentChip } from './AttachmentChip';
-import { IconCheck, IconChevronDown, IconClose, IconPaperclip, IconSend, IconStop } from '../icons';
+import { IconCheck, IconChevronDown, IconClose, IconPaperclip, IconPlus, IconSend, IconStop } from '../icons';
 
 export interface WorkbenchComposerProps {
   busy: boolean;
@@ -44,7 +44,7 @@ export interface WorkbenchComposerProps {
   onRetryAttachment(id: string): void;
 }
 
-type Popover = 'commands' | 'models' | null;
+type Popover = 'commands' | 'models' | 'insert' | null;
 
 function startsSlashCommand(input: string): boolean {
   return input.trim().startsWith('/');
@@ -167,17 +167,26 @@ export function WorkbenchComposer({
     textareaRef.current?.focus();
   }
 
+  // 斜杠命令入口和附件入口合并成一个"+"按钮下的小菜单，减少输入框左侧的图标数量。
   // 唯一学会"/"能唤出命令菜单的方式过去只有用户自己偶然敲出"/"——这里给一个常驻可见的
-  // 按钮入口，点击等效于敲了"/"（复用同一套 commands 列表/键盘导航），焦点仍留在输入框，
+  // 入口，选中后等效于敲了"/"（复用同一套 commands 列表/键盘导航），焦点仍留在输入框，
   // 这样弹出后箭头键/Enter 照常可用（ref: [[project-design-audit-2026-09-02]] 发现1）。
-  function toggleSlashCommands() {
+  function toggleInsertMenu() {
     if (requestBlocked) return;
-    setOpenPopover((current) => {
-      if (current === 'commands') return null;
-      setHighlightedCommand(0);
-      return 'commands';
-    });
+    setOpenPopover((current) => (current === 'insert' ? null : 'insert'));
+  }
+
+  function chooseSlashCommands() {
+    if (requestBlocked) return;
+    setHighlightedCommand(0);
+    setOpenPopover('commands');
     requestAnimationFrame(() => textareaRef.current?.focus());
+  }
+
+  function chooseAttachFile() {
+    if (busy) return;
+    setOpenPopover(null);
+    fileInputRef.current?.click();
   }
 
   function focusModelItem(index: number) {
@@ -450,26 +459,44 @@ export function WorkbenchComposer({
           <button
             type="button"
             disabled={requestBlocked}
-            onClick={toggleSlashCommands}
-            aria-label={t('chat.slashCommandMenuAriaLabel')}
-            title={t('chat.slashCommandMenuAriaLabel')}
+            onClick={toggleInsertMenu}
+            aria-label={t('workbench.insertMenuAriaLabel')}
+            title={t('workbench.insertMenuAriaLabel')}
             aria-haspopup="menu"
-            aria-expanded={openPopover === 'commands'}
-            aria-controls={openPopover === 'commands' ? 'workbench-slash-commands' : undefined}
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-base font-semibold text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
-          >
-            /
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => fileInputRef.current?.click()}
-            aria-label={t('workbench.attachButtonLabel')}
-            title={t('workbench.attachButtonLabel')}
+            aria-expanded={openPopover === 'insert'}
+            aria-controls={openPopover === 'insert' ? 'workbench-insert-menu' : undefined}
             className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
           >
-            <IconPaperclip className="h-5 w-5" />
+            <IconPlus className="h-5 w-5" />
           </button>
+          {openPopover === 'insert' && (
+            <div
+              id="workbench-insert-menu"
+              role="menu"
+              aria-label={t('workbench.insertMenuAriaLabel')}
+              className="absolute bottom-full left-0 z-20 mb-2 w-48 overflow-hidden rounded-xl border border-neutral-200 bg-white p-1 shadow-lg dark:border-neutral-800 dark:bg-neutral-900"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={chooseSlashCommands}
+                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-neutral-200 dark:hover:bg-neutral-800"
+              >
+                <span aria-hidden="true" className="flex h-4 w-4 shrink-0 items-center justify-center text-sm font-semibold text-neutral-500 dark:text-neutral-400">/</span>
+                <span className="truncate">{t('chat.slashCommandMenuAriaLabel')}</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={busy}
+                onClick={chooseAttachFile}
+                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:text-neutral-200 dark:hover:bg-neutral-800"
+              >
+                <IconPaperclip className="h-4 w-4 shrink-0 text-neutral-500 dark:text-neutral-400" />
+                <span className="truncate">{t('workbench.attachButtonLabel')}</span>
+              </button>
+            </div>
+          )}
           <textarea
             ref={textareaRef}
             value={input}

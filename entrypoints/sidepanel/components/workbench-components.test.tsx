@@ -654,17 +654,20 @@ describe('workbench composer', () => {
     expect(onSend).not.toHaveBeenCalled();
   });
 
-  it('opens the slash-command menu from the dedicated trigger button and keeps focus on the textarea for keyboard nav', async () => {
+  it('opens the slash-command menu via the merged insert menu and keeps focus on the textarea for keyboard nav', async () => {
     const user = userEvent.setup();
     const onRunShortcut = vi.fn();
     render(<ComposerHarness onRunShortcut={onRunShortcut} />);
 
-    const trigger = screen.getByRole('button', { name: 'Slash commands' });
+    const trigger = screen.getByRole('button', { name: 'Add content' });
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
 
     await user.click(trigger);
 
     expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    const insertMenu = screen.getByRole('menu', { name: 'Add content' });
+    await user.click(within(insertMenu).getByRole('menuitem', { name: 'Slash commands' }));
+
     const menu = screen.getByRole('menu', { name: 'Slash commands' });
     expect(within(menu).getByText('阅读页面')).toBeVisible();
     expect(screen.getByRole('textbox')).toHaveValue('');
@@ -676,13 +679,13 @@ describe('workbench composer', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
   });
 
-  it('toggles the slash-command menu closed on a second click of the trigger button', async () => {
+  it('toggles the insert menu closed on a second click of the trigger button', async () => {
     const user = userEvent.setup();
     render(<ComposerHarness />);
 
-    const trigger = screen.getByRole('button', { name: 'Slash commands' });
+    const trigger = screen.getByRole('button', { name: 'Add content' });
     await user.click(trigger);
-    expect(screen.getByRole('menu', { name: 'Slash commands' })).toBeVisible();
+    expect(screen.getByRole('menu', { name: 'Add content' })).toBeVisible();
 
     await user.click(trigger);
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
@@ -794,7 +797,6 @@ describe('workbench composer', () => {
     await waitFor(() => expect(screen.getByRole('menuitem', { name: 'model-one' })).toHaveFocus());
     await user.keyboard('{ArrowDown}');
     await waitFor(() => expect(screen.getByRole('menuitem', { name: 'model-two' })).toHaveFocus());
-    await user.tab();
     await user.tab();
     await user.tab();
     await user.tab();

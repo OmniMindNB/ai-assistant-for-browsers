@@ -104,6 +104,7 @@ export const zh = {
   'workbench.quotedSelectionLabel': '引用的选中内容',
   'workbench.clearQuotedSelection': '清除引用',
   'workbench.attachButtonLabel': '添加附件',
+  'workbench.insertMenuAriaLabel': '添加内容',
   'workbench.removeAttachmentLabel': '移除附件',
   'workbench.attachmentTruncatedBadge': '内容过长，已截断',
   'workbench.attachmentLimitReached': '最多添加 {max} 个附件',

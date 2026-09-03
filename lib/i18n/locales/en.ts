@@ -107,6 +107,7 @@ export const en: Record<keyof typeof zh, string> = {
   'workbench.quotedSelectionLabel': 'Quoted selection',
   'workbench.clearQuotedSelection': 'Clear quote',
   'workbench.attachButtonLabel': 'Add attachment',
+  'workbench.insertMenuAriaLabel': 'Add content',
   'workbench.removeAttachmentLabel': 'Remove attachment',
   'workbench.attachmentTruncatedBadge': 'Truncated (too long)',
   'workbench.attachmentLimitReached': 'Up to {max} attachments',
