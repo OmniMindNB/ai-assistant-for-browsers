@@ -1302,6 +1302,21 @@ describe('chat store page context', () => {
     expect(lastStartRunCall().agentUserContent).toBe('original question');
   });
 
+  // regenerate 底层复用 editMessage 的截断重发逻辑，原样重发标签文本对快捷操作消息来说
+  // 语义就是错的（标签≠真实 prompt），所以这里仍然预期 false——真正的修复是
+  // canRegenerateMessage 让 UI 在这种情况下不展示按钮，而不是让这条路径"假装成功"。
+  it('does not regenerate when the preceding user message came from a shortcut (kind "action")', async () => {
+    useChat.setState({
+      messages: [
+        { id: 'u1', role: 'user', content: '📄 总结当前网页', createdAt: 1, kind: 'action' },
+        { id: 'a1', role: 'assistant', content: 'summary answer', createdAt: 2 },
+      ],
+    });
+
+    await expect(useChat.getState().regenerate('a1')).resolves.toBe(false);
+    expect(mocks.runPortPostMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'startRun' }));
+  });
+
   it('skips regenerate when the assistant message has no preceding user message', async () => {
     useChat.setState({
       messages: [{ id: 'a1', role: 'assistant', content: 'stray answer', createdAt: 1 }],

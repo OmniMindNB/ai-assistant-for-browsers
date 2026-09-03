@@ -21,6 +21,7 @@ import {
 } from '@/lib/db';
 import {
   findMessageIndex,
+  findPrecedingUserMessage,
   isEditableMessage,
   type ChatMessage,
 } from '@/lib/chat/messages';
@@ -824,13 +825,8 @@ export const useChat = create<ChatState>((set, get) => ({
   },
 
   regenerate: async (assistantId) => {
-    const messages = get().messages;
-    const assistantIndex = findMessageIndex(messages, assistantId);
-    if (assistantIndex < 0) return false;
-    let userIndex = assistantIndex - 1;
-    while (userIndex >= 0 && messages[userIndex].role !== 'user') userIndex -= 1;
-    if (userIndex < 0) return false;
-    const userMessage = messages[userIndex];
+    const userMessage = findPrecedingUserMessage(get().messages, assistantId);
+    if (!userMessage) return false;
     return get().editMessage(userMessage.id, userMessage.content);
   },
 

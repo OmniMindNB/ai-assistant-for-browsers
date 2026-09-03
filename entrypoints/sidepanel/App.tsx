@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useChat } from './store';
 import { nextThemeMode, useTheme } from '@/lib/theme';
 import { useTranslation } from '@/lib/i18n';
-import { discardedCount, isEditableMessage } from '@/lib/chat/messages';
+import { canRegenerateMessage, discardedCount, isEditableMessage } from '@/lib/chat/messages';
 import { hasBusyAttachments } from '@/lib/chat/attachments';
 import { isNearBottom } from '@/lib/scroll';
 import {
@@ -318,6 +318,7 @@ export default function App() {
                       editing={editingId === m.id}
                       discardCount={editingId === m.id ? discardedCount(messages, m.id) : 0}
                       isLastMessage={i === messages.length - 1}
+                      canRegenerate={m.role === 'assistant' && canRegenerateMessage(messages, m.id)}
                       onBeginEdit={handleBeginEdit}
                       onCancelEdit={handleCancelEdit}
                       onSubmitEdit={submitEdit}
@@ -433,6 +434,7 @@ const Message = memo(function Message({
   editing,
   discardCount,
   isLastMessage,
+  canRegenerate,
   onBeginEdit,
   onCancelEdit,
   onSubmitEdit,
@@ -445,6 +447,7 @@ const Message = memo(function Message({
   editing: boolean;
   discardCount: number;
   isLastMessage: boolean;
+  canRegenerate: boolean;
   onBeginEdit: (id: string) => void;
   onCancelEdit: () => void;
   onSubmitEdit: (id: string, content: string) => void;
@@ -569,7 +572,7 @@ const Message = memo(function Message({
         {content && (!busy || !isLastMessage) && (
           <div className="mt-2 flex items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
             <CopyMessageButton content={content} />
-            {isLastMessage && !requestBlocked && (
+            {isLastMessage && !requestBlocked && canRegenerate && (
               <button
                 type="button"
                 onClick={() => onRegenerate(message.id)}

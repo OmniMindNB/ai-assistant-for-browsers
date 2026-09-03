@@ -49,6 +49,28 @@ export function findMessageIndex(messages: ChatMessage[], id: string): number {
   return messages.findIndex((message) => message.id === id);
 }
 
+/** 从指定 assistant 消息往前找最近一条 user 消息；未找到（消息不存在/前面没有 user 消息）返回 undefined */
+export function findPrecedingUserMessage(messages: ChatMessage[], assistantId: string): ChatMessage | undefined {
+  const assistantIndex = findMessageIndex(messages, assistantId);
+  if (assistantIndex < 0) return undefined;
+  for (let i = assistantIndex - 1; i >= 0; i -= 1) {
+    if (messages[i].role === 'user') return messages[i];
+  }
+  return undefined;
+}
+
+/**
+ * regenerate 复用 editMessage 的截断重发逻辑，原样重发最近一条 user 消息的 content。
+ * 这要求那条消息可编辑：快捷操作消息展示的是标签（如「📄 总结当前网页」），真正发给模型的
+ * prompt 是另一段文字且未持久化，原样重发标签文本语义就是错的——isEditableMessage 已经
+ * 挡住了这条路径，这里只是把同一条件也用在"要不要展示重新生成按钮"上，避免展示一个
+ * 点了没反应的按钮。
+ */
+export function canRegenerateMessage(messages: ChatMessage[], assistantId: string): boolean {
+  const userMessage = findPrecedingUserMessage(messages, assistantId);
+  return userMessage !== undefined && isEditableMessage(userMessage);
+}
+
 /** 编辑该条消息后将被一并丢弃的后续消息条数；id 未命中时返回 0 */
 export function discardedCount(messages: ChatMessage[], id: string): number {
   const index = findMessageIndex(messages, id);

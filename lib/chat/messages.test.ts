@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { MessageAttachment } from '@/lib/chat/attachments';
 import {
+  canRegenerateMessage,
   conversationTitle,
   discardedCount,
   findMessageIndex,
+  findPrecedingUserMessage,
   isEditableMessage,
   toMessageRecords,
   type ChatMessage,
@@ -67,6 +69,48 @@ describe('discardedCount', () => {
 
   it('未命中时返回 0', () => {
     expect(discardedCount(messages, 'zzz')).toBe(0);
+  });
+});
+
+describe('findPrecedingUserMessage', () => {
+  it('返回紧邻在前的 user 消息', () => {
+    const messages = [msg('u1', 'user', '一', 'input'), msg('a1', 'assistant', '二')];
+    expect(findPrecedingUserMessage(messages, 'a1')?.id).toBe('u1');
+  });
+
+  it('跳过中间的空 assistant 占位，找到更早的 user 消息', () => {
+    const messages = [
+      msg('u1', 'user', '一', 'input'),
+      msg('a1', 'assistant', ''),
+      msg('a2', 'assistant', '二'),
+    ];
+    expect(findPrecedingUserMessage(messages, 'a2')?.id).toBe('u1');
+  });
+
+  it('assistant 消息不存在时返回 undefined', () => {
+    expect(findPrecedingUserMessage([msg('u1', 'user', '一')], 'missing')).toBeUndefined();
+  });
+
+  it('前面没有 user 消息时返回 undefined', () => {
+    expect(findPrecedingUserMessage([msg('a1', 'assistant', '孤立回答')], 'a1')).toBeUndefined();
+  });
+});
+
+describe('canRegenerateMessage', () => {
+  it('前一条是普通输入的 user 消息时可以重新生成', () => {
+    const messages = [msg('u1', 'user', '一', 'input'), msg('a1', 'assistant', '二')];
+    expect(canRegenerateMessage(messages, 'a1')).toBe(true);
+  });
+
+  // 快捷操作展示的是标签（如「📄 总结当前网页」），真正发给模型的 prompt 是另一段文字且
+  // 未持久化——原样重发标签文本语义就是错的，所以这类回复不该展示"能重新生成"的假象。
+  it('前一条是快捷操作产生的 user 消息时不可以重新生成', () => {
+    const messages = [msg('u1', 'user', '📄 总结当前网页', 'action'), msg('a1', 'assistant', '摘要')];
+    expect(canRegenerateMessage(messages, 'a1')).toBe(false);
+  });
+
+  it('没有前置 user 消息时不可以重新生成', () => {
+    expect(canRegenerateMessage([msg('a1', 'assistant', '孤立回答')], 'a1')).toBe(false);
   });
 });
 

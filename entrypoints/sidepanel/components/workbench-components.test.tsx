@@ -1221,6 +1221,23 @@ describe('activity step list', () => {
     expect(chatStore.regenerate).toHaveBeenCalledWith('m4');
   });
 
+  // 快捷操作展示的是标签（如「📄 总结当前网页」），真正发给模型的 prompt 是另一段文字且
+  // 未持久化——展示一个点了没反应的按钮比不展示更糟，所以这种情况下不渲染它。
+  it('hides regenerate when the last reply came from a shortcut', () => {
+    (chatStore as any).messages = [
+      { id: 'm1', role: 'user', content: '📄 总结当前网页', createdAt: 1, kind: 'action' },
+      { id: 'm2', role: 'assistant', content: 'summary answer', createdAt: 2 },
+    ];
+    (chatStore as any).busy = false;
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    expect(screen.queryByRole('button', { name: 'Regenerate response' })).not.toBeInTheDocument();
+  });
+
   it('hides regenerate while a request is in flight', () => {
     (chatStore as any).messages = [
       { id: 'm1', role: 'user', content: 'first', createdAt: 1 },
