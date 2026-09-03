@@ -80,7 +80,13 @@ describe('browser_press_key 的权限分级', () => {
 describe('browser_press_key 的提交探测', () => {
   it('探测载荷带上 fieldId 与按键', () => {
     const payload = buildSubmitIntentProbePayload('browser_press_key', { key: 'Enter', fieldId: 'f1' });
-    expect(payload).toMatchObject({ submitFieldId: 'f1', fieldIds: ['f1'] });
+    // 字段名必须是 fieldId，不是 submitFieldId：ProbeKeyTargetPayload（lib/messaging.ts）
+    // 声明的就是 fieldId，probeEnterSubmitIntent（entrypoints/background.ts）两处调用
+    // （PROBE_KEY_TARGET 消息分支、pressKey() 内部复用）读的也都是 payload.fieldId。
+    // 发送端一旦发成 submitFieldId，确认闸门探测永远拿不到 handle，
+    // 会把「应确认的提交」错判成 isSubmit:false，是曾经真实发生过的安全回归。
+    expect(payload).toMatchObject({ fieldId: 'f1', fieldIds: ['f1'] });
+    expect(payload).not.toHaveProperty('submitFieldId');
   });
 
   it('不给目标时探测走 activeElement', () => {

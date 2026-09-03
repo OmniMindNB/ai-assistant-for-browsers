@@ -142,7 +142,7 @@ export function buildSubmitIntentProbePayload(
     const fieldId = typeof record.fieldId === 'string' ? record.fieldId : '';
     // 只有 Enter 可能提交；其它按键直接给一个探不到目标的载荷，探测会返回 isSubmit:false。
     if (record.key !== 'Enter') return { fieldIds: [] };
-    if (fieldId) return { submitFieldId: fieldId, fieldIds: [fieldId], useActiveElement: false };
+    if (fieldId) return { fieldId, fieldIds: [fieldId], useActiveElement: false };
     if (typeof record.selector === 'string' && record.selector) {
       return { selector: record.selector, index: Number(record.index ?? 0), fieldIds: [] };
     }
