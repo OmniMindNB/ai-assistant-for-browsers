@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { isExtensionContextInvalidatedError } from './extension-context';
+import { describe, expect, it, vi } from 'vitest';
+import { isExtensionContextInvalidatedError, runIgnoringOrphanContext } from './extension-context';
 
 describe('isExtensionContextInvalidatedError', () => {
   it('recognizes the exact message Chrome throws after the extension is reloaded', () => {
@@ -32,5 +32,31 @@ describe('isExtensionContextInvalidatedError', () => {
     expect(isExtensionContextInvalidatedError(new Error('network error'))).toBe(false);
     expect(isExtensionContextInvalidatedError(undefined)).toBe(false);
     expect(isExtensionContextInvalidatedError(null)).toBe(false);
+  });
+});
+
+describe('runIgnoringOrphanContext', () => {
+  it('runs the body when the context is alive', () => {
+    const body = vi.fn();
+    runIgnoringOrphanContext(body);
+    expect(body).toHaveBeenCalledTimes(1);
+  });
+
+  // 内容脚本启动体里第一句就是 browser.runtime.onMessage.addListener，注入到已失效的上下文时
+  // 它同步抛错；WXT 的入口是个没人 catch 的 async IIFE，于是原样变成 Uncaught (in promise)。
+  it('swallows a synchronous invalidated-context throw so it cannot escape into WXT’s uncaught entry promise', () => {
+    expect(() =>
+      runIgnoringOrphanContext(() => {
+        throw new Error('Extension context invalidated.');
+      }),
+    ).not.toThrow();
+  });
+
+  it('still lets a real startup bug propagate', () => {
+    expect(() =>
+      runIgnoringOrphanContext(() => {
+        throw new TypeError('mountOverlay is not a function');
+      }),
+    ).toThrow(TypeError);
   });
 });

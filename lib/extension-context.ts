@@ -10,3 +10,26 @@ export function isExtensionContextInvalidatedError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return message.includes(INVALIDATED_MESSAGE);
 }
+
+/**
+ * 跑内容脚本的同步启动体，只吞掉「上下文已失效」这一种错误。
+ *
+ * 上面说的孤儿场景不止发生在脚本跑起来之后：注入本身就可能落在一个已经死掉的上下文里——
+ * 按需注入（content-script-messaging.ts 的 scripting.executeScript）与扩展重载撞在一起，
+ * 或页面加载正好跨过重载边界。这时启动体的第一句 browser.runtime.onMessage.addListener
+ * 就会同步抛错，而 WXT 生成的入口是 `(async () => { ... await main(ctx) })()` —— 一个没人
+ * catch 的 Promise，于是这次同步抛错原样变成用户可见的 “Uncaught (in promise) Error:
+ * Extension context invalidated.”（栈指向 main 所在的 content.js 第 2 行）。
+ *
+ * 对策与已跑起来的孤儿脚本一致：安静退出。此时监听器一个都没挂上，不需要像
+ * content.ts 的 handleAsyncFailure 那样反向清理，表现等同于「扩展未启用」，刷新页面即恢复。
+ * 只吞这一种错误——启动体里真正的 bug 必须照常炸出来，否则等于把内容脚本的问题全部静音。
+ */
+export function runIgnoringOrphanContext(body: () => void): void {
+  try {
+    body();
+  } catch (error) {
+    if (isExtensionContextInvalidatedError(error)) return;
+    throw error;
+  }
+}

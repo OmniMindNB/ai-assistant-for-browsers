@@ -10,7 +10,10 @@ import {
   type SetAgentOverlayResult,
 } from '@/lib/messaging';
 import { mountOverlay, moveOverlayCursor, unmountOverlay } from '@/lib/agent/agent-overlay';
-import { isExtensionContextInvalidatedError } from '@/lib/extension-context';
+import {
+  isExtensionContextInvalidatedError,
+  runIgnoringOrphanContext,
+} from '@/lib/extension-context';
 import { loadLocale, resolveLocale } from '@/lib/i18n/core';
 import { SELECTION_ASK_BUBBLE_LABEL } from '@/lib/i18n/locales/selection-ask-bubble-label';
 import {
@@ -23,36 +26,41 @@ import {
 export default defineContentScript({
   matches: ['<all_urls>'],
   main() {
-    browser.runtime.onMessage.addListener(
-      (message: Message, _sender, sendResponse: (r: MessageResponse) => void) => {
-        if (message.type === 'EXTRACT_PAGE') {
-          respond(message.id, sendResponse, extractPage);
-          return true;
-        }
-        if (message.type === 'GET_SELECTION') {
-          respond(message.id, sendResponse, getSelection);
-          return true;
-        }
-        if (message.type === 'SET_AGENT_OVERLAY') {
-          const payload = message.payload as SetAgentOverlayPayload;
-          respond(message.id, sendResponse, (): SetAgentOverlayResult => {
-            if (payload.active) {
-              mountOverlay(payload.label ?? '');
-            } else {
-              unmountOverlay();
-            }
-            return { active: payload.active };
-          });
-          return true;
-        }
-        return false;
-      },
-    );
+    // 启动体整个包一层：WXT 的入口是 `(async () => await main(ctx))()`，一个没人 catch 的
+    // Promise，所以这里任何一次同步抛错都会变成用户网站控制台里的 Uncaught (in promise)。
+    // 注入落在已失效的上下文里时，下面第一句 addListener 就是这样一条报错（见该函数注释）。
+    runIgnoringOrphanContext(() => {
+      browser.runtime.onMessage.addListener(
+        (message: Message, _sender, sendResponse: (r: MessageResponse) => void) => {
+          if (message.type === 'EXTRACT_PAGE') {
+            respond(message.id, sendResponse, extractPage);
+            return true;
+          }
+          if (message.type === 'GET_SELECTION') {
+            respond(message.id, sendResponse, getSelection);
+            return true;
+          }
+          if (message.type === 'SET_AGENT_OVERLAY') {
+            const payload = message.payload as SetAgentOverlayPayload;
+            respond(message.id, sendResponse, (): SetAgentOverlayResult => {
+              if (payload.active) {
+                mountOverlay(payload.label ?? '');
+              } else {
+                unmountOverlay();
+              }
+              return { active: payload.active };
+            });
+            return true;
+          }
+          return false;
+        },
+      );
 
-    // 不能让这个 Promise 裸奔：内容脚本跑在用户访问的每一个页面里，一次 unhandled rejection
-    // 就会在人家网站的控制台留一条红色报错。里面的 storage/i18n 读取都会在扩展重载后失败。
-    void initSelectionAskBubble().catch(handleAsyncFailure);
-    initAgentCursorBridge();
+      // 不能让这个 Promise 裸奔：内容脚本跑在用户访问的每一个页面里，一次 unhandled rejection
+      // 就会在人家网站的控制台留一条红色报错。里面的 storage/i18n 读取都会在扩展重载后失败。
+      void initSelectionAskBubble().catch(handleAsyncFailure);
+      initAgentCursorBridge();
+    });
   },
 });
 
