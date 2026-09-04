@@ -12,6 +12,24 @@ import type { FormFieldHandle, FormFieldTable } from './tab-form-fields';
 const SENSITIVE_DETAIL = '出于安全考虑，本扩展不代填密码与支付类字段，请提示用户手动输入。';
 const UNKNOWN_FIELD_DETAIL = '未知的 fieldId，请重新调用 browser_get_form。';
 
+/**
+ * mergeFrameCollections 会给每条 raw 都挂上它所在帧的 frameId/frameOrigin——
+ * 主框架也不例外（frameId: 0，frameOrigin: 主页面的 origin），而不是 undefined。
+ * 但写入侧的 origin 校验（form-dom.ts 的 applyFormFill/pressKeyInPage/
+ * scrollContainerInPage）只应该拦住"子帧的 frameId 被 Chrome 复用给了别的帧"这一种
+ * 陈旧——主框架的陈旧检测完全由 table.url 与 location.href 的比对负责（ref: 设计文档
+ * §3.3）。如果不加区分地把主框架句柄的 frameOrigin 也当作 expectOrigin 传下去，会
+ * 让 form-dom.ts 里"只要 expectOrigin 存在就跳过 url 校验"的分支意外命中主框架
+ * 写入，使一次同源换页（例如分步 SPA 流程）不再能被识别为陈旧。
+ *
+ * 因此这里是 expectOrigin 的唯一决策点：只有 handle.frameId 为真值（非 0、非
+ * undefined）——也就是真正的子帧句柄——才转发 frameOrigin；主框架句柄一律传
+ * undefined，交回给 url 校验。
+ */
+export function resolveExpectOrigin(handle: FormFieldHandle | undefined): string | undefined {
+  return handle?.frameId ? handle.frameOrigin : undefined;
+}
+
 export interface FormFillPlan {
   /** 真正送进页面注入函数的字段。 */
   items: ApplyFillItem[];
@@ -124,7 +142,7 @@ export function groupItemsByFrame(
     const frameId = handle?.frameId;
     let group = groups.get(frameId);
     if (!group) {
-      group = { frameId, frameOrigin: handle?.frameOrigin, items: [] };
+      group = { frameId, frameOrigin: resolveExpectOrigin(handle), items: [] };
       groups.set(frameId, group);
     }
     return group;

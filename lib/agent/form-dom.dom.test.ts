@@ -4,6 +4,8 @@ import { applyFormFill, type ApplyFillItem } from './form-dom';
 import { scrollContainerInPage, scrollPageInPage } from './form-dom';
 import { pressKeyInPage } from './form-dom';
 import { MAX_FIELD_TEXT_CHARS, sanitizeFieldText, toFieldDescriptor } from './form-schema';
+import { resolveExpectOrigin } from './fill-form-request';
+import type { FormFieldHandle } from './tab-form-fields';
 
 const INPUT = { maxFields: 120, maxOptions: 50 };
 
@@ -1442,6 +1444,49 @@ describe('applyFormFill origin guard', () => {
 
     expect(result.fieldsTableStale).toBe(true);
     expect(result.outcomes[0].status).toBe('mismatch');
+    expect(document.querySelector('input')!.value).toBe('');
+  });
+
+  // 会让这个用例失败的 production 改动：调用方（entrypoints/background.ts 的
+  // fillForm/clickElementByFieldId/pressKey/scrollContainerByFieldId，或
+  // fill-form-request.ts 的 groupItemsByFrame）不再经过 resolveExpectOrigin 的
+  // frameId 真值判断，直接把主框架句柄的 handle.frameOrigin 当作 expectOrigin 转发——
+  // 那样这个用例会看到 fieldsTableStale 变成 undefined、写入"误判成功"：table.url 已经
+  // 跟 location.href 不一致（页面已经同源换页，比如分步 SPA 流程），但因为 expectOrigin
+  // 恰好等于 location.origin，applyFormFill 里"存在 expectOrigin 就跳过 url 检查"的
+  // 分支会被命中，放过这次本该被判定为 stale 的写入（2026-09-04 review 第二轮发现：
+  // round 1 修 Critical #1 时引入的缺陷——expectOrigin 并非子帧写入独有，
+  // mergeFrameCollections 给主框架句柄挂的 frameId 也是 0/主框架 origin 而非
+  // undefined，不能被无差别当作"这是子帧调用"的信号）。
+  it('reports stale for a main-frame handle whose url no longer matches, instead of wrongly succeeding via a same-origin expectOrigin', async () => {
+    render('<input name="card" value="" />');
+    const mainFrameHandle: FormFieldHandle = {
+      path: [{ kind: 'selector', selector: 'input', index: 0 }],
+      expect: { tag: 'input', type: 'text', name: 'card' },
+      sensitive: false,
+      kind: 'text',
+      frameId: 0, // 主框架——frameId 是假值，但 frameOrigin 仍然是一个真实字符串
+      frameOrigin: location.origin, // 与当前 location.origin 一致：若被误转发，会"通过"origin 比对
+    };
+    const items: ApplyFillItem[] = [
+      {
+        fieldId: 'f1',
+        value: '4111111111111111',
+        path: mainFrameHandle.path,
+        expect: mainFrameHandle.expect,
+        kind: 'text',
+      },
+    ];
+
+    const result = await applyFormFill({
+      items,
+      url: 'https://elsewhere.test/page', // 与 location.href 不一致：整个主页面已经导航走了
+      // 调用方真实的决策路径，而不是直接拿 handle.frameOrigin——这正是本轮修复所在的位置。
+      expectOrigin: resolveExpectOrigin(mainFrameHandle),
+    });
+
+    expect(result.fieldsTableStale).toBe(true);
+    expect(result.outcomes).toHaveLength(0);
     expect(document.querySelector('input')!.value).toBe('');
   });
 });

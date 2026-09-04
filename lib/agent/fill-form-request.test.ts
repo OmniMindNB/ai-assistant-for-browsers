@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { FillFormFieldOutcome, FillFormPayload } from '@/lib/messaging';
 import type { ApplyFillItem } from './form-dom';
-import { groupItemsByFrame, mergeFillOutcomes, planFieldClick, planFieldScroll, planFormFill } from './fill-form-request';
+import {
+  groupItemsByFrame,
+  mergeFillOutcomes,
+  planFieldClick,
+  planFieldScroll,
+  planFormFill,
+  resolveExpectOrigin,
+} from './fill-form-request';
 import type { FormFieldHandle, FormFieldTable } from './tab-form-fields';
 
 function handle(overrides: Partial<FormFieldHandle> = {}): FormFieldHandle {
@@ -217,7 +224,13 @@ describe('groupItemsByFrame', () => {
   const submitHandlePath = [{ kind: 'selector' as const, selector: 'button', index: 0 }];
   const submitHandleExpect = { tag: 'button', name: 'go' };
 
-  it('keeps all items and submit in one group for the common single-frame case', () => {
+  // frameId: 0 是主框架句柄——即便它也带着真实的 frameOrigin 字符串，分组结果里的
+  // frameOrigin 也必须是 undefined，而不是转发那个值：main-frame 的陈旧检测完全交给
+  // table.url 与 location.href 的比对负责，expectOrigin 只应该守住"子帧的 frameId
+  // 被 Chrome 复用给了别的帧"这一种陈旧（ref: 设计文档 §3.3，2026-09-04 review 第二轮
+  // 发现：round 1 的 Critical #2 修复把这一区分弄反了，导致主框架写入的 url 陈旧检测
+  // 被意外关闭）。
+  it('keeps all items and submit in one group for the common single-frame case, without forwarding the main frame origin', () => {
     const items = [item({ fieldId: 'f1' }), item({ fieldId: 'f2' })];
     const submit = { fieldId: 'f9', path: submitHandlePath, expect: submitHandleExpect };
     const t = table({
@@ -230,7 +243,7 @@ describe('groupItemsByFrame', () => {
 
     expect(groups).toHaveLength(1);
     expect(groups[0].frameId).toBe(0);
-    expect(groups[0].frameOrigin).toBe('https://example.com');
+    expect(groups[0].frameOrigin).toBeUndefined();
     expect(groups[0].items.map((i) => i.fieldId)).toEqual(['f1', 'f2']);
     expect(groups[0].submit).toEqual(submit);
   });
@@ -252,7 +265,8 @@ describe('groupItemsByFrame', () => {
     const main = groups.find((g) => g.frameId === 0)!;
     const child = groups.find((g) => g.frameId === 7)!;
     expect(main.items.map((i) => i.fieldId)).toEqual(['f1']);
-    expect(main.frameOrigin).toBe('https://example.com');
+    // 主框架分组不转发 frameOrigin（见上面用例的说明）；只有真正的子帧分组才带 origin。
+    expect(main.frameOrigin).toBeUndefined();
     expect(child.items.map((i) => i.fieldId)).toEqual(['f2']);
     expect(child.frameOrigin).toBe('https://payments.example.com');
   });
@@ -308,5 +322,30 @@ describe('groupItemsByFrame', () => {
     const groups = groupItemsByFrame(items, undefined, t);
 
     expect(groups).toEqual([{ frameId: undefined, frameOrigin: undefined, items }]);
+  });
+});
+
+describe('resolveExpectOrigin', () => {
+  // 会让这个用例失败的 production 改动：判定条件从"handle.frameId 为真值"松绑成
+  // "handle.frameId !== undefined"（或者干脆直接返回 handle?.frameOrigin）——那样
+  // frameId: 0 的主框架句柄也会被当成子帧句柄转发 frameOrigin，关闭 form-dom.ts 里
+  // "存在 expectOrigin 就跳过 url 检查"分支对主框架的 url 陈旧检测（2026-09-04 review
+  // 第二轮：round 1 修 Critical #1 时引入的缺陷）。
+  it('does not forward frameOrigin for a main-frame handle (frameId: 0), even though it carries a real origin string', () => {
+    const mainFrame = handle({ frameId: 0, frameOrigin: 'https://example.com' });
+    expect(resolveExpectOrigin(mainFrame)).toBeUndefined();
+  });
+
+  it('forwards frameOrigin for a real child-frame handle (truthy frameId)', () => {
+    const childFrame = handle({ frameId: 7, frameOrigin: 'https://payments.example.com' });
+    expect(resolveExpectOrigin(childFrame)).toBe('https://payments.example.com');
+  });
+
+  it('returns undefined for a legacy handle with no frameId at all', () => {
+    expect(resolveExpectOrigin(handle())).toBeUndefined();
+  });
+
+  it('returns undefined when there is no handle to resolve', () => {
+    expect(resolveExpectOrigin(undefined)).toBeUndefined();
   });
 });

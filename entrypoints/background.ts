@@ -92,7 +92,14 @@ import {
   listPanelOpenedTabs,
   markPanelOpenedForTab,
 } from '@/lib/tab-panel-scope';
-import { groupItemsByFrame, mergeFillOutcomes, planFieldClick, planFieldScroll, planFormFill } from '@/lib/agent/fill-form-request';
+import {
+  groupItemsByFrame,
+  mergeFillOutcomes,
+  planFieldClick,
+  planFieldScroll,
+  planFormFill,
+  resolveExpectOrigin,
+} from '@/lib/agent/fill-form-request';
 import {
   applyFormFill,
   clickElementInPage,
@@ -1178,7 +1185,7 @@ async function clickElementByFieldId(fieldId: string, tabId: number): Promise<Cl
   const handle = table?.fields[fieldId];
   const applied = await executeInTab(
     tabId,
-    { url: table!.url, items: [], submit: plan.submit, expectOrigin: handle?.frameOrigin },
+    { url: table!.url, items: [], submit: plan.submit, expectOrigin: resolveExpectOrigin(handle) },
     applyFormFill,
     { frameId: handle?.frameId },
   );
@@ -1313,7 +1320,7 @@ async function pressKey(payload: PressKeyPayload, tabId: number): Promise<PressK
       submitOnEnter,
       url,
       expect,
-      expectOrigin: handle?.frameOrigin,
+      expectOrigin: resolveExpectOrigin(handle),
     },
     pressKeyInPage,
     { frameId: handle?.frameId },
@@ -1364,7 +1371,7 @@ async function scrollContainerByFieldId(payload: ScrollPagePayload, tabId: numbe
       x: payload.x,
       y: payload.y,
       behavior: payload.behavior,
-      expectOrigin: handle?.frameOrigin,
+      expectOrigin: resolveExpectOrigin(handle),
     },
     scrollContainerInPage,
     { frameId: handle?.frameId },
