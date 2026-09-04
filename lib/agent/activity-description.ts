@@ -50,6 +50,17 @@ export function describeToolActivity(toolName: string, args: unknown, status: Ac
       const seconds = typeof record.seconds === 'number' && Number.isFinite(record.seconds) ? record.seconds : 2;
       return withTarget(status, 'agentActivity.now.wait', 'agentActivity.done.wait', 'agentActivity.failed.wait', String(seconds));
     }
+    case 'browser_wait_for': {
+      const kind = str('kind');
+      const target = str('selector') || str('text') || kind;
+      return withTarget(
+        status,
+        'agentActivity.now.waitFor',
+        'agentActivity.done.waitFor',
+        'agentActivity.failed.waitFor',
+        target,
+      );
+    }
     case 'browser_read_page':
       return plain(status, 'agentActivity.tool.readPage');
     case 'browser_get_page_meta':

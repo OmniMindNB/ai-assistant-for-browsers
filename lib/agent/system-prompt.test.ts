@@ -368,3 +368,11 @@ describe('buildSystemPrompt 表单路径不被其它分区反向指引', () => {
     expect(batchLine).toContain('browser_type');
   });
 });
+
+describe('等待策略引导', () => {
+  it('提示词让模型优先用 browser_wait_for 而不是盲等', () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toContain('browser_wait_for');
+    expect(prompt).toContain('wait');
+  });
+});
