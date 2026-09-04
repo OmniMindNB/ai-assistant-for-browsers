@@ -473,7 +473,7 @@ function sleep(ms: number): Promise<void> {
  * 只调几次（实测 24 次工具调用里只有 3 次只读），比窗口逐轮漂移那个每轮都断的问题小一个
  * 量级，后者已由 planContextWindow 的迟滞修掉。
  */
-function compactAgentMessages(messages: AgentMessage[], contextWindow: ContextWindowState): AgentMessage[] {
+export function compactAgentMessages(messages: AgentMessage[], contextWindow: ContextWindowState): AgentMessage[] {
   const kept = planContextWindow(messages, contextWindow);
   const toolCallArgs = collectToolCallArguments(kept);
 
@@ -482,11 +482,32 @@ function compactAgentMessages(messages: AgentMessage[], contextWindow: ContextWi
     if (message.role === 'toolResult' && READ_ONLY_TOOL_NAMES.has(message.toolName)) lastReadResultIndex = index;
   });
 
+  // 最新一张截图单独跟踪：它必须豁免"非最新只读结果整条摘要"这条规则，
+  // 否则截图只要后面跟了任何别的读取工具就会失去图像，多步视觉任务
+  // （截图 → 点击 → 再看）会退化成看一眼就失忆。
+  let lastScreenshotIndex = -1;
+  kept.forEach((message, index) => {
+    if (message.role === 'toolResult' && message.toolName === 'browser_screenshot') {
+      lastScreenshotIndex = index;
+    }
+  });
+
   let summarizedReadResults = 0;
   let keptReadResultChars = 0;
 
   const compacted: AgentMessage[] = kept.map((message, index) => {
     if (message.role !== 'toolResult' || !READ_ONLY_TOOL_NAMES.has(message.toolName)) return message;
+
+    // 旧截图：图片是上下文里最贵的东西，换成占位符，并明确告诉模型怎么拿回来。
+    if (message.toolName === 'browser_screenshot' && index !== lastScreenshotIndex) {
+      return {
+        ...message,
+        content: [{ type: 'text', text: '[截图已移出上下文，如需重新查看请再次截图]' }],
+      };
+    }
+
+    // 最新截图：豁免下面的整条摘要，图片原样保留。
+    if (index === lastScreenshotIndex) return message;
 
     if (index !== lastReadResultIndex) {
       summarizedReadResults += 1;
@@ -509,7 +530,9 @@ function compactAgentMessages(messages: AgentMessage[], contextWindow: ContextWi
     });
 
     keptReadResultChars = compactedContent.reduce(
-      (total, part) => total + (part.type === 'text' ? part.text.length : 0),
+      // 图片此前对读预算完全隐形；base64 长度是它在请求体里的真实体积，计进来。
+      (total, part) =>
+        total + (part.type === 'text' ? part.text.length : part.type === 'image' ? part.data.length : 0),
       0,
     );
     return { ...message, content: compactedContent };
