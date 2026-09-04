@@ -56,11 +56,11 @@ export interface FindTextHandleInput {
   frameOrigin: string;
 }
 
-// 把这一轮 find_text 命中并入现有句柄表：保留 f*/s* (browser_get_form 发放的句柄),
-// 只替换上一轮 find_text 自己发放的 t* -- 这一轮的命中集合已经变了，旧的不该继续被信任，
-// 与 browser_get_form 每次整表覆写是同一个理由 (ref: 设计文档 4.4)。
+// 把这一轮 find_text 命中并入现有句柄表：保留 f*/s*（browser_get_form 发放的句柄），
+// 只替换上一轮 find_text 自己发放的 t*——这一轮的命中集合已经变了，旧的不该继续被信任，
+// 与 browser_get_form 每次整表覆写是同一个理由（ref: 设计文档 §4.4）。
 //
-// 换了页面 (existing.url 与 currentUrl 不符) 时连 f*/s* 也不保留：它们本就对着别的页面，
+// 换了页面（existing.url 与 currentUrl 不符）时连 f*/s* 也不保留：它们本就对着别的页面，
 // 硬并入只会在下次写入时统一因 url 不符判 stale，保留没有意义。
 export function mergeFindTextHandles(
   existing: FormFieldTable | undefined,
