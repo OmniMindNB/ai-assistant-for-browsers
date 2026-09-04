@@ -101,7 +101,9 @@ executeScript({
 
 子帧走窄采集的理由是信噪比：广告与埋点 iframe 几乎没有可写表单字段，因此在窄采集下自然贡献 0 条；而登录、支付、客服框要的字段一条不少。全收链接和一般可点击元素会让几十个广告链接把真正的目标字段挤出截断线。
 
-注入函数当然可以用 `window.top === window` 自己判断身份，但**分流的判断权仍然由 background 通过 `scope` 参数下发**。理由是可测性：规则留在参数层，`form-schema.ts` 的纯函数就能覆盖它；塞进注入函数就只能靠 dom test 间接验证。
+注入函数当然可以用 `window.top === window` 自己判断身份，但**分流的判断权仍然由 background 通过 `scope` 参数下发**：让"收什么"成为一个显式入参，而不是注入函数内部的隐式状态，调用点因此可以在不改注入函数的前提下换策略。
+
+过滤本身只能实现在注入函数里，用它已有的局部 helper `isStandardFieldTag`（`form-dom.ts:165`，判定 input/textarea/select/button/contenteditable，恰好等于「可写字段 + 提交按钮」）。**它不可能抽成 `form-schema.ts` 的纯函数**——注入函数被 `executeScript` 序列化，引用不到任何模块作用域的东西。因此这条规则的测试落在 `form-dom.dom.test.ts`，与其他注入函数一致。
 
 ### 4.2 fieldId 不需要改
 
@@ -109,7 +111,7 @@ executeScript({
 
 ### 4.3 两处上限
 
-病态页面（几十个嵌入组件）会把字段表撑爆，因此需要两个硬上限，都作为常量落在 `form-schema.ts`，与既有的截断逻辑同处一地：
+病态页面（几十个嵌入组件）会把字段表撑爆，因此需要两个硬上限，作为常量落在 `frame-merge.ts`——它们在那里被强制执行、也在那里被测试，而既有的 `MAX_FORM_FIELDS` 同样是定义在执行它的 `background.ts` 里：
 
 - `MAX_COLLECTED_FRAMES`（建议 16）：参与合并的子帧数上限，超出的按文档序丢弃。
 - `MAX_FIELDS_PER_CHILD_FRAME`（建议 30）：单个子帧的字段数上限。
@@ -168,6 +170,10 @@ f14  submit    确认支付
 
 实现要求：探测的注入目标取自句柄表里的 `frameId`；句柄不存在（纯 selector 兜底路径）时探测主框架，与现状一致。
 
+**这处改动落在 background 而不是 agent.ts。** `agent.ts` 的 `buildSubmitIntentProbePayload` 只负责把 fieldId 装进载荷；真正查句柄表并发起注入的是 `background.ts:747` 的 `probeSubmitIntent` 与 `:781` 的 `probeEnterSubmitIntent`。
+
+但 background 里的逻辑没有 vitest project 覆盖，守门的回归测试按原样落不了地。因此把"这次探测该打哪个帧"抽成 `fill-form-request.ts` 的纯函数 `planProbeTarget(payload, table)`——该文件已经放着 `planFieldClick`，做的正是同一件事（拿 payload 去句柄表里查定位信息），抽在一起符合既有分工。background 退回纯 I/O 编排，回归测试落在 `fill-form-request.test.ts`。
+
 ### 5.3 确认卡显示 frame origin
 
 `SubmitIntent` 增加 `frameOrigin?: string`。`confirm-summary.ts` 在它存在且与主框架 origin 不同时，多渲染一句：
@@ -209,12 +215,12 @@ f14  submit    确认支付
 
 | 测试 | 位置 | 钉住的行为 |
 |---|---|---|
-| `scope` 分流 | `form-schema.test.ts` | 子帧只产出 `WRITABLE_KINDS` + submit |
+| `scope` 分流 | `form-dom.dom.test.ts` | 子帧只产出可写字段 + submit，主框架行为不变 |
 | 多帧合并编号 | `frame-merge.test.ts` | 主框架优先、子帧按序，fieldId 全局唯一 |
 | 双上限截断 | `frame-merge.test.ts` | 超限时的丢弃规则与旁注文案 |
 | origin 比对 | `form-dom.dom.test.ts` | frameId 复用场景报 stale 而非误写 |
 | 确认卡 origin 行 | `confirm-summary.test.ts` | 同 origin 不渲染、跨 origin 渲染 |
-| **探测定向** | `agent.test.ts` | **句柄带 frameId 时探测必须注入该帧**（守 §5.2 的后门） |
+| **探测定向** | `fill-form-request.test.ts` | **句柄带 frameId 时 `planProbeTarget` 必须回传该帧**（守 §5.2 的后门） |
 
 最后一条是回归测试而非功能测试：它存在的唯一目的是让将来任何一次重构都无法悄悄把探测退回主框架。
 
@@ -222,13 +228,13 @@ f14  submit    确认支付
 
 | 文件 | 改动 |
 |---|---|
-| `entrypoints/background.ts` | `executeInTab` 增加可选 `frameId` 与 `allFrames`；`getForm` 改 `allFrames` 注入并调用 `frame-merge`；`queryDom` / `getHtml` / `getComputedStyle` 改广播并分组（§4.6）；探测按句柄 frameId 定向；遮罩推送区分主/子帧 |
+| `entrypoints/background.ts` | `executeInTab` 增加可选 `frameId` 与 `allFrames`；`getForm` 改 `allFrames` 注入并调用 `frame-merge`；`queryDom` / `getHtml` / `getComputedStyle` 改广播并分组（§4.6）；`probeSubmitIntent` / `probeEnterSubmitIntent` 改用 `planProbeTarget` 定向注入；遮罩推送区分主/子帧 |
 | `lib/agent/frame-merge.ts` | 新增：多帧结果合并、编号、双上限截断 |
 | `lib/agent/tab-form-fields.ts` | `FormFieldHandle` 加 `frameId` / `frameOrigin` |
 | `lib/agent/form-dom.ts` | `collectFormFields` 接受 `scope`；写入函数比对 `location.origin`；子帧跳过光标事件与等待 |
-| `lib/agent/form-schema.ts` | 两个上限常量；`scope` 分流的纯函数部分 |
+| `lib/messaging.ts` | 只读注入结果加 `origin` 字段（§4.6 的分帧分段靠它标注归属）；`GetFormResult` 加截断计数 |
 | `lib/agent/form-render.ts` | 删 `unreachable.iframes` 旁注，改按帧分组 + 截断旁注 |
 | `lib/agent/form-submit.ts` | `SubmitIntent` 加 `frameOrigin` |
 | `lib/agent/confirm-summary.ts` | 渲染 frame origin 行 |
-| `lib/agent/agent.ts` | `buildSubmitIntentProbePayload` 按句柄 frameId 定向探测 |
+| `lib/agent/fill-form-request.ts` | 新增 `planProbeTarget`：把探测的帧定向从 background 抽成可测的纯函数 |
 | `lib/agent/system-prompt.ts` | 改写第 7 条 iframe 指令 |
