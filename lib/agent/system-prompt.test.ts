@@ -374,5 +374,12 @@ describe('等待策略引导', () => {
     const prompt = buildSystemPrompt();
     expect(prompt).toContain('browser_wait_for');
     expect(prompt).toContain('wait');
+    // 四种条件都要点名，否则模型不知道该传哪个 kind。
+    expect(prompt).toContain('appear');
+    expect(prompt).toContain('disappear');
+    expect(prompt).toContain('textContains');
+    expect(prompt).toContain('domIdle');
+    // 必须明确劝阻盲等固定秒数，否则模型会继续走 wait(N) 老路。
+    expect(prompt).toContain('不要用 wait 盲等固定秒数');
   });
 });
