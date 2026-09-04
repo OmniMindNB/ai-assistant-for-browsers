@@ -7,6 +7,7 @@ import {
   planFieldClick,
   planFieldScroll,
   planFormFill,
+  planProbeTarget,
   resolveExpectOrigin,
 } from './fill-form-request';
 import type { FormFieldHandle, FormFieldTable } from './tab-form-fields';
@@ -347,5 +348,34 @@ describe('resolveExpectOrigin', () => {
 
   it('returns undefined when there is no handle to resolve', () => {
     expect(resolveExpectOrigin(undefined)).toBeUndefined();
+  });
+});
+
+describe('planProbeTarget', () => {
+  // 会让这个用例失败的 production 改动：探测忽略 handle.frameId 只打主框架。
+  // 后果不是"探不到"这么轻——探测失败会被 resolveSubmitIntent 降级成
+  // { isSubmit: false } 放行，于是子帧里的每一次表单提交都绕过确认闸门。
+  it('targets the frame recorded on the handle', () => {
+    const plan = planProbeTarget(
+      'f9',
+      table({ f9: handle({ frameId: 7, frameOrigin: 'https://pay.example.com', kind: 'submit' }) }),
+    );
+
+    expect(plan.frameId).toBe(7);
+    expect(plan.expectOrigin).toBe('https://pay.example.com');
+    expect(plan.path).toBeDefined();
+  });
+
+  // 会让这个用例失败的 production 改动：主框架句柄也回传一个 frameId，
+  // 那样 executeInTab 会走 frameIds 分支，与改动前的行为不再等价。
+  it('leaves frameId undefined for a main-frame handle', () => {
+    const plan = planProbeTarget('f1', table({ f1: handle() }));
+    expect(plan.frameId).toBeUndefined();
+  });
+
+  // 会让这个用例失败的 production 改动：没有句柄时凭空造一个 path 去探测。
+  it('returns an empty plan when the handle is unknown', () => {
+    expect(planProbeTarget('f404', table({}))).toEqual({});
+    expect(planProbeTarget(undefined, undefined)).toEqual({});
   });
 });

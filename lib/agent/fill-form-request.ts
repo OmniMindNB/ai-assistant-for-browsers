@@ -194,3 +194,18 @@ export function planFieldScroll(fieldId: string, table: FormFieldTable | undefin
   if (handle.kind !== 'scrollable') return { ok: false, reason: 'wrong_kind' };
   return { ok: true, target: { fieldId, path: handle.path, expect: { tag: handle.expect.tag } } };
 }
+
+/**
+ * 探测该打哪个帧。抽成纯函数不是为了复用，是为了让「探测必须跟着 frameId 走」
+ * 这条安全约束有测试守着——background 里的逻辑没有任何 vitest project 覆盖
+ * （ref: 设计文档 §5.2）。
+ */
+export function planProbeTarget(
+  fieldId: string | undefined,
+  table: FormFieldTable | undefined,
+): { path?: FormFieldHandle['path']; frameId?: number; expectOrigin?: string } {
+  if (!fieldId || !table) return {};
+  const handle = table.fields[fieldId];
+  if (!handle) return {};
+  return { path: handle.path, frameId: handle.frameId, expectOrigin: handle.frameOrigin };
+}

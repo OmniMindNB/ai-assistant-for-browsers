@@ -98,6 +98,7 @@ import {
   planFieldClick,
   planFieldScroll,
   planFormFill,
+  planProbeTarget,
   resolveExpectOrigin,
 } from '@/lib/agent/fill-form-request';
 import {
@@ -792,13 +793,17 @@ async function probeSubmitIntent(payload: ProbeClickTargetPayload, tabId: number
     label: table?.fields[fieldId]?.expect.label,
   }));
 
-  const handle = payload?.submitFieldId ? table?.fields[payload.submitFieldId] : undefined;
-  if (!payload?.selector && !handle) return { isSubmit: false, fieldLabels };
+  // 提交探测必须跟着句柄的 frameId 走：子帧字段若还是只打主框架，探测会找不到目标，
+  // 而"探测失败⇒当作非提交放行"的既有降级会让子帧里的每一次表单提交都绕过确认闸门
+  // （ref: 设计文档 §5.2，这是整个设计里唯一能静默打穿确认闸门的地方）。
+  const target = planProbeTarget(payload?.submitFieldId, table);
+  if (!payload?.selector && !target.path) return { isSubmit: false, fieldLabels };
 
   const probe = await executeInTab(
     tabId,
-    { selector: payload?.selector, index: payload?.index, path: handle?.path },
+    { selector: payload?.selector, index: payload?.index, path: target.path },
     probeClickTarget,
+    { frameId: target.frameId },
   );
   if (!probe.found) return { isSubmit: false, fieldLabels };
 
@@ -828,20 +833,23 @@ async function probeEnterSubmitIntent(
     label: table?.fields[fieldId]?.expect.label,
   }));
 
-  const handle = payload?.fieldId ? table?.fields[payload.fieldId] : undefined;
-  if (!handle && !payload?.selector && !payload?.useActiveElement) {
+  // 同 probeSubmitIntent：探测必须跟着句柄的 frameId 走，否则子帧字段的 Enter 隐式
+  // 提交探测永远探不到目标，会被降级为「非提交」放行，绕过确认闸门（ref: 设计文档 §5.2）。
+  const target = planProbeTarget(payload?.fieldId, table);
+  if (!target.path && !payload?.selector && !payload?.useActiveElement) {
     return { isSubmit: false, fieldLabels };
   }
 
   const probe = await executeInTab(
     tabId,
     {
-      path: handle?.path,
+      path: target.path,
       selector: payload?.selector,
       index: payload?.index,
       useActiveElement: payload?.useActiveElement,
     },
     probeKeyTarget,
+    { frameId: target.frameId },
   );
   if (!probe.found) return { isSubmit: false, fieldLabels };
 
