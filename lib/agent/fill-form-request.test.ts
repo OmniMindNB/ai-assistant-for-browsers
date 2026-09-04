@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FillFormFieldOutcome, FillFormPayload } from '@/lib/messaging';
-import { mergeFillOutcomes, planFieldClick, planFieldScroll, planFormFill } from './fill-form-request';
+import type { ApplyFillItem } from './form-dom';
+import { groupItemsByFrame, mergeFillOutcomes, planFieldClick, planFieldScroll, planFormFill } from './fill-form-request';
 import type { FormFieldHandle, FormFieldTable } from './tab-form-fields';
 
 function handle(overrides: Partial<FormFieldHandle> = {}): FormFieldHandle {
@@ -15,6 +16,17 @@ function handle(overrides: Partial<FormFieldHandle> = {}): FormFieldHandle {
 
 function table(fields: Record<string, FormFieldHandle>): FormFieldTable {
   return { url: 'https://example.com/checkout', fields };
+}
+
+function item(overrides: Partial<ApplyFillItem> = {}): ApplyFillItem {
+  return {
+    fieldId: 'f1',
+    path: [{ kind: 'selector', selector: 'input', index: 0 }],
+    expect: { tag: 'input', type: 'text', name: 'x' },
+    kind: 'text',
+    value: 'v',
+    ...overrides,
+  };
 }
 
 describe('planFormFill', () => {
@@ -198,5 +210,103 @@ describe('planFieldScroll', () => {
       ok: true,
       target: { fieldId: 's1', path: h.path, expect: { tag: 'div' } },
     });
+  });
+});
+
+describe('groupItemsByFrame', () => {
+  const submitHandlePath = [{ kind: 'selector' as const, selector: 'button', index: 0 }];
+  const submitHandleExpect = { tag: 'button', name: 'go' };
+
+  it('keeps all items and submit in one group for the common single-frame case', () => {
+    const items = [item({ fieldId: 'f1' }), item({ fieldId: 'f2' })];
+    const submit = { fieldId: 'f9', path: submitHandlePath, expect: submitHandleExpect };
+    const t = table({
+      f1: handle({ frameId: 0, frameOrigin: 'https://example.com' }),
+      f2: handle({ frameId: 0, frameOrigin: 'https://example.com' }),
+      f9: handle({ frameId: 0, frameOrigin: 'https://example.com', kind: 'submit' }),
+    });
+
+    const groups = groupItemsByFrame(items, submit, t);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].frameId).toBe(0);
+    expect(groups[0].frameOrigin).toBe('https://example.com');
+    expect(groups[0].items.map((i) => i.fieldId)).toEqual(['f1', 'f2']);
+    expect(groups[0].submit).toEqual(submit);
+  });
+
+  // 会让这个用例失败的 production 改动：分组时不按 frameId 分桶，仍然只用一个"代表"句柄
+  // （比如 submit 或第一个字段）去发起唯一一次 executeInTab——那样支付 iframe 里的字段
+  // 会被拿去跟主框架（或另一个字段所在帧）的 origin 比对，origin 校验对它形同虚设，
+  // 这正是本轮修的 Critical #2。
+  it('splits items across frames instead of using one "primary" handle for the whole batch', () => {
+    const items = [item({ fieldId: 'f1' }), item({ fieldId: 'f2' })];
+    const t = table({
+      f1: handle({ frameId: 0, frameOrigin: 'https://example.com' }),
+      f2: handle({ frameId: 7, frameOrigin: 'https://payments.example.com' }),
+    });
+
+    const groups = groupItemsByFrame(items, undefined, t);
+
+    expect(groups).toHaveLength(2);
+    const main = groups.find((g) => g.frameId === 0)!;
+    const child = groups.find((g) => g.frameId === 7)!;
+    expect(main.items.map((i) => i.fieldId)).toEqual(['f1']);
+    expect(main.frameOrigin).toBe('https://example.com');
+    expect(child.items.map((i) => i.fieldId)).toEqual(['f2']);
+    expect(child.frameOrigin).toBe('https://payments.example.com');
+  });
+
+  it('gives submit its own empty-items group when its frame has no items in the batch', () => {
+    const items = [item({ fieldId: 'f2' })];
+    const submit = { fieldId: 'f9', path: submitHandlePath, expect: submitHandleExpect };
+    const t = table({
+      f2: handle({ frameId: 7, frameOrigin: 'https://payments.example.com' }),
+      f9: handle({ frameId: 0, frameOrigin: 'https://example.com', kind: 'submit' }),
+    });
+
+    const groups = groupItemsByFrame(items, submit, t);
+
+    expect(groups).toHaveLength(2);
+    const itemsGroup = groups.find((g) => g.frameId === 7)!;
+    const submitGroup = groups.find((g) => g.frameId === 0)!;
+    expect(itemsGroup.items.map((i) => i.fieldId)).toEqual(['f2']);
+    expect(itemsGroup.submit).toBeUndefined();
+    expect(submitGroup.items).toEqual([]);
+    expect(submitGroup.submit).toEqual(submit);
+  });
+
+  it('joins submit into an existing item group when their frames match', () => {
+    const items = [item({ fieldId: 'f1' })];
+    const submit = { fieldId: 'f9', path: submitHandlePath, expect: submitHandleExpect };
+    const t = table({
+      f1: handle({ frameId: 3, frameOrigin: 'https://example.com' }),
+      f9: handle({ frameId: 3, frameOrigin: 'https://example.com', kind: 'submit' }),
+    });
+
+    const groups = groupItemsByFrame(items, submit, t);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].items.map((i) => i.fieldId)).toEqual(['f1']);
+    expect(groups[0].submit).toEqual(submit);
+  });
+
+  // 会让这个用例失败的 production 改动：items/submit 都为空时直接返回空数组——过去的
+  // 实现即使没有任何字段可写，也会对主框架发一次空 items 的 executeInTab 调用，用来检测
+  // 页面是否已经导航；分组不能把这次校验静默丢掉（否则页面已导航时 fillForm 不再报
+  // fieldsTableStale）。
+  it('falls back to a single main-frame group with empty items when there is nothing to write or submit', () => {
+    const groups = groupItemsByFrame([], undefined, table({}));
+
+    expect(groups).toEqual([{ frameId: undefined, frameOrigin: undefined, items: [] }]);
+  });
+
+  it('buckets a field with no explicit frameId (legacy handle) into the main-frame group', () => {
+    const items = [item({ fieldId: 'f1' })];
+    const t = table({ f1: handle() }); // handle() 默认不带 frameId/frameOrigin
+
+    const groups = groupItemsByFrame(items, undefined, t);
+
+    expect(groups).toEqual([{ frameId: undefined, frameOrigin: undefined, items }]);
   });
 });

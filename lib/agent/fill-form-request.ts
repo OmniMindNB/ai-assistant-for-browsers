@@ -83,6 +83,68 @@ export function mergeFillOutcomes(
   });
 }
 
+export interface FormFillFrameGroup {
+  /** undefined = 主框架旧句柄（向后兼容缺省 frameId 的表），否则是采集时记下的真实 frameId。 */
+  frameId: number | undefined;
+  frameOrigin: string | undefined;
+  items: ApplyFillItem[];
+  submit?: { fieldId: string; path: FormFieldHandle['path']; expect: FormFieldHandle['expect'] };
+}
+
+/**
+ * 把 planFormFill 产出的 items/submit 按句柄的 frameId 分组，每组对应一次独立的
+ * executeInTab 调用。
+ *
+ * 背景：一次 browser_fill_form 天然可能横跨多个帧——旗舰场景就是主框架的姓名/邮箱
+ * 与支付 iframe 里的卡号在同一次 browser_get_form 快照里、同一次 browser_fill_form
+ * 调用里。过去的实现只用"代表整批"的一个句柄（submit 或第一个字段）做 origin 校验、
+ * 只发起一次 executeInTab，其余字段的 path 会被拿去跟这唯一目标帧解析——同源撞名时
+ * 甚至可能真的解析成功，写进完全不该写的帧，却仍然回报 'ok'。按帧分组、每组各自
+ * 校验 origin，才能让 Critical #2 描述的这条误写路径被真正堵住
+ * （ref: 设计文档 §3.3，2026-09-04 review Critical #2）。
+ *
+ * submit 归入它自己句柄所在的组，可能与所有 items 所在的组都不同（字段在 iframe 里，
+ * 提交按钮却在主框架的表单上，或反过来）；若它的 frameId 在 items 分组里找不到对应的
+ * 组，就单独开一个 items 为空的组——与 clickElementByFieldId 现有的
+ * `applyFormFill({ items: [], submit })` 用法是同一个模式。
+ *
+ * items 与 submit 都为空时（例如请求的字段全被判定为敏感、且未请求提交）仍返回一个
+ * 面向主框架、items 为空的组：过去的实现在这种情况下也会对主框架发起一次空 items 的
+ * executeInTab 调用，用来检测页面是否已经导航——分组不能把这次校验静默丢掉。
+ */
+export function groupItemsByFrame(
+  items: ApplyFillItem[],
+  submit: FormFillPlan['submit'],
+  table: FormFieldTable,
+): FormFillFrameGroup[] {
+  const groups = new Map<number | undefined, FormFillFrameGroup>();
+
+  const groupFor = (fieldId: string): FormFillFrameGroup => {
+    const handle = table.fields[fieldId];
+    const frameId = handle?.frameId;
+    let group = groups.get(frameId);
+    if (!group) {
+      group = { frameId, frameOrigin: handle?.frameOrigin, items: [] };
+      groups.set(frameId, group);
+    }
+    return group;
+  };
+
+  for (const item of items) {
+    groupFor(item.fieldId).items.push(item);
+  }
+
+  if (submit) {
+    groupFor(submit.fieldId).submit = submit;
+  }
+
+  if (groups.size === 0) {
+    groups.set(undefined, { frameId: undefined, frameOrigin: undefined, items: [] });
+  }
+
+  return Array.from(groups.values());
+}
+
 export interface FieldClickPlan {
   ok: boolean;
   reason?: 'no_table' | 'unknown_field' | 'wrong_kind';

@@ -92,7 +92,7 @@ import {
   listPanelOpenedTabs,
   markPanelOpenedForTab,
 } from '@/lib/tab-panel-scope';
-import { mergeFillOutcomes, planFieldClick, planFieldScroll, planFormFill } from '@/lib/agent/fill-form-request';
+import { groupItemsByFrame, mergeFillOutcomes, planFieldClick, planFieldScroll, planFormFill } from '@/lib/agent/fill-form-request';
 import {
   applyFormFill,
   clickElementInPage,
@@ -656,6 +656,10 @@ async function snapshotFields(tabId: number, payload: GetFormPayload = {}): Prom
   const scrollableContainers: ScrollableContainerDescriptor[] | undefined = collected.scrollables?.map(
     (raw, index) => {
       const fieldId = `s${index + 1}`;
+      // 有意不带 frameId/frameOrigin：mergeFrameCollections 的 scrollables 只来自主框架的
+      // 采集输出（见该函数），可滚动容器目前是主框架专属的采集能力，不存在子帧句柄。
+      // scrollContainerInPage 的 origin 校验因此在生产中永远不会被这条路径触发——
+      // 只受它自己的单元测试保护（ref: 2026-09-04 review Minor）。
       handles[fieldId] = { path: raw.path, expect: { tag: raw.tag }, sensitive: false, kind: 'scrollable' };
       return toScrollableContainerDescriptor(raw, fieldId);
     },
@@ -719,28 +723,38 @@ async function fillForm(payload: FillFormPayload, tabId: number): Promise<FillFo
   }
 
   const plan = planFormFill(payload, table);
-  // 一次 fill_form 写入的所有字段来自同一个 browser_get_form 快照，天然属于同一帧：
-  // 用提交目标（若有）或第一个字段的句柄代表整批的 frameId/origin。若请求真的混杂了
-  // 不同帧的 fieldId（不该发生），非目标帧的字段会在注入时因 path 解析不到而 not_found，
-  // 不会误写到别的帧——不是静默成功。
-  const primaryFieldId = payload?.submit?.fieldId ?? payload?.fields?.[0]?.fieldId;
-  const primaryHandle = primaryFieldId ? table.fields[primaryFieldId] : undefined;
-  const applied = await executeInTab(
-    tabId,
-    { url: table.url, items: plan.items, submit: plan.submit, expectOrigin: primaryHandle?.frameOrigin },
-    applyFormFill,
-    { frameId: primaryHandle?.frameId },
+  // 一次 fill_form 天然可能横跨多个帧（主框架字段 + 支付 iframe 里的卡号，都来自同一次
+  // browser_get_form 快照）：按每个字段/提交句柄各自的 frameId 分组，每组独立一次
+  // executeInTab + 独立的 origin 校验，不能只用"代表整批"的一个句柄
+  // （ref: 设计文档 §3.3，2026-09-04 review Critical #2）。未混帧的常见情形（所有字段
+  // 和提交都在主框架）分组后仍恰好是一组，行为与此前完全一致。
+  const groups = groupItemsByFrame(plan.items, plan.submit, table);
+  const appliedResults = await Promise.all(
+    groups.map((group) =>
+      executeInTab(
+        tabId,
+        { url: table.url, items: group.items, submit: group.submit, expectOrigin: group.frameOrigin },
+        applyFormFill,
+        { frameId: group.frameId },
+      ),
+    ),
   );
 
-  if (applied.fieldsTableStale) {
+  // 任一帧的写入因句柄过期被拒绝，整次调用就报 stale：模型需要重新 get_form，
+  // 不能因为别的帧写成功了就掩盖这一部分已经失效的事实。
+  if (appliedResults.some((applied) => applied.fieldsTableStale)) {
     return { outcomes: [], fieldsTableStale: true };
   }
 
+  const allOutcomes = appliedResults.flatMap((applied) => applied.outcomes);
+  // 只有携带 plan.submit 的那一组会真正尝试提交，其余组的 submitted 恒为 undefined。
+  const submitted = appliedResults.find((applied) => applied.submitted)?.submitted;
+
   return {
-    outcomes: mergeFillOutcomes(payload, plan.blocked, applied.outcomes),
+    outcomes: mergeFillOutcomes(payload, plan.blocked, allOutcomes),
     submitted: plan.submitFieldMissing
       ? { fieldId: payload!.submit!.fieldId, status: 'not_found' as const }
-      : applied.submitted,
+      : submitted,
     newFields: await collectNewFieldsAfterWrite(tabId),
   };
 }

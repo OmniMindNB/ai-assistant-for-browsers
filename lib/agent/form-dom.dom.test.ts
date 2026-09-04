@@ -1392,6 +1392,58 @@ describe('applyFormFill origin guard', () => {
     expect(result.outcomes[0].status).toBe('mismatch');
     expect(document.querySelector('input')!.value).toBe('');
   });
+
+  // 会让这个用例失败的 production 改动：把 expectOrigin 的比对条件从「不等于当前
+  // origin」误改成「存在就拒绝」之类的过度收紧——那样任何带 expectOrigin 的子帧写入
+  // 都会被无差别挡下，即便 origin 明明匹配（这正是本轮修的 Critical #1：子帧写入
+  // 曾经因为另一条 url 检查而恒报 stale，永远无法真正落地）。
+  it('writes through when the frame origin matches the handle', async () => {
+    render('<input type="text" name="card" value="" />');
+    const items: ApplyFillItem[] = [
+      {
+        fieldId: 'f1',
+        value: '4111111111111111',
+        path: [
+          { kind: 'selector', selector: 'body', index: 0 },
+          { kind: 'selector', selector: 'input', index: 0 },
+        ],
+        expect: { tag: 'input', type: 'text', name: 'card' },
+        kind: 'text',
+      },
+    ];
+
+    const result = await applyFormFill({ items, expectOrigin: location.origin, url: '' });
+
+    expect(result.fieldsTableStale).toBeUndefined();
+    expect(result.outcomes[0].status).toBe('ok');
+    expect(document.querySelector('input')!.value).toBe('4111111111111111');
+  });
+
+  // 会让这个用例失败的 production 改动：把 `expectOrigin === 'null'` 的特判删掉，
+  // 只留 `!== location.origin` 比对——两个不同的不透明帧（sandboxed iframe 缺
+  // allow-same-origin、data:/about:blank）的 location.origin 都是字面字符串 "null"，
+  // "null" !== "null" 为 false，会被误判成同一帧，frameId 复用到另一个不透明帧时
+  // 这道锁就形同虚设。测试环境的 location.origin 不是字符串 "null"（不需要伪造成
+  // 那样），所以这条用例已经足以证明「等于 'null' 就必拒」是一条独立生效的规则，
+  // 不依赖当前帧本身也恰好是不透明的。
+  it('treats a "null" (opaque) expectOrigin as always stale, never a match', async () => {
+    render('<input name="card" value="" />');
+    const items: ApplyFillItem[] = [
+      {
+        fieldId: 'f1',
+        value: '4111111111111111',
+        path: [{ kind: 'selector', selector: 'input', index: 0 }],
+        expect: { tag: 'input', type: 'text', name: 'card' },
+        kind: 'text',
+      },
+    ];
+
+    const result = await applyFormFill({ items, expectOrigin: 'null', url: '' });
+
+    expect(result.fieldsTableStale).toBe(true);
+    expect(result.outcomes[0].status).toBe('mismatch');
+    expect(document.querySelector('input')!.value).toBe('');
+  });
 });
 
 describe('pressKeyInPage origin guard', () => {
@@ -1435,6 +1487,42 @@ describe('pressKeyInPage origin guard', () => {
     expect(result.submitted).toBe(false);
     expect(sawKeydown).toBe(false);
   });
+
+  // 会让这个用例失败的 production 改动：把 expectOrigin 比对条件从「不等于当前 origin」
+  // 误改成「存在就拒绝」——那样带 expectOrigin 的子帧按键永远无法真正落地（同 Critical #1
+  // 修的那类问题：子帧写入曾经因另一条检查而恒报 stale）。
+  it('presses the key through when the frame origin matches the handle', () => {
+    render('<form><input type="text" name="q" /></form>');
+    const input = document.querySelector('input')!;
+    let sawKeydown = false;
+    input.addEventListener('keydown', () => {
+      sawKeydown = true;
+    });
+
+    const result = pressKeyInPage({
+      path: [
+        { kind: 'selector', selector: 'body', index: 0 },
+        { kind: 'selector', selector: 'form', index: 0 },
+        { kind: 'selector', selector: 'input', index: 0 },
+      ],
+      descriptor: {
+        key: 'Tab',
+        code: 'Tab',
+        keyCode: 9,
+        ctrlKey: false,
+        shiftKey: false,
+        altKey: false,
+        metaKey: false,
+        emitsKeypress: false,
+      },
+      submitOnEnter: false,
+      expectOrigin: location.origin,
+    });
+
+    expect(result.fieldsTableStale).toBeUndefined();
+    expect(result.status).toBe('ok');
+    expect(sawKeydown).toBe(true);
+  });
 });
 
 describe('scrollContainerInPage origin guard', () => {
@@ -1465,5 +1553,30 @@ describe('scrollContainerInPage origin guard', () => {
     expect(result.fieldsTableStale).toBe(true);
     expect(result.status).toBe('not_found');
     expect(el.scrollTop).toBe(0);
+  });
+
+  // 会让这个用例失败的 production 改动：把 expectOrigin 比对条件从「不等于当前 origin」
+  // 误改成「存在就拒绝」——那样带 expectOrigin 的滚动请求永远无法真正落地。
+  it('scrolls through when the frame origin matches the handle', () => {
+    render('<div id="panel"></div>');
+    const el = document.getElementById('panel')!;
+    Object.defineProperty(el, 'scrollHeight', { value: 1000, configurable: true });
+    Object.defineProperty(el, 'clientHeight', { value: 400, configurable: true });
+    el.scrollTop = 0;
+
+    const result = scrollContainerInPage({
+      url: location.href,
+      path: [
+        { kind: 'selector', selector: 'body', index: 0 },
+        { kind: 'selector', selector: 'div', index: 0 },
+      ],
+      expect: { tag: 'div' },
+      y: 300,
+      expectOrigin: location.origin,
+    });
+
+    expect(result.fieldsTableStale).toBeUndefined();
+    expect(result.status).toBe('ok');
+    expect(el.scrollTop).toBe(300);
   });
 });

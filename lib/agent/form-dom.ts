@@ -522,7 +522,12 @@ export interface ApplyFillOutput {
 export async function applyFormFill(input: ApplyFillInput): Promise<ApplyFillOutput> {
   // frameId 复用检测：句柄发放时记下的 origin 与本帧当前 origin 不符，说明这个
   // frameId 已经被分配给了另一个帧。此时整批拒绝，绝不逐条尝试。
-  if (input.expectOrigin && input.expectOrigin !== location.origin) {
+  //
+  // 'null' 是不透明 origin（sandboxed iframe 缺 allow-same-origin、data:/about:blank）的
+  // 字面值。两个不同的不透明帧的 location.origin 都是字符串 "null"，彼此却完全不是
+  // 同一个文档——"null 等于 null" 不是真的相等，必须视为永远不匹配，否则 frameId 被
+  // 复用给另一个不透明帧时，这道锁形同虚设。
+  if (input.expectOrigin && (input.expectOrigin === 'null' || input.expectOrigin !== location.origin)) {
     return {
       fieldsTableStale: true,
       outcomes: input.items.map((item) => ({
@@ -533,7 +538,12 @@ export async function applyFormFill(input: ApplyFillInput): Promise<ApplyFillOut
     };
   }
 
-  if (input.url && input.url !== location.href) {
+  // table.url 是主帧的 URL（见 snapshotFields）；子帧场景下 location.href 是子帧自己的
+  // URL，与 table.url 恒不相等——这条检查只对「整页导航走了」这一主帧场景有意义。
+  // 子帧场景（input.expectOrigin 存在）已经由上面的 origin 比对 + 下面逐字段的
+  // matchesExpect 结构指纹校验兜底，不需要、也不能再套用主帧的 url 判定
+  // （ref: 设计文档 §3.3）。
+  if (!input.expectOrigin && input.url && input.url !== location.href) {
     return { outcomes: [], fieldsTableStale: true };
   }
 
@@ -1048,10 +1058,16 @@ export function pressKeyInPage(input: PressKeyInput): PressKeyOutput {
   // frameId 复用检测放在 url/expect 之前：句柄发放时记下的 origin 与本帧当前 origin 不符，
   // 说明这个 frameId 已经被分配给了另一个帧，此时按 url/expect 比对已经没有意义——
   // 目标压根不是同一个文档。
-  if (input.expectOrigin && input.expectOrigin !== location.origin) {
+  //
+  // 'null' 是不透明 origin 的字面值（sandboxed iframe / data: / about:blank）；两个不同的
+  // 不透明帧都读成 "null"，彼此却不是同一个文档，必须视为永远不匹配（同 applyFormFill）。
+  if (input.expectOrigin && (input.expectOrigin === 'null' || input.expectOrigin !== location.origin)) {
     return { status: 'not_found', defaultPrevented: false, submitted: false, fieldsTableStale: true };
   }
-  if (input.url && input.url !== location.href) {
+  // table.url 是主帧 URL：子帧场景下 location.href 恒不等于它，这条检查只对主帧场景
+  // （expectOrigin 未传）有意义——子帧场景已经由上面的 origin 比对兜底（同 applyFormFill，
+  // ref: 设计文档 §3.3）。
+  if (!input.expectOrigin && input.url && input.url !== location.href) {
     return { status: 'not_found', defaultPrevented: false, submitted: false, fieldsTableStale: true };
   }
   if (input.expect) {
@@ -1162,11 +1178,18 @@ export function scrollContainerInPage(input: ScrollContainerInput): ScrollContai
 
   // frameId 复用检测：句柄发放时记下的 origin 与本帧当前 origin 不符，说明这个
   // frameId 已经被分配给了另一个帧。与下方的 url 早退语义一致，检查顺序在前。
-  if (input.expectOrigin && input.expectOrigin !== location.origin) {
+  //
+  // 'null' 是不透明 origin 的字面值（sandboxed iframe / data: / about:blank）；两个不同的
+  // 不透明帧都读成 "null"，彼此却不是同一个文档，必须视为永远不匹配（同 applyFormFill）。
+  if (input.expectOrigin && (input.expectOrigin === 'null' || input.expectOrigin !== location.origin)) {
     return { ...empty, status: 'not_found', fieldsTableStale: true };
   }
 
-  if (input.url && input.url !== location.href) {
+  // table.url 是主帧 URL：子帧场景下 location.href 恒不等于它，这条检查只对主帧场景
+  // （expectOrigin 未传）有意义——子帧场景已经由上面的 origin 比对兜底（同 applyFormFill，
+  // ref: 设计文档 §3.3）。目前可滚动容器只在主帧采集（见 background.ts 注释），此分支
+  // 尚不会在生产中被子帧命中，但保持三处判定逻辑一致。
+  if (!input.expectOrigin && input.url && input.url !== location.href) {
     return { ...empty, status: 'not_found', fieldsTableStale: true };
   }
 
