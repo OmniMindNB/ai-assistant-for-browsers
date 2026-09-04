@@ -50,6 +50,7 @@ jobs:
 
       - name: Verify generated policy routes
         run: |
+          test -f _site/index.html
           test -f _site/privacy-policy/index.html
           test -f _site/privacy-policy/zh-CN/index.html
           grep -F "Runi Privacy Policy" _site/privacy-policy/index.html
@@ -58,10 +59,13 @@ jobs:
           grep -F "生效日期：2026-08-21" _site/privacy-policy/zh-CN/index.html
           grep -F 'href="/ai-assistant-for-browsers/privacy-policy/zh-CN/"' _site/privacy-policy/index.html
           grep -F 'href="/ai-assistant-for-browsers/privacy-policy/"' _site/privacy-policy/zh-CN/index.html
+          grep -F 'href="/ai-assistant-for-browsers/privacy-policy/zh-CN/"' _site/index.html
+          grep -F 'href="/ai-assistant-for-browsers/privacy-policy/"' _site/index.html
 
       - name: Stage policy-only Pages artifact
         run: |
           mkdir _pages
+          cp _site/index.html _pages/index.html
           cp -R _site/privacy-policy _pages/privacy-policy
 
       - name: Upload GitHub Pages artifact
