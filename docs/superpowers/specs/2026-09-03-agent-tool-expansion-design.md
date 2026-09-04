@@ -127,6 +127,8 @@ const block = { type: 'tool_result', tool_use_id: message.toolCallId, content: s
 
 考虑过的替代方案：在工具层双写（工具回文本，同时让 `run-registry` 在 tool result 后插一条真实 user 消息带图）。协议无关、两边一套代码，但那条伪造的 user 消息会污染真实历史与持久化。为绕协议差异去污染历史，不划算。已否决。
 
+**已知代价：截图绕过内容脱敏。** `lib/redaction.ts` 的规则只处理文本，截图是直接发给视觉模型的原始 JPEG 像素，完全不经过脱敏管线。这是可接受的产品取舍（对截图做 OCR 再脱敏不现实），但需要显式写下来而不是隐含行为——已在设置页 `provider.visionModelsHint` 文案里补一句提示。
+
 ### 3.4 上下文淘汰：只保留最新一张
 
 `agent.ts` 的 `compactAgentMessages` 目前只截断 `part.type === 'text'`：

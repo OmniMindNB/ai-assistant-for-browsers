@@ -73,7 +73,7 @@ export const en: Record<keyof typeof zh, string> = {
   'provider.fieldModel': 'Model (default)',
   'provider.fieldExtraModels': 'Other available models (comma-separated, optional)',
   'provider.visionModels': 'Models that accept images',
-  'provider.visionModelsHint': 'Comma-separated. The screenshot tool is only enabled for models listed here — sending an image to a model that cannot accept one fails outright.',
+  'provider.visionModelsHint': 'Comma-separated. The screenshot tool is only enabled for models listed here — sending an image to a model that cannot accept one fails outright. Screenshots are sent as images and are not covered by the content-redaction rules.',
   'provider.saveChanges': 'Save changes',
   'provider.addSubmit': 'Add',
   'provider.flashFillRequired': 'Please fill in name, Base URL, model, and API key',

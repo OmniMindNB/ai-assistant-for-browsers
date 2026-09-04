@@ -70,7 +70,7 @@ export const zh = {
   'provider.fieldModel': '模型（默认）',
   'provider.fieldExtraModels': '其他可用模型（逗号分隔，可选）',
   'provider.visionModels': '支持图片的模型',
-  'provider.visionModelsHint': '逗号分隔。只有列在这里的模型才会启用截图工具——给不支持图片的模型发图片会直接报错。',
+  'provider.visionModelsHint': '逗号分隔。只有列在这里的模型才会启用截图工具——给不支持图片的模型发图片会直接报错。截图以图片形式发送，不会经过"内容脱敏"规则处理。',
   'provider.saveChanges': '保存修改',
   'provider.addSubmit': '添加',
   'provider.flashFillRequired': '请填写名称、Base URL、模型和 API Key',
