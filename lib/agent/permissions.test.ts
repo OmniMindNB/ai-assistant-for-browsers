@@ -303,6 +303,52 @@ describe('submit intent escalation', () => {
     expect((args as any).formAction).toBeUndefined();
   });
 
+  // 会让这个用例失败的 production 改动：confirmArgs 重建时不带 frameOrigin——
+  // confirm-summary.ts 的跨帧提示永远拿不到值，只有直接构造 args 的测试才能看到它生效。
+  it('threads frameOrigin from the resolved intent into the confirmation args (fields array)', async () => {
+    const args = { fields: [{ fieldId: 'f1', value: '4111' }] };
+    const onConfirm = vi.fn().mockResolvedValue(true);
+
+    await beforeToolCallPermissionGate(
+      { toolCall: { id: 'call-1', name: 'browser_fill_form' }, args } as any,
+      {
+        gateState: createConfirmGateState(),
+        onConfirm,
+        targetTabId: 1,
+        resolveSubmitIntent: async () => ({
+          isSubmit: true,
+          fieldLabels: [{ fieldId: 'f1', label: '卡号' }],
+          frameOrigin: 'https://pay.example.com',
+        }),
+      },
+    );
+
+    expect((onConfirm.mock.calls[0][2] as any).frameOrigin).toBe('https://pay.example.com');
+    expect((args as any).frameOrigin).toBeUndefined();
+  });
+
+  it('threads frameOrigin from the resolved intent into the confirmation args (fieldId click)', async () => {
+    const args = { fieldId: 'f7' };
+    const onConfirm = vi.fn().mockResolvedValue(true);
+
+    await beforeToolCallPermissionGate(
+      { toolCall: { id: 'call-1', name: 'browser_click' }, args } as any,
+      {
+        gateState: createConfirmGateState(),
+        onConfirm,
+        targetTabId: 1,
+        resolveSubmitIntent: async () => ({
+          isSubmit: true,
+          fieldLabels: [{ fieldId: 'f7', label: '提交' }],
+          frameOrigin: 'https://pay.example.com',
+        }),
+      },
+    );
+
+    expect((onConfirm.mock.calls[0][2] as any).frameOrigin).toBe('https://pay.example.com');
+    expect((args as any).frameOrigin).toBeUndefined();
+  });
+
   it('automatically allows a non-submitting press_key', async () => {
     const state = createConfirmGateState();
     state.decision = 'approved';

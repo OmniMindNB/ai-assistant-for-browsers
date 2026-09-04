@@ -17,6 +17,8 @@ export interface SubmitIntent {
   isSubmit: boolean;
   formAction?: string;
   fieldCount?: number;
+  /** 该表单所在帧的 origin；与主框架相同时由渲染层省略（ref: 设计文档 §5.3）。 */
+  frameOrigin?: string;
 }
 
 export function decideSubmitIntent(info: ClickTargetInfo): SubmitIntent {

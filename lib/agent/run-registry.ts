@@ -278,6 +278,24 @@ function currentTargetTab(state: RunState): TrackedTab | undefined {
   return state.session.trackedTabs.find((tab) => tab.id === state.session.currentTabId);
 }
 
+/**
+ * 当前实际操作 tab 的顶层 origin，供确认卡片跟表单所在帧的 origin 比对（ref: 设计文档 §5.3）。
+ * 不能从 trackedTabs 里取：面板自己绑定的 tab 通常没有被跟踪记录 url（只有 browser_open_tab
+ * 打开的 tab 才可靠地带 url），所以这里做一次实时查询；纯装饰性的 UI 增强，任何失败都直接
+ * 返回 undefined，绝不能抛出或阻塞确认流程。
+ */
+async function currentMainOrigin(state: RunState): Promise<string | undefined> {
+  try {
+    const tab = await browser.tabs.get(state.session.currentTabId);
+    if (!tab.url) return undefined;
+    const url = new URL(tab.url);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined;
+    return url.origin;
+  } catch {
+    return undefined;
+  }
+}
+
 /** 供活动步骤展示用的标签文本；未命名页面兜底文案与 confirm-summary.ts 保持一致。 */
 function currentTabLabel(state: RunState): string | undefined {
   const targetTab = currentTargetTab(state);
@@ -330,7 +348,8 @@ export async function startRun(request: StartRunRequest): Promise<void> {
     // 读的是 state.session 的实时字段而不是 startRun 那一刻的值：browser_open_tab /
     // browser_switch_tab 会在一轮之内改变 currentTabId。
     const targetTab = currentTargetTab(state);
-    const { summary, codePreview } = summarizeToolCallForConfirmation(toolName, args, targetTab);
+    const mainOrigin = await currentMainOrigin(state);
+    const { summary, codePreview } = summarizeToolCallForConfirmation(toolName, args, targetTab, mainOrigin);
     state.pendingToolArgs.set(toolCallId, { toolName, args });
     state.pendingConfirmation = { toolCallId, toolName, summary, codePreview };
     pushAndPersist(state);

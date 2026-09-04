@@ -19,6 +19,8 @@ export function summarizeToolCallForConfirmation(
   args: unknown,
   /** 目标 tab 不是面板绑定的那个时才传——用于在摘要前面标注"将操作标签页"（ref: 设计文档 §3.5）。 */
   targetTab?: { title?: string; url?: string },
+  /** 主框架（顶层页面）的 origin，用于跟表单实际所在帧的 origin 比对（ref: 设计文档 §5.3）。 */
+  mainOrigin?: string,
 ): ConfirmationSummary {
   const record = args && typeof args === 'object' ? (args as Record<string, unknown>) : {};
   const str = (key: string): string => (typeof record[key] === 'string' ? (record[key] as string) : '');
@@ -105,7 +107,14 @@ export function summarizeToolCallForConfirmation(
     }
   })();
 
-  if (!targetTab) return result;
+  // 只在跨 origin 时提示：同 origin 是绝大多数情况，多这一行只是噪音。
+  const frameOrigin = typeof record.frameOrigin === 'string' ? record.frameOrigin : '';
+  const withFrameNote =
+    frameOrigin && frameOrigin !== mainOrigin
+      ? { ...result, summary: `${result.summary}\n该表单位于嵌入框架 ${new URL(frameOrigin).host}。` }
+      : result;
+
+  if (!targetTab) return withFrameNote;
   const targetTabNote = `将操作标签页：《${targetTab.title || '未命名页面'}》(${targetTab.url ?? ''})\n`;
-  return { ...result, summary: `${targetTabNote}${result.summary}` };
+  return { ...withFrameNote, summary: `${targetTabNote}${withFrameNote.summary}` };
 }

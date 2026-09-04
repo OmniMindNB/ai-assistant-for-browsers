@@ -702,6 +702,9 @@ describe('run-registry confirmation summary target tab', () => {
     await startRun(makeRequest({ tabId: 70 }));
     void lastOnConfirm()('call-cross-tab', 'browser_click', { selector: '#pay' });
 
+    // onConfirm 现在会先 await 一次 currentMainOrigin()（browser.tabs.get 查询），
+    // pendingConfirmation 不再是同步落地的，需要等它出现。
+    await vi.waitFor(() => expect(lastPendingConfirmation(posted)).toBeDefined());
     const pending = lastPendingConfirmation(posted);
     expect(pending.summary).toContain('将操作标签页：《网上银行》(https://bank.example/pay)');
     expect(pending.summary).toContain('AI 想要点击 "#pay"。');
@@ -716,8 +719,55 @@ describe('run-registry confirmation summary target tab', () => {
     await startRun(makeRequest({ tabId: 71 }));
     void lastOnConfirm()('call-same-tab', 'browser_click', { selector: '#pay' });
 
+    await vi.waitFor(() => expect(lastPendingConfirmation(posted)).toBeDefined());
     const pending = lastPendingConfirmation(posted);
     expect(pending.summary).toBe('AI 想要点击 "#pay"。');
+  });
+
+  it('threads mainOrigin from a live browser.tabs.get lookup into the confirmation summary', async () => {
+    const agent = makeFakeAgent([]);
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    (globalThis as any).browser = {
+      ...(globalThis as any).browser,
+      tabs: { get: vi.fn(async () => ({ url: 'https://shop.example.com/checkout' })) },
+    };
+    const posted: any[] = [];
+    attachPort(72, { postMessage: (message) => posted.push(message) });
+
+    await startRun(makeRequest({ tabId: 72 }));
+    void lastOnConfirm()('call-frame-origin', 'browser_fill_form', {
+      fields: [{ fieldId: 'f1', value: '4111' }],
+      submit: { fieldId: 'f2' },
+      frameOrigin: 'https://pay.example.com',
+    });
+
+    await vi.waitFor(() => expect(lastPendingConfirmation(posted)).toBeDefined());
+    const pending = lastPendingConfirmation(posted);
+    expect(pending.summary).toContain('pay.example.com');
+  });
+
+  it('falls back to no mainOrigin when browser.tabs.get rejects, without throwing', async () => {
+    const agent = makeFakeAgent([]);
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    (globalThis as any).browser = {
+      ...(globalThis as any).browser,
+      tabs: { get: vi.fn(async () => { throw new Error('no such tab'); }) },
+    };
+    const posted: any[] = [];
+    attachPort(73, { postMessage: (message) => posted.push(message) });
+
+    await startRun(makeRequest({ tabId: 73 }));
+    void lastOnConfirm()('call-frame-origin-2', 'browser_fill_form', {
+      fields: [{ fieldId: 'f1', value: '4111' }],
+      submit: { fieldId: 'f2' },
+      frameOrigin: 'https://pay.example.com',
+    });
+
+    // mainOrigin 解析失败时按「未知」处理：frameOrigin 与 undefined 必然不相等，
+    // 因此仍然会带上嵌入框架提示——宁可多提示，也不能在解析失败时静默吞掉风险信号。
+    await vi.waitFor(() => expect(lastPendingConfirmation(posted)).toBeDefined());
+    const pending = lastPendingConfirmation(posted);
+    expect(pending.summary).toContain('pay.example.com');
   });
 });
 

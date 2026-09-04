@@ -543,6 +543,8 @@ export interface ProbeClickTargetResult {
   formAction?: string;
   fieldCount?: number;
   fieldLabels?: { fieldId: string; label?: string }[];
+  /** 该表单所在帧的 origin；供确认卡片标注嵌入框架用（ref: 设计文档 §5.3）。 */
+  frameOrigin?: string;
 }
 
 /**

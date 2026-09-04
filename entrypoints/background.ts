@@ -816,6 +816,7 @@ async function probeSubmitIntent(payload: ProbeClickTargetPayload, tabId: number
       textContent: probe.textContent,
       fieldCount: probe.fieldCount,
     }),
+    frameOrigin: target.expectOrigin,
     fieldLabels,
   };
 }
@@ -863,6 +864,7 @@ async function probeEnterSubmitIntent(
       hasSubmitButton: probe.hasSubmitButton,
       textLikeFieldCount: probe.textLikeFieldCount,
     }),
+    frameOrigin: target.expectOrigin,
     fieldLabels,
   };
 }

@@ -221,3 +221,43 @@ describe('跨标签页目标标注', () => {
     expect(result.summary).toContain('42');
   });
 });
+
+describe('frame origin 提示', () => {
+  // 会让这个用例失败的 production 改动：不渲染 frameOrigin——
+  // 用户会以为在向主站提交，实际是在向嵌入的第三方支付域提交。
+  it('names the embedding frame when the submit target is cross-origin', () => {
+    const result = summarizeToolCallForConfirmation(
+      'browser_fill_form',
+      { fields: [{ fieldId: 'f1', value: '4111' }], submit: { fieldId: 'f2' }, frameOrigin: 'https://pay.example.com' },
+      undefined,
+      'https://shop.example.com',
+    );
+    expect(result.summary).toContain('pay.example.com');
+  });
+
+  // 会让这个用例失败的 production 改动：同 origin 也渲染这一行——
+  // 绝大多数提交都在主框架，多这一行只是噪音。
+  it('stays silent when the frame origin equals the main origin', () => {
+    const result = summarizeToolCallForConfirmation(
+      'browser_fill_form',
+      { fields: [{ fieldId: 'f1', value: 'a' }], submit: { fieldId: 'f2' }, frameOrigin: 'https://shop.example.com' },
+      undefined,
+      'https://shop.example.com',
+    );
+    expect(result.summary).not.toContain('嵌入框架');
+  });
+
+  // 会让这个用例失败的 production 改动：frameOrigin 分支提前 return，跳过了后面
+  // targetTab 的前缀标注逻辑——两个提示必须能同时出现在同一张确认卡上。
+  it('composes with the cross-tab targetTab note when both apply', () => {
+    const result = summarizeToolCallForConfirmation(
+      'browser_fill_form',
+      { fields: [{ fieldId: 'f1', value: '4111' }], submit: { fieldId: 'f2' }, frameOrigin: 'https://pay.example.com' },
+      { title: '示例站点', url: 'https://shop.example.com' },
+      'https://shop.example.com',
+    );
+    expect(result.summary).toContain('将操作标签页');
+    expect(result.summary).toContain('示例站点');
+    expect(result.summary).toContain('pay.example.com');
+  });
+});

@@ -157,12 +157,14 @@ export async function beforeToolCallPermissionGate(
           label: labels.find((entry) => entry.fieldId === field.fieldId)?.label,
         })),
         submit: intent?.isSubmit ? { ...(record.submit as object), formAction: intent?.formAction } : record.submit,
+        frameOrigin: intent?.frameOrigin,
       };
     } else if (labels?.length && typeof record.fieldId === 'string') {
       confirmArgs = {
         ...record,
         label: labels.find((entry) => entry.fieldId === record.fieldId)?.label,
         formAction: intent?.isSubmit ? intent?.formAction : undefined,
+        frameOrigin: intent?.frameOrigin,
       };
     }
   }
