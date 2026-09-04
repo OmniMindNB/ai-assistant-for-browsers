@@ -13,6 +13,11 @@ export interface ProviderConfig {
   model: string;
   /** 该 Provider 下可在输入框切换的全部模型（含 model）；为空时回退到 [model] */
   models?: string[];
+  /**
+   * models 中支持图片输入的子集。缺省视为空——历史配置没有这个字段，默认必须是
+   * "不支持"：给不支持视觉的端点发图片是硬报错，会直接打断整轮任务。
+   */
+  visionModels?: string[];
   /** 协议类型；缺省按 'openai-completions' 处理（兼容未设置该字段的历史配置） */
   api?: 'openai-completions' | 'anthropic-messages';
 }
