@@ -387,6 +387,15 @@ export interface NavigateTabResult {
   title?: string;
 }
 
+export interface NavigateHistoryResult {
+  /** 落地后的地址；已在历史起点、或后退未在预期时间内生效时等于后退前的地址。 */
+  url: string;
+  /** 落地页标题，页面可控，已净化截断。 */
+  title?: string;
+  /** 后退是否真的发生了（URL 有变化）。false 时模型不该假设页面已经变化。 */
+  moved: boolean;
+}
+
 export interface OpenNewTabPayload {
   url: string;
 }
