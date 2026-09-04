@@ -757,7 +757,15 @@ async function fillForm(payload: FillFormPayload, tabId: number): Promise<FillFo
     groups.map((group) =>
       executeInTab(
         tabId,
-        { url: table.url, items: group.items, submit: group.submit, expectOrigin: group.frameOrigin },
+        {
+          url: table.url,
+          items: group.items,
+          submit: group.submit,
+          expectOrigin: group.frameOrigin,
+          // 子帧写操作跳过顶层执行遮罩的光标动画/等待——该动画的自定义事件是通过 window
+          // CustomEvent 派发的，从子帧永远到不了顶层的 content script（ref: Task 9）。
+          isChildFrame: group.frameId !== undefined && group.frameId !== 0,
+        },
         applyFormFill,
         { frameId: group.frameId },
       ),
@@ -1244,7 +1252,14 @@ async function clickElementByFieldId(fieldId: string, tabId: number): Promise<Cl
   const handle = table?.fields[fieldId];
   const applied = await executeInTab(
     tabId,
-    { url: table!.url, items: [], submit: plan.submit, expectOrigin: resolveExpectOrigin(handle) },
+    {
+      url: table!.url,
+      items: [],
+      submit: plan.submit,
+      expectOrigin: resolveExpectOrigin(handle),
+      // 同上：子帧点击跳过顶层执行遮罩的光标动画/等待。
+      isChildFrame: handle?.frameId !== undefined && handle.frameId !== 0,
+    },
     applyFormFill,
     { frameId: handle?.frameId },
   );
