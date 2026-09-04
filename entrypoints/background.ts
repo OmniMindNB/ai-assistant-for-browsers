@@ -111,6 +111,7 @@ import { getFormFieldsForTab, setFormFieldsForTab, type FormFieldHandle } from '
 import { decideEnterSubmitIntent, decideSubmitIntent } from '@/lib/agent/form-submit';
 import { resolveKeyDescriptor } from '@/lib/agent/key-dispatch';
 import { waitForConditionInPage } from '@/lib/agent/wait-dom';
+import { DEFAULT_WAIT_TIMEOUT_MS, MAX_WAIT_TIMEOUT_MS, MIN_WAIT_TIMEOUT_MS } from '@/lib/agent/wait-condition';
 
 const DEFAULT_TOOL_MAX_CHARS = 12000;
 // 以下为模型可见/可调用的消息类型；内部专用消息（如 SET_AGENT_OVERLAY）有意不在此列，以免暴露给模型。
@@ -1302,23 +1303,30 @@ async function scrollContainerByFieldId(payload: ScrollPagePayload, tabId: numbe
 /**
  * 注入函数自己带超时，正常路径不会挂住；这里再加一层略长的兜底，是防注入上下文
  * 因导航被销毁而使 executeScript 的 promise 永远不结算。executeScript 本身的
- * 失败（页面已关闭、被 CSP 拒绝等）同样收敛成"没等到"，而不是让整轮任务报错——
- * 等待失败不该比等待超时更严重。
+ * 失败（页面已关闭、被 CSP 拒绝等）收敛成 unavailable:true 的"没等到"，而不是
+ * 让整轮任务报错——这属于基础设施失败，和超时是同一档严重程度，都不该比
+ * "选择器写错了"（页面内报告的 error，模型可以自己修正）更重。两者不共用
+ * error 字段：error 专指后者。
  */
 async function waitForCondition(payload: WaitForPayload, tabId: number): Promise<WaitForResult> {
-  const guardMs = payload.timeoutMs + 2000;
+  const timeoutMs = clampWaitTimeoutMs(payload.timeoutMs);
+  const guardMs = timeoutMs + 2000;
+  const startedAt = Date.now();
   let guardTimer: ReturnType<typeof setTimeout> | undefined;
   const guard = new Promise<WaitForResult>((resolve) => {
-    guardTimer = setTimeout(() => resolve({ met: false, elapsedMs: payload.timeoutMs }), guardMs);
+    guardTimer = setTimeout(
+      () => resolve({ met: false, elapsedMs: Date.now() - startedAt }),
+      guardMs,
+    );
   });
 
   try {
     return await Promise.race([
-      executeInTab(tabId, payload, waitForConditionInPage).catch(
-        (error): WaitForResult => ({
+      executeInTab(tabId, { ...payload, timeoutMs }, waitForConditionInPage).catch(
+        (): WaitForResult => ({
           met: false,
-          elapsedMs: 0,
-          error: error instanceof Error ? error.message : String(error),
+          elapsedMs: Date.now() - startedAt,
+          unavailable: true,
         }),
       ),
       guard,
@@ -1326,6 +1334,15 @@ async function waitForCondition(payload: WaitForPayload, tabId: number): Promise
   } finally {
     if (guardTimer) clearTimeout(guardTimer);
   }
+}
+
+// WAIT_FOR 走 SUPPORTED_MESSAGE_TYPES 的通用分发，handleMessage 不按调用方类型区分校验；
+// 正常路径的载荷都经过 parseWaitCondition 夹好范围，但这里独立兜底一次，防止一个缺
+// timeoutMs 的畸形载荷把 guardMs 算成 NaN（NaN 定时器立即触发，等于静默空等）。
+// 与 permissions.ts/isNavigableUrl 对 http(s) scheme 的独立校验是同一种纵深防御模式。
+function clampWaitTimeoutMs(value: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return DEFAULT_WAIT_TIMEOUT_MS;
+  return Math.min(MAX_WAIT_TIMEOUT_MS, Math.max(MIN_WAIT_TIMEOUT_MS, Math.floor(value)));
 }
 
 // 拒绝非 http(s) 协议的跳转目标，防止 agent 被诱导跳转到 javascript:/file:/chrome: 等敏感 scheme。

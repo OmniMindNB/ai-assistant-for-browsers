@@ -825,17 +825,25 @@ function makeWaitForTool(session: TabSessionController): BrowserAgentTool {
       idleMs: Type.Optional(Type.Number({ description: 'For domIdle: how long the DOM must stay unchanged. 100-5000, defaults to 500.' })),
       timeoutMs: Type.Optional(Type.Number({ description: 'Give up after this long. 500-15000, defaults to 5000.' })),
     }),
-    execute: async (_toolCallId, params) => {
+    execute: async (_toolCallId, params, signal) => {
       const parsed = parseWaitCondition(params);
       if (!parsed.ok) throw new Error(parsed.error);
 
-      const response = (await sendMessage<WaitForPayload, WaitForResult>(
+      // 注入侧不能从这里被真正取消（页面里的 setInterval/setTimeout/observer 只能
+      // 自己超时收尾）；能做的只是不再占着这一轮不放——和 wait 工具同样的模式：
+      // race 一个由 signal 触发拒绝的 Promise。
+      const responsePromise = sendMessage<WaitForPayload, WaitForResult>(
         'WAIT_FOR',
         parsed.condition as WaitForPayload,
         session.currentTabId,
-      )) as MessageResponse<WaitForResult>;
+      ) as Promise<MessageResponse<WaitForResult>>;
+      const response = await new Promise<MessageResponse<WaitForResult>>((resolve, reject) => {
+        responsePromise.then(resolve, reject);
+        signal?.addEventListener('abort', () => reject(new Error('等待已被中止。')));
+      });
+
       if (!response.ok || !response.data) throw new Error(response.error ?? '等待失败');
-      // 非法选择器是模型可以修正的参数错误，值得抛出；超时不是。
+      // 非法选择器是模型可以修正的参数错误，值得抛出；超时、执行环境不可用都不是。
       if (response.data.error) throw new Error(response.data.error);
 
       return textResult(

@@ -340,8 +340,14 @@ export interface WaitForResult {
   elapsedMs: number;
   /** appear/disappear 命中时匹配到的元素数。 */
   matched?: number;
-  /** 页面内错误（例如非法选择器）。 */
+  /** 页面内报告的错误（例如非法选择器）——模型可以修正参数，值得抛出。 */
   error?: string;
+  /**
+   * 执行环境本身不可用（executeScript 失败：页面已关闭/导航中/被 CSP 拒绝等），
+   * 与 error 是两码事——这不是模型能修正的参数错误，和超时同属"没等到"，
+   * 不该让整轮任务报错。
+   */
+  unavailable?: boolean;
 }
 
 export interface NavigateTabPayload {

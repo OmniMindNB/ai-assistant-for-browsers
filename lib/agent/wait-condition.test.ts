@@ -104,4 +104,24 @@ describe('describeWaitResult', () => {
     expect(text).toContain('超时');
     expect(text).toContain('不要原样重试');
   });
+
+  // domIdle 的超时建议必须是"换个具体元素盯着"，而不是通用的"确认页面当前状态"——
+  // 后者对"DOM 一直没静止"这个原因帮不上忙。
+  it('domIdle 超时的文案给出针对性建议，而不是通用的确认页面状态', () => {
+    const condition: WaitCondition = { kind: 'domIdle', idleMs: 500, timeoutMs: 5000 };
+    const text = describeWaitResult(condition, { met: false, elapsedMs: 5000 });
+    expect(text).toContain('超时');
+    expect(text).toContain('appear');
+    expect(text).toContain('disappear');
+    expect(text).not.toContain('先用 browser_get_form 或 browser_read_page 确认页面当前状态');
+  });
+
+  // 执行环境不可用（页面导航/关闭/CSP 拒绝）和超时是两种不同的"没等到"：
+  // 前者页面已经变了，"确认页面当前状态"式的超时建议不适用，得单独措辞。
+  it('unavailable 的文案与超时不同，且不建议原地确认页面状态', () => {
+    const text = describeWaitResult(appear, { met: false, elapsedMs: 1200, unavailable: true });
+    expect(text).not.toContain('超时');
+    expect(text).toContain('1200');
+    expect(text).toContain('browser_get_active_tab');
+  });
 });

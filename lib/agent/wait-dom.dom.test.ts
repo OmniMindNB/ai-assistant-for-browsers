@@ -90,4 +90,60 @@ describe('waitForConditionInPage', () => {
     expect(output.met).toBe(false);
     expect(output.error).toBeTruthy();
   });
+
+  // appear/disappear/textContains 全靠 50ms 轮询判定，不读 MutationObserver 的
+  // lastMutationAt；给它们装一个订阅整份文档变动的 observer 纯属白白开销
+  // （尤其在真实页面上，subtree+attributes+characterData 可能被频繁触发）。
+  describe('MutationObserver 只在 domIdle 时安装', () => {
+    let created: number;
+    let OriginalMutationObserver: typeof MutationObserver;
+
+    beforeEach(() => {
+      created = 0;
+      OriginalMutationObserver = globalThis.MutationObserver;
+      class SpyMutationObserver extends OriginalMutationObserver {
+        constructor(...args: ConstructorParameters<typeof MutationObserver>) {
+          super(...args);
+          created += 1;
+        }
+      }
+      globalThis.MutationObserver = SpyMutationObserver;
+    });
+
+    afterEach(() => {
+      globalThis.MutationObserver = OriginalMutationObserver;
+    });
+
+    it('appear 等待期间不安装 MutationObserver', async () => {
+      const promise = waitForConditionInPage({
+        kind: 'appear', selector: '.late', idleMs: 500, timeoutMs: 3000,
+      });
+      setTimeout(() => {
+        const node = document.createElement('div');
+        node.className = 'late';
+        document.body.append(node);
+      }, 30);
+      const output = await promise;
+      expect(output.met).toBe(true);
+      expect(created).toBe(0);
+    });
+
+    it('超时路径（非 domIdle）也不安装 MutationObserver', async () => {
+      // .never 选择器一直不出现：必须真正进入轮询/Promise 分支直到超时，
+      // 而不是走"一开始就满足"的快速路径，才能验证 observer 分支没被创建。
+      const output = await waitForConditionInPage({
+        kind: 'appear', selector: '.never', idleMs: 500, timeoutMs: 150,
+      });
+      expect(output.met).toBe(false);
+      expect(created).toBe(0);
+    });
+
+    it('domIdle 等待仍会安装 MutationObserver，且行为不受影响', async () => {
+      const promise = waitForConditionInPage({ kind: 'domIdle', idleMs: 120, timeoutMs: 3000 });
+      setTimeout(() => document.body.append(document.createElement('span')), 20);
+      const output = await promise;
+      expect(output.met).toBe(true);
+      expect(created).toBe(1);
+    });
+  });
 });

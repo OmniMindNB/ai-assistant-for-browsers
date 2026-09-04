@@ -224,7 +224,7 @@ export const en: Record<keyof typeof zh, string> = {
   'agentActivity.failed.scrollTo': 'Failed to scroll to "{target}"',
   'agentActivity.now.waitFor': 'Waiting for "{target}"',
   'agentActivity.done.waitFor': 'Waited for "{target}"',
-  'agentActivity.failed.waitFor': 'Failed waiting for "{target}"',
+  'agentActivity.failed.waitFor': 'Failed to wait for "{target}"',
   'agentActivity.now.navigate': 'Navigating to "{target}"',
   'agentActivity.done.navigate': 'Navigated to "{target}"',
   'agentActivity.failed.navigate': 'Failed to navigate to "{target}"',

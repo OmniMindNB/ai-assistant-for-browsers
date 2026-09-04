@@ -50,6 +50,19 @@ describe('describeToolActivity', () => {
     expect(describeToolActivity('browser_fill_form', {}, 'failed')).toBe('Failed to fill 0 fields');
   });
 
+  it('describes browser_wait_for running/done/failed by selector or text', () => {
+    expect(describeToolActivity('browser_wait_for', { kind: 'appear', selector: '.result' }, 'running')).toBe('Waiting for ".result"');
+    expect(describeToolActivity('browser_wait_for', { kind: 'appear', selector: '.result' }, 'done')).toBe('Waited for ".result"');
+    expect(describeToolActivity('browser_wait_for', { kind: 'appear', selector: '.result' }, 'failed')).toBe('Failed to wait for ".result"');
+    expect(describeToolActivity('browser_wait_for', { kind: 'textContains', text: '已完成' }, 'running')).toBe('Waiting for "已完成"');
+  });
+
+  it('falls back to the literal kind for browser_wait_for domIdle, which has neither selector nor text', () => {
+    expect(describeToolActivity('browser_wait_for', { kind: 'domIdle' }, 'running')).toBe('Waiting for "domIdle"');
+    expect(describeToolActivity('browser_wait_for', { kind: 'domIdle' }, 'done')).toBe('Waited for "domIdle"');
+    expect(describeToolActivity('browser_wait_for', { kind: 'domIdle' }, 'failed')).toBe('Failed to wait for "domIdle"');
+  });
+
   it('describes scroll with and without a target selector', () => {
     expect(describeToolActivity('browser_scroll', { selector: '#footer' }, 'running')).toBe('Scrolling to "#footer"');
     expect(describeToolActivity('browser_scroll', {}, 'running')).toBe('Scroll');

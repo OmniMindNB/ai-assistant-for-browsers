@@ -18,6 +18,11 @@ export interface WaitOutcome {
   matched?: number;
   /** 页面内错误（例如非法选择器）；有值时工具抛出，让模型修正参数。 */
   error?: string;
+  /**
+   * 执行环境不可用（页面已关闭/导航中/被 CSP 拒绝等），与 error 不同——不是
+   * 模型能修正的参数错误，工具不抛异常，走这里的专属文案。
+   */
+  unavailable?: boolean;
 }
 
 export const DEFAULT_WAIT_TIMEOUT_MS = 5000;
@@ -62,10 +67,21 @@ export function parseWaitCondition(
 }
 
 export function describeWaitResult(condition: WaitCondition, outcome: WaitOutcome): string {
+  if (outcome.unavailable) {
+    return [
+      `等待未完成：执行环境不可用（页面可能已关闭、正在导航，或被 CSP 拒绝），已等待 ${outcome.elapsedMs}ms。`,
+      '页面在等待过程中就已经发生了变化，不要假设它还是等待前的状态——先用 browser_get_active_tab 或 browser_read_page 重新确认当前页面再决定下一步。',
+    ].join('\n');
+  }
+
   if (!outcome.met) {
+    const advice =
+      condition.kind === 'domIdle'
+        ? '页面可能一直有零星变动（进度条、时钟、懒加载类名切换等），domIdle 未必会触发。换成 appear 或 disappear 盯住一个具体元素，而不是继续等"没有变动"。'
+        : '页面可能仍在加载，也可能是条件本身写错了。不要原样重试——先用 browser_get_form 或 browser_read_page 确认页面当前状态。';
     return [
       `等待超时：${condition.timeoutMs}ms 内未满足条件（${describeCondition(condition)}），实际等待 ${outcome.elapsedMs}ms。`,
-      '页面可能仍在加载，也可能是条件本身写错了。不要原样重试——先用 browser_get_form 或 browser_read_page 确认页面当前状态。',
+      advice,
     ].join('\n');
   }
 

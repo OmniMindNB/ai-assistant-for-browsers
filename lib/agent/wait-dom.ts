@@ -57,17 +57,23 @@ export async function waitForConditionInPage(input: WaitForInput): Promise<WaitF
 
   return new Promise<WaitForOutput>((resolve) => {
     let settled = false;
-    const observer = new MutationObserver(() => {
-      lastMutationAt = Date.now();
-    });
-    observer.observe(document.documentElement, {
+    // 只有 domIdle 才需要"最近一次变动发生在何时"；appear/disappear/textContains
+    // 全靠下面的轮询判定，装个 observer 只是让它白白订阅整份文档的变动通知
+    // （subtree+attributes+characterData，可能在真实页面上被频繁触发），却没人读它。
+    const observer =
+      input.kind === 'domIdle'
+        ? new MutationObserver(() => {
+            lastMutationAt = Date.now();
+          })
+        : undefined;
+    observer?.observe(document.documentElement, {
       childList: true, subtree: true, attributes: true, characterData: true,
     });
 
     const finish = (output: WaitForOutput) => {
       if (settled) return;
       settled = true;
-      observer.disconnect();
+      observer?.disconnect();
       clearInterval(poll);
       clearTimeout(timer);
       resolve(output);

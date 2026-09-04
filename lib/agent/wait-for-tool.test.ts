@@ -64,6 +64,26 @@ describe('browser_wait_for 工具', () => {
       getWaitForTool().execute('call-1', { kind: 'appear', selector: ':::bad' }),
     ).rejects.toThrow('选择器非法');
   });
+
+  // 执行环境不可用（页面导航/关闭/CSP 拒绝）和超时同一档：不抛异常，返回专属文案。
+  it('执行环境不可用时不抛异常，返回劝阻原地确认状态的文案', async () => {
+    sendMessage.mockResolvedValue({ ok: true, data: { met: false, elapsedMs: 900, unavailable: true } });
+    const output = await getWaitForTool().execute('call-1', { kind: 'appear', selector: '.result' });
+    const text = (output.content[0] as { text: string }).text;
+    expect(text).not.toContain('超时');
+    expect(text).toContain('900');
+  });
+
+  // signal 触发后不能继续占着这一轮不放——跟 wait 工具的 abort 模式一致。
+  it('abort 信号触发后拒绝，即便底层消息尚未返回', async () => {
+    let resolveSend: (value: unknown) => void;
+    sendMessage.mockReturnValue(new Promise((resolve) => { resolveSend = resolve; }));
+    const controller = new AbortController();
+    const promise = getWaitForTool().execute('call-1', { kind: 'appear', selector: '.result' }, controller.signal);
+    controller.abort();
+    await expect(promise).rejects.toThrow('中止');
+    resolveSend!({ ok: true, data: { met: true, elapsedMs: 10, matched: 1 } });
+  });
 });
 
 describe('browser_wait_for 的权限分级', () => {
