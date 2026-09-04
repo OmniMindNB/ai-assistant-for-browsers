@@ -2,7 +2,7 @@
 
 - 日期：2026-09-04
 - 来源：2026-09-04 对 30 个工具做能力盘点后识别出的最大覆盖率缺口。另两项（`browser_go_back` / `browser_find_text`）体量小且互不相干，单独成篇
-- 状态：待实现
+- 状态：已实现（2026-09-05）——代码与单测已完成并经过多轮 review（含一次全量评审揪出的 `executeInAllFrames` 闭包序列化 Critical bug，已修复并复核）；**未做真实浏览器验收**（计划 Task 10 按人工决定跳过）：没有在真实跨源 iframe 页面上验证过 `browser_get_form` 分帧结果、跨帧 `browser_fill_form` 落地、提交确认卡片的 origin 提示、执行遮罩降级、以及句柄过期后的 stale 检测。
 
 ## 1. 问题
 
