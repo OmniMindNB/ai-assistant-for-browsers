@@ -14,6 +14,20 @@ function truncate(value: string, max = MAX_VALUE_LENGTH): string {
   return value.length > max ? `${value.slice(0, max)}…` : value;
 }
 
+/**
+ * 把 frameOrigin 渲染成确认卡片的提示句。frameOrigin 可能是字面量字符串 `'null'`——
+ * 这是不带 allow-same-origin 的沙箱 iframe，或 data:/about:blank 帧的 location.origin
+ * 取值（form-dom.ts 里已经对这个不透明 origin 做过专门处理），`new URL('null')` 会抛出。
+ * 用 try/catch 兜底而不是只特判字符串 'null'：畸形或其它解析不出来的 origin 同样要兜住。
+ */
+function describeFrameOrigin(frameOrigin: string): string {
+  try {
+    return `该表单位于嵌入框架 ${new URL(frameOrigin).host}。`;
+  } catch {
+    return '该表单位于一个来源不明的嵌入框架。';
+  }
+}
+
 export function summarizeToolCallForConfirmation(
   toolName: string,
   args: unknown,
@@ -111,7 +125,7 @@ export function summarizeToolCallForConfirmation(
   const frameOrigin = typeof record.frameOrigin === 'string' ? record.frameOrigin : '';
   const withFrameNote =
     frameOrigin && frameOrigin !== mainOrigin
-      ? { ...result, summary: `${result.summary}\n该表单位于嵌入框架 ${new URL(frameOrigin).host}。` }
+      ? { ...result, summary: `${result.summary}\n${describeFrameOrigin(frameOrigin)}` }
       : result;
 
   if (!targetTab) return withFrameNote;

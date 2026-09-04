@@ -260,4 +260,27 @@ describe('frame origin 提示', () => {
     expect(result.summary).toContain('示例站点');
     expect(result.summary).toContain('pay.example.com');
   });
+
+  // 会让这个用例失败的 production 改动：对 frameOrigin 直接 `new URL(frameOrigin)`
+  // 而不做 try/catch——'null' 是不带 allow-same-origin 的沙箱 iframe（以及 data:/
+  // about:blank 帧）location.origin 的真实取值，不是占位符；new URL('null') 会抛出，
+  // 使 onConfirm 在设置 pendingConfirmation 之前就 reject，最终把"用户拒绝"这个
+  // 错误原因回报给一次从未展示过确认卡片的调用。
+  it('does not throw when frameOrigin is the opaque-origin literal "null"', () => {
+    expect(() =>
+      summarizeToolCallForConfirmation(
+        'browser_fill_form',
+        { fields: [{ fieldId: 'f1', value: '4111' }], submit: { fieldId: 'f2' }, frameOrigin: 'null' },
+        undefined,
+        'https://shop.example.com',
+      ),
+    ).not.toThrow();
+    const result = summarizeToolCallForConfirmation(
+      'browser_fill_form',
+      { fields: [{ fieldId: 'f1', value: '4111' }], submit: { fieldId: 'f2' }, frameOrigin: 'null' },
+      undefined,
+      'https://shop.example.com',
+    );
+    expect(result.summary).toContain('来源不明');
+  });
 });

@@ -769,6 +769,49 @@ describe('run-registry confirmation summary target tab', () => {
     const pending = lastPendingConfirmation(posted);
     expect(pending.summary).toContain('pay.example.com');
   });
+
+  it('does not resurrect a stopped run with a fresh pendingConfirmation once the suspended mainOrigin lookup resolves', async () => {
+    const agent = makeFakeAgent([]);
+    let rejectPrompt!: (e: unknown) => void;
+    // 同上面 "archives activity steps..." 用例：默认的 fake prompt() 同步跑完就
+    // resolve，不会真的被 abort() 打断；这里换成受控 promise，好在 stopRun() 之后
+    // 手动模拟 agent.prompt() 因 AbortError 而 reject，让 startRun 的 finally 真正
+    // 把这个 run 从 runs 里摘掉——onConfirm 恢复时正是靠这个来判断自己是否还"当前"。
+    agent.prompt = vi.fn(() => new Promise<void>((_resolve, reject) => { rejectPrompt = reject; }));
+    mocks.createBrowserAgent.mockReturnValue(agent);
+
+    // browser.tabs.get 挂起不返回，制造 onConfirm 悬在 currentMainOrigin() 里的那个窗口。
+    let resolveTabsGet!: (tab: unknown) => void;
+    (globalThis as any).browser = {
+      ...(globalThis as any).browser,
+      tabs: { get: vi.fn(() => new Promise((resolve) => { resolveTabsGet = resolve; })) },
+    };
+
+    const posted: any[] = [];
+    attachPort(74, { postMessage: (message) => posted.push(message) });
+
+    await startRun(makeRequest({ tabId: 74 }));
+
+    let resolvedValue: boolean | undefined;
+    void lastOnConfirm()('call-race', 'browser_click', { selector: '#pay' }).then((v) => { resolvedValue = v; });
+
+    // 用户此时点了"停止"：pendingConfirmation 还没落地，stopRun 看不到这条在途的确认，
+    // 只能 abort agent——这正是本用例要验证的竞态本身。
+    stopRun(74);
+    expect(agent.abort).toHaveBeenCalledOnce();
+
+    // 模拟真实的 abort 让 agent.prompt() 以 AbortError reject，走到 startRun 的
+    // finally，把这条 run 从 runs 里摘掉。
+    rejectPrompt(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+    await vi.waitFor(() => expect(getRunState(74)).toBeUndefined());
+
+    // 现在才放行悬挂的 browser.tabs.get()——onConfirm 恢复执行。
+    resolveTabsGet({ url: 'https://shop.example.com/checkout' });
+
+    await vi.waitFor(() => expect(resolvedValue).toBe(false));
+    // 全程不应该有任何一次广播带上非空的 pendingConfirmation：run 已经不是当前的了。
+    expect(lastPendingConfirmation(posted)).toBeUndefined();
+  });
 });
 
 // 用户接管：与提交确认共用 pendingConfirmation 通道，靠 kind 区分。

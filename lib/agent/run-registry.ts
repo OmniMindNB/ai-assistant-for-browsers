@@ -349,6 +349,13 @@ export async function startRun(request: StartRunRequest): Promise<void> {
     // browser_switch_tab 会在一轮之内改变 currentTabId。
     const targetTab = currentTargetTab(state);
     const mainOrigin = await currentMainOrigin(state);
+    // currentMainOrigin 是这个回调里唯一的 await 点，期间 stopRun 可能已经把这轮跑
+    // 结束（agent.abort() + 清 pending 字段）。这个 await 恢复时如果那已经发生了，
+    // runs.get(state.tabId) 早就不再是这个 state（同一 tab 的下一轮已经顶替它，
+    // 或者压根没有新的一轮）——这时绝不能再无条件写 pendingConfirmation/
+    // resolveConfirmation：那会为一个用户已经点了停止的 run 重新弹出一张确认卡。
+    // 直接按"拒绝"收场，与 stopRun 里 resolveConfirmation?.(false) 的既有语义一致。
+    if (runs.get(state.tabId) !== state) return false;
     const { summary, codePreview } = summarizeToolCallForConfirmation(toolName, args, targetTab, mainOrigin);
     state.pendingToolArgs.set(toolCallId, { toolName, args });
     state.pendingConfirmation = { toolCallId, toolName, summary, codePreview };
