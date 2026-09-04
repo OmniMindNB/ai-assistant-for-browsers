@@ -192,18 +192,34 @@ function processChunk(
   }
 }
 
-function convertMessages(context: Context): Array<Record<string, unknown>> {
-  return context.messages.map((message) => {
+export function convertMessages(context: Context): Array<Record<string, unknown>> {
+  return context.messages.flatMap((message): Array<Record<string, unknown>> => {
     if (message.role === 'user') {
-      return { role: 'user', content: convertUserContent(message.content) };
+      return [{ role: 'user', content: convertUserContent(message.content) }];
     }
     if (message.role === 'toolResult') {
-      return {
+      const toolMessage = {
         role: 'tool',
         tool_call_id: message.toolCallId,
         name: message.toolName,
         content: stringifyContent(message.content),
       };
+      const images = extractImageParts(message.content);
+      if (images.length === 0) return [toolMessage];
+      // OpenAI chat completions 不允许 role:'tool' 消息携带图片，只能把图片
+      // 放进紧随其后的一条合成 user 消息。这条消息只存在于线格式里——它由
+      // 本函数（纯函数：context.messages → 线格式）生成，不进 agent 自己的
+      // 消息列表，因此不会被写进 Dexie、不会显示在面板、不会被会话恢复读回。
+      return [
+        { ...toolMessage, content: `${toolMessage.content}\n[图片见下一条消息。]` },
+        {
+          role: 'user',
+          content: images.map((image) => ({
+            type: 'image_url',
+            image_url: { url: `data:${image.mimeType};base64,${image.data}` },
+          })),
+        },
+      ];
     }
     const text = message.content
       .filter((part) => part.type === 'text')
@@ -216,11 +232,13 @@ function convertMessages(context: Context): Array<Record<string, unknown>> {
         type: 'function',
         function: { name: part.name, arguments: JSON.stringify(part.arguments) },
       }));
-    return {
-      role: 'assistant',
-      content: text || null,
-      tool_calls: toolCalls.length ? toolCalls : undefined,
-    };
+    return [
+      {
+        role: 'assistant',
+        content: text || null,
+        tool_calls: toolCalls.length ? toolCalls : undefined,
+      },
+    ];
   });
 }
 

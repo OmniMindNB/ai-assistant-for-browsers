@@ -151,8 +151,8 @@ describe('convertMessagesForAnthropic', () => {
     expect(converted[1]).toEqual({
       role: 'user',
       content: [
-        { type: 'tool_result', tool_use_id: 't1', content: 'result-1' },
-        { type: 'tool_result', tool_use_id: 't2', content: 'result-2' },
+        { type: 'tool_result', tool_use_id: 't1', content: [{ type: 'text', text: 'result-1' }] },
+        { type: 'tool_result', tool_use_id: 't2', content: [{ type: 'text', text: 'result-2' }] },
       ],
     });
   });
@@ -429,5 +429,39 @@ describe('browserAnthropicStream', () => {
       expect(errorEvent.error.errorMessage).toContain('https://example.com/v1/messages');
       expect(errorEvent.error.errorMessage).toContain('Failed to fetch');
     }
+  });
+});
+
+describe('convertMessagesForAnthropic 的图片工具结果', () => {
+  const toolResult = {
+    role: 'toolResult' as const,
+    toolCallId: 'call-1',
+    toolName: 'browser_screenshot',
+    content: [
+      { type: 'text' as const, text: '已截取截图（1280×800）。' },
+      { type: 'image' as const, data: 'AAAA', mimeType: 'image/jpeg' },
+    ],
+    isError: false,
+    timestamp: 0,
+  };
+
+  it('把图片作为 image 块放进 tool_result', () => {
+    const [message] = convertMessagesForAnthropic({ messages: [toolResult] } as never);
+    const block = (message.content as Array<Record<string, unknown>>)[0];
+    expect(block.type).toBe('tool_result');
+    const inner = block.content as Array<Record<string, unknown>>;
+    expect(inner[0]).toEqual({ type: 'text', text: '已截取截图（1280×800）。' });
+    expect(inner[1]).toEqual({
+      type: 'image',
+      source: { type: 'base64', media_type: 'image/jpeg', data: 'AAAA' },
+    });
+  });
+
+  it('没有图片时 tool_result 仍是纯文本内容', () => {
+    const textOnly = { ...toolResult, content: [{ type: 'text' as const, text: '正文' }] };
+    const [message] = convertMessagesForAnthropic({ messages: [textOnly] } as never);
+    const block = (message.content as Array<Record<string, unknown>>)[0];
+    const inner = block.content as Array<Record<string, unknown>>;
+    expect(inner).toEqual([{ type: 'text', text: '正文' }]);
   });
 });

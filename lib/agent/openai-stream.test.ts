@@ -1,7 +1,7 @@
 // lib/agent/openai-stream.test.ts
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AssistantMessageEvent, AssistantMessageEventStream, Api, Context, Model } from '@earendil-works/pi-ai';
-import { browserOpenAIStream, convertUserContent, openAiCompletionsUrl } from './openai-stream';
+import { browserOpenAIStream, convertMessages, convertUserContent, openAiCompletionsUrl } from './openai-stream';
 
 function makeModel(): Model<Api> {
   return {
@@ -201,5 +201,40 @@ describe('browserOpenAIStream', () => {
 
     const content = await finalMessage(contextWithTools(['browser_read_page']));
     expect(content).toEqual([{ type: 'text', text: '这页讲的是气候变化。' }]);
+  });
+});
+
+describe('convertMessages 的图片工具结果', () => {
+  const toolResult = {
+    role: 'toolResult' as const,
+    toolCallId: 'call-1',
+    toolName: 'browser_screenshot',
+    content: [
+      { type: 'text' as const, text: '已截取截图（1280×800）。' },
+      { type: 'image' as const, data: 'AAAA', mimeType: 'image/jpeg' },
+    ],
+    isError: false,
+    timestamp: 0,
+  };
+
+  // OpenAI chat completions 不允许 role:'tool' 消息带图片，只能拆成两条。
+  it('把一条带图的 toolResult 展开成 tool + user 两条消息', () => {
+    const messages = convertMessages({ messages: [toolResult] } as never);
+    expect(messages).toHaveLength(2);
+    expect(messages[0]).toMatchObject({ role: 'tool', tool_call_id: 'call-1' });
+    expect(String(messages[0].content)).toContain('已截取截图');
+    expect(messages[1]).toMatchObject({ role: 'user' });
+    const parts = messages[1].content as Array<Record<string, unknown>>;
+    expect(parts.some((part) => part.type === 'image_url')).toBe(true);
+  });
+
+  it('tool 消息本身不含图片字段', () => {
+    const messages = convertMessages({ messages: [toolResult] } as never);
+    expect(JSON.stringify(messages[0])).not.toContain('image_url');
+  });
+
+  it('没有图片的 toolResult 仍然只产生一条消息', () => {
+    const textOnly = { ...toolResult, content: [{ type: 'text' as const, text: '正文' }] };
+    expect(convertMessages({ messages: [textOnly] } as never)).toHaveLength(1);
   });
 });

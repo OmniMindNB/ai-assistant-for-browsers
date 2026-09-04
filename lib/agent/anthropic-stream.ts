@@ -224,10 +224,17 @@ export function convertMessagesForAnthropic(context: Context): Array<Record<stri
       continue;
     }
     if (message.role === 'toolResult') {
+      // Anthropic 的 tool_result 原生支持内嵌 image 块，直接放进去即可。
+      const inner: Array<Record<string, unknown>> = [];
+      const text = stringifyContent(message.content);
+      if (text) inner.push({ type: 'text', text });
+      for (const image of extractImageParts(message.content)) {
+        inner.push({ type: 'image', source: { type: 'base64', media_type: image.mimeType, data: image.data } });
+      }
       const block = {
         type: 'tool_result',
         tool_use_id: message.toolCallId,
-        content: stringifyContent(message.content),
+        content: inner,
       };
       const prev = result[result.length - 1];
       if (prev && prev.role === 'user' && isToolResultGroup(prev.content)) {
