@@ -501,6 +501,8 @@ export interface ApplyFillInput {
   url: string;
   items: ApplyFillItem[];
   submit?: { fieldId: string; path: FormFieldPathStep[]; expect: ApplyFillItem['expect'] };
+  /** 发放句柄时目标帧的 origin；与当前帧不符说明 frameId 已被复用，整批拒绝写入。 */
+  expectOrigin?: string;
 }
 
 export interface ApplyFillOutput {
@@ -518,6 +520,19 @@ export interface ApplyFillOutput {
 
 // ⚠️ 同 collectFormFields：本函数会被序列化注入页面，不得引用模块作用域的任何绑定。
 export async function applyFormFill(input: ApplyFillInput): Promise<ApplyFillOutput> {
+  // frameId 复用检测：句柄发放时记下的 origin 与本帧当前 origin 不符，说明这个
+  // frameId 已经被分配给了另一个帧。此时整批拒绝，绝不逐条尝试。
+  if (input.expectOrigin && input.expectOrigin !== location.origin) {
+    return {
+      fieldsTableStale: true,
+      outcomes: input.items.map((item) => ({
+        fieldId: item.fieldId,
+        status: 'mismatch' as const,
+        detail: '目标框架已改变，请重新调用 browser_get_form。',
+      })),
+    };
+  }
+
   if (input.url && input.url !== location.href) {
     return { outcomes: [], fieldsTableStale: true };
   }
@@ -979,6 +994,8 @@ export interface PressKeyInput {
   url?: string;
   /** fieldId 路径的结构指纹；仅 path 存在时传入，用于核对目标元素与发放句柄时是否一致。 */
   expect?: { tag: string; type?: string; name?: string };
+  /** 发放句柄时目标帧的 origin；与当前帧不符说明 frameId 已被复用，拒绝按键。 */
+  expectOrigin?: string;
 }
 
 export interface PressKeyOutput {
@@ -1023,10 +1040,17 @@ export function pressKeyInPage(input: PressKeyInput): PressKeyOutput {
     };
   }
 
-  // fieldId 路径专用的过期/结构漂移校验（url/expect 只在有 path 时由 background 传入，
-  // selector/activeElement 路径这两个字段天然是 undefined，下面两处检查自然跳过）。
+  // fieldId 路径专用的过期/结构漂移校验（url/expect/expectOrigin 只在有 path 时由 background
+  // 传入，selector/activeElement 路径这三个字段天然是 undefined，下面各检查自然跳过）。
   // 与 applyFormFill 的 url 早退 + matchesExpect 校验语义一致，但按本文件「序列化注入
   // 函数之间不共享 helper」的约定内联实现，不导入/调用 applyFormFill 内部的 matchesExpect。
+  //
+  // frameId 复用检测放在 url/expect 之前：句柄发放时记下的 origin 与本帧当前 origin 不符，
+  // 说明这个 frameId 已经被分配给了另一个帧，此时按 url/expect 比对已经没有意义——
+  // 目标压根不是同一个文档。
+  if (input.expectOrigin && input.expectOrigin !== location.origin) {
+    return { status: 'not_found', defaultPrevented: false, submitted: false, fieldsTableStale: true };
+  }
   if (input.url && input.url !== location.href) {
     return { status: 'not_found', defaultPrevented: false, submitted: false, fieldsTableStale: true };
   }
@@ -1114,6 +1138,8 @@ export interface ScrollContainerInput {
   x?: number;
   y?: number;
   behavior?: 'auto' | 'smooth';
+  /** 发放句柄时目标帧的 origin；与当前帧不符说明 frameId 已被复用，拒绝滚动。 */
+  expectOrigin?: string;
 }
 
 export interface ScrollContainerOutput {
@@ -1133,6 +1159,12 @@ export interface ScrollContainerOutput {
 // applyFormFill/probeClickTarget 里的同名函数各自独立内联，是同一个既有约定。
 export function scrollContainerInPage(input: ScrollContainerInput): ScrollContainerOutput {
   const empty = { x: 0, y: 0, scrolledBy: 0, pixelsAbove: 0, pixelsBelow: 0, viewportHeight: 0 };
+
+  // frameId 复用检测：句柄发放时记下的 origin 与本帧当前 origin 不符，说明这个
+  // frameId 已经被分配给了另一个帧。与下方的 url 早退语义一致，检查顺序在前。
+  if (input.expectOrigin && input.expectOrigin !== location.origin) {
+    return { ...empty, status: 'not_found', fieldsTableStale: true };
+  }
 
   if (input.url && input.url !== location.href) {
     return { ...empty, status: 'not_found', fieldsTableStale: true };

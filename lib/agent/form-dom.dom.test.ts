@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { collectFormFields } from './form-dom';
 import { applyFormFill, type ApplyFillItem } from './form-dom';
 import { scrollContainerInPage, scrollPageInPage } from './form-dom';
+import { pressKeyInPage } from './form-dom';
 import { MAX_FIELD_TEXT_CHARS, sanitizeFieldText, toFieldDescriptor } from './form-schema';
 
 const INPUT = { maxFields: 120, maxOptions: 50 };
@@ -1367,5 +1368,102 @@ describe('applyFormFill 逐字段扫光', () => {
     expect(seen).toEqual([{ x: 20, y: 10 }, { x: 20, y: 110 }]);
     // 两个高亮框同时在场：后一个亮起时前一个还没淡出，用户才能看到完整的一组改动。
     expect(document.body.querySelectorAll('div')).toHaveLength(2);
+  });
+});
+
+describe('applyFormFill origin guard', () => {
+  // 会让这个用例失败的 production 改动：删掉 expectOrigin 比对分支——
+  // 那样 frameId 被 Chrome 复用给另一个帧时，这次写入会落到完全无关的页面上。
+  it('refuses to write when the frame origin no longer matches the handle', async () => {
+    render('<input name="card" value="" />');
+    const items: ApplyFillItem[] = [
+      {
+        fieldId: 'f1',
+        value: '4111111111111111',
+        path: [{ kind: 'selector', selector: 'input', index: 0 }],
+        expect: { tag: 'input', type: 'text', name: 'card' },
+        kind: 'text',
+      },
+    ];
+
+    const result = await applyFormFill({ items, expectOrigin: 'https://not-this-origin.example.com', url: '' });
+
+    expect(result.fieldsTableStale).toBe(true);
+    expect(result.outcomes[0].status).toBe('mismatch');
+    expect(document.querySelector('input')!.value).toBe('');
+  });
+});
+
+describe('pressKeyInPage origin guard', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  // 会让这个用例失败的 production 改动：删掉 expectOrigin 比对分支——
+  // 那样 frameId 被 Chrome 复用给另一个帧时，这次按键会打在完全无关的页面上。
+  it('refuses to press a key when the frame origin no longer matches the handle', () => {
+    render('<form><input type="text" name="q" /></form>');
+    const input = document.querySelector('input')!;
+    let sawKeydown = false;
+    input.addEventListener('keydown', () => {
+      sawKeydown = true;
+    });
+
+    const result = pressKeyInPage({
+      path: [
+        { kind: 'selector', selector: 'body', index: 0 },
+        { kind: 'selector', selector: 'form', index: 0 },
+        { kind: 'selector', selector: 'input', index: 0 },
+      ],
+      descriptor: {
+        key: 'Tab',
+        code: 'Tab',
+        keyCode: 9,
+        ctrlKey: false,
+        shiftKey: false,
+        altKey: false,
+        metaKey: false,
+        emitsKeypress: false,
+      },
+      submitOnEnter: false,
+      expectOrigin: 'https://not-this-origin.example.com',
+    });
+
+    expect(result.fieldsTableStale).toBe(true);
+    expect(result.status).toBe('not_found');
+    expect(result.defaultPrevented).toBe(false);
+    expect(result.submitted).toBe(false);
+    expect(sawKeydown).toBe(false);
+  });
+});
+
+describe('scrollContainerInPage origin guard', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  // 会让这个用例失败的 production 改动：删掉 expectOrigin 比对分支——
+  // 那样 frameId 被 Chrome 复用给另一个帧时，这次滚动会作用到完全无关的页面上。
+  it('refuses to scroll when the frame origin no longer matches the handle', () => {
+    render('<div id="panel"></div>');
+    const el = document.getElementById('panel')!;
+    Object.defineProperty(el, 'scrollHeight', { value: 1000, configurable: true });
+    Object.defineProperty(el, 'clientHeight', { value: 400, configurable: true });
+    el.scrollTop = 0;
+
+    const result = scrollContainerInPage({
+      url: location.href,
+      path: [
+        { kind: 'selector', selector: 'body', index: 0 },
+        { kind: 'selector', selector: 'div', index: 0 },
+      ],
+      expect: { tag: 'div' },
+      y: 300,
+      expectOrigin: 'https://not-this-origin.example.com',
+    });
+
+    expect(result.fieldsTableStale).toBe(true);
+    expect(result.status).toBe('not_found');
+    expect(el.scrollTop).toBe(0);
   });
 });

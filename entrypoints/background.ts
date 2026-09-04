@@ -644,6 +644,10 @@ async function snapshotFields(tabId: number, payload: GetFormPayload = {}): Prom
       expect: { tag: raw.tag, type: raw.type, name: raw.name, label: descriptor.label, href: raw.href },
       sensitive: descriptor.sensitive,
       kind: descriptor.kind,
+      // mergeFrameCollections 已经把每条 raw 挂上了它所在帧的 frameId/origin
+      // （主框架也不例外，值为 0/主框架 origin）——写入前的 origin 比对靠这两个字段。
+      frameId: raw.frameId,
+      frameOrigin: raw.frameOrigin,
     };
     if (!descriptor.formId) orphanFieldIds.push(fieldId);
     if (sanitizeFieldText(raw.precedingText, 'tail').truncated) textTruncated = true;
@@ -715,10 +719,17 @@ async function fillForm(payload: FillFormPayload, tabId: number): Promise<FillFo
   }
 
   const plan = planFormFill(payload, table);
+  // 一次 fill_form 写入的所有字段来自同一个 browser_get_form 快照，天然属于同一帧：
+  // 用提交目标（若有）或第一个字段的句柄代表整批的 frameId/origin。若请求真的混杂了
+  // 不同帧的 fieldId（不该发生），非目标帧的字段会在注入时因 path 解析不到而 not_found，
+  // 不会误写到别的帧——不是静默成功。
+  const primaryFieldId = payload?.submit?.fieldId ?? payload?.fields?.[0]?.fieldId;
+  const primaryHandle = primaryFieldId ? table.fields[primaryFieldId] : undefined;
   const applied = await executeInTab(
     tabId,
-    { url: table.url, items: plan.items, submit: plan.submit },
+    { url: table.url, items: plan.items, submit: plan.submit, expectOrigin: primaryHandle?.frameOrigin },
     applyFormFill,
+    { frameId: primaryHandle?.frameId },
   );
 
   if (applied.fieldsTableStale) {
@@ -1150,10 +1161,12 @@ async function clickElementByFieldId(fieldId: string, tabId: number): Promise<Cl
     };
   }
 
+  const handle = table?.fields[fieldId];
   const applied = await executeInTab(
     tabId,
-    { url: table!.url, items: [], submit: plan.submit },
+    { url: table!.url, items: [], submit: plan.submit, expectOrigin: handle?.frameOrigin },
     applyFormFill,
+    { frameId: handle?.frameId },
   );
 
   if (applied.fieldsTableStale) {
@@ -1235,6 +1248,7 @@ async function pressKey(payload: PressKeyPayload, tabId: number): Promise<PressK
   let path: FormFieldPathStep[] | undefined;
   let url: string | undefined;
   let expect: { tag: string; type?: string; name?: string } | undefined;
+  let handle: FormFieldHandle | undefined;
   if (payload?.fieldId) {
     const table = await getFormFieldsForTab(tabId);
     const plan = planFieldClick(payload.fieldId, table);
@@ -1254,6 +1268,7 @@ async function pressKey(payload: PressKeyPayload, tabId: number): Promise<PressK
     path = plan.submit.path;
     url = table?.url;
     expect = plan.submit.expect;
+    handle = table?.fields[payload.fieldId];
   }
 
   // Enter 是否提交由这里决定，页面侧不自行判断：确认闸门已经在 beforeToolCall
@@ -1284,8 +1299,10 @@ async function pressKey(payload: PressKeyPayload, tabId: number): Promise<PressK
       submitOnEnter,
       url,
       expect,
+      expectOrigin: handle?.frameOrigin,
     },
     pressKeyInPage,
+    { frameId: handle?.frameId },
   );
 
   return {
@@ -1323,10 +1340,20 @@ async function scrollContainerByFieldId(payload: ScrollPagePayload, tabId: numbe
     };
   }
 
+  const handle = table?.fields[payload.fieldId!];
   const result = await executeInTab(
     tabId,
-    { url: table!.url, path: plan.target.path, expect: plan.target.expect, x: payload.x, y: payload.y, behavior: payload.behavior },
+    {
+      url: table!.url,
+      path: plan.target.path,
+      expect: plan.target.expect,
+      x: payload.x,
+      y: payload.y,
+      behavior: payload.behavior,
+      expectOrigin: handle?.frameOrigin,
+    },
     scrollContainerInPage,
+    { frameId: handle?.frameId },
   );
 
   return {

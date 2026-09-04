@@ -11,6 +11,13 @@ export interface FormFieldHandle {
   expect: { tag: string; type?: string; name?: string; label?: string; href?: string };
   sensitive: boolean;
   kind: FormFieldKind;
+  /** 该字段所在帧；缺省 = 主框架，旧版本存下的表读回来仍然有效（ref: 设计文档 §3.2）。 */
+  frameId?: number;
+  /**
+   * 发放句柄时该帧的 origin。Chrome 会把回收掉的 frameId 复用给别的帧，
+   * 只比对 frameId 会写到完全无关的页面上——origin 比对是堵这个的那道锁。
+   */
+  frameOrigin?: string;
 }
 
 export interface FormFieldTable {
