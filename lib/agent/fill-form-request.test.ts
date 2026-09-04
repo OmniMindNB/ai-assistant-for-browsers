@@ -3,12 +3,15 @@ import type { FillFormFieldOutcome, FillFormPayload } from '@/lib/messaging';
 import type { ApplyFillItem } from './form-dom';
 import {
   groupItemsByFrame,
+  isChildFrameHandle,
   mergeFillOutcomes,
   planFieldClick,
   planFieldScroll,
   planFormFill,
+  planFrameGroupExecution,
   planProbeTarget,
   resolveExpectOrigin,
+  skippedFrameGroupOutcomes,
 } from './fill-form-request';
 import type { FormFieldHandle, FormFieldTable } from './tab-form-fields';
 
@@ -373,9 +376,102 @@ describe('planProbeTarget', () => {
     expect(plan.frameId).toBeUndefined();
   });
 
+  // 会让这个用例失败的 production 改动：expectOrigin 原样转发 handle.frameOrigin，
+  // 不再走 resolveExpectOrigin 的子帧闸门。这个返回值一路走到确认卡片的
+  // 「该表单位于嵌入框架 X」提示，主框架句柄一旦带出 origin，一次普通的主框架提交
+  // 就会在 currentMainOrigin() 解析失败时被误标成发生在嵌入框架里。
+  it('never reports an embedded-frame origin for a main-frame handle', () => {
+    const mainFrameZero = planProbeTarget(
+      'f1',
+      table({ f1: handle({ frameId: 0, frameOrigin: 'https://example.com', kind: 'submit' }) }),
+    );
+    expect(mainFrameZero.expectOrigin).toBeUndefined();
+
+    const legacyNoFrameId = planProbeTarget('f1', table({ f1: handle({ frameOrigin: 'https://example.com' }) }));
+    expect(legacyNoFrameId.expectOrigin).toBeUndefined();
+  });
+
   // 会让这个用例失败的 production 改动：没有句柄时凭空造一个 path 去探测。
   it('returns an empty plan when the handle is unknown', () => {
     expect(planProbeTarget('f404', table({}))).toEqual({});
     expect(planProbeTarget(undefined, undefined)).toEqual({});
+  });
+});
+
+describe('isChildFrameHandle', () => {
+  // 会让这个用例失败的 production 改动：把 frameId 0（主框架）或缺省 frameId（旧句柄表）
+  // 当成子帧。这条谓词此前在 agent.ts / background.ts / resolveExpectOrigin 各写了一遍，
+  // 收敛到这里就是为了让唯一的判据只有一个可能写错的地方。
+  it('treats only a non-zero frameId as a child frame', () => {
+    expect(isChildFrameHandle({ frameId: 7 })).toBe(true);
+    expect(isChildFrameHandle({ frameId: 0 })).toBe(false);
+    expect(isChildFrameHandle({})).toBe(false);
+    expect(isChildFrameHandle(undefined)).toBe(false);
+  });
+});
+
+describe('planFrameGroupExecution', () => {
+  const group = (fieldIds: string[], submitFieldId?: string) => ({
+    frameId: undefined,
+    frameOrigin: undefined,
+    items: fieldIds.map((fieldId) => item({ fieldId })),
+    submit: submitFieldId
+      ? { fieldId: submitFieldId, path: handle().path, expect: handle().expect }
+      : undefined,
+  });
+
+  // 会让这个用例失败的 production 改动：把携带提交的组和纯写入组一起 Promise.all。
+  // 不同帧的 executeScript 之间没有完成顺序保证，提交那一帧先返回，表单就会在另一帧的
+  // 字段还没写进去时被提交出去——正是本特性的旗舰场景（主框架填字段 + 支付 iframe 提交）。
+  it('separates the submit-bearing group from the concurrently runnable write groups', () => {
+    const writeA = group(['f1']);
+    const writeB = group(['f2']);
+    const submitting = group(['f3'], 'f9');
+
+    const plan = planFrameGroupExecution([writeA, submitting, writeB]);
+
+    expect(plan.writeGroups).toEqual([writeA, writeB]);
+    expect(plan.submitGroup).toBe(submitting);
+  });
+
+  // 会让这个用例失败的 production 改动：没有提交时也硬挑一组当 submitGroup，
+  // 那会把本可并发的一组串行化，且让它错过 stale 短路的判定。
+  it('leaves submitGroup undefined when nothing submits', () => {
+    const plan = planFrameGroupExecution([group(['f1']), group(['f2'])]);
+    expect(plan.submitGroup).toBeUndefined();
+    expect(plan.writeGroups).toHaveLength(2);
+  });
+
+  // 会让这个用例失败的 production 改动：未混帧的常见情形（字段与提交同一组）被拆成两次调用。
+  it('keeps the single-frame case as one submit-bearing group', () => {
+    const only = group(['f1', 'f2'], 'f3');
+    const plan = planFrameGroupExecution([only]);
+    expect(plan.writeGroups).toEqual([]);
+    expect(plan.submitGroup).toBe(only);
+  });
+});
+
+describe('skippedFrameGroupOutcomes', () => {
+  // 会让这个用例失败的 production 改动：提交组因前面的帧过期而整组没跑时，让它的字段
+  // 静默消失。mergeFillOutcomes 会把它们补成 not_found，等于告诉模型「这个 fieldId 不存在」，
+  // 而真相是句柄还在、只是我们主动没写。
+  it('reports the un-attempted fields as mismatch with an explanation', () => {
+    const outcomes = skippedFrameGroupOutcomes({
+      frameId: 3,
+      frameOrigin: 'https://pay.example.com',
+      items: [item({ fieldId: 'f1' }), item({ fieldId: 'f2' })],
+      submit: { fieldId: 'f9', path: handle().path, expect: handle().expect },
+    });
+
+    expect(outcomes.map((outcome) => outcome.fieldId)).toEqual(['f1', 'f2']);
+    expect(outcomes.every((outcome) => outcome.status === 'mismatch')).toBe(true);
+    expect(outcomes[0]?.detail).toContain('browser_get_form');
+  });
+
+  it('returns nothing when there is no group or it has no items', () => {
+    expect(skippedFrameGroupOutcomes(undefined)).toEqual([]);
+    expect(
+      skippedFrameGroupOutcomes({ frameId: undefined, frameOrigin: undefined, items: [] }),
+    ).toEqual([]);
   });
 });

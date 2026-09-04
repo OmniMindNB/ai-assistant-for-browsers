@@ -16,8 +16,14 @@ export interface CollectFormInput {
   maxOptions: number;
   /**
    * 'child' 时只采可写字段与提交按钮（ref: 设计文档 §4.1）。缺省 'main' 保持既有行为。
-   * 判断权由 background 下发而不是让本函数用 window.top === window 自己决定：
-   * 规则留在参数层，form-schema 的纯函数才能覆盖它。
+   *
+   * scope 的取值本身仍然完全由调用方决定：background 的 executeInAllFrames 用
+   * buildInput(isMain) 的两个分支分别造好「主框架该用的那份输入」和「子帧该用的那份
+   * 输入」，规则留在参数层，form-schema 的纯函数才能覆盖它。
+   * 本函数内部只做一步纯机械的挑选——两份已经定好的输入里，哪一份适用于「我正跑在的
+   * 这个帧」——这一步不得不放进注入函数里，因为 executeScript 对一次 allFrames 广播的
+   * 所有帧发送的是同一份 args，平台没有按帧传不同参数的能力
+   * （ref: 2026-09-05 final review Critical #1）。
    */
   scope?: 'main' | 'child';
 }
@@ -43,7 +49,18 @@ export interface CollectFormOutput {
   scrollables?: RawScrollableContainer[];
 }
 
-export function collectFormFields(input: CollectFormInput): CollectFormOutput {
+export function collectFormFields(
+  mainInput: CollectFormInput,
+  childInput?: CollectFormInput,
+): CollectFormOutput {
+  // 单参调用（现有测试的调用方式）等价于「只有一份输入」，直接用它，行为与改动前一致。
+  // 经 executeInAllFrames 广播时两个参数都会被传入，函数在页面里自己用 window.top
+  // 判断当前跑在哪个 frame，从而决定用哪一份——不能让 background 帮它选，
+  // executeScript 对所有帧发送的是同一份 args，没法按帧传不同参数；也不能在
+  // background 侧包一层「转调 collectFormFields」的闭包，那层包装函数被序列化送进页面
+  // 后引用的外部绑定早已不存在，只会抛 ReferenceError
+  // （ref: 2026-09-05 final review Critical #1）。
+  const input = childInput === undefined ? mainInput : window.top === window ? mainInput : childInput;
   const maxFields = input.maxFields;
   const maxOptions = input.maxOptions;
   // 通用可交互元素（链接/role/tabindex）最多只能占用一半预算，避免导航栏密集的页面

@@ -27,7 +27,19 @@ const UNKNOWN_FIELD_DETAIL = '未知的 fieldId，请重新调用 browser_get_fo
  * undefined，交回给 url 校验。
  */
 export function resolveExpectOrigin(handle: FormFieldHandle | undefined): string | undefined {
-  return handle?.frameId ? handle.frameOrigin : undefined;
+  return isChildFrameHandle(handle) ? handle!.frameOrigin : undefined;
+}
+
+/**
+ * 「这个句柄落在子帧吗」的唯一判据。
+ *
+ * frameId 缺省（旧句柄表）与 frameId 0（主框架）都不是子帧，其余才是。这条谓词此前在
+ * agent.ts、background.ts（两处）、本文件的 resolveExpectOrigin 里各写了一遍，已经因为
+ * 其中一处漏写而出过 bug——收敛成一个导出的函数，让它只有一个可能出错的地方
+ * （ref: 2026-09-05 final review Minor #1）。
+ */
+export function isChildFrameHandle(handle: { frameId?: number } | undefined): boolean {
+  return handle?.frameId !== undefined && handle.frameId !== 0;
 }
 
 export interface FormFillPlan {
@@ -163,6 +175,47 @@ export function groupItemsByFrame(
   return Array.from(groups.values());
 }
 
+/** 因为别的帧写入已过期而没敢动手的字段，回报给模型的说明。 */
+export const STALE_SKIPPED_DETAIL =
+  '同一次调用中其它框架的写入已因句柄表过期被拒绝，为避免在字段未填全的情况下触发提交，本组字段与提交都没有执行。请重新调用 browser_get_form 后重试。';
+
+export interface FrameGroupExecutionPlan {
+  /** 不携带提交的组。彼此之间没有顺序危险（谁都提交不了），可以并发跑。 */
+  writeGroups: FormFillFrameGroup[];
+  /** 携带提交的那一组，至多一个（submit 只属于一个 fieldId，也就只属于一个帧）。 */
+  submitGroup?: FormFillFrameGroup;
+}
+
+/**
+ * 把分好的帧组拆成「可并发的写入组」与「必须最后跑的提交组」。
+ *
+ * 存在的理由是一条时序安全约束：executeScript 对不同帧的多次调用之间没有任何完成顺序
+ * 保证，若把所有组一起 Promise.all，携带提交的那一帧完全可能先于另一帧的字段写入返回，
+ * 于是表单在字段还没填全时就被提交出去了——而「主框架填姓名邮箱 + 支付 iframe 里点提交」
+ * 恰恰是本特性的旗舰场景，这不是理论风险（ref: 2026-09-05 final review Critical #2）。
+ * 提交必须排在所有纯写入之后，且只有在它们全部没过期时才允许发生。
+ */
+export function planFrameGroupExecution(groups: FormFillFrameGroup[]): FrameGroupExecutionPlan {
+  return {
+    writeGroups: groups.filter((group) => !group.submit),
+    submitGroup: groups.find((group) => group.submit),
+  };
+}
+
+/**
+ * 提交组因为前面的帧已过期而整组没跑时，为它自己的字段合成结果。
+ *
+ * 不能让它们静默消失：mergeFillOutcomes 会把找不到回报的字段补成 not_found，那等于告诉
+ * 模型「这个 fieldId 不存在」，而真相是「句柄还在，只是我们主动没写」。
+ */
+export function skippedFrameGroupOutcomes(group: FormFillFrameGroup | undefined): FillFormFieldOutcome[] {
+  return (group?.items ?? []).map((item) => ({
+    fieldId: item.fieldId,
+    status: 'mismatch' as const,
+    detail: STALE_SKIPPED_DETAIL,
+  }));
+}
+
 export interface FieldClickPlan {
   ok: boolean;
   reason?: 'no_table' | 'unknown_field' | 'wrong_kind';
@@ -199,6 +252,14 @@ export function planFieldScroll(fieldId: string, table: FormFieldTable | undefin
  * 探测该打哪个帧。抽成纯函数不是为了复用，是为了让「探测必须跟着 frameId 走」
  * 这条安全约束有测试守着——background 里的逻辑没有任何 vitest project 覆盖
  * （ref: 设计文档 §5.2）。
+ *
+ * expectOrigin 必须走 resolveExpectOrigin 而不是原样转发 handle.frameOrigin：这个返回值
+ * 会被 probeSubmitIntent 当作 frameOrigin 一路带进确认卡片，渲染成「该表单位于嵌入框架 X」
+ * 的提示。主框架句柄的 frameOrigin 是主站自己的 origin（不是 undefined），原样转发会在
+ * run-registry 的 currentMainOrigin() 解析失败时，把一次普普通通的主框架提交误标成发生在
+ * 嵌入框架里（ref: 2026-09-05 final review Important #1）。
+ * frameId 则照原样返回：frameId 0 就是主框架，executeInTab 的 { frameId: 0 } 分支与不传
+ * frameId 行为等价，语义上也正确。
  */
 export function planProbeTarget(
   fieldId: string | undefined,
@@ -207,5 +268,5 @@ export function planProbeTarget(
   if (!fieldId || !table) return {};
   const handle = table.fields[fieldId];
   if (!handle) return {};
-  return { path: handle.path, frameId: handle.frameId, expectOrigin: handle.frameOrigin };
+  return { path: handle.path, frameId: handle.frameId, expectOrigin: resolveExpectOrigin(handle) };
 }

@@ -94,12 +94,16 @@ import {
 } from '@/lib/tab-panel-scope';
 import {
   groupItemsByFrame,
+  isChildFrameHandle,
   mergeFillOutcomes,
   planFieldClick,
   planFieldScroll,
   planFormFill,
+  planFrameGroupExecution,
   planProbeTarget,
   resolveExpectOrigin,
+  skippedFrameGroupOutcomes,
+  type FormFillFrameGroup,
 } from '@/lib/agent/fill-form-request';
 import {
   applyFormFill,
@@ -117,7 +121,7 @@ import {
 } from '@/lib/agent/form-dom';
 import { findNewFieldIds, sanitizeFieldText, sanitizePageText, toFieldDescriptor, toScrollableContainerDescriptor, type FormFieldPathStep } from '@/lib/agent/form-schema';
 import { getFormFieldsForTab, setFormFieldsForTab, type FormFieldHandle } from '@/lib/agent/tab-form-fields';
-import { mergeFrameCollections, type MergedCollection } from '@/lib/agent/frame-merge';
+import { mergeFrameCollections, mergeReadResultsByFrame, type MergedCollection } from '@/lib/agent/frame-merge';
 import { decideEnterSubmitIntent, decideSubmitIntent } from '@/lib/agent/form-submit';
 import { resolveKeyDescriptor } from '@/lib/agent/key-dispatch';
 import { waitForConditionInPage } from '@/lib/agent/wait-dom';
@@ -564,7 +568,15 @@ async function getActiveSelection(tabId: number): Promise<PageSelection> {
   return response.data;
 }
 
-const queryDomInPage = (input: QueryDomPayload): QueryDomResult & { origin: string } => {
+// 广播注入函数必须自包含：只能引用自己的参数与真实全局（window/document/location），
+// 且自己用 window.top 在两份 args 里挑一份（ref: 2026-09-05 final review Critical #1）。
+// 这三个只读工具对每一帧下发的输入完全相同，挑哪份都一样，但签名形状必须一致才能直接
+// 作为 executeScript 的 func 使用。
+const queryDomInPage = (
+  mainInput: QueryDomPayload,
+  childInput: QueryDomPayload,
+): QueryDomResult & { origin: string } => {
+  const input = window.top === window ? mainInput : childInput;
   const selector = input?.selector || 'body';
   const limit = Math.max(1, Math.min(100, input?.limit ?? 20));
   const nodes = Array.from(document.querySelectorAll(selector));
@@ -598,7 +610,7 @@ const queryDomInPage = (input: QueryDomPayload): QueryDomResult & { origin: stri
 // 单帧原则（见 clickElement 等处注释）不同（ref: spec §4.6）。
 async function queryDom(payload: QueryDomPayload, tabId: number): Promise<QueryDomResult> {
   const frames = await executeInAllFrames(tabId, () => payload, queryDomInPage);
-  return mergeReadResultsByFrame(frames);
+  return mergeReadResultsByFrame(frames, (output) => output.count > 0);
 }
 
 const MAX_FORM_FIELDS = 120;
@@ -753,40 +765,50 @@ async function fillForm(payload: FillFormPayload, tabId: number): Promise<FillFo
   // （ref: 设计文档 §3.3，2026-09-04 review Critical #2）。未混帧的常见情形（所有字段
   // 和提交都在主框架）分组后仍恰好是一组，行为与此前完全一致。
   const groups = groupItemsByFrame(plan.items, plan.submit, table);
-  const appliedResults = await Promise.all(
-    groups.map((group) =>
-      executeInTab(
-        tabId,
-        {
-          url: table.url,
-          items: group.items,
-          submit: group.submit,
-          expectOrigin: group.frameOrigin,
-          // 子帧写操作跳过顶层执行遮罩的光标动画/等待——该动画的自定义事件是通过 window
-          // CustomEvent 派发的，从子帧永远到不了顶层的 content script（ref: Task 9）。
-          isChildFrame: group.frameId !== undefined && group.frameId !== 0,
-        },
-        applyFormFill,
-        { frameId: group.frameId },
-      ),
-    ),
-  );
+  const runGroup = (group: FormFillFrameGroup) =>
+    executeInTab(
+      tabId,
+      {
+        url: table.url,
+        items: group.items,
+        submit: group.submit,
+        expectOrigin: group.frameOrigin,
+        // 子帧写操作跳过顶层执行遮罩的光标动画/等待——该动画的自定义事件是通过 window
+        // CustomEvent 派发的，从子帧永远到不了顶层的 content script（ref: Task 9）。
+        isChildFrame: isChildFrameHandle(group),
+      },
+      applyFormFill,
+      { frameId: group.frameId },
+    );
 
-  // 任一帧的写入因句柄过期被拒绝，整次调用就报 stale：模型需要重新 get_form，
-  // 不能因为别的帧写成功了就掩盖这一部分已经失效的事实。
-  if (appliedResults.some((applied) => applied.fieldsTableStale)) {
-    return { outcomes: [], fieldsTableStale: true };
-  }
+  // 提交必须排在所有纯写入之后：并发的 executeScript 之间没有完成顺序保证，把提交组和
+  // 写入组一起 Promise.all，完全可能在别的帧的字段还没写完时就把表单提交出去
+  // （ref: 2026-09-05 final review Critical #2）。未混帧的常见情形（字段与提交同属一组）
+  // 拆分后 writeGroups 为空、只跑提交组这一次调用，行为与此前完全一致。
+  const { writeGroups, submitGroup } = planFrameGroupExecution(groups);
+  const writeResults = await Promise.all(writeGroups.map(runGroup));
+  const writesStale = writeResults.some((applied) => applied.fieldsTableStale);
 
-  const allOutcomes = appliedResults.flatMap((applied) => applied.outcomes);
-  // 只有携带 plan.submit 的那一组会真正尝试提交，其余组的 submitted 恒为 undefined。
-  const submitted = appliedResults.find((applied) => applied.submitted)?.submitted;
+  // 前面任一帧已过期就不再提交：宁可让模型重新 get_form，也不能对一张字段没填全的表单
+  // 按下提交。提交组自己的字段合成 mismatch 结果，而不是让它们静默变成 not_found。
+  const submitResult = submitGroup && !writesStale ? await runGroup(submitGroup) : undefined;
+  const skippedOutcomes = submitGroup && writesStale ? skippedFrameGroupOutcomes(submitGroup) : [];
+
+  const allOutcomes = [
+    ...writeResults.flatMap((applied) => applied.outcomes),
+    ...(submitResult?.outcomes ?? []),
+    ...skippedOutcomes,
+  ];
+  // 任一帧过期就如实标记 stale（模型据此重新 get_form），但不再把已经落地的那些帧的
+  // outcomes 一并抹成空数组——那等于隐瞒了真实发生过的写入。
+  const fieldsTableStale = writesStale || submitResult?.fieldsTableStale === true;
 
   return {
     outcomes: mergeFillOutcomes(payload, plan.blocked, allOutcomes),
     submitted: plan.submitFieldMissing
       ? { fieldId: payload!.submit!.fieldId, status: 'not_found' as const }
-      : submitted,
+      : submitResult?.submitted,
+    fieldsTableStale: fieldsTableStale || undefined,
     newFields: await collectNewFieldsAfterWrite(tabId),
   };
 }
@@ -893,7 +915,12 @@ async function probeEnterSubmitIntent(
   };
 }
 
-const getHtmlInPage = (input: GetHtmlPayload): GetHtmlResult & { origin: string } => {
+// 自包含 + 自选参数，理由同 queryDomInPage 上方的注释。
+const getHtmlInPage = (
+  mainInput: GetHtmlPayload,
+  childInput: GetHtmlPayload,
+): GetHtmlResult & { origin: string } => {
+  const input = window.top === window ? mainInput : childInput;
   const selector = input?.selector || 'html';
   const maxChars = Math.max(1000, input?.maxChars ?? 12000);
   const nodes = Array.from(document.querySelectorAll(selector));
@@ -911,7 +938,7 @@ const getHtmlInPage = (input: GetHtmlPayload): GetHtmlResult & { origin: string 
 // 只读裸选择器广播到全部帧，理由同 queryDom 上方的注释。
 async function getHtml(payload: GetHtmlPayload, tabId: number): Promise<GetHtmlResult> {
   const frames = await executeInAllFrames(tabId, () => payload, getHtmlInPage);
-  return mergeReadResultsByFrame(frames);
+  return mergeReadResultsByFrame(frames, (output) => output.count > 0 && output.html.trim().length > 0);
 }
 
 async function getScripts(payload: GetScriptsPayload, tabId: number): Promise<GetScriptsResult> {
@@ -1019,7 +1046,12 @@ async function getStylesheets(payload: GetStylesheetsPayload, tabId: number): Pr
   return { count: stylesheets.length, stylesheets: output, truncated };
 }
 
-const getComputedStyleInPage = (input: GetComputedStylePayload): GetComputedStyleResult & { origin: string } => {
+// 自包含 + 自选参数，理由同 queryDomInPage 上方的注释。
+const getComputedStyleInPage = (
+  mainInput: GetComputedStylePayload,
+  childInput: GetComputedStylePayload,
+): GetComputedStyleResult & { origin: string } => {
+  const input = window.top === window ? mainInput : childInput;
   const selector = input?.selector || 'body';
   const element = document.querySelector(selector);
   if (!element) return { selector, found: false, styles: {}, origin: location.origin };
@@ -1051,7 +1083,7 @@ async function getComputedStyleForSelector(
   tabId: number,
 ): Promise<GetComputedStyleResult> {
   const frames = await executeInAllFrames(tabId, () => payload, getComputedStyleInPage);
-  return mergeReadResultsByFrame(frames);
+  return mergeReadResultsByFrame(frames, (output) => output.found);
 }
 
 async function getPageMeta(tabId: number): Promise<PageMetaResult> {
@@ -1122,15 +1154,19 @@ async function executeInTab<TInput, TResult>(
 async function executeInAllFrames<TInput, TResult extends { origin: string }>(
   tabId: number,
   buildInput: (isMain: boolean) => TInput,
-  func: (input: TInput) => TResult | Promise<TResult>,
+  // func 必须是自包含的顶层函数：内部自己用 window.top === window 在 mainInput/childInput
+  // 两份参数里挑一份用。不能像过去那样在这里包一层引用外部变量的闭包再转调——
+  // executeScript 序列化会丢失所有闭包绑定，那层包装函数在页面里执行时，
+  // 它引用的外部变量早已不存在（ref: 2026-09-05 final review Critical #1）。
+  func: (mainInput: TInput, childInput: TInput) => TResult | Promise<TResult>,
 ): Promise<{ frameId: number; origin: string; isMain: boolean; output: TResult }[]> {
   const tab = await resolveTargetTab(tabId);
   const results = await browser.scripting.executeScript({
     target: { tabId: tab.id, allFrames: true },
     world: 'MAIN',
+    // executeScript 无法给不同帧传不同 args：两份输入都发下去，由 func 自己挑。
     args: [buildInput(true), buildInput(false)],
-    // 注入函数自己判断身份来选参数：executeScript 无法给不同帧传不同 args。
-    func: (mainInput: TInput, childInput: TInput) => func(window.top === window ? mainInput : childInput),
+    func,
   });
   return results
     .filter((entry) => entry.result)
@@ -1138,26 +1174,6 @@ async function executeInAllFrames<TInput, TResult extends { origin: string }>(
       const output = entry.result as TResult;
       return { frameId: entry.frameId, origin: output.origin, isMain: entry.frameId === 0, output };
     });
-}
-
-/**
- * 只读裸选择器广播的合并层：主框架命中留在顶层（不加标题，与单帧时代的形状一致），
- * 其它帧命中打包进 frames[]，每段带 origin。origin 只用来分段，不进最终结果的顶层——
- * 那会让「主框架不加标题」这条既有观感被一个多余字段破坏。
- */
-function mergeReadResultsByFrame<T extends { origin: string }>(
-  frames: { frameId: number; origin: string; isMain: boolean; output: T }[],
-): Omit<T, 'origin'> & { frames?: { origin: string; result: Omit<T, 'origin'> }[] } {
-  const main = frames.find((f) => f.isMain) ?? frames[0];
-  const others = frames.filter((f) => f !== main);
-  const stripOrigin = (output: T): Omit<T, 'origin'> => {
-    const { origin: _origin, ...rest } = output;
-    return rest;
-  };
-  return {
-    ...(main ? stripOrigin(main.output) : ({} as Omit<T, 'origin'>)),
-    frames: others.length > 0 ? others.map((f) => ({ origin: f.origin, result: stripOrigin(f.output) })) : undefined,
-  };
 }
 
 async function setStyle(payload: SetStylePayload, tabId: number): Promise<SetStyleResult> {
@@ -1258,7 +1274,7 @@ async function clickElementByFieldId(fieldId: string, tabId: number): Promise<Cl
       submit: plan.submit,
       expectOrigin: resolveExpectOrigin(handle),
       // 同上：子帧点击跳过顶层执行遮罩的光标动画/等待。
-      isChildFrame: handle?.frameId !== undefined && handle.frameId !== 0,
+      isChildFrame: isChildFrameHandle(handle),
     },
     applyFormFill,
     { frameId: handle?.frameId },

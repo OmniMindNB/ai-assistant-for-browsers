@@ -27,6 +27,7 @@ import { createBrowserTools, type BrowserAgentTool } from './tools';
 import { supportsVision } from './vision';
 import { createTabSession, type TabSessionController } from './tab-session';
 import { getFormFieldsForTab } from './tab-form-fields';
+import { isChildFrameHandle } from './fill-form-request';
 import { createAgentToolPolicy } from './tool-policy';
 import { describeToolActivity } from './activity-description';
 import { recordPerfContext } from './perf-trace';
@@ -176,8 +177,7 @@ async function resolveOverlayCursor(toolName: string, args: unknown, tabId: numb
     if (!fieldId) return true;
     const table = await getFormFieldsForTab(tabId);
     const handle = table?.fields[fieldId];
-    const isChildFrameWrite = handle?.frameId !== undefined && handle.frameId !== 0;
-    return !isChildFrameWrite;
+    return !isChildFrameHandle(handle);
   } catch {
     return true;
   }

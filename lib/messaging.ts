@@ -124,8 +124,12 @@ export interface QueryDomResult {
   count: number;
   truncated: boolean;
   nodes: DomNodeSummary[];
-  /** 同一选择器在其它帧的命中；不含主框架（主框架命中就是本对象的顶层字段）。 */
+  /** 同一选择器在其它帧的命中；不含主框架（主框架命中就是本对象的顶层字段），也不含零命中的帧。 */
   frames?: { origin: string; result: Omit<QueryDomResult, 'frames'> }[];
+  /** 有命中、但因帧数上限没能放进 frames[] 的帧数。 */
+  droppedFrames?: number;
+  /** 主框架读取失败（注入被 CSP 拒绝/帧已销毁）：顶层字段为空，命中都在 frames[] 里。 */
+  mainFrameUnavailable?: true;
 }
 
 export interface GetHtmlPayload {
@@ -139,8 +143,12 @@ export interface GetHtmlResult {
   html: string;
   length: number;
   truncated: boolean;
-  /** 同一选择器在其它帧的命中；不含主框架（主框架命中就是本对象的顶层字段）。 */
+  /** 同一选择器在其它帧的命中；不含主框架（主框架命中就是本对象的顶层字段），也不含零命中的帧。 */
   frames?: { origin: string; result: Omit<GetHtmlResult, 'frames'> }[];
+  /** 有命中、但因帧数上限没能放进 frames[] 的帧数。 */
+  droppedFrames?: number;
+  /** 主框架读取失败（注入被 CSP 拒绝/帧已销毁）：顶层字段为空，命中都在 frames[] 里。 */
+  mainFrameUnavailable?: true;
 }
 
 export interface GetScriptsPayload {
@@ -198,8 +206,12 @@ export interface GetComputedStyleResult {
   selector: string;
   found: boolean;
   styles: Record<string, string>;
-  /** 同一选择器在其它帧的命中；不含主框架（主框架命中就是本对象的顶层字段）。 */
+  /** 同一选择器在其它帧的命中；不含主框架（主框架命中就是本对象的顶层字段），也不含未命中的帧。 */
   frames?: { origin: string; result: Omit<GetComputedStyleResult, 'frames'> }[];
+  /** 有命中、但因帧数上限没能放进 frames[] 的帧数。 */
+  droppedFrames?: number;
+  /** 主框架读取失败（注入被 CSP 拒绝/帧已销毁）：顶层字段为空，命中都在 frames[] 里。 */
+  mainFrameUnavailable?: true;
 }
 
 export interface PageMetaResult {

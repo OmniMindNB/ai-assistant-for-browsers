@@ -1291,6 +1291,34 @@ describe('collectFormFields scope', () => {
     render('<input name="q" />');
     expect(collectFormFields({ ...INPUT }).origin).toBe(location.origin);
   });
+
+  // 会让这个用例失败的 production 改动：把「两份输入里挑一份」这一步搬回 background，
+  // 在那边包一层转调本函数的闭包。executeScript 会序列化注入函数、丢掉所有闭包绑定，
+  // 那层包装函数在页面里执行时引用的外部变量根本不存在，每一次广播注入都直接
+  // ReferenceError——整个跨帧广播机制会静默失效（ref: 2026-09-05 final review Critical #1）。
+  // jsdom 里 window.top === window，等同于跑在主框架。
+  it('picks mainInput when it runs in the top frame and both inputs are passed', () => {
+    render(`
+      <form>
+        <input name="card" />
+        <button type="submit">支付</button>
+      </form>
+      <a href="https://ad.example.com">广告链接</a>
+    `);
+
+    const picked = collectFormFields({ ...INPUT, scope: 'main' }, { ...INPUT, scope: 'child' });
+    // scope: 'main' 才会收链接；挑错参数（用了 childInput）这里就只剩 input/button。
+    expect(picked.raws.some((item) => item.tag === 'a')).toBe(true);
+  });
+
+  // 会让这个用例失败的 production 改动：把第二个参数改成必填。现有几十处单参调用
+  // （以及任何只有一份输入的场景）都必须继续按「就用这一份」处理，行为与改动前一致。
+  it('treats a single-argument call as the only input', () => {
+    render('<input name="q" /><a href="/x">链接</a>');
+
+    const single = collectFormFields({ ...INPUT, scope: 'child' });
+    expect(single.raws.some((item) => item.tag === 'a')).toBe(false);
+  });
 });
 
 // 逐字段扫光：fill_form 一次可能改十几个字段，值瞬间全部出现的话，用户看不出到底动了哪几个。

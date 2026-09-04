@@ -2,6 +2,9 @@
 // 放在注入函数外面，是因为 executeScript 会序列化函数体、闭包外引用一律失效
 // （ref: Spec-0005 §设计方案「一条决定模块边界的硬约束」）。
 import type { FormFieldDescriptor, FormFieldKind, ScrollableContainerDescriptor } from '@/lib/messaging';
+// 唯一的「这是子帧句柄吗」判据。fill-form-request 在运行时是一个叶子模块（它自己只有
+// import type），从这里引用它不会形成循环依赖。
+import { isChildFrameHandle } from './fill-form-request';
 
 const MAX_LABEL_CHARS = 80;
 
@@ -122,7 +125,7 @@ export function fieldFingerprint(raw: RawFormField): string {
 }
 
 export function toFieldDescriptor(
-  raw: RawFormField & { frameOrigin?: string },
+  raw: RawFormField & { frameOrigin?: string; frameId?: number },
   fieldId: string,
 ): FormFieldDescriptor {
   const kind = resolveFieldKind(raw);
@@ -154,7 +157,18 @@ export function toFieldDescriptor(
     writable: WRITABLE_KINDS.has(kind) && !sensitive && !raw.disabled && !raw.readOnly,
     clickable: CLICKABLE_KINDS.has(kind) && !raw.disabled,
     fingerprint: fieldFingerprint(raw),
-    formId: typeof raw.formIndex === 'number' ? `form${raw.formIndex}` : undefined,
+    // formIndex 是「本文档内第几个 <form>」，每个帧各自从 0 数起：不加区分地渲染成
+    // form0/form1，子帧字段的 formId 就会和主框架的 formId 撞名。撞名的后果是
+    // background 的 getForm() 在给主框架表单算 submitFieldIds 时（按 formId 相等过滤），
+    // 可能把某个子帧的提交按钮算进主框架表单里，模型看到的表单分组因此失真
+    // （ref: 2026-09-05 final review Important #2）。子帧的 formId 加 frameId 前缀即可，
+    // 顶层 forms[] 本来就只收主框架的表单，子帧 formId 不需要能被反查。
+    formId:
+      typeof raw.formIndex !== 'number'
+        ? undefined
+        : isChildFrameHandle(raw)
+          ? `f${raw.frameId}:form${raw.formIndex}`
+          : `form${raw.formIndex}`,
     validationMessage: raw.validationMessage || undefined,
     precedingText,
     byCursor: raw.byCursor,

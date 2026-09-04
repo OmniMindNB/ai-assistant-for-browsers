@@ -127,6 +127,32 @@ describe('resolveFieldKind', () => {
   });
 });
 
+describe('toFieldDescriptor formId', () => {
+  // 会让这个用例失败的 production 改动：子帧字段的 formId 也直接渲染成 formN。
+  // formIndex 是「本文档内第几个 <form>」，每个帧各自从 0 数起，撞名之后
+  // background 的 getForm() 按 formId 相等过滤 submitFieldIds 时，会把子帧的提交按钮
+  // 算进主框架表单里，模型看到的表单分组因此失真。
+  it('namespaces a child-frame formId so it cannot collide with a main-frame one', () => {
+    const child = toFieldDescriptor(
+      { ...raw({ formIndex: 0 }), frameId: 4, frameOrigin: 'https://pay.example.com' },
+      'f1',
+    );
+    expect(child.formId).toBe('f4:form0');
+    expect(child.formId).not.toBe('form0');
+  });
+
+  // 会让这个用例失败的 production 改动：主框架字段也被加上前缀，
+  // 那样 getForm() 的 submitFieldIds 过滤（比对 `form${formIndex}`）一条都匹配不上。
+  it('keeps the plain formN shape for main-frame and legacy fields', () => {
+    expect(toFieldDescriptor({ ...raw({ formIndex: 2 }), frameId: 0 }, 'f2').formId).toBe('form2');
+    expect(toFieldDescriptor(raw({ formIndex: 1 }), 'f3').formId).toBe('form1');
+  });
+
+  it('leaves formId undefined for a field that belongs to no form', () => {
+    expect(toFieldDescriptor(raw(), 'f4').formId).toBeUndefined();
+  });
+});
+
 describe('toFieldDescriptor', () => {
   it('omits the value of a sensitive field but still reports whether it is filled', () => {
     const descriptor = toFieldDescriptor(raw({ type: 'password', name: 'pw', value: 'hunter2' }), 'f1');

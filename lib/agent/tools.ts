@@ -372,8 +372,12 @@ function makeInspectPageImplementationTool(session: TabSessionController): Brows
           '优先使用 evidenceSummary 中的命中证据、来源和 computed styles 写出详细分析；原始 scripts/stylesheets/html 仅用于核对。只有关键证据明显缺失时，才继续调用单项工具。',
       };
 
+      // 聚合工具直接内联了 GET_HTML/QUERY_DOM/GET_COMPUTED_STYLE 的原始结果，这三者现在
+      // 都会广播进子帧，因此必须和它们各自的单项工具一样过一遍脱敏，否则单项工具补了口子、
+      // 聚合工具照样把 iframe 里的敏感文本原样送进模型（ref: 2026-09-05 final review Important #4）。
+      const redactionSettings = await loadRedactionSettings();
       return textResult(
-        formatJson('页面实现巡检（untrusted page content）', report),
+        redactText(formatJson('页面实现巡检（untrusted page content）', report), redactionSettings),
         report as unknown as Record<string, unknown>,
       );
     },
@@ -431,7 +435,15 @@ function makeQueryDomTool(session: TabSessionController): BrowserAgentTool {
       const payload = params as QueryDomPayload;
       const response = (await sendMessage<QueryDomPayload, QueryDomResult>('QUERY_DOM', payload, session.currentTabId)) as MessageResponse<QueryDomResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? 'DOM 查询失败');
-      return textResult(formatJson('DOM 查询结果（untrusted page content）', response.data), response.data as unknown as Record<string, unknown>);
+      // 与 browser_get_form 同样过一遍脱敏：本工具现在能读进登录/支付 iframe 内部
+      // （ref: 2026-09-05 final review Important #4）。脱敏在 formatJson 之后整段做——
+      // 占位符是 [xx已脱敏]，不含引号/反斜杠，不会破坏这段 JSON 文本的可读结构；
+      // details 与 get_form 一致保持原样（只进面板/日志，不进模型上下文）。
+      const redactionSettings = await loadRedactionSettings();
+      return textResult(
+        redactText(formatJson('DOM 查询结果（untrusted page content）', response.data), redactionSettings),
+        response.data as unknown as Record<string, unknown>,
+      );
     },
   };
 }
@@ -450,7 +462,12 @@ function makeGetHtmlTool(session: TabSessionController): BrowserAgentTool {
       const payload = params as GetHtmlPayload;
       const response = (await sendMessage<GetHtmlPayload, GetHtmlResult>('GET_HTML', payload, session.currentTabId)) as MessageResponse<GetHtmlResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? 'HTML 读取失败');
-      return textResult(formatJson('HTML 片段（untrusted page content）', response.data), response.data as unknown as Record<string, unknown>);
+      // 脱敏，理由同 browser_query_dom（ref: 2026-09-05 final review Important #4）。
+      const redactionSettings = await loadRedactionSettings();
+      return textResult(
+        redactText(formatJson('HTML 片段（untrusted page content）', response.data), redactionSettings),
+        response.data as unknown as Record<string, unknown>,
+      );
     },
   };
 }
@@ -509,7 +526,12 @@ function makeGetComputedStyleTool(session: TabSessionController): BrowserAgentTo
       const payload = params as GetComputedStylePayload;
       const response = (await sendMessage<GetComputedStylePayload, GetComputedStyleResult>('GET_COMPUTED_STYLE', payload, session.currentTabId)) as MessageResponse<GetComputedStyleResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '计算样式读取失败');
-      return textResult(formatJson('计算样式', response.data), response.data as unknown as Record<string, unknown>);
+      // 脱敏，理由同 browser_query_dom（ref: 2026-09-05 final review Important #4）。
+      const redactionSettings = await loadRedactionSettings();
+      return textResult(
+        redactText(formatJson('计算样式', response.data), redactionSettings),
+        response.data as unknown as Record<string, unknown>,
+      );
     },
   };
 }
