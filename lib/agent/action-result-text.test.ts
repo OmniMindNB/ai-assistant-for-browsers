@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { ClickElementResult, FormFieldDescriptor, NavigateTabResult, ScrollPageResult } from '@/lib/messaging';
-import { describeClickResult, describeNavigateResult, describeNewFields, describeScrollResult } from './action-result-text';
+import type { ClickElementResult, FormFieldDescriptor, NavigateHistoryResult, NavigateTabResult, ScrollPageResult } from '@/lib/messaging';
+import { describeClickResult, describeGoBackResult, describeNavigateResult, describeNewFields, describeScrollResult } from './action-result-text';
 
 function scroll(overrides: Partial<ScrollPageResult> = {}): ScrollPageResult {
   return { x: 0, y: 800, scrolledBy: 800, pixelsAbove: 800, pixelsBelow: 2400, viewportHeight: 1200, ...overrides };
@@ -152,5 +152,25 @@ describe('describeNewFields', () => {
     expect(result).toContain('f7「选项7」');
     expect(result).not.toContain('f8「选项8」');
     expect(result).toContain('等，另有 4 个未列出');
+  });
+});
+
+describe('describeGoBackResult', () => {
+  it('reports the page it landed on', () => {
+    expect(describeGoBackResult({ url: 'https://a.com/list', title: '列表页', moved: true })).toBe(
+      '已后退到 "https://a.com/list"，页面标题 "列表页"。',
+    );
+  });
+
+  it('warns when nothing moved (no earlier history, or it never settled)', () => {
+    expect(describeGoBackResult({ url: 'https://a.com/only', moved: false })).toBe(
+      '⚠️ 未能后退：当前标签页没有更早的历史记录，或后退操作未在预期时间内生效。',
+    );
+  });
+
+  it('warns when it landed on a page the extension cannot operate on', () => {
+    expect(describeGoBackResult({ url: 'chrome://extensions/', moved: true })).toBe(
+      '已后退到 "chrome://extensions/"。⚠️ 已退回到扩展无法操作的页面，后续的读取或写入工具会持续失败，请改用其它方式继续任务。',
+    );
   });
 });

@@ -4,7 +4,7 @@
 // 模型对下一步的判断几乎完全依赖这句文案：旧版的「已滚动到 (0, 800)。」不含
 // 「还剩多少没看」「有没有滚动」这类信息，模型只能盲目重复同一次调用。
 // 这里全部是纯函数，与消息通道解耦，便于单测。
-import type { ClickElementResult, FormFieldDescriptor, NavigateTabResult, PressKeyResult, ScrollPageResult } from '@/lib/messaging';
+import type { ClickElementResult, FormFieldDescriptor, NavigateHistoryResult, NavigateTabResult, PressKeyResult, ScrollPageResult } from '@/lib/messaging';
 
 /** 新元素最多列举这么多个，其余只报个数——一次展开几十个选项时全列出来会淹没工具结果。 */
 const MAX_LISTED_NEW_FIELDS = 8;
@@ -72,6 +72,24 @@ export function describeNavigateResult(result: NavigateTabResult): string {
     : `"${result.url}"`;
   const title = result.title ? `，页面标题 "${result.title}"` : '';
   return `已跳转到 ${destination}${title}。`;
+}
+
+export function describeGoBackResult(result: NavigateHistoryResult): string {
+  if (!result.moved) {
+    return '⚠️ 未能后退：当前标签页没有更早的历史记录，或后退操作未在预期时间内生效。';
+  }
+
+  const title = result.title ? `，页面标题 "${result.title}"` : '';
+  let isHttpUrl = false;
+  try {
+    isHttpUrl = /^https?:$/.test(new URL(result.url).protocol);
+  } catch {
+    isHttpUrl = false;
+  }
+  if (!isHttpUrl) {
+    return `已后退到 "${result.url}"${title}。⚠️ 已退回到扩展无法操作的页面，后续的读取或写入工具会持续失败，请改用其它方式继续任务。`;
+  }
+  return `已后退到 "${result.url}"${title}。`;
 }
 
 /**
