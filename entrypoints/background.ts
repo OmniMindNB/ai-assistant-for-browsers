@@ -105,9 +105,11 @@ import {
   selectOptionInPage,
   typeTextInPage,
   type ApplyFillItem,
+  type CollectFormInput,
 } from '@/lib/agent/form-dom';
 import { findNewFieldIds, sanitizeFieldText, sanitizePageText, toFieldDescriptor, toScrollableContainerDescriptor, type FormFieldPathStep } from '@/lib/agent/form-schema';
 import { getFormFieldsForTab, setFormFieldsForTab, type FormFieldHandle } from '@/lib/agent/tab-form-fields';
+import { mergeFrameCollections, type MergedCollection } from '@/lib/agent/frame-merge';
 import { decideEnterSubmitIntent, decideSubmitIntent } from '@/lib/agent/form-submit';
 import { resolveKeyDescriptor } from '@/lib/agent/key-dispatch';
 import { waitForConditionInPage } from '@/lib/agent/wait-dom';
@@ -589,7 +591,7 @@ const MAX_FORM_FIELDS = 120;
 const MAX_SELECT_OPTIONS = 50;
 
 interface FieldSnapshot {
-  collected: Awaited<ReturnType<typeof collectFormFields>>;
+  collected: MergedCollection;
   fields: FormFieldDescriptor[];
   orphanFieldIds: string[];
   /** 相对上一次快照新出现的字段；首次读取该页面或页面已换地址时为空。 */
@@ -611,18 +613,22 @@ interface FieldSnapshot {
  */
 async function snapshotFields(tabId: number, payload: GetFormPayload = {}): Promise<FieldSnapshot> {
   const previous = await getFormFieldsForTab(tabId);
-  const collected = await executeInTab(
+  const frames = await executeInAllFrames(
     tabId,
-    {
+    (isMain): CollectFormInput => ({
+      // selector 是「把范围收窄到这个容器」，跨帧的容器概念不成立：传了就只采主框架。
       selector: payload?.selector,
       includeHidden: payload?.includeHidden,
       includeText: payload?.includeText,
       includeScrollable: payload?.includeScrollable,
       maxFields: MAX_FORM_FIELDS,
       maxOptions: MAX_SELECT_OPTIONS,
-    },
+      scope: isMain ? 'main' : 'child',
+    }),
     collectFormFields,
   );
+  const scoped = payload?.selector ? frames.filter((frame) => frame.isMain) : frames;
+  const collected = mergeFrameCollections(scoped);
 
   const fields: FormFieldDescriptor[] = [];
   const handles: Record<string, FormFieldHandle> = {};
@@ -1020,15 +1026,43 @@ async function executeInTab<TInput, TResult>(
   tabId: number,
   input: TInput,
   func: (input: TInput) => TResult | Promise<TResult>,
+  options?: { frameId?: number },
 ): Promise<TResult> {
   const tab = await resolveTargetTab(tabId);
   const [frame] = await browser.scripting.executeScript({
-    target: { tabId: tab.id },
+    // frameId 缺省即主框架，与改动前的 { tabId } 等价。
+    target: options?.frameId === undefined ? { tabId: tab.id } : { tabId: tab.id, frameIds: [options.frameId] },
     world: 'MAIN',
     args: [input],
     func,
   });
   return frame.result as TResult;
+}
+
+/**
+ * 广播注入并按帧收集结果。跨源子帧靠 host_permissions '<all_urls>' 覆盖，
+ * 不需要 webNavigation：每条 InjectionResult 自带 frameId。
+ * 单帧注入失败（CSP 拒绝、帧已销毁）不该让整次采集失败——result 为空的帧直接跳过。
+ */
+async function executeInAllFrames<TInput, TResult extends { origin: string }>(
+  tabId: number,
+  buildInput: (isMain: boolean) => TInput,
+  func: (input: TInput) => TResult | Promise<TResult>,
+): Promise<{ frameId: number; origin: string; isMain: boolean; output: TResult }[]> {
+  const tab = await resolveTargetTab(tabId);
+  const results = await browser.scripting.executeScript({
+    target: { tabId: tab.id, allFrames: true },
+    world: 'MAIN',
+    args: [buildInput(true), buildInput(false)],
+    // 注入函数自己判断身份来选参数：executeScript 无法给不同帧传不同 args。
+    func: (mainInput: TInput, childInput: TInput) => func(window.top === window ? mainInput : childInput),
+  });
+  return results
+    .filter((entry) => entry.result)
+    .map((entry) => {
+      const output = entry.result as TResult;
+      return { frameId: entry.frameId, origin: output.origin, isMain: entry.frameId === 0, output };
+    });
 }
 
 async function setStyle(payload: SetStylePayload, tabId: number): Promise<SetStyleResult> {
