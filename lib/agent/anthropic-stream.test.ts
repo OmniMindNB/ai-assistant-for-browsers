@@ -464,4 +464,13 @@ describe('convertMessagesForAnthropic 的图片工具结果', () => {
     const inner = block.content as Array<Record<string, unknown>>;
     expect(inner).toEqual([{ type: 'text', text: '正文' }]);
   });
+
+  // 既无文本又无图片时，改动前 stringifyContent 兜底吐出 ''，现在若不特殊处理会变成
+  // `content: []`——两种形状都可能不被 Anthropic 接受，用占位文本兜底。
+  it('既没有文本也没有图片时，tool_result 的 content 不是空数组，而是一个占位文本块', () => {
+    const empty = { ...toolResult, content: [] as unknown as typeof toolResult.content };
+    const [message] = convertMessagesForAnthropic({ messages: [empty] } as never);
+    const block = (message.content as Array<Record<string, unknown>>)[0];
+    expect(block.content).toEqual([{ type: 'text', text: '(empty)' }]);
+  });
 });

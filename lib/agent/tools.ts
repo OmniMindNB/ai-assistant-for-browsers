@@ -520,10 +520,9 @@ function makeScreenshotTool(session: TabSessionController): BrowserAgentTool {
     label: 'Screenshot',
     description:
       'Capture a screenshot of the visible tab and look at it. Use this when the answer depends on what the page actually looks like — canvas-rendered content, iframe content, visual state such as whether a button appears disabled, or layout problems — none of which the DOM-reading tools can reach. Prefer the DOM tools for anything textual or structural: they are cheaper and more precise.',
-    parameters: Type.Object({
-      format: Type.Optional(Type.Union([Type.Literal('png'), Type.Literal('jpeg')])),
-      quality: Type.Optional(Type.Number({ description: 'JPEG quality from 0 to 100.' })),
-    }),
+    // 不暴露 format/quality：background.ts 的 shrinkScreenshot 无论如何都会把结果固定
+    // 重编码成 JPEG，模型传的低 quality 只会在那次强制重编码前劣化原图，没有任何好处。
+    parameters: Type.Object({}),
     execute: async (_toolCallId, params) => {
       const payload = params as CaptureScreenshotPayload;
       const response = (await sendMessage<CaptureScreenshotPayload, CaptureScreenshotResult>('CAPTURE_SCREENSHOT', payload, session.currentTabId)) as MessageResponse<CaptureScreenshotResult>;
@@ -537,7 +536,10 @@ function makeScreenshotTool(session: TabSessionController): BrowserAgentTool {
           },
           { type: 'image' as const, data: shot.base64, mimeType: shot.mimeType },
         ],
-        details: shot as unknown as Record<string, unknown>,
+        // dataUrl/base64 是同一张图的两份拷贝，体积可达数 MB；details 没有消费者会读它们
+        // （已核对 agent.ts 里唯一的 .details 读取点只认 browser_navigate/browser_open_tab
+        // 的 url 字段），全量塞进 details 只是让 service worker 常驻多一份重复内存。
+        details: { width: shot.width, height: shot.height, mimeType: shot.mimeType },
       };
     },
   };

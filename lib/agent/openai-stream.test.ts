@@ -237,4 +237,76 @@ describe('convertMessages 的图片工具结果', () => {
     const textOnly = { ...toolResult, content: [{ type: 'text' as const, text: '正文' }] };
     expect(convertMessages({ messages: [textOnly] } as never)).toHaveLength(1);
   });
+
+  it('合成 user 消息以 untrusted-content 免执行声明开头', () => {
+    const messages = convertMessages({ messages: [toolResult] } as never);
+    const parts = messages[1].content as Array<Record<string, unknown>>;
+    expect(parts[0]).toMatchObject({ type: 'text' });
+    expect((parts[0] as { text: string }).text).toContain('untrusted page content');
+    expect(parts.slice(1).every((part) => part.type === 'image_url')).toBe(true);
+  });
+});
+
+describe('convertMessages 并行工具调用不破坏 tool 消息连续性', () => {
+  const assistantMessage = {
+    role: 'assistant' as const,
+    content: [
+      { type: 'toolCall' as const, id: 'call-1', name: 'browser_screenshot', arguments: {} },
+      { type: 'toolCall' as const, id: 'call-2', name: 'browser_read_page', arguments: {} },
+    ],
+    timestamp: 0,
+  };
+
+  const screenshotResult = {
+    role: 'toolResult' as const,
+    toolCallId: 'call-1',
+    toolName: 'browser_screenshot',
+    content: [
+      { type: 'text' as const, text: '已截取截图（1280×800）。' },
+      { type: 'image' as const, data: 'AAAA', mimeType: 'image/jpeg' },
+    ],
+    isError: false,
+    timestamp: 0,
+  };
+
+  const readPageResult = {
+    role: 'toolResult' as const,
+    toolCallId: 'call-2',
+    toolName: 'browser_read_page',
+    content: [{ type: 'text' as const, text: '页面正文' }],
+    isError: false,
+    timestamp: 0,
+  };
+
+  // 修复前：第一条 toolResult（截图）一处理完就立刻插入图片 user 消息，把它挤进两条
+  // tool 消息中间，破坏了 OpenAI 要求的"同批 tool_calls 的 tool 消息必须连续"的约束，
+  // 触发 400。
+  it('两条 tool 消息连续出现，图片 user 消息推迟到这批 toolResult 结束后才出现', () => {
+    const messages = convertMessages({ messages: [assistantMessage, screenshotResult, readPageResult] } as never);
+
+    expect(messages.map((m) => m.role)).toEqual(['assistant', 'tool', 'tool', 'user']);
+    expect(messages[1]).toMatchObject({ role: 'tool', tool_call_id: 'call-1' });
+    expect(messages[2]).toMatchObject({ role: 'tool', tool_call_id: 'call-2' });
+    const parts = messages[3].content as Array<Record<string, unknown>>;
+    expect(parts.some((part) => part.type === 'image_url')).toBe(true);
+  });
+
+  it('两条 toolResult 都带图片时，合并成一条 user 消息里的多个 image_url，而不是两条消息', () => {
+    const secondScreenshotResult = {
+      ...readPageResult,
+      toolName: 'browser_screenshot',
+      content: [
+        { type: 'text' as const, text: '已截取截图 2（1280×800）。' },
+        { type: 'image' as const, data: 'BBBB', mimeType: 'image/jpeg' },
+      ],
+    };
+    const messages = convertMessages({ messages: [assistantMessage, screenshotResult, secondScreenshotResult] } as never);
+
+    expect(messages.map((m) => m.role)).toEqual(['assistant', 'tool', 'tool', 'user']);
+    const parts = messages[3].content as Array<Record<string, unknown>>;
+    const imageParts = parts.filter((part) => part.type === 'image_url');
+    expect(imageParts).toHaveLength(2);
+    expect(imageParts[0]).toMatchObject({ image_url: { url: 'data:image/jpeg;base64,AAAA' } });
+    expect(imageParts[1]).toMatchObject({ image_url: { url: 'data:image/jpeg;base64,BBBB' } });
+  });
 });

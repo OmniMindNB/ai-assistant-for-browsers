@@ -42,6 +42,7 @@ describe('browser_screenshot 的结果', () => {
 
     expect(output.content).toHaveLength(2);
     expect(output.content[0]).toMatchObject({ type: 'text' });
+    expect((output.content[0] as { text: string }).text).toContain('untrusted page content');
     expect(output.content[1]).toEqual({ type: 'image', data: 'AAAA', mimeType: 'image/jpeg' });
   });
 

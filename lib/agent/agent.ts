@@ -511,10 +511,7 @@ export function compactAgentMessages(messages: AgentMessage[], contextWindow: Co
       };
     }
 
-    // 最新截图：豁免下面的整条摘要，图片原样保留。
-    if (index === lastScreenshotIndex) return message;
-
-    if (index !== lastReadResultIndex) {
+    if (index !== lastReadResultIndex && index !== lastScreenshotIndex) {
       summarizedReadResults += 1;
       const summary = describeToolActivity(
         message.toolName,

@@ -95,6 +95,14 @@ describe('buildSystemPrompt tool strategy', () => {
     expect(prompt).not.toContain('browser_screenshot 在当前模型下不可用');
   });
 
+  it('identity 分区里，vision 为真时提到截图，vision 为假（默认）时不提', () => {
+    // identity 那句"你可以按需读取……"此前无条件写死"和截图"，即使 vision 为假、
+    // browser_screenshot 根本没注册进工具表也照样声称有这个能力，与下面 tool_strategy
+    // 分区的说法自相矛盾。
+    expect(SYSTEM_PROMPT).not.toContain('和截图');
+    expect(buildSystemPrompt({ vision: true })).toContain('和截图');
+  });
+
   it('skips the active-tab shortcut when no page was injected', () => {
     expect(buildSystemPrompt()).not.toContain('不要再调用 browser_get_active_tab');
   });

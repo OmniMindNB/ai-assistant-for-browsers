@@ -231,6 +231,10 @@ export function convertMessagesForAnthropic(context: Context): Array<Record<stri
       for (const image of extractImageParts(message.content)) {
         inner.push({ type: 'image', source: { type: 'base64', media_type: image.mimeType, data: image.data } });
       }
+      // 既没有文本也没有图片时，`content: []` 是这次改动才可能出现的新形状（改动前
+      // stringifyContent 兜底吐出 ''，`content: ''` 至少是个字符串）；Anthropic 是否接受
+      // 空数组没有把握，给个占位文本，别把这种边界情况留给线上第一次调用去发现。
+      if (inner.length === 0) inner.push({ type: 'text', text: '(empty)' });
       const block = {
         type: 'tool_result',
         tool_use_id: message.toolCallId,
