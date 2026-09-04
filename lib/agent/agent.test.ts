@@ -5,6 +5,15 @@ vi.mock('@/lib/messaging', async () => {
   return { ...actual, sendMessage: (...args: unknown[]) => sendMessageSpy(...args) };
 });
 
+// 测试环境的 browser 全局桩只有 storage.local（见 lib/test-setup.ts），没有 storage.session——
+// 真实实现 getFormFieldsForTab 会读它。直接 mock 掉这一层，让「fieldId 定位到子帧」的用例
+// 能确定性地控制查表结果，而不必真去搭一个 storage.session 桩。
+const getFormFieldsForTabSpy = vi.fn();
+vi.mock('./tab-form-fields', async () => {
+  const actual = await vi.importActual<typeof import('./tab-form-fields')>('./tab-form-fields');
+  return { ...actual, getFormFieldsForTab: (...args: unknown[]) => getFormFieldsForTabSpy(...args) };
+});
+
 import { describe, expect, it, vi } from 'vitest';
 import type {
   AfterToolCallContext,
@@ -541,6 +550,102 @@ describe('执行期遮罩', () => {
     await options.beforeToolCall!(beforeContext('browser_click', { selector: '#submit', index: 0 }), undefined);
 
     expect(onOverlay).not.toHaveBeenCalled();
+  });
+
+  // 跨帧写操作：fieldId 定位到子帧（句柄 frameId !== 0）时，顶层遮罩不该显示模拟光标——
+  // content script 只在顶层跑，收不到子帧派发的 runi:cursor-move（ref: 设计文档 §6）。
+  it('fieldId 定位到子帧时遮罩关闭光标', async () => {
+    sendMessageSpy.mockResolvedValueOnce({ ok: true, data: { isSubmit: false } });
+    getFormFieldsForTabSpy.mockResolvedValueOnce({
+      url: 'https://example.com',
+      fields: {
+        f1: {
+          path: [{ kind: 'selector', selector: 'button', index: 0 }],
+          expect: { tag: 'button' },
+          sensitive: false,
+          kind: 'submit',
+          frameId: 3,
+        },
+      },
+    });
+    const onOverlay = vi.fn();
+    const options = overlayOptions(onOverlay, true);
+
+    await options.beforeToolCall!(beforeContext('browser_click', { fieldId: 'f1' }), undefined);
+
+    expect(getFormFieldsForTabSpy).toHaveBeenCalledWith(1);
+    expect(onOverlay).toHaveBeenCalledWith(expect.objectContaining({ active: true, cursor: false }), 1);
+  });
+
+  it('fieldId 定位到主帧（frameId: 0）时遮罩保留光标', async () => {
+    sendMessageSpy.mockResolvedValueOnce({ ok: true, data: { isSubmit: false } });
+    getFormFieldsForTabSpy.mockResolvedValueOnce({
+      url: 'https://example.com',
+      fields: {
+        f1: {
+          path: [{ kind: 'selector', selector: 'button', index: 0 }],
+          expect: { tag: 'button' },
+          sensitive: false,
+          kind: 'submit',
+          frameId: 0,
+        },
+      },
+    });
+    const onOverlay = vi.fn();
+    const options = overlayOptions(onOverlay, true);
+
+    await options.beforeToolCall!(beforeContext('browser_click', { fieldId: 'f1' }), undefined);
+
+    expect(onOverlay).toHaveBeenCalledWith(expect.objectContaining({ active: true, cursor: true }), 1);
+  });
+
+  it('browser_fill_form 的 submit.fieldId 定位到子帧时遮罩关闭光标', async () => {
+    sendMessageSpy.mockResolvedValueOnce({ ok: true, data: { isSubmit: false } });
+    getFormFieldsForTabSpy.mockResolvedValueOnce({
+      url: 'https://example.com',
+      fields: {
+        f9: {
+          path: [{ kind: 'selector', selector: 'button', index: 0 }],
+          expect: { tag: 'button' },
+          sensitive: false,
+          kind: 'submit',
+          frameId: 5,
+        },
+      },
+    });
+    const onOverlay = vi.fn();
+    const options = overlayOptions(onOverlay, true);
+
+    await options.beforeToolCall!(
+      beforeContext('browser_fill_form', { fields: [], submit: { fieldId: 'f9' } }),
+      undefined,
+    );
+
+    expect(onOverlay).toHaveBeenCalledWith(expect.objectContaining({ active: true, cursor: false }), 1);
+  });
+
+  it('查表失败（如 storage.session 不可用）时默认保留光标，不影响写操作放行', async () => {
+    sendMessageSpy.mockResolvedValueOnce({ ok: true, data: { isSubmit: false } });
+    getFormFieldsForTabSpy.mockRejectedValueOnce(new Error('boom'));
+    const onOverlay = vi.fn();
+    const options = overlayOptions(onOverlay, true);
+
+    const result = await options.beforeToolCall!(beforeContext('browser_click', { fieldId: 'f1' }), undefined);
+
+    expect(result).toBeUndefined();
+    expect(onOverlay).toHaveBeenCalledWith(expect.objectContaining({ active: true, cursor: true }), 1);
+  });
+
+  it('裸选择器写操作（无 fieldId）不查表，遮罩保留光标', async () => {
+    getFormFieldsForTabSpy.mockClear();
+    sendMessageSpy.mockResolvedValueOnce({ ok: true, data: { isSubmit: false } });
+    const onOverlay = vi.fn();
+    const options = overlayOptions(onOverlay, true);
+
+    await options.beforeToolCall!(beforeContext('browser_click', { selector: '#menu', index: 0 }), undefined);
+
+    expect(getFormFieldsForTabSpy).not.toHaveBeenCalled();
+    expect(onOverlay).toHaveBeenCalledWith(expect.objectContaining({ active: true, cursor: true }), 1);
   });
 });
 

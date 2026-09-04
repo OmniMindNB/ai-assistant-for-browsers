@@ -52,7 +52,7 @@ export default defineContentScript({
             const payload = message.payload as SetAgentOverlayPayload;
             respond(message.id, sendResponse, (): SetAgentOverlayResult => {
               if (payload.active) {
-                mountOverlay(payload.label ?? '');
+                mountOverlay(payload.label ?? '', payload.cursor ?? true);
               } else {
                 unmountOverlay();
               }

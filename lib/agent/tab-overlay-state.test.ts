@@ -32,6 +32,11 @@ describe('tab-overlay-state', () => {
     await expect(getOverlayForTab(7)).resolves.toEqual({ label: '正在点击「登录」' });
   });
 
+  it('写入并读回 cursor:false（子帧写操作降级遮罩）', async () => {
+    await setOverlayForTab(7, '正在嵌入框架中操作', false);
+    await expect(getOverlayForTab(7)).resolves.toEqual({ label: '正在嵌入框架中操作', cursor: false });
+  });
+
   it('按标签页隔离', async () => {
     await setOverlayForTab(7, 'A');
     await expect(getOverlayForTab(8)).resolves.toBeUndefined();

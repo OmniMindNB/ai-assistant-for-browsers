@@ -8,6 +8,8 @@
 
 export interface TabOverlayState {
   label: string;
+  /** 是否显示模拟光标动画；省略/undefined 等同 true。子帧写操作会存 false（见 agent.ts）。 */
+  cursor?: boolean;
 }
 
 function storageKey(tabId: number): string {
@@ -21,9 +23,9 @@ export async function getOverlayForTab(tabId: number): Promise<TabOverlayState |
 }
 
 /** 写入失败（如配额超限）时静默降级：遮罩是纯视觉功能，不值得让一次写入失败中断整个回合。 */
-export async function setOverlayForTab(tabId: number, label: string): Promise<void> {
+export async function setOverlayForTab(tabId: number, label: string, cursor?: boolean): Promise<void> {
   try {
-    await browser.storage.session.set({ [storageKey(tabId)]: { label } satisfies TabOverlayState });
+    await browser.storage.session.set({ [storageKey(tabId)]: { label, cursor } satisfies TabOverlayState });
   } catch {
     // 忽略
   }

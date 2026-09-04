@@ -35,18 +35,27 @@ let refs: OverlayRefs | null = null;
 let currentLabel = '';
 let watchdog: ReturnType<typeof setTimeout> | undefined;
 let cursorPos: { x: number; y: number } | null = null;
+let cursorVisible = true;
 
 export function getOverlayState(): {
   mounted: boolean;
   label: string;
   cursor: { x: number; y: number } | null;
+  cursorVisible: boolean;
 } {
-  return { mounted: refs !== null, label: currentLabel, cursor: cursorPos };
+  return { mounted: refs !== null, label: currentLabel, cursor: cursorPos, cursorVisible };
 }
 
-export function mountOverlay(label: string): void {
+/**
+ * showCursor=false 用于跨帧写操作（fieldId 定位到子帧）：顶层收不到子帧派发的
+ * runi:cursor-move，模拟光标动画只会停在原地或对不上位置，因此只留 glow + 标签这两个
+ * 全局信号，精确落点由帧内自己画的高亮框给出（ref: 设计文档 §6）。隐藏只是不显示，
+ * moveOverlayCursor / pulseOverlayCursor 仍可正常对一个隐藏元素调用，无需额外判空。
+ */
+export function mountOverlay(label: string, showCursor: boolean = true): void {
   if (!refs) refs = createOverlay();
   setLabel(label);
+  setCursorVisible(showCursor);
   renewOverlayWatchdog();
 }
 
@@ -63,6 +72,7 @@ export function unmountOverlay(): void {
   refs = null;
   currentLabel = '';
   cursorPos = null;
+  cursorVisible = true;
 }
 
 /**
@@ -119,6 +129,11 @@ export function moveOverlayCursor(x: number, y: number): void {
 function setLabel(label: string): void {
   currentLabel = label;
   if (refs) refs.label.textContent = label;
+}
+
+function setCursorVisible(visible: boolean): void {
+  cursorVisible = visible;
+  if (refs) refs.cursor.style.display = visible ? '' : 'none';
 }
 
 function createOverlay(): OverlayRefs {

@@ -503,6 +503,12 @@ export interface ApplyFillInput {
   submit?: { fieldId: string; path: FormFieldPathStep[]; expect: ApplyFillItem['expect'] };
   /** 发放句柄时目标帧的 origin；与当前帧不符说明 frameId 已被复用，整批拒绝写入。 */
   expectOrigin?: string;
+  /**
+   * 目标句柄是否落在子帧（frameId !== 0）。子帧里没有 content script（它只在顶层跑），
+   * runi:cursor-move / runi:cursor-click 派发出去也无人接收，连带那 250ms 等待纯属浪费，
+   * 因此本函数在子帧场景下跳过顶层光标动画及其等待——高亮框不受影响，见 submit 分支。
+   */
+  isChildFrame?: boolean;
 }
 
 export interface ApplyFillOutput {
@@ -804,12 +810,17 @@ export async function applyFormFill(input: ApplyFillInput): Promise<ApplyFillOut
           setTimeout(() => highlight.remove(), 300);
         }, 250);
 
-        // 先让模拟光标滑到落点，停稳后再派发点击。
-        // ⚠️ 这里的 250 必须与 lib/agent/agent-overlay.ts 的 CURSOR_MOVE_MS 一致。本函数被
-        // executeScript 序列化注入页面，引用不到那个常量，只能内联——改一处必须同步另一处。
-        // 等得比动画短，就会在光标还没停稳时派发点击，正是这个功能要消除的那种错位。
-        window.dispatchEvent(new CustomEvent('runi:cursor-move', { detail: { x: centerX, y: centerY } }));
-        await new Promise((resolve) => setTimeout(resolve, 250));
+        // 子帧里没有 content script（它只在顶层跑），runi:cursor-move 无人接收；连带那
+        // 250ms 等待也就纯属浪费。高亮框不受影响——它画在本帧自己的 document.body 上，
+        // 位置天然正确（ref: 设计文档 §6）。
+        if (!input.isChildFrame) {
+          // 先让模拟光标滑到落点，停稳后再派发点击。
+          // ⚠️ 这里的 250 必须与 lib/agent/agent-overlay.ts 的 CURSOR_MOVE_MS 一致。本函数被
+          // executeScript 序列化注入页面，引用不到那个常量，只能内联——改一处必须同步另一处。
+          // 等得比动画短，就会在光标还没停稳时派发点击，正是这个功能要消除的那种错位。
+          window.dispatchEvent(new CustomEvent('runi:cursor-move', { detail: { x: centerX, y: centerY } }));
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
 
         // 同 clickElementInPage：给上一次点击的元素补一套「鼠标离开」事件，防止它弹出的
         // hover 菜单粘住不消失。⚠️ 与 clickElementInPage 重复，不能共用 helper。
@@ -825,7 +836,10 @@ export async function applyFormFill(input: ApplyFillInput): Promise<ApplyFillOut
         }
 
         // 涟漪与 click 同刻派发。⚠️ 与 clickElementInPage 重复，不能共用 helper。
-        window.dispatchEvent(new CustomEvent('runi:cursor-click'));
+        // 子帧场景同上：顶层收不到这个事件，派发了也没有观众。
+        if (!input.isChildFrame) {
+          window.dispatchEvent(new CustomEvent('runi:cursor-click'));
+        }
 
         const pointerOpts = { bubbles: true, cancelable: true, clientX: centerX, clientY: centerY, pointerId: 1, pointerType: 'mouse', isPrimary: true };
         const mouseOpts = { bubbles: true, cancelable: true, clientX: centerX, clientY: centerY, button: 0 };

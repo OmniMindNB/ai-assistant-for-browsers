@@ -430,6 +430,12 @@ export interface GetStorageResult {
 export interface SetAgentOverlayPayload {
   active: boolean;
   label?: string;
+  /**
+   * 是否显示模拟光标动画。省略等同 true（今天的行为不变）。子帧写操作要传 false——
+   * 顶层 content script 收不到子帧派发的 runi:cursor-move，光标动画只会停在原地/不对位，
+   * 精确位置改由帧内自己画的高亮框给出（ref: 设计文档 §6）。
+   */
+  cursor?: boolean;
 }
 
 export interface SetAgentOverlayResult {

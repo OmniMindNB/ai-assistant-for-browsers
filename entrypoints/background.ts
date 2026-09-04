@@ -1632,7 +1632,7 @@ async function setAgentOverlay(
   tabId: number,
 ): Promise<SetAgentOverlayResult> {
   if (payload.active) {
-    await setOverlayForTab(tabId, payload.label ?? '');
+    await setOverlayForTab(tabId, payload.label ?? '', payload.cursor);
   } else {
     await clearOverlayForTab(tabId);
   }
@@ -1664,7 +1664,7 @@ browser.tabs.onUpdated.addListener((tabId, changeInfo) => {
   void (async () => {
     const state = await getOverlayForTab(tabId);
     if (!state) return;
-    await pushOverlayToTab(tabId, { active: true, label: state.label });
+    await pushOverlayToTab(tabId, { active: true, label: state.label, cursor: state.cursor });
   })();
 });
 
@@ -1689,7 +1689,7 @@ async function captureScreenshotWithoutOverlay(
   try {
     return shrinkScreenshot(await captureScreenshot(payload, tabId));
   } finally {
-    await pushOverlayToTab(tabId, { active: true, label: state.label });
+    await pushOverlayToTab(tabId, { active: true, label: state.label, cursor: state.cursor });
   }
 }
 

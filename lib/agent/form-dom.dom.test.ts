@@ -899,6 +899,29 @@ describe('applyFormFill', () => {
     expect(order).toEqual(['scrollIntoView:center', 'pointerdown']);
     expect((document.body.lastElementChild as HTMLElement).style.top).toBe('120px');
   });
+
+  // 会让这个用例失败的 production 改动：子帧仍然派发 runi:cursor-move / runi:cursor-click
+  // 并等 250ms——顶层的 content script 收不到这两个事件，那 250ms 是纯粹的浪费。
+  it('skips the cursor animation and its wait for a child-frame submit click', async () => {
+    render(`<button type="submit">提交</button>`);
+    const buttonRaw = collectFormFields(INPUT).raws.find((raw) => raw.tag === 'button')!;
+    const submitExpect = { tag: 'button', type: 'submit' };
+    const seen: string[] = [];
+    window.addEventListener('runi:cursor-move', () => seen.push('move'));
+    window.addEventListener('runi:cursor-click', () => seen.push('click'));
+
+    const started = Date.now();
+    const output = await applyFormFill({
+      url: location.href,
+      items: [],
+      submit: { fieldId: 'f1', path: buttonRaw.path, expect: submitExpect },
+      isChildFrame: true,
+    });
+
+    expect(output.submitted?.status).toBe('ok');
+    expect(seen).toEqual([]);
+    expect(Date.now() - started).toBeLessThan(200);
+  });
 });
 
 describe('scrollContainerInPage', () => {

@@ -35,7 +35,12 @@ describe('mountOverlay', () => {
     // shadowRoot 为 null 正是 closed 的证据：open 时这里会返回 ShadowRoot。
     expect(el!.shadowRoot).toBeNull();
     expect(el!.style.pointerEvents).toBe('none');
-    expect(getOverlayState()).toEqual({ mounted: true, label: '正在操作此页面', cursor: null });
+    expect(getOverlayState()).toEqual({
+      mounted: true,
+      label: '正在操作此页面',
+      cursor: null,
+      cursorVisible: true,
+    });
   });
 
   it('重复挂载不产生第二个宿主，只更新文案', () => {
@@ -49,6 +54,25 @@ describe('mountOverlay', () => {
   it('挂在 documentElement 上而不是 body 上', () => {
     mountOverlay('x');
     expect(host()!.parentElement).toBe(document.documentElement);
+  });
+
+  // 跨帧写操作（fieldId 定位到子帧）不该显示模拟光标：content script 只在顶层跑，
+  // 收不到子帧派发的 runi:cursor-move，光标动画只会停在原地或对不上位置。
+  it('showCursor=false 时不显示模拟光标', () => {
+    mountOverlay('正在嵌入框架中操作', false);
+    expect(getOverlayState().cursorVisible).toBe(false);
+  });
+
+  it('showCursor 省略时默认显示光标，等同 true', () => {
+    mountOverlay('x');
+    expect(getOverlayState().cursorVisible).toBe(true);
+  });
+
+  it('重复挂载时更新光标可见性', () => {
+    mountOverlay('第一句', true);
+    expect(getOverlayState().cursorVisible).toBe(true);
+    mountOverlay('第二句', false);
+    expect(getOverlayState().cursorVisible).toBe(false);
   });
 });
 
@@ -65,7 +89,13 @@ describe('unmountOverlay', () => {
     unmountOverlay();
 
     expect(host()).toBeNull();
-    expect(getOverlayState()).toEqual({ mounted: false, label: '', cursor: null });
+    expect(getOverlayState()).toEqual({ mounted: false, label: '', cursor: null, cursorVisible: true });
+  });
+
+  it('撤下时把光标可见性复位为 true', () => {
+    mountOverlay('x', false);
+    unmountOverlay();
+    expect(getOverlayState().cursorVisible).toBe(true);
   });
 
   it('重复调用是安全的', () => {

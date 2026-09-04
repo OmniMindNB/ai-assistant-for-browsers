@@ -687,7 +687,7 @@ export function stopRun(tabId: number): void {
 // 直接调用是同一件事的更短路径，不是另起一套逻辑。
 async function sendAgentOverlay(payload: SetAgentOverlayPayload, targetTabId: number): Promise<void> {
   if (payload.active) {
-    await setOverlayForTab(targetTabId, payload.label ?? '');
+    await setOverlayForTab(targetTabId, payload.label ?? '', payload.cursor);
   } else {
     await clearOverlayForTab(targetTabId);
   }

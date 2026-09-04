@@ -26,6 +26,7 @@ import { getTakeoverForTab } from './tab-takeover';
 import { createBrowserTools, type BrowserAgentTool } from './tools';
 import { supportsVision } from './vision';
 import { createTabSession, type TabSessionController } from './tab-session';
+import { getFormFieldsForTab } from './tab-form-fields';
 import { createAgentToolPolicy } from './tool-policy';
 import { describeToolActivity } from './activity-description';
 import { recordPerfContext } from './perf-trace';
@@ -155,6 +156,33 @@ export function buildSubmitIntentProbePayload(
   return { selector: String(record.selector ?? ''), index: Number(record.index ?? 0) };
 }
 
+/**
+ * 写操作若通过 fieldId 定位到子帧（句柄 frameId 存在且不为 0），顶层遮罩就不该显示模拟
+ * 光标——content script 只在顶层运行，收不到子帧派发的 runi:cursor-move，光标动画只会
+ * 停在原地或对不上位置，帧内高亮框才是这类写操作真正准确的视觉信号（ref: 设计文档 §6）。
+ *
+ * 裸选择器写操作（args 里没有 fieldId）、字段表查不到、或查表本身出错，一律按「未跨帧」
+ * 处理：这只是个遮罩观感选择，绝不能因为查表变慢或失败就影响写操作本身是否执行。
+ */
+async function resolveOverlayCursor(toolName: string, args: unknown, tabId: number): Promise<boolean> {
+  try {
+    const record = (args ?? {}) as Record<string, unknown>;
+    const fieldId =
+      toolName === 'browser_fill_form'
+        ? (record.submit as { fieldId?: string } | undefined)?.fieldId
+        : typeof record.fieldId === 'string'
+          ? record.fieldId
+          : undefined;
+    if (!fieldId) return true;
+    const table = await getFormFieldsForTab(tabId);
+    const handle = table?.fields[fieldId];
+    const isChildFrameWrite = handle?.frameId !== undefined && handle.frameId !== 0;
+    return !isChildFrameWrite;
+  } catch {
+    return true;
+  }
+}
+
 export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): AgentOptions {
   const session = options.session ?? createTabSession(options.tabId);
   const tools = options.tools ?? createBrowserTools(session, {
@@ -269,8 +297,13 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
         policy.approveWrite();
         const approvedPolicyBlock = policy.preflight(context.toolCall.name, context.args, isWriteTool);
         if (approvedPolicyBlock) return recordPreExecutionBlock(approvedPolicyBlock);
+        const cursor = await resolveOverlayCursor(context.toolCall.name, context.toolCall.arguments, session.currentTabId);
         options.onOverlay?.(
-          { active: true, label: describeToolActivity(context.toolCall.name, context.toolCall.arguments, 'running') },
+          {
+            active: true,
+            label: describeToolActivity(context.toolCall.name, context.toolCall.arguments, 'running'),
+            cursor,
+          },
           session.currentTabId,
         );
         overlayTabId = session.currentTabId;
