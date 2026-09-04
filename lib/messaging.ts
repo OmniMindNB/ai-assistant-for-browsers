@@ -213,7 +213,13 @@ export interface CaptureScreenshotPayload {
 }
 
 export interface CaptureScreenshotResult {
+  /** 已缩放重编码后的 data URL。 */
   dataUrl: string;
+  /** 不含 data URL 前缀的 base64 载荷，供直接构造 ImageContent。 */
+  base64: string;
+  mimeType: string;
+  width: number;
+  height: number;
 }
 
 export interface SetStylePayload {

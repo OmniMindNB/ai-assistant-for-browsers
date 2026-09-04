@@ -112,6 +112,14 @@ import { decideEnterSubmitIntent, decideSubmitIntent } from '@/lib/agent/form-su
 import { resolveKeyDescriptor } from '@/lib/agent/key-dispatch';
 import { waitForConditionInPage } from '@/lib/agent/wait-dom';
 import { DEFAULT_WAIT_TIMEOUT_MS, MAX_WAIT_TIMEOUT_MS, MIN_WAIT_TIMEOUT_MS } from '@/lib/agent/wait-condition';
+import {
+  SCREENSHOT_FALLBACK_QUALITY,
+  SCREENSHOT_JPEG_QUALITY,
+  SCREENSHOT_MAX_BYTES,
+  SCREENSHOT_MAX_EDGE,
+  encodeBase64,
+  planScreenshotResize,
+} from '@/lib/agent/screenshot-image';
 
 const DEFAULT_TOOL_MAX_CHARS = 12000;
 // 以下为模型可见/可调用的消息类型；内部专用消息（如 SET_AGENT_OVERLAY）有意不在此列，以免暴露给模型。
@@ -991,7 +999,7 @@ async function getPageMeta(tabId: number): Promise<PageMetaResult> {
 async function captureScreenshot(
   payload: CaptureScreenshotPayload,
   tabId: number,
-): Promise<CaptureScreenshotResult> {
+): Promise<{ dataUrl: string }> {
   const tab = await resolveTargetTab(tabId);
   if (!tab.active) {
     // chrome.tabs.captureVisibleTab 只能截取"当前可见"的标签页，没有按 tabId 截图的 API；
@@ -1530,12 +1538,50 @@ async function captureScreenshotWithoutOverlay(
   tabId: number,
 ): Promise<CaptureScreenshotResult> {
   const state = await getOverlayForTab(tabId);
-  if (!state) return captureScreenshot(payload, tabId);
+  if (!state) return shrinkScreenshot(await captureScreenshot(payload, tabId));
 
   await pushOverlayToTab(tabId, { active: false });
   try {
-    return await captureScreenshot(payload, tabId);
+    return shrinkScreenshot(await captureScreenshot(payload, tabId));
   } finally {
     await pushOverlayToTab(tabId, { active: true, label: state.label });
+  }
+}
+
+/**
+ * captureVisibleTab 在高分屏上会吐出数 MB 的 PNG，直接送进上下文会让 token
+ * 成本和延迟失控。这里缩放到最长边 1280 并转成 JPEG。
+ *
+ * 注意：service worker 里没有 FileReader，blob → base64 只能走 arrayBuffer +
+ * 分块 btoa（见 encodeBase64）。
+ */
+async function shrinkScreenshot(captured: { dataUrl: string }): Promise<CaptureScreenshotResult> {
+  const sourceBlob = await (await fetch(captured.dataUrl)).blob();
+  const bitmap = await createImageBitmap(sourceBlob);
+  try {
+    const plan = planScreenshotResize(bitmap.width, bitmap.height, SCREENSHOT_MAX_EDGE);
+    const canvas = new OffscreenCanvas(plan.width, plan.height);
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('无法创建离屏画布上下文');
+    context.drawImage(bitmap, 0, 0, plan.width, plan.height);
+
+    let blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: SCREENSHOT_JPEG_QUALITY });
+    if (blob.size > SCREENSHOT_MAX_BYTES) {
+      blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: SCREENSHOT_FALLBACK_QUALITY });
+    }
+    if (blob.size > SCREENSHOT_MAX_BYTES) {
+      throw new Error(`截图压缩后仍有 ${Math.round(blob.size / 1024)}KB，超过上限，已放弃。`);
+    }
+
+    const base64 = encodeBase64(new Uint8Array(await blob.arrayBuffer()));
+    return {
+      dataUrl: `data:image/jpeg;base64,${base64}`,
+      base64,
+      mimeType: 'image/jpeg',
+      width: plan.width,
+      height: plan.height,
+    };
+  } finally {
+    bitmap.close();
   }
 }
