@@ -19,6 +19,18 @@ function field(overrides: Partial<FormFieldDescriptor> = {}): FormFieldDescripto
   };
 }
 
+function resultWith(overrides: Partial<GetFormResult> = {}): GetFormResult {
+  return {
+    forms: [],
+    fields: [],
+    orphanFieldIds: [],
+    unreachable: { iframes: 0, closedShadowRoots: 0 },
+    truncated: false,
+    textTruncated: false,
+    ...overrides,
+  };
+}
+
 describe('renderFieldLine', () => {
   it('never leaks the fingerprint into model-facing text', () => {
     const line = renderFieldLine(field({ fingerprint: 'SHOULD-NOT-APPEAR' }), { showFormId: false });
@@ -102,33 +114,21 @@ describe('renderFieldLine', () => {
   });
 });
 
-function result(overrides: Partial<GetFormResult> = {}): GetFormResult {
-  return {
-    forms: [],
-    fields: [],
-    orphanFieldIds: [],
-    unreachable: { iframes: 0, closedShadowRoots: 0 },
-    truncated: false,
-    textTruncated: false,
-    ...overrides,
-  };
-}
-
 describe('renderFormResultForModel', () => {
   it('keeps the untrusted-content declaration', () => {
-    expect(renderFormResultForModel(result())).toContain('untrusted page content');
+    expect(renderFormResultForModel(resultWith())).toContain('untrusted page content');
   });
 
   it('leads with a count of forms and interactive elements', () => {
     const text = renderFormResultForModel(
-      result({ forms: [{ formId: 'form0', submitFieldIds: [] }], fields: [field(), field({ fieldId: 'f2' })] }),
+      resultWith({ forms: [{ formId: 'form0', submitFieldIds: [] }], fields: [field(), field({ fieldId: 'f2' })] }),
     );
     expect(text).toContain('共 1 个表单、2 个可交互元素。');
   });
 
   it('renders one line per form with its submit handles', () => {
     const text = renderFormResultForModel(
-      result({
+      resultWith({
         forms: [{ formId: 'form0', method: 'post', action: 'https://example.com/checkout', submitFieldIds: ['f5'] }],
       }),
     );
@@ -137,12 +137,12 @@ describe('renderFormResultForModel', () => {
 
   it('shows formId on fields only when the page has several forms', () => {
     const single = renderFormResultForModel(
-      result({ forms: [{ formId: 'form0', submitFieldIds: [] }], fields: [field({ formId: 'form0' })] }),
+      resultWith({ forms: [{ formId: 'form0', submitFieldIds: [] }], fields: [field({ formId: 'form0' })] }),
     );
     expect(single).not.toContain('form=form0');
 
     const many = renderFormResultForModel(
-      result({
+      resultWith({
         forms: [
           { formId: 'form0', submitFieldIds: [] },
           { formId: 'form1', submitFieldIds: [] },
@@ -154,27 +154,26 @@ describe('renderFormResultForModel', () => {
   });
 
   it('never leaks any fingerprint', () => {
-    const text = renderFormResultForModel(result({ fields: [field({ fingerprint: 'SHOULD-NOT-APPEAR' })] }));
+    const text = renderFormResultForModel(resultWith({ fields: [field({ fingerprint: 'SHOULD-NOT-APPEAR' })] }));
     expect(text).not.toContain('SHOULD-NOT-APPEAR');
   });
 
-  it('keeps the unreachable and truncation notes that stop the model probing', () => {
+  it('keeps the closed-shadow-root and truncation notes that stop the model probing', () => {
     const text = renderFormResultForModel(
-      result({ unreachable: { iframes: 2, closedShadowRoots: 1 }, truncated: true }),
+      resultWith({ unreachable: { iframes: 0, closedShadowRoots: 1 }, truncated: true }),
     );
-    expect(text).toContain('2 个 iframe');
     expect(text).toContain('closed shadow root');
     expect(text).toContain('字段数量已达上限');
   });
 
   it('keeps the textTruncated note when includeText cut off surrounding copy', () => {
-    const text = renderFormResultForModel(result({ textTruncated: true }));
+    const text = renderFormResultForModel(resultWith({ textTruncated: true }));
     expect(text).toContain('部分正文已截断');
   });
 
   it('renders scrollable containers with their handles and four-directional remaining distance', () => {
     const text = renderFormResultForModel(
-      result({
+      resultWith({
         scrollableContainers: [
           { fieldId: 's1', tag: 'div', label: '消息列表', pixelsAbove: 0, pixelsBelow: 3400, pixelsLeft: 0, pixelsRight: 0 },
         ],
@@ -184,7 +183,7 @@ describe('renderFormResultForModel', () => {
   });
 
   it('renders trailing text when includeText was used', () => {
-    expect(renderFormResultForModel(result({ trailingText: '提交即代表同意条款' }))).toContain(
+    expect(renderFormResultForModel(resultWith({ trailingText: '提交即代表同意条款' }))).toContain(
       '尾部正文: 提交即代表同意条款',
     );
   });
@@ -193,7 +192,38 @@ describe('renderFormResultForModel', () => {
     const fields = Array.from({ length: 40 }, (_, index) =>
       field({ fieldId: `f${index + 1}`, label: `字段${index + 1}` }),
     );
-    const data = result({ fields });
+    const data = resultWith({ fields });
     expect(renderFormResultForModel(data).length).toBeLessThan(JSON.stringify(data, null, 2).length / 4);
+  });
+});
+
+describe('分帧渲染', () => {
+  // 会让这个用例失败的 production 改动：把子帧字段和主框架字段平铺在一起——
+  // 模型无从判断这个「卡号」输入框属于哪一方。
+  it('groups child-frame fields under an origin heading', () => {
+    const rendered = renderFormResultForModel(resultWith({
+      fields: [
+        field({ fieldId: 'f1', label: '邮箱' }),
+        field({ fieldId: 'f2', label: '卡号', frameOrigin: 'https://pay.example.com' }),
+      ],
+    }));
+
+    expect(rendered).toContain('嵌入框架 https://pay.example.com');
+    expect(rendered.indexOf('f1')).toBeLessThan(rendered.indexOf('嵌入框架'));
+  });
+
+  // 会让这个用例失败的 production 改动：保留旧的 unreachable.iframes 旁注——
+  // 那句话现在是假的，会让模型主动放弃它其实够得着的表单。
+  it('no longer tells the model that iframes are unreachable', () => {
+    const rendered = renderFormResultForModel(resultWith({ unreachable: { iframes: 3, closedShadowRoots: 0 } }));
+    expect(rendered).not.toContain('无法读取或操作');
+  });
+
+  // 会让这个用例失败的 production 改动：上限截断时不出旁注——
+  // 模型会以为自己看到了页面上全部字段。
+  it('reports how much was dropped by the frame and field caps', () => {
+    const rendered = renderFormResultForModel(resultWith({ droppedFrames: 2, droppedChildFields: 7 }));
+    expect(rendered).toContain('2');
+    expect(rendered).toContain('7');
   });
 });

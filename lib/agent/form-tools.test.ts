@@ -75,10 +75,18 @@ describe('browser_get_form', () => {
     expect(output.details).toMatchObject({ fields: [{ fieldId: 'f1', fingerprint: 'input|email|email|邮箱' }] });
   });
 
-  it('surfaces unreachable iframes in the text so the model stops probing', async () => {
+  // 会让这个用例失败的 production 改动：恢复旧的 unreachable.iframes 旁注——那句话现在是假的
+  // （iframe 已经可以正常读取/操作），会让模型主动放弃它其实够得着的表单。
+  it('no longer claims iframes are unreachable, even when unreachable.iframes is set', async () => {
     sendMessage.mockResolvedValueOnce({ id: '1', ok: true, data: RESULT });
     const output = await getFormTool().execute('call-1', {});
-    expect((output.content[0] as { text: string }).text).toContain('iframe');
+    expect((output.content[0] as { text: string }).text).not.toContain('无法读取或操作');
+  });
+
+  it('surfaces dropped frames in the text so the model stops assuming it saw everything', async () => {
+    sendMessage.mockResolvedValueOnce({ id: '1', ok: true, data: { ...RESULT, droppedFrames: 2 } });
+    const output = await getFormTool().execute('call-1', {});
+    expect((output.content[0] as { text: string }).text).toContain('2');
   });
 
   it('throws with the backend error when the read fails', async () => {

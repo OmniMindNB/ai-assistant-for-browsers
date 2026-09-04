@@ -645,7 +645,15 @@ async function snapshotFields(tabId: number, payload: GetFormPayload = {}): Prom
 
   collected.raws.forEach((raw, index) => {
     const fieldId = `f${index + 1}`;
-    const descriptor = toFieldDescriptor(raw, fieldId);
+    // FormFieldDescriptor.frameOrigin 是「模型该把这个字段当子帧」的分组信号，只在真的是子帧
+    // 时才传：mergeFrameCollections 给主框架的 raw 也挂了 frameOrigin（值为主站自己的 origin，
+    // 供下面 handles 表的写入前 origin 比对使用），如果原样转发给 toFieldDescriptor，主框架
+    // 字段会被 renderFormResultForModel 误判成子帧、套上一个多余的「嵌入框架 <主站 origin>」
+    // 标题。主框架固定是 frameId 0（与 executeInAllFrames 的 isMain 判定同一约定）。
+    const descriptor = toFieldDescriptor(
+      raw.frameId === 0 ? { ...raw, frameOrigin: undefined } : raw,
+      fieldId,
+    );
     fields.push(descriptor);
     handles[fieldId] = {
       path: raw.path,
@@ -718,6 +726,8 @@ async function getForm(payload: GetFormPayload, tabId: number): Promise<GetFormR
     orphanFieldIds,
     unreachable: collected.unreachable,
     truncated: collected.truncated,
+    droppedFrames: collected.droppedFrames,
+    droppedChildFields: collected.droppedChildFields,
     trailingText,
     textTruncated,
     scrollableContainers,

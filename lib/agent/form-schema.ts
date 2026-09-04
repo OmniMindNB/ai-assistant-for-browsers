@@ -121,7 +121,10 @@ export function fieldFingerprint(raw: RawFormField): string {
   return [raw.tag.toLowerCase(), raw.type ?? '', raw.name ?? '', pickFieldLabel(raw) ?? ''].join('|');
 }
 
-export function toFieldDescriptor(raw: RawFormField, fieldId: string): FormFieldDescriptor {
+export function toFieldDescriptor(
+  raw: RawFormField & { frameOrigin?: string },
+  fieldId: string,
+): FormFieldDescriptor {
   const kind = resolveFieldKind(raw);
   const sensitive = isSensitiveField(raw);
   const hasValue = Boolean((raw.value ?? '').length) || raw.checked === true;
@@ -155,6 +158,7 @@ export function toFieldDescriptor(raw: RawFormField, fieldId: string): FormField
     validationMessage: raw.validationMessage || undefined,
     precedingText,
     byCursor: raw.byCursor,
+    frameOrigin: raw.frameOrigin,
   };
 }
 

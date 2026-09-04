@@ -465,6 +465,9 @@ export interface FormFieldDescriptor {
   byCursor?: true;
   /** 排在这个字段之前、上一个字段之后出现的正文；已净化截断。仅 GetFormPayload.includeText 时有值。 */
   precedingText?: string;
+  /** 该字段所属子帧（iframe）的 origin；主框架字段为 undefined。只存 origin，不存完整 URL——
+   *  iframe URL 常带 token/订单号等不该进模型上下文的信息。 */
+  frameOrigin?: string;
 }
 
 export interface GetFormPayload {
@@ -497,6 +500,10 @@ export interface GetFormResult {
   /** 如实上报「这里有内容但我看不见」，避免模型在主框架里反复试探。 */
   unreachable: { iframes: number; closedShadowRoots: number };
   truncated: boolean;
+  /** 因帧数上限被丢弃、完全未采集的子帧数量。 */
+  droppedFrames?: number;
+  /** 已采集的子帧中，因单帧字段上限未列出的字段数量。 */
+  droppedChildFields?: number;
   /** 最后一个字段之后出现的正文；已净化截断。仅 includeText 时可能有值。 */
   trailingText?: string;
   /** precedingText/trailingText 中是否发生了截断。includeText 为 false 时恒为 false。 */

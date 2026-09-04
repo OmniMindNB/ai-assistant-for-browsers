@@ -86,14 +86,13 @@ function renderScrollableLine(container: ScrollableContainerDescriptor): string 
 }
 
 /**
- * 这几条旁注是模型「停止无效试探」的依据（iframe 里的表单够不着、字段被截断了要缩小范围），
- * 总量只有几十 token，紧凑化不动它们。措辞与改造前的 makeGetFormTool 保持一致。
+ * 这几条旁注是模型「停止无效试探」的依据（closed shadow root 里的字段不可见、字段被截断了
+ * 要缩小范围、帧/字段上限丢弃了多少），总量只有几十 token，紧凑化不动它们。
+ * iframe 本身现在是可达的（见 renderFormResultForModel 的分帧渲染），不再在这里报告
+ * 「iframe 无法读取或操作」——那句话现在是假的。
  */
 function renderNotes(data: GetFormResult): string[] {
   const notes: string[] = [];
-  if (data.unreachable.iframes > 0) {
-    notes.push(`页面中有 ${data.unreachable.iframes} 个 iframe，其内部表单当前版本无法读取或操作。`);
-  }
   if (data.unreachable.closedShadowRoots > 0) {
     notes.push(
       `页面中有 ${data.unreachable.closedShadowRoots} 个可能含 closed shadow root 的自定义元素，其内部字段不可见。`,
@@ -101,6 +100,12 @@ function renderNotes(data: GetFormResult): string[] {
   }
   if (data.truncated) notes.push('字段数量已达上限，请用 selector 参数缩小范围后重新读取。');
   if (data.textTruncated) notes.push('部分正文已截断，完整正文请用 browser_read_page 读取。');
+  if (data.droppedFrames) {
+    notes.push(`页面嵌入框架过多，有 ${data.droppedFrames} 个框架未采集。`);
+  }
+  if (data.droppedChildFields) {
+    notes.push(`嵌入框架中有 ${data.droppedChildFields} 个字段因单帧上限未列出。`);
+  }
   return notes;
 }
 
@@ -123,7 +128,22 @@ export function renderFormResultForModel(data: GetFormResult): string {
     lines.push(parts.join(' '));
   }
 
-  for (const field of data.fields) lines.push(renderFieldLine(field, { showFormId }));
+  // 主框架字段（frameOrigin 为 undefined）平铺在前，与改造前完全一致；每个子帧的字段
+  // 各自归到一个「嵌入框架 <origin>」标题下面，让模型知道这些字段该往哪个上下文里填。
+  // 只写 origin、不写完整 URL——iframe URL 常带 token、订单号等不该进模型上下文的信息。
+  const mainFields = data.fields.filter((field) => field.frameOrigin === undefined);
+  for (const field of mainFields) lines.push(renderFieldLine(field, { showFormId }));
+
+  const childOrigins: string[] = [];
+  for (const field of data.fields) {
+    if (field.frameOrigin && !childOrigins.includes(field.frameOrigin)) childOrigins.push(field.frameOrigin);
+  }
+  for (const origin of childOrigins) {
+    lines.push(`— 嵌入框架 ${origin} —`);
+    for (const field of data.fields.filter((f) => f.frameOrigin === origin)) {
+      lines.push(renderFieldLine(field, { showFormId }));
+    }
+  }
 
   if (data.trailingText) lines.push(`尾部正文: ${data.trailingText}`);
 

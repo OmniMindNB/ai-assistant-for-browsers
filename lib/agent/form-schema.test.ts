@@ -207,6 +207,20 @@ describe('toFieldDescriptor', () => {
     );
     expect(descriptor.precedingText).toBe('请填写您的常用邮箱地址');
   });
+
+  // 会让这个用例失败的 production 改动：toFieldDescriptor 的形参停留在纯 RawFormField——
+  // 合并后的子帧字段带着 frameOrigin 传进来也读不出，渲染层就永远分不清字段属于哪个帧。
+  it('passes frameOrigin through onto the descriptor when the merged raw field carries one', () => {
+    const descriptor = toFieldDescriptor(
+      { ...raw({ type: 'text', name: 'cardNumber' }), frameOrigin: 'https://pay.example.com' },
+      'f18',
+    );
+    expect(descriptor.frameOrigin).toBe('https://pay.example.com');
+  });
+
+  it('leaves frameOrigin undefined for a main-frame field', () => {
+    expect(toFieldDescriptor(raw({ type: 'text', name: 'email' }), 'f19').frameOrigin).toBeUndefined();
+  });
 });
 
 describe('sanitizePageText', () => {
