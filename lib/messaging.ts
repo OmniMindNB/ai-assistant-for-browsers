@@ -124,6 +124,8 @@ export interface QueryDomResult {
   count: number;
   truncated: boolean;
   nodes: DomNodeSummary[];
+  /** 同一选择器在其它帧的命中；不含主框架（主框架命中就是本对象的顶层字段）。 */
+  frames?: { origin: string; result: Omit<QueryDomResult, 'frames'> }[];
 }
 
 export interface GetHtmlPayload {
@@ -137,6 +139,8 @@ export interface GetHtmlResult {
   html: string;
   length: number;
   truncated: boolean;
+  /** 同一选择器在其它帧的命中；不含主框架（主框架命中就是本对象的顶层字段）。 */
+  frames?: { origin: string; result: Omit<GetHtmlResult, 'frames'> }[];
 }
 
 export interface GetScriptsPayload {
@@ -194,6 +198,8 @@ export interface GetComputedStyleResult {
   selector: string;
   found: boolean;
   styles: Record<string, string>;
+  /** 同一选择器在其它帧的命中；不含主框架（主框架命中就是本对象的顶层字段）。 */
+  frames?: { origin: string; result: Omit<GetComputedStyleResult, 'frames'> }[];
 }
 
 export interface PageMetaResult {

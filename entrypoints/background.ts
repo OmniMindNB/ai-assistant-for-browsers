@@ -564,35 +564,41 @@ async function getActiveSelection(tabId: number): Promise<PageSelection> {
   return response.data;
 }
 
+const queryDomInPage = (input: QueryDomPayload): QueryDomResult & { origin: string } => {
+  const selector = input?.selector || 'body';
+  const limit = Math.max(1, Math.min(100, input?.limit ?? 20));
+  const nodes = Array.from(document.querySelectorAll(selector));
+  return {
+    selector,
+    count: nodes.length,
+    truncated: nodes.length > limit,
+    nodes: nodes.slice(0, limit).map((node, index) => {
+      const element = node as Element;
+      const rect = element.getBoundingClientRect();
+      const attributes: Record<string, string> = {};
+      for (const attr of Array.from(element.attributes)) {
+        attributes[attr.name] = attr.value.slice(0, 500);
+      }
+      const rawClassName = (element as HTMLElement).className;
+      return {
+        index,
+        tag: element.tagName.toLowerCase(),
+        id: element.id || undefined,
+        className: typeof rawClassName === 'string' ? rawClassName : String(rawClassName || ''),
+        text: input?.includeText ? (element.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 500) : undefined,
+        attributes,
+        rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      };
+    }),
+    origin: location.origin,
+  };
+};
+
+// 只读裸选择器广播到全部帧：同一选择器在多帧命中对读取是有用信息，与写工具的
+// 单帧原则（见 clickElement 等处注释）不同（ref: spec §4.6）。
 async function queryDom(payload: QueryDomPayload, tabId: number): Promise<QueryDomResult> {
-  return executeInTab(tabId, payload, (input): QueryDomResult => {
-    const selector = input?.selector || 'body';
-    const limit = Math.max(1, Math.min(100, input?.limit ?? 20));
-    const nodes = Array.from(document.querySelectorAll(selector));
-    return {
-      selector,
-      count: nodes.length,
-      truncated: nodes.length > limit,
-      nodes: nodes.slice(0, limit).map((node, index) => {
-        const element = node as Element;
-        const rect = element.getBoundingClientRect();
-        const attributes: Record<string, string> = {};
-        for (const attr of Array.from(element.attributes)) {
-          attributes[attr.name] = attr.value.slice(0, 500);
-        }
-        const rawClassName = (element as HTMLElement).className;
-        return {
-          index,
-          tag: element.tagName.toLowerCase(),
-          id: element.id || undefined,
-          className: typeof rawClassName === 'string' ? rawClassName : String(rawClassName || ''),
-          text: input?.includeText ? (element.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 500) : undefined,
-          attributes,
-          rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-        };
-      }),
-    };
-  });
+  const frames = await executeInAllFrames(tabId, () => payload, queryDomInPage);
+  return mergeReadResultsByFrame(frames);
 }
 
 const MAX_FORM_FIELDS = 120;
@@ -879,20 +885,25 @@ async function probeEnterSubmitIntent(
   };
 }
 
+const getHtmlInPage = (input: GetHtmlPayload): GetHtmlResult & { origin: string } => {
+  const selector = input?.selector || 'html';
+  const maxChars = Math.max(1000, input?.maxChars ?? 12000);
+  const nodes = Array.from(document.querySelectorAll(selector));
+  const html = nodes.map((node) => (node as Element).outerHTML).join('\n\n');
+  return {
+    selector,
+    count: nodes.length,
+    html: html.slice(0, maxChars),
+    length: html.length,
+    truncated: html.length > maxChars,
+    origin: location.origin,
+  };
+};
+
+// 只读裸选择器广播到全部帧，理由同 queryDom 上方的注释。
 async function getHtml(payload: GetHtmlPayload, tabId: number): Promise<GetHtmlResult> {
-  return executeInTab(tabId, payload, (input): GetHtmlResult => {
-    const selector = input?.selector || 'html';
-    const maxChars = Math.max(1000, input?.maxChars ?? 12000);
-    const nodes = Array.from(document.querySelectorAll(selector));
-    const html = nodes.map((node) => (node as Element).outerHTML).join('\n\n');
-    return {
-      selector,
-      count: nodes.length,
-      html: html.slice(0, maxChars),
-      length: html.length,
-      truncated: html.length > maxChars,
-    };
-  });
+  const frames = await executeInAllFrames(tabId, () => payload, getHtmlInPage);
+  return mergeReadResultsByFrame(frames);
 }
 
 async function getScripts(payload: GetScriptsPayload, tabId: number): Promise<GetScriptsResult> {
@@ -1000,35 +1011,39 @@ async function getStylesheets(payload: GetStylesheetsPayload, tabId: number): Pr
   return { count: stylesheets.length, stylesheets: output, truncated };
 }
 
+const getComputedStyleInPage = (input: GetComputedStylePayload): GetComputedStyleResult & { origin: string } => {
+  const selector = input?.selector || 'body';
+  const element = document.querySelector(selector);
+  if (!element) return { selector, found: false, styles: {}, origin: location.origin };
+  const computed = getComputedStyle(element);
+  const props = input?.props?.length
+    ? input.props
+    : [
+        'display',
+        'position',
+        'overflow',
+        'overflow-x',
+        'overflow-y',
+        'scroll-behavior',
+        'scroll-snap-type',
+        'transform',
+        'transition',
+        'animation',
+        'will-change',
+        'z-index',
+      ];
+  const styles: Record<string, string> = {};
+  for (const prop of props) styles[prop] = computed.getPropertyValue(prop);
+  return { selector, found: true, styles, origin: location.origin };
+};
+
+// 只读裸选择器广播到全部帧，理由同 queryDom 上方的注释。
 async function getComputedStyleForSelector(
   payload: GetComputedStylePayload,
   tabId: number,
 ): Promise<GetComputedStyleResult> {
-  return executeInTab(tabId, payload, (input): GetComputedStyleResult => {
-    const selector = input?.selector || 'body';
-    const element = document.querySelector(selector);
-    if (!element) return { selector, found: false, styles: {} };
-    const computed = getComputedStyle(element);
-    const props = input?.props?.length
-      ? input.props
-      : [
-          'display',
-          'position',
-          'overflow',
-          'overflow-x',
-          'overflow-y',
-          'scroll-behavior',
-          'scroll-snap-type',
-          'transform',
-          'transition',
-          'animation',
-          'will-change',
-          'z-index',
-        ];
-    const styles: Record<string, string> = {};
-    for (const prop of props) styles[prop] = computed.getPropertyValue(prop);
-    return { selector, found: true, styles };
-  });
+  const frames = await executeInAllFrames(tabId, () => payload, getComputedStyleInPage);
+  return mergeReadResultsByFrame(frames);
 }
 
 async function getPageMeta(tabId: number): Promise<PageMetaResult> {
@@ -1117,7 +1132,29 @@ async function executeInAllFrames<TInput, TResult extends { origin: string }>(
     });
 }
 
+/**
+ * 只读裸选择器广播的合并层：主框架命中留在顶层（不加标题，与单帧时代的形状一致），
+ * 其它帧命中打包进 frames[]，每段带 origin。origin 只用来分段，不进最终结果的顶层——
+ * 那会让「主框架不加标题」这条既有观感被一个多余字段破坏。
+ */
+function mergeReadResultsByFrame<T extends { origin: string }>(
+  frames: { frameId: number; origin: string; isMain: boolean; output: T }[],
+): Omit<T, 'origin'> & { frames?: { origin: string; result: Omit<T, 'origin'> }[] } {
+  const main = frames.find((f) => f.isMain) ?? frames[0];
+  const others = frames.filter((f) => f !== main);
+  const stripOrigin = (output: T): Omit<T, 'origin'> => {
+    const { origin: _origin, ...rest } = output;
+    return rest;
+  };
+  return {
+    ...(main ? stripOrigin(main.output) : ({} as Omit<T, 'origin'>)),
+    frames: others.length > 0 ? others.map((f) => ({ origin: f.origin, result: stripOrigin(f.output) })) : undefined,
+  };
+}
+
 async function setStyle(payload: SetStylePayload, tabId: number): Promise<SetStyleResult> {
+  // 有意不广播到所有帧：写入必须单帧可预期，跨帧写入需要 browser_get_form + fieldId
+  // 句柄（带写入前后校验），裸选择器兜底只作用于主框架（ref: spec §4.6）。
   return executeInTab(tabId, payload, (input): SetStyleResult => {
     const selector = input?.selector || '';
     const styles = input?.styles || {};
@@ -1132,6 +1169,7 @@ async function setStyle(payload: SetStylePayload, tabId: number): Promise<SetSty
 }
 
 async function modifyDom(payload: ModifyDomPayload, tabId: number): Promise<ModifyDomResult> {
+  // 有意不广播到所有帧：理由同 setStyle 上方的注释。
   return executeInTab(tabId, payload, (input): ModifyDomResult => {
     const selector = input?.selector || '';
     const nodes = Array.from(document.querySelectorAll<HTMLElement>(selector));
@@ -1165,6 +1203,7 @@ async function clickElement(payload: ClickElementPayload, tabId: number): Promis
   if (payload?.fieldId) {
     return clickElementByFieldId(payload.fieldId, tabId);
   }
+  // 有意不广播到所有帧：没有 fieldId 的裸选择器点击只作用于主框架，理由同 setStyle 上方的注释。
   const selector = payload?.selector || '';
   const index = payload?.index ?? 0;
   const result = await executeInTab(tabId, { selector, index }, clickElementInPage);
@@ -1247,6 +1286,7 @@ async function clickElementByFieldId(fieldId: string, tabId: number): Promise<Cl
 }
 
 async function typeText(payload: TypeTextPayload, tabId: number): Promise<TypeTextResult> {
+  // 有意不广播到所有帧：裸选择器输入只作用于主框架，理由同 setStyle 上方的注释。
   const selector = payload?.selector || '';
   const index = payload?.index ?? 0;
   const result = await executeInTab(
@@ -1267,6 +1307,7 @@ async function typeText(payload: TypeTextPayload, tabId: number): Promise<TypeTe
 }
 
 async function selectOption(payload: SelectOptionPayload, tabId: number): Promise<SelectOptionResult> {
+  // 有意不广播到所有帧：裸选择器下拉选择只作用于主框架，理由同 setStyle 上方的注释。
   const selector = payload?.selector || '';
   const index = payload?.index ?? 0;
   const result = await executeInTab(tabId, { selector, index, value: payload?.value ?? '' }, selectOptionInPage);
@@ -1361,6 +1402,8 @@ async function scrollPage(payload: ScrollPagePayload, tabId: number): Promise<Sc
   if (payload?.fieldId) {
     return scrollContainerByFieldId(payload, tabId);
   }
+  // 有意不广播到所有帧：坐标滚动只作用于主框架——跨帧滚动没有共同坐标系，
+  // 跨帧场景应改用 browser_get_form 拿到 fieldId 句柄后走 scrollContainerByFieldId。
   return executeInTab(tabId, { selector: payload?.selector, x: payload?.x, y: payload?.y, behavior: payload?.behavior }, scrollPageInPage);
 }
 
