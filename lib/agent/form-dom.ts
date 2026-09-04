@@ -14,6 +14,12 @@ export interface CollectFormInput {
   includeScrollable?: boolean;
   maxFields: number;
   maxOptions: number;
+  /**
+   * 'child' 时只采可写字段与提交按钮（ref: 设计文档 §4.1）。缺省 'main' 保持既有行为。
+   * 判断权由 background 下发而不是让本函数用 window.top === window 自己决定：
+   * 规则留在参数层，form-schema 的纯函数才能覆盖它。
+   */
+  scope?: 'main' | 'child';
 }
 
 export interface CollectedFormInfo {
@@ -25,6 +31,8 @@ export interface CollectedFormInfo {
 
 export interface CollectFormOutput {
   url: string;
+  /** 本帧的 location.origin，写入前比对 frameId 是否被复用（ref: 设计文档 §3.3）。 */
+  origin: string;
   raws: RawFormField[];
   forms: CollectedFormInfo[];
   unreachable: { iframes: number; closedShadowRoots: number };
@@ -45,6 +53,7 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
   const includeHidden = input.includeHidden === true;
   const includeText = input.includeText === true;
   const includeScrollable = input.includeScrollable === true;
+  const isChildScope = input.scope === 'child';
   const MAX_SCROLLABLE_CONTAINERS = 20;
   const scrollables: RawScrollableContainer[] = [];
 
@@ -332,7 +341,7 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
         unreachable.closedShadowRoots += 1;
       }
 
-      if (includeScrollable && scrollables.length < MAX_SCROLLABLE_CONTAINERS && isScrollableContainer(element)) {
+      if (!isChildScope && includeScrollable && scrollables.length < MAX_SCROLLABLE_CONTAINERS && isScrollableContainer(element)) {
         const rawLabel = element.getAttribute('aria-label') || element.id || '';
         scrollables.push({
           path: buildPath(element),
@@ -348,6 +357,9 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
       }
 
       if (!interactiveKind) continue;
+      // 子帧只要能写的字段和提交按钮：广告/埋点 iframe 几乎没有可写表单字段，
+      // 因此在窄采集下自然贡献 0 条，而登录/支付/客服框要的字段一条不少。
+      if (isChildScope && !isStandardFieldTag(element)) continue;
       if (interactiveKind === 'cursor' && hasCollectedAncestor(element)) continue;
 
       const isGeneric = !isStandardFieldTag(element);
@@ -456,7 +468,16 @@ export function collectFormFields(input: CollectFormInput): CollectFormOutput {
     trailingText = finalize(trailingBuffer, 'head');
   }
 
-  return { url: location.href, raws, forms, unreachable, truncated, trailingText, scrollables: includeScrollable ? scrollables : undefined };
+  return {
+    url: location.href,
+    origin: location.origin,
+    raws,
+    forms,
+    unreachable,
+    truncated,
+    trailingText,
+    scrollables: includeScrollable ? scrollables : undefined,
+  };
 }
 
 export interface ApplyFillItem {

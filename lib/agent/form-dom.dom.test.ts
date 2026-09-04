@@ -1239,6 +1239,34 @@ describe('collectFormFields root container exclusion', () => {
   });
 });
 
+describe('collectFormFields scope', () => {
+  // 会让这个用例失败的 production 改动：子帧也走通用可交互元素采集分支——
+  // 那样广告 iframe 里的几十个链接会把真正的目标字段挤出截断线。
+  it('collects only writable fields and submits in child scope', () => {
+    render(`
+      <form>
+        <input name="card" type="text" />
+        <button type="submit">支付</button>
+      </form>
+      <a href="https://ad.example.com">广告链接</a>
+      <div role="button" tabindex="0">自定义按钮</div>
+    `);
+
+    const child = collectFormFields({ ...INPUT, scope: 'child' });
+    const main = collectFormFields({ ...INPUT, scope: 'main' });
+
+    expect(child.raws.map((item) => item.tag)).toEqual(['input', 'button']);
+    expect(main.raws.some((item) => item.tag === 'a')).toBe(true);
+  });
+
+  // 会让这个用例失败的 production 改动：不上报 origin——
+  // 那样写入前的 frameId 复用比对（Task 4）就没有可比的东西。
+  it('reports the document origin', () => {
+    render('<input name="q" />');
+    expect(collectFormFields({ ...INPUT }).origin).toBe(location.origin);
+  });
+});
+
 // 逐字段扫光：fill_form 一次可能改十几个字段，值瞬间全部出现的话，用户看不出到底动了哪几个。
 describe('applyFormFill 逐字段扫光', () => {
   const listeners: Array<() => void> = [];

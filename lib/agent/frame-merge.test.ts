@@ -24,6 +24,9 @@ function raw(name: string, tag = 'input'): RawFormField {
 function output(names: string[], url: string): CollectFormOutput {
   return {
     url,
+    // Task 2 给 CollectFormOutput 加了必填的 origin 字段；测试用的 url 都形如
+    // `${origin}/page`，直接用 URL 解析拿回 origin，不用额外传参。
+    origin: new URL(url).origin,
     raws: names.map((name) => raw(name)),
     forms: [],
     unreachable: { iframes: 0, closedShadowRoots: 0 },
