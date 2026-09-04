@@ -7,6 +7,7 @@ import { REPORT_TASK_OUTCOME_TOOL_NAME, type TaskOutcome, type TaskOutcomeValue 
 import { formatTabList, type TabSessionController } from './tab-session';
 import { resolveKeyDescriptor } from './key-dispatch';
 import { DEFAULT_STORAGE_MAX_CHARS, buildStorageView, renderStorageView } from './storage-read';
+import { describeWaitResult, parseWaitCondition } from './wait-condition';
 import {
   sendMessage,
   type CaptureScreenshotPayload,
@@ -52,6 +53,8 @@ import {
   type SetStyleResult,
   type TypeTextPayload,
   type TypeTextResult,
+  type WaitForPayload,
+  type WaitForResult,
 } from '@/lib/messaging';
 
 export type BrowserAgentTool = AgentTool<any, Record<string, unknown>>;
@@ -93,6 +96,7 @@ export function createBrowserTools(session: TabSessionController, config: Browse
     makeSelectTool(session),
     makePressKeyTool(session),
     makeScrollTool(session),
+    makeWaitForTool(session),
     makeNavigateTool(session),
     makeSetStorageTool(session),
     makeGetStorageTool(session),
@@ -797,6 +801,47 @@ function makeScrollTool(session: TabSessionController): BrowserAgentTool {
         );
       }
       return textResult(describeScrollResult(response.data), response.data as unknown as Record<string, unknown>);
+    },
+  };
+}
+
+function makeWaitForTool(session: TabSessionController): BrowserAgentTool {
+  return {
+    name: 'browser_wait_for',
+    label: 'Wait For',
+    description:
+      'Wait until the page satisfies a specific condition, then continue. Prefer this over the generic `wait` tool: blind fixed-duration waiting either stops too early (costing another full round-trip) or wastes wall-clock time. Conditions: appear/disappear (a CSS selector matches / stops matching), textContains (text shows up, optionally scoped to a selector), domIdle (no DOM mutation for idleMs — use this when you do not know which selector to watch for). A timeout is a normal result, not an error: it reports how long it waited so you can change strategy instead of retrying the same wait.',
+    parameters: Type.Object({
+      kind: Type.Union([
+        Type.Literal('appear'),
+        Type.Literal('disappear'),
+        Type.Literal('textContains'),
+        Type.Literal('domIdle'),
+      ]),
+      selector: Type.Optional(
+        Type.String({ description: 'CSS selector. Required for appear and disappear; optional scope for textContains.' }),
+      ),
+      text: Type.Optional(Type.String({ description: 'Text to wait for. Required for textContains.' })),
+      idleMs: Type.Optional(Type.Number({ description: 'For domIdle: how long the DOM must stay unchanged. 100-5000, defaults to 500.' })),
+      timeoutMs: Type.Optional(Type.Number({ description: 'Give up after this long. 500-15000, defaults to 5000.' })),
+    }),
+    execute: async (_toolCallId, params) => {
+      const parsed = parseWaitCondition(params);
+      if (!parsed.ok) throw new Error(parsed.error);
+
+      const response = (await sendMessage<WaitForPayload, WaitForResult>(
+        'WAIT_FOR',
+        parsed.condition as WaitForPayload,
+        session.currentTabId,
+      )) as MessageResponse<WaitForResult>;
+      if (!response.ok || !response.data) throw new Error(response.error ?? '等待失败');
+      // 非法选择器是模型可以修正的参数错误，值得抛出；超时不是。
+      if (response.data.error) throw new Error(response.data.error);
+
+      return textResult(
+        describeWaitResult(parsed.condition, response.data),
+        response.data as unknown as Record<string, unknown>,
+      );
     },
   };
 }

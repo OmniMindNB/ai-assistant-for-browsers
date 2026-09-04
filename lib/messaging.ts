@@ -27,6 +27,7 @@ export type MessageType =
   | 'PRESS_KEY'
   | 'PROBE_KEY_TARGET'
   | 'SCROLL_PAGE'
+  | 'WAIT_FOR'
   | 'NAVIGATE_TAB'
   | 'OPEN_NEW_TAB'
   | 'CLOSE_TAB'
@@ -320,6 +321,27 @@ export interface ScrollPageResult {
   status?: 'ok' | 'not_found' | 'mismatch';
   /** 句柄表已失效（页面导航或 storage 丢失），模型必须重新调用 browser_get_form。 */
   fieldsTableStale?: boolean;
+}
+
+/**
+ * browser_wait_for 的载荷。字段与 lib/agent/wait-dom.ts 的 WaitForInput 同构，
+ * 但独立声明——messaging 是被 agent 层依赖的下层，不反向 import agent 模块。
+ */
+export interface WaitForPayload {
+  kind: 'appear' | 'disappear' | 'textContains' | 'domIdle';
+  selector?: string;
+  text?: string;
+  idleMs: number;
+  timeoutMs: number;
+}
+
+export interface WaitForResult {
+  met: boolean;
+  elapsedMs: number;
+  /** appear/disappear 命中时匹配到的元素数。 */
+  matched?: number;
+  /** 页面内错误（例如非法选择器）。 */
+  error?: string;
 }
 
 export interface NavigateTabPayload {

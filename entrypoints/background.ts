@@ -56,6 +56,8 @@ import {
   type SetStyleResult,
   type TypeTextPayload,
   type TypeTextResult,
+  type WaitForPayload,
+  type WaitForResult,
   newMessageId,
   registerLocalDispatcher,
 } from '@/lib/messaging';
@@ -108,6 +110,7 @@ import { findNewFieldIds, sanitizeFieldText, sanitizePageText, toFieldDescriptor
 import { getFormFieldsForTab, setFormFieldsForTab, type FormFieldHandle } from '@/lib/agent/tab-form-fields';
 import { decideEnterSubmitIntent, decideSubmitIntent } from '@/lib/agent/form-submit';
 import { resolveKeyDescriptor } from '@/lib/agent/key-dispatch';
+import { waitForConditionInPage } from '@/lib/agent/wait-dom';
 
 const DEFAULT_TOOL_MAX_CHARS = 12000;
 // 以下为模型可见/可调用的消息类型；内部专用消息（如 SET_AGENT_OVERLAY）有意不在此列，以免暴露给模型。
@@ -135,6 +138,7 @@ const SUPPORTED_MESSAGE_TYPES = [
   'PRESS_KEY',
   'PROBE_KEY_TARGET',
   'SCROLL_PAGE',
+  'WAIT_FOR',
   'NAVIGATE_TAB',
   'OPEN_NEW_TAB',
   'CLOSE_TAB',
@@ -471,6 +475,9 @@ async function handleMessage(message: Message, sender?: MessageSender): Promise<
 
     case 'SCROLL_PAGE':
       return scrollPage(message.payload as ScrollPagePayload, requireTabId(message));
+
+    case 'WAIT_FOR':
+      return waitForCondition(message.payload as WaitForPayload, requireTabId(message));
 
     case 'NAVIGATE_TAB':
       return navigateTab(message.payload as NavigateTabPayload, requireTabId(message));
@@ -1290,6 +1297,35 @@ async function scrollContainerByFieldId(payload: ScrollPagePayload, tabId: numbe
     status: result.status,
     fieldsTableStale: result.fieldsTableStale,
   };
+}
+
+/**
+ * 注入函数自己带超时，正常路径不会挂住；这里再加一层略长的兜底，是防注入上下文
+ * 因导航被销毁而使 executeScript 的 promise 永远不结算。executeScript 本身的
+ * 失败（页面已关闭、被 CSP 拒绝等）同样收敛成"没等到"，而不是让整轮任务报错——
+ * 等待失败不该比等待超时更严重。
+ */
+async function waitForCondition(payload: WaitForPayload, tabId: number): Promise<WaitForResult> {
+  const guardMs = payload.timeoutMs + 2000;
+  let guardTimer: ReturnType<typeof setTimeout> | undefined;
+  const guard = new Promise<WaitForResult>((resolve) => {
+    guardTimer = setTimeout(() => resolve({ met: false, elapsedMs: payload.timeoutMs }), guardMs);
+  });
+
+  try {
+    return await Promise.race([
+      executeInTab(tabId, payload, waitForConditionInPage).catch(
+        (error): WaitForResult => ({
+          met: false,
+          elapsedMs: 0,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      ),
+      guard,
+    ]);
+  } finally {
+    if (guardTimer) clearTimeout(guardTimer);
+  }
 }
 
 // 拒绝非 http(s) 协议的跳转目标，防止 agent 被诱导跳转到 javascript:/file:/chrome: 等敏感 scheme。

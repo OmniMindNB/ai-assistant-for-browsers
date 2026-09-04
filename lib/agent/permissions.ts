@@ -26,6 +26,8 @@ export const READ_ONLY_TOOL_NAMES = new Set([
   'browser_get_storage',
   'browser_screenshot',
   'browser_get_form',
+  // 只等待、不修改任何状态；因此不触发执行遮罩、不进写预算，但仍计入读预算。
+  'browser_wait_for',
   'browser_switch_tab',
   'browser_list_tabs',
   // 不修改页面或浏览器状态——它本身就是"停下来问用户"，不需要写确认闸门再问一遍。
