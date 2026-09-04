@@ -83,10 +83,16 @@ describe('按键策略引导', () => {
 });
 
 describe('buildSystemPrompt tool strategy', () => {
-  it('warns that screenshots never reach the model', () => {
-    // createModel 声明 input: ['text']，截图只进 tool result 的 details（仅用于 UI/日志），
-    // 模型拿不到图像——提示词必须说明，否则模型会白白浪费一次调用。
-    expect(SYSTEM_PROMPT).toContain('截图图像本身不会进入你的上下文');
+  it('vision 未声明（默认）时说明截图不可用', () => {
+    // vision 为假（含未传）时 browser_screenshot 根本没注册进工具表，提示词必须
+    // 说明它不可用，不能说模型"看不到画面内容"却又暗示可以调用它。
+    expect(SYSTEM_PROMPT).toContain('browser_screenshot 在当前模型下不可用');
+  });
+
+  it('vision 为真时提示词引导模型用截图看画面，且不出现"不可用"的措辞', () => {
+    const prompt = buildSystemPrompt({ vision: true });
+    expect(prompt).toContain('用 browser_screenshot 看一眼');
+    expect(prompt).not.toContain('browser_screenshot 在当前模型下不可用');
   });
 
   it('skips the active-tab shortcut when no page was injected', () => {

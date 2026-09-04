@@ -35,6 +35,7 @@ import { type ActivityStep } from '@/lib/agent/activity-steps';
 import { getConversationIdForTab, setConversationIdForTab } from '@/lib/agent/tab-conversation';
 import { clearTabSession, loadTabSession, saveTabSession } from '@/lib/agent/tab-session-storage';
 import { createTabSession } from '@/lib/agent/tab-session';
+import { supportsVision } from '@/lib/agent/vision';
 import { clearPendingAskForTab, getPendingAskForTab, pendingAskStorageKey } from '@/lib/agent/tab-pending-ask';
 import { buildSelectionAskTemplate, truncateSelectionText } from '@/lib/selection-ask';
 import {
@@ -1329,6 +1330,7 @@ async function runAgent(
       now: new Date(),
       page: options.withoutBrowserTools ? undefined : { tabId, title: tab.title, url: tab.url },
       constraints: options.systemPromptSuffix,
+      vision: supportsVision(agentProvider, agentProvider.model),
     }),
     withoutBrowserTools: options.withoutBrowserTools,
     // history 是提交前的历史，不含本轮新增的用户消息——run-registry.ts 的 startRun 会自己

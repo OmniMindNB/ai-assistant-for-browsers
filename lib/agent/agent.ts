@@ -24,6 +24,7 @@ import { createConfirmGateState, type ConfirmFn } from './confirm-gate';
 import { createTakeoverGateState, resolveTakeoverGate, type TakeoverPromptFn } from './takeover-gate';
 import { getTakeoverForTab } from './tab-takeover';
 import { createBrowserTools, type BrowserAgentTool } from './tools';
+import { supportsVision } from './vision';
 import { createTabSession, type TabSessionController } from './tab-session';
 import { createAgentToolPolicy } from './tool-policy';
 import { describeToolActivity } from './activity-description';
@@ -156,7 +157,11 @@ export function buildSubmitIntentProbePayload(
 
 export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): AgentOptions {
   const session = options.session ?? createTabSession(options.tabId);
-  const tools = options.tools ?? createBrowserTools(session, { onAskUser: options.onAskUser, onTaskOutcome: options.onTaskOutcome });
+  const tools = options.tools ?? createBrowserTools(session, {
+    onAskUser: options.onAskUser,
+    onTaskOutcome: options.onTaskOutcome,
+    vision: supportsVision(options.provider, options.provider.model),
+  });
   const reportTaskOutcomeTool = tools.find((tool) => tool.name === REPORT_TASK_OUTCOME_TOOL_NAME);
   const readToolCallBudget = options.readToolCallBudget ?? DEFAULT_READ_TOOL_CALL_BUDGET;
   const writeToolCallBudget = options.writeToolCallBudget ?? DEFAULT_WRITE_TOOL_CALL_BUDGET;

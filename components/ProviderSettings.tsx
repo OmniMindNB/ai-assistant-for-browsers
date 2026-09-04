@@ -47,6 +47,22 @@ function withExtras(p: ProviderConfig, extrasText: string): ProviderConfig {
   return { ...p, models: deduped.length ? deduped : undefined };
 }
 
+/** 支持图片输入的模型列表（逗号分隔展示）。 */
+function visionModelsOf(p: ProviderConfig): string {
+  return (p.visionModels ?? []).join(', ');
+}
+
+/** 根据「支持图片的模型」文本，重建去重后的 visionModels 列表。 */
+function withVisionModels(p: ProviderConfig, visionModelsText: string): ProviderConfig {
+  const models = visionModelsText
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const seen = new Set<string>();
+  const deduped = models.filter((m) => (seen.has(m) ? false : (seen.add(m), true)));
+  return { ...p, visionModels: deduped.length ? deduped : undefined };
+}
+
 export default function ProviderSettings({ onChange }: { onChange?: () => void }) {
   const { t, resolved } = useTranslation();
   const [settings, setSettings] = useState<Settings>({ providers: [] });
@@ -56,6 +72,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
   // 独立于 draft 的原始文本，避免每次按键都经过 withExtras 的去重/过滤——
   // 那样会在用户粘贴的内容恰好等于「模型（默认）」时把输入静默清空（看起来像粘贴无效）。
   const [extrasText, setExtrasText] = useState('');
+  const [visionModelsText, setVisionModelsText] = useState('');
   const [selectedPreset, setSelectedPreset] = useState('');
   const [toast, setToast] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -129,6 +146,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
   function loadDraft(p: ProviderConfig) {
     setDraft(p);
     setExtrasText(extrasOf(p));
+    setVisionModelsText(visionModelsOf(p));
     setSelectedPreset('');
     setEditingRemoved(false);
     setEditorOpen(true);
@@ -140,6 +158,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
     restoreAddFocusRef.current = restoreAddFocus;
     setDraft(EMPTY_DRAFT);
     setExtrasText('');
+    setVisionModelsText('');
     setSelectedPreset('');
     setEditingRemoved(false);
     setEditorOpen(false);
@@ -179,7 +198,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
       flash(t('provider.flashFillRequired'));
       return;
     }
-    const finalDraft = withExtras(trimmed, extrasText);
+    const finalDraft = withVisionModels(withExtras(trimmed, extrasText), visionModelsText);
     const newId = newProviderId();
     setSaving(true);
     try {
@@ -455,6 +474,12 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
             value={extrasText}
             placeholder={placeholders.extras}
             onChange={setExtrasText}
+          />
+          <Field
+            label={t('provider.visionModels')}
+            value={visionModelsText}
+            placeholder={t('provider.visionModelsHint')}
+            onChange={setVisionModelsText}
           />
           <Field
             key={`api-key:${draft.id || 'new'}`}

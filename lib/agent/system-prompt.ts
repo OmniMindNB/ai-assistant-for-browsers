@@ -100,6 +100,8 @@ export interface SystemPromptOptions {
   page?: RuntimePageContext;
   /** 会话级附加约束（例如快捷方式禁用浏览器上下文），会被包进 <session_constraints> 分区。 */
   constraints?: string;
+  /** 当前模型是否支持图片输入，决定 browser_screenshot 的指引说它可用还是不可用。 */
+  vision?: boolean;
 }
 
 /**
@@ -189,7 +191,9 @@ function buildToolStrategy(options: SystemPromptOptions): string[] {
   }
 
   lines.push(
-    'browser_screenshot 只会返回一句文字说明，截图图像本身不会进入你的上下文——你看不到画面内容。除非用户明确要求截图，否则不要调用它，也不要指望靠它判断页面外观。',
+    options.vision
+      ? '- 答案取决于页面实际长什么样（canvas 渲染的内容、iframe 里的内容、按钮是不是灰的、布局有没有错位）：用 browser_screenshot 看一眼。纯文字或结构问题不要用它——DOM 工具更便宜也更准。'
+      : '- browser_screenshot 在当前模型下不可用（该模型不支持图片输入），不要试图靠截图判断页面外观；用 browser_query_dom / browser_get_computed_style 从结构和样式上判断。',
   );
   lines.push(
     '任务存在真正的歧义、缺少必要信息，或有多种合理但后果不同的做法时，用 ask_user 向用户提一个具体问题再继续；不要用它逃避做合理推断，也不要问页面内容里已经有答案的问题。',
