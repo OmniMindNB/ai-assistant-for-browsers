@@ -50,6 +50,7 @@ export const AUTO_APPROVE_TOOL_NAMES = new Set([
   'browser_select',
   'browser_open_tab',
   'browser_navigate',
+  'browser_go_back',
   'browser_set_storage',
   'browser_close_tab',
 ]);

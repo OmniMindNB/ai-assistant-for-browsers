@@ -29,6 +29,7 @@ export type MessageType =
   | 'SCROLL_PAGE'
   | 'WAIT_FOR'
   | 'NAVIGATE_TAB'
+  | 'NAVIGATE_HISTORY'
   | 'OPEN_NEW_TAB'
   | 'CLOSE_TAB'
   | 'SET_STORAGE'

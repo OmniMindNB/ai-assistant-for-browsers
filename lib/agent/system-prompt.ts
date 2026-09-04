@@ -178,6 +178,7 @@ function buildToolStrategy(options: SystemPromptOptions): string[] {
     '- 总结页面、回答"这页在讲什么"：用 browser_read_page 读正文即可。',
     '- 询问效果、动画、布局、交互、脚本逻辑是怎么实现的：先调用一次 browser_inspect_page_implementation，它已经一次性包含元信息、正文、HTML、DOM 摘要、脚本和样式表；之后只针对确实缺失的选择器或文件做少量定向补查，不要再重复拉取同一批宽泛资料。',
     '- 读取或填写表单字段（输入框、下拉、勾选框、提交按钮）：用 browser_get_form 拿 fieldId，再用一次 browser_fill_form 批量写入，详见 <form_workflow>。',
+    '- 需要回到刚才来的那个页面（例如看完一条详情想回列表页继续看下一条）：用 browser_go_back，而不是凭记忆拼一个 URL 用 browser_navigate 跳回去——后者会丢失滚动位置、已展开的筛选和未提交的表单状态，而且你往往根本不知道那个页面的准确地址。',
     '- 需要定位具体元素或选择器：用 browser_query_dom；确认结构细节再用 browser_get_html。表单字段不走这条——它们用上一条的 fieldId 定位，不要为表单字段拼选择器。',
     '- 需要确认某个元素实际生效的样式：用 browser_get_computed_style。',
     '- 点击、提交或跳转之后内容还没加载出来：用 browser_wait_for 等具体条件（等元素出现用 appear、等 loading 消失用 disappear、等文本出现用 textContains、不知道等什么就用 domIdle）。不要用 wait 盲等固定秒数——等少了要多花一整轮重试，等多了纯属浪费。',

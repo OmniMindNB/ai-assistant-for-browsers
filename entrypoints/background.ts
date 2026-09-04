@@ -25,6 +25,7 @@ import {
   type ModifyDomResult,
   type NavigateTabPayload,
   type NavigateTabResult,
+  type NavigateHistoryResult,
   type OpenNewTabPayload,
   type OpenNewTabResult,
   type CloseTabResult,
@@ -64,6 +65,7 @@ import {
 import { loadRedactionSettings, redactText } from '@/lib/redaction';
 import { fetchPageResourceText } from '@/lib/page-resource-fetch';
 import { resolveTargetTab } from '@/lib/agent/tab-target';
+import { performGoBack, waitForTabLoadComplete, NAVIGATE_HISTORY_SETTLE_TIMEOUT_MS } from '@/lib/agent/history-nav';
 import { sendToContentScript } from '@/lib/agent/content-script-messaging';
 import { clearOverlayForTab, getOverlayForTab, setOverlayForTab } from '@/lib/agent/tab-overlay-state';
 import { clearConversationIdForTab } from '@/lib/agent/tab-conversation';
@@ -163,6 +165,7 @@ const SUPPORTED_MESSAGE_TYPES = [
   'SCROLL_PAGE',
   'WAIT_FOR',
   'NAVIGATE_TAB',
+  'NAVIGATE_HISTORY',
   'OPEN_NEW_TAB',
   'CLOSE_TAB',
   'SET_STORAGE',
@@ -504,6 +507,9 @@ async function handleMessage(message: Message, sender?: MessageSender): Promise<
 
     case 'NAVIGATE_TAB':
       return navigateTab(message.payload as NavigateTabPayload, requireTabId(message));
+
+    case 'NAVIGATE_HISTORY':
+      return navigateHistory(requireTabId(message));
 
     case 'OPEN_NEW_TAB':
       return openNewTab(message.payload as OpenNewTabPayload, requireTabId(message));
@@ -1581,6 +1587,15 @@ async function navigateTab(payload: NavigateTabPayload, tabId: number): Promise<
     // 标题由网页控制，属于不可信数据，按纯文本净化并截断后才交给模型。
     title: settled?.title ? sanitizePageText(settled.title, MAX_PAGE_TITLE_CHARS) : undefined,
   };
+}
+
+async function navigateHistory(tabId: number): Promise<NavigateHistoryResult> {
+  const tab = await resolveTargetTab(tabId);
+  return performGoBack({
+    goBack: () => browser.tabs.goBack(tab.id),
+    getTab: () => browser.tabs.get(tab.id).catch(() => undefined),
+    onceLoadComplete: () => waitForTabLoadComplete(tab.id, NAVIGATE_HISTORY_SETTLE_TIMEOUT_MS),
+  });
 }
 
 /**

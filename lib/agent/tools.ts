@@ -1,6 +1,6 @@
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import { Type } from '@earendil-works/pi-ai';
-import { describeClickResult, describeNavigateResult, describeNewFields, describePressKeyResult, describeScrollResult } from './action-result-text';
+import { describeClickResult, describeGoBackResult, describeNavigateResult, describeNewFields, describePressKeyResult, describeScrollResult } from './action-result-text';
 import { renderFormResultForModel } from './form-render';
 import { loadRedactionSettings, redactText } from '@/lib/redaction';
 import { REPORT_TASK_OUTCOME_TOOL_NAME, type TaskOutcome, type TaskOutcomeValue } from './task-outcome';
@@ -35,6 +35,7 @@ import {
   type ModifyDomResult,
   type NavigateTabPayload,
   type NavigateTabResult,
+  type NavigateHistoryResult,
   type OpenNewTabPayload,
   type OpenNewTabResult,
   type PageContent,
@@ -103,6 +104,7 @@ export function createBrowserTools(session: TabSessionController, config: Browse
     makeScrollTool(session),
     makeWaitForTool(session),
     makeNavigateTool(session),
+    makeGoBackTool(session),
     makeSetStorageTool(session),
     makeGetStorageTool(session),
     makeOpenTabTool(session),
@@ -908,6 +910,28 @@ function makeNavigateTool(session: TabSessionController): BrowserAgentTool {
       // 不是误用；ref: 最终审查 Important #7）。
       session.openAndSwitch({ id: session.currentTabId, title: response.data.title, url: response.data.url });
       return textResult(describeNavigateResult(response.data), response.data as unknown as Record<string, unknown>);
+    },
+  };
+}
+
+function makeGoBackTool(session: TabSessionController): BrowserAgentTool {
+  return {
+    name: 'browser_go_back',
+    label: 'Go Back',
+    description:
+      "Navigate the active tab back to the previous page in its history, like pressing the browser's Back button. Prefer this over browser_navigate to return to a list or search page you came from — it preserves scroll position, expanded filters, and in-progress form state that a fresh navigate would lose, and you usually do not know or remember that page's exact URL anyway. Reports moved:false (via the result text) when there is no earlier page in this tab's history — that is a normal outcome, not an error.",
+    parameters: Type.Object({}),
+    execute: async () => {
+      const response = (await sendMessage<undefined, NavigateHistoryResult>(
+        'NAVIGATE_HISTORY',
+        undefined,
+        session.currentTabId,
+      )) as MessageResponse<NavigateHistoryResult>;
+      if (!response.ok || !response.data) throw new Error(response.error ?? '后退失败');
+      // 跳转没有切换"当前操作 tab"，但标题/URL 变了——复用 openAndSwitch 只是为了刷新
+      // tracked 列表里这条记录，与 makeNavigateTool 是同一个既有惯例。
+      session.openAndSwitch({ id: session.currentTabId, title: response.data.title, url: response.data.url });
+      return textResult(describeGoBackResult(response.data), response.data as unknown as Record<string, unknown>);
     },
   };
 }
