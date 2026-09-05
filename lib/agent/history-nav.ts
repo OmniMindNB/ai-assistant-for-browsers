@@ -34,15 +34,28 @@ export interface GoBackDeps {
  * 错误文案（ref: 设计文档 §3.4："不要按猜测的字符串匹配"）：reject 时直接跳过等待（导航
  * 都没触发，没什么好等的）；resolve 时正常等待落定。两条路径最终都只看"前后 URL 是否
  * 不同"来决定 moved，因此哪种实现都能得出正确结论。
+ *
+ * ⚠️ 等待必须先于触发启动：onceLoadComplete 的生产实现是在调用的那一刻才挂上
+ * tabs.onUpdated 监听，而 bfcache 复原的后退（以及同文档的 SPA history 变更）可以在
+ * goBack() 的 promise 落定之前就已经报完 complete。先 await goBack() 再挂监听，会稳定
+ * 漏掉那一次事件，接着白白烧满 NAVIGATE_HISTORY_SETTLE_TIMEOUT_MS（10s）才返回
+ * （ref: 2026-09-05 final review Important #6）。
  */
 export async function performGoBack(deps: GoBackDeps): Promise<NavigateHistoryResult> {
   const before = await deps.getTab();
 
   try {
+    const settled = deps.onceLoadComplete();
+    // goBack 拒绝时下面的 await settled 不会执行，这个 promise 就被丢下了。按 GoBackDeps
+    // 的约定它恒 resolve，但真丢下一个日后 reject 的 promise 会变成全局未处理拒绝，
+    // 所以先挂一个空 catch 兜底。这不影响下面 await settled 拿到的拒绝——那走的是
+    // 原 promise 的另一条分支，仍会被本 try 的 catch 接住。
+    settled.catch(() => {});
     await deps.goBack();
-    await deps.onceLoadComplete();
+    await settled;
   } catch {
-    // 见上方函数注释：无历史可退时的拒绝，统一收敛成"没有移动"，不解析错误文案。
+    // 见上方函数注释：无历史可退时的拒绝，统一收敛成"没有移动"，不解析错误文案，
+    // 也不再去 await 那次等待——导航都没触发，等它只会白白付满超时。
   }
 
   const after = await deps.getTab();

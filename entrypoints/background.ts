@@ -651,7 +651,11 @@ async function findText(payload: FindTextPayload, tabId: number): Promise<FindTe
   const truncated = frames.some((frame) => frame.output.truncated) || flat.length > limit;
   const kept = flat.slice(0, limit);
 
-  const currentUrl = main?.output.url ?? '';
+  // 主框架缺席（CSP 拒绝注入、帧在调用途中销毁）时退到第一个可用帧的 URL，与
+  // mergeFrameCollections 的 `main?.output.url ?? collections[0]?.output.url ?? ''`
+  // 同一条兜底链：空串会让 mergeFindTextHandles 发出一张 url 为空的句柄表，接着任何
+  // 写入都因 url 不符判为 stale（ref: 2026-09-05 final review Minor #6）。
+  const currentUrl = main?.output.url ?? frames[0]?.output.url ?? '';
   const existingTable = await getFormFieldsForTab(tabId);
   const table = mergeFindTextHandles(
     existingTable,

@@ -162,8 +162,14 @@ describe('describeGoBackResult', () => {
     );
   });
 
-  it('warns when nothing moved (no earlier history, or it never settled)', () => {
+  it('warns when nothing moved, and says which page it is still on', () => {
     expect(describeGoBackResult({ url: 'https://a.com/only', moved: false })).toBe(
+      '⚠️ 未能后退：当前标签页没有更早的历史记录，或后退操作未在预期时间内生效。当前仍在 "https://a.com/only"。',
+    );
+  });
+
+  it('omits the "still on" clause when there is no URL to report', () => {
+    expect(describeGoBackResult({ url: '', moved: false })).toBe(
       '⚠️ 未能后退：当前标签页没有更早的历史记录，或后退操作未在预期时间内生效。',
     );
   });

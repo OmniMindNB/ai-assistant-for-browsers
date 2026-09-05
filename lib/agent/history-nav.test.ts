@@ -23,14 +23,28 @@ describe('performGoBack', () => {
     expect(result).toEqual({ url: 'https://a.test/list', title: '列表页', moved: true });
   });
 
-  it('reports moved:false without guessing when goBack rejects (no history to go back to)', async () => {
+  it('reports moved:false without waiting for the settle when goBack rejects (no history to go back to)', async () => {
     const getTab = vi.fn().mockResolvedValue({ url: 'https://a.test/only-page', title: '唯一页面' });
     const goBack = vi.fn().mockRejectedValue(new Error('Cannot go back'));
-    const onceLoadComplete = vi.fn();
+    // 监听为了不漏掉 bfcache 瞬时后退而先于 goBack 挂上（见下一条测试），所以
+    // onceLoadComplete 这个 mock 必然被调用过——真正要钉死的是"goBack 都没触发导航，
+    // 就绝不能付那笔等待的代价"。用一个永不落定的 promise 表达：只要实现回头去
+    // await 它，这条测试就会挂到超时而不是通过。
+    const onceLoadComplete = vi.fn().mockReturnValue(new Promise<void>(() => {}));
     const result = await performGoBack(deps({ getTab, goBack, onceLoadComplete }));
     expect(result).toEqual({ url: 'https://a.test/only-page', title: '唯一页面', moved: false });
-    // goBack 都没成功触发导航，就不该去等一次不存在的加载。
-    expect(onceLoadComplete).not.toHaveBeenCalled();
+  });
+
+  it('starts waiting for the load before triggering goBack, so an instant bfcache back is not missed', async () => {
+    const order: string[] = [];
+    const onceLoadComplete = vi.fn().mockImplementation(async () => {
+      order.push('wait-started');
+    });
+    const goBack = vi.fn().mockImplementation(async () => {
+      order.push('go-back-triggered');
+    });
+    await performGoBack(deps({ goBack, onceLoadComplete }));
+    expect(order).toEqual(['wait-started', 'go-back-triggered']);
   });
 
   it('reports moved:false when goBack resolves but the URL never changes (e.g. it timed out)', async () => {

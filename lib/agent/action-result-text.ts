@@ -76,7 +76,10 @@ export function describeNavigateResult(result: NavigateTabResult): string {
 
 export function describeGoBackResult(result: NavigateHistoryResult): string {
   if (!result.moved) {
-    return '⚠️ 未能后退：当前标签页没有更早的历史记录，或后退操作未在预期时间内生效。';
+    // 带上当前 URL：没有它，模型只知道"没退成"，不知道自己还站在哪一页，
+    // 很容易接着盲目重试（ref: 2026-09-05 final review Minor #7）。
+    const stillAt = result.url ? `当前仍在 "${result.url}"。` : '';
+    return `⚠️ 未能后退：当前标签页没有更早的历史记录，或后退操作未在预期时间内生效。${stillAt}`;
   }
 
   const title = result.title ? `，页面标题 "${result.title}"` : '';
