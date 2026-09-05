@@ -26,7 +26,7 @@ import { getTakeoverForTab } from './tab-takeover';
 import { createBrowserTools, type BrowserAgentTool } from './tools';
 import { supportsVision } from './vision';
 import { createTabSession, type TabSessionController } from './tab-session';
-import { decideTabAccess } from './tab-access';
+import { decideTabAccess, resolveToolTargetTabId } from './tab-access';
 import { getFormFieldsForTab } from './tab-form-fields';
 import { isChildFrameHandle } from './fill-form-request';
 import { createAgentToolPolicy } from './tool-policy';
@@ -284,9 +284,16 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
       // 排在权限门之后——被全局分级拦下的调用不该再惊动下游任何一层；
       // 排在接管门之前——接管提示是体贴（见 takeover-gate.ts），tab-access 是硬边界，
       // 硬边界排在软提示后面的话，用户会为一个注定被拒绝的调用白被打断一次。
+      // 目标必须按"这次调用真正会落在哪个 tab 上"解析：browser_close_tab 之类参数寻址的写工具
+      // 作用在 args.tabId 上，照 currentTabId 查表会把闸门指向错误的对象（ref: 最终评审 Critical）。
+      const tabAccessTargetId = resolveToolTargetTabId(
+        context.toolCall.name,
+        context.args,
+        session.currentTabId,
+      );
       const tabAccess = decideTabAccess(
         context.toolCall.name,
-        session.trackedTabs.find((tab) => tab.id === session.currentTabId),
+        session.trackedTabs.find((tab) => tab.id === tabAccessTargetId),
       );
       if (!tabAccess.allowed) {
         return recordPreExecutionBlock({ block: true, reason: tabAccess.reason });

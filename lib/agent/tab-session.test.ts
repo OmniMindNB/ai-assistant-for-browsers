@@ -59,6 +59,17 @@ describe('TabSessionController', () => {
     expect(result.ok).toBe(false);
   });
 
+  // beforeToolCall 里的 tab-access 闸门之外的第二道防线：即使某条路径绕过了闸门，
+  // 只读引用页也不能被关掉（ref: 2026-09-05 跨标签页上下文最终评审 Critical）。
+  it('refuses to close a read-only referenced tab', () => {
+    const session = createTabSession(1);
+    session.reference([{ id: 7, title: 'Docs', url: 'https://docs.example.com' }]);
+    const result = session.close(7);
+    expect(result.ok).toBe(false);
+    expect((result as { error: string }).error).toContain('只读');
+    expect(session.isTracked(7)).toBe(true);
+  });
+
   it('closes a non-current tracked tab without changing currentTabId', () => {
     const session = createTabSession(1);
     session.openAndSwitch({ id: 2 });

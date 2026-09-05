@@ -65,7 +65,12 @@ export class TabSessionController {
   /** browser_switch_tab：只能切到已追踪的 tab，越权切换直接拒绝，不改变当前状态。 */
   switchTo(tabId: number): TabSessionSwitchResult {
     if (!this.isTracked(tabId)) {
-      return { ok: false, error: `标签页 ${tabId} 不在可操作列表中，只能切换到 browser_open_tab 打开过的标签页。` };
+      return {
+        ok: false,
+        error:
+          `标签页 ${tabId} 不在可操作列表中。可切换的只有 browser_open_tab 打开过的标签页，`
+          + '以及用户通过 @ 引用进来的只读标签页；用 browser_list_tabs 查看当前列表。',
+      };
     }
     this.currentTabId = tabId;
     return { ok: true };
@@ -76,8 +81,18 @@ export class TabSessionController {
     if (tabId === this.panelTabId) {
       return { ok: false, error: '不能关闭侧边栏所在的标签页。' };
     }
-    if (!this.isTracked(tabId)) {
+    const target = this.trackedTabs.find((tab) => tab.id === tabId);
+    if (!target) {
       return { ok: false, error: `标签页 ${tabId} 不在可操作列表中。` };
+    }
+    // 与 tab-access.ts 的闸门独立的第二道检查（同 browser_navigate 的 http(s) 双重校验）：
+    // 用户 @ 引用进来的标签页只授了读权限，关掉它不在授权范围内。即使某个调用路径绕过了
+    // beforeToolCall，这里也必须挡住（ref: 2026-09-05 跨标签页上下文最终评审 Critical）。
+    if (tabAccessOf(target) === 'read') {
+      return {
+        ok: false,
+        error: `标签页 ${tabId} 是用户通过 @ 引用进来的只读标签页，不能关闭。引用只授予读取权限。`,
+      };
     }
     this.trackedTabs = this.trackedTabs.filter((tab) => tab.id !== tabId);
     const fellBackToPanelTab = this.currentTabId === tabId;

@@ -1337,6 +1337,31 @@ describe('tab-access 闸门', () => {
     expect(onOverlay).not.toHaveBeenCalled();
   });
 
+  // 回归：闸门过去无条件按 session.currentTabId 查表，而 browser_close_tab 是参数寻址的——
+  // 当前目标停在面板 tab（永远 'full'）时，模型只要把只读引用页的 id 写进参数就能把闸门
+  // 骗到面板 tab 上并放行（ref: 2026-09-05 跨标签页上下文最终评审 Critical）。
+  it('拒绝关闭只读引用标签页，即使当前操作目标是另一个可写标签页', async () => {
+    const session = createTabSession(1);
+    session.reference([{ id: 7, title: 'Docs', url: 'https://docs.example.com' }]);
+    expect(session.currentTabId).toBe(1);
+
+    const hooks = optionsWithSession(session);
+    const result = await hooks.beforeToolCall?.(beforeContext('browser_close_tab', { tabId: 7 }));
+
+    expect(result).toMatchObject({ block: true });
+    expect((result as { reason: string }).reason).toContain('只读');
+  });
+
+  it('照常允许关闭 agent 自己打开的标签页', async () => {
+    const session = createTabSession(1);
+    session.openAndSwitch({ id: 9, url: 'https://example.com' });
+    session.reference([{ id: 7, title: 'Docs', url: 'https://docs.example.com' }]);
+    session.switchTo(1);
+
+    const hooks = optionsWithSession(session);
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_close_tab', { tabId: 9 }))).toBeUndefined();
+  });
+
   it('读工具落在只读引用标签页上照常放行', async () => {
     const session = createTabSession(1);
     session.reference([{ id: 7 }]);

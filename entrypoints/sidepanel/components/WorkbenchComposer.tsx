@@ -96,6 +96,7 @@ export function WorkbenchComposer({
   const dragDepthRef = useRef(0);
   const [openPopover, setOpenPopover] = useState<Popover>(null);
   const [highlightedCommand, setHighlightedCommand] = useState(0);
+  const [highlightedTab, setHighlightedTab] = useState(0);
   const [composing, setComposing] = useState(false);
   const [fileDragActive, setFileDragActive] = useState(false);
   const [tabCandidates, setTabCandidates] = useState<ReferencableTab[]>([]);
@@ -120,6 +121,9 @@ export function WorkbenchComposer({
   const syncMention = (value: string, caret: number) => {
     const next = findMentionQuery(value, caret);
     setMention(next);
+    // 查询串一变，候选集就换了一批，高亮必须回到第一项——否则上一次停在第 3 项的高亮会
+    // 落到一个语义上毫不相干的候选上，Enter 选中的东西和用户看到的对不上。
+    setHighlightedTab(0);
     if (next && openPopover !== 'tabs') {
       setOpenPopover('tabs');
       void onLoadReferencableTabs().then(setTabCandidates);
@@ -146,6 +150,7 @@ export function WorkbenchComposer({
       setInput(input.slice(0, mention.start) + input.slice(caret));
     }
     setMention(null);
+    setHighlightedTab(0);
     setOpenPopover(null);
   };
 
@@ -198,6 +203,11 @@ export function WorkbenchComposer({
     if (highlightedCommand >= commands.length) setHighlightedCommand(0);
   }, [commands.length, highlightedCommand]);
 
+  // 候选是异步加载的（onLoadReferencableTabs），加载完成后条数可能比当前高亮还少。
+  useEffect(() => {
+    if (highlightedTab >= mentionMatches.length) setHighlightedTab(0);
+  }, [mentionMatches.length, highlightedTab]);
+
   useEffect(() => {
     if (!busy) return;
     dragDepthRef.current = 0;
@@ -217,7 +227,14 @@ export function WorkbenchComposer({
     if (!canSend) return;
     const text = input;
     const started = await onSend(text);
-    if (started) setInput('');
+    if (!started) return;
+    setInput('');
+    // mention 记的是"@ 在旧输入串里的下标"，输入框一清空这个下标就失效了；不重置的话
+    // 弹层会带着上一条消息的查询串继续挂在那里（/ 命令菜单靠 input 的 useEffect 自动关，
+    // @ 只在 syncMention 里同步，必须显式清）。
+    setMention(null);
+    setHighlightedTab(0);
+    if (openPopover === 'tabs') setOpenPopover(null);
   }
 
   function runCommand(index: number) {
@@ -326,6 +343,39 @@ export function WorkbenchComposer({
       if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
         if (commands.length > 0) runCommand(highlightedCommand);
+        return;
+      }
+    }
+
+    // @ 选择器和 / 命令菜单一样要吃掉方向键与 Enter：候选列表明明摆在眼前，Enter 却把
+    // 带着裸 "@doc" 的整条消息发出去，是把选择动作静默变成了发送动作
+    // （ref: 2026-09-05 跨标签页上下文最终评审 Important）。
+    // 只在**有候选可选**时拦截：没有匹配项时列表是空的，再吞掉 Enter 就等于把用户困在
+    // 一个只能按 Escape 才能离开的输入框里。
+    if (openPopover === 'tabs' && mentionMatches.length > 0) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setHighlightedTab((index) => (index + 1) % mentionMatches.length);
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setHighlightedTab((index) => (index - 1 + mentionMatches.length) % mentionMatches.length);
+        return;
+      }
+      if (event.key === 'Home') {
+        event.preventDefault();
+        setHighlightedTab(0);
+        return;
+      }
+      if (event.key === 'End') {
+        event.preventDefault();
+        setHighlightedTab(mentionMatches.length - 1);
+        return;
+      }
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        pickTab(mentionMatches[highlightedTab] ?? mentionMatches[0]);
         return;
       }
     }
@@ -629,11 +679,12 @@ export function WorkbenchComposer({
                   <span className="ml-auto shrink-0 text-xs">{t('workbench.currentPageIncluded')}</span>
                 </li>
               )}
-              {mentionMatches.map((tab) => (
+              {mentionMatches.map((tab, index) => (
                 <li key={tab.id}>
                   <button
                     type="button"
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                    onMouseEnter={() => setHighlightedTab(index)}
+                    className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm ${index === highlightedTab ? 'bg-neutral-100 dark:bg-neutral-800' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}
                     onClick={() => pickTab(tab)}
                   >
                     {tab.favIconUrl && <img src={tab.favIconUrl} alt="" className="h-4 w-4 shrink-0" />}

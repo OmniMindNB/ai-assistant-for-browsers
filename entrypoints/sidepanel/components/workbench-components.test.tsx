@@ -1876,6 +1876,63 @@ describe('composer tab picker', () => {
     expect(row.closest('button')).toBeNull();
   });
 
+  // 回归：候选列表摆在眼前时按 Enter 曾经直接落到 handleSend，把带着裸 "@doc" 的整条消息
+  // 发了出去（ref: 2026-09-05 跨标签页上下文最终评审 Important）。
+  it('picks the highlighted candidate on Enter instead of sending the raw @query', async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn(async () => true);
+    const onAddTabReference = vi.fn();
+    render(
+      <ComposerHarness
+        onLoadReferencableTabs={async () => [docsTab, blogTab]}
+        onAddTabReference={onAddTabReference}
+        onSend={onSend}
+      />,
+    );
+
+    await user.type(screen.getByRole('textbox'), '对比 @doc');
+    expect(await screen.findByText('Docs')).toBeInTheDocument();
+
+    await user.keyboard('{Enter}');
+
+    expect(onSend).not.toHaveBeenCalled();
+    expect(onAddTabReference).toHaveBeenCalledWith(docsTab);
+    // "@doc" 被替换成 chip 后必须从输入框里消失，否则下一次 Enter 又会把它发出去。
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('对比 ');
+  });
+
+  it('moves the highlight with ArrowDown before Enter picks', async () => {
+    const user = userEvent.setup();
+    const onAddTabReference = vi.fn();
+    render(
+      <ComposerHarness
+        onLoadReferencableTabs={async () => [docsTab, blogTab]}
+        onAddTabReference={onAddTabReference}
+      />,
+    );
+
+    await user.type(screen.getByRole('textbox'), '@');
+    expect(await screen.findByText('Docs')).toBeInTheDocument();
+
+    await user.keyboard('{ArrowDown}');
+    await user.keyboard('{Enter}');
+
+    expect(onAddTabReference).toHaveBeenCalledWith(blogTab);
+  });
+
+  it('still sends normally once no candidate is visible', async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn(async () => true);
+    render(
+      <ComposerHarness onLoadReferencableTabs={async () => [docsTab]} onSend={onSend} />,
+    );
+
+    await user.type(screen.getByRole('textbox'), 'hello');
+    await user.keyboard('{Enter}');
+
+    expect(onSend).toHaveBeenCalledWith('hello');
+  });
+
   it('renders reference chips and removes one on click', async () => {
     const user = userEvent.setup();
     const onRemoveTabReference = vi.fn();

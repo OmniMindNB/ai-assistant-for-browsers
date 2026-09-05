@@ -1077,6 +1077,12 @@ useChat.subscribe((state, prevState) => {
   setConversationIdForTab(panelTabId, state.conversationId).catch(() => undefined);
   if (restoringSavedConversation) return;
   clearTabSession(panelTabId).catch(() => undefined);
+  // 授权在"用户移除 / 标签页关闭 / 切换会话"三种情况下终止（设计文档 §2）。上面这一行清掉了
+  // background 侧的 trackedTabs，面板侧的 chip 也必须一起清：留着的话 chip 的 snapshotSent
+  // 还是 true，下一轮 startRun 会把这些 tab 重新登记成 'read'，但正文永远不再注入——
+  // 模型拿到一份没有内容的只读授权，用户却以为引用的内容跟着过来了
+  // （ref: 2026-09-05 跨标签页上下文最终评审 Important）。
+  if (state.referencedTabs.length > 0) useChat.setState({ referencedTabs: [] });
 });
 
 // 面板已经打开时（sidePanel.open() 对已打开的面板是 no-op，不会重新触发挂载时的
@@ -1368,6 +1374,11 @@ async function runAgent(
   const referenceBudget = planTabRefBudget(pendingReferences.length);
   const referenceSnapshots: TabRefSnapshot[] = [];
   const closedReferenceIds = new Set<number>();
+  // 点选时记下的 title/url 可能已经过期（用户 @ 了"Docs"，又把那个 tab 导航去了别处）。
+  // 正文是发送这一刻现抓的，chip 和落库的引用元数据必须跟着现抓的这一份走，否则用户看到的
+  // 是"Docs"、模型收到的却是另一个页面——同意的对象和实际发出去的对象对不上
+  // （ref: 2026-09-05 跨标签页上下文最终评审 Important）。
+  const liveMeta = new Map<number, { title: string; url: string }>();
   for (const item of pendingReferences) {
     try {
       const response = (await sendMessage(
@@ -1382,6 +1393,7 @@ async function runAgent(
           url: response.data.url,
           text: response.data.text.slice(0, referenceBudget),
         });
+        liveMeta.set(item.id, { title: response.data.title, url: response.data.url });
       } else {
         closedReferenceIds.add(item.id);
       }
@@ -1393,7 +1405,15 @@ async function runAgent(
   }
   const survivingReferences = references
     .filter((item) => !closedReferenceIds.has(item.id))
-    .map((item) => ({ ...item, snapshotSent: true }));
+    .map((item) => {
+      const live = liveMeta.get(item.id);
+      return {
+        ...item,
+        // 空标题的页面退回点选时的记录，总比 chip 变成一片空白强。
+        ...(live ? { title: live.title || item.title, url: live.url || item.url } : {}),
+        snapshotSent: true,
+      };
+    });
   set({ referencedTabs: survivingReferences });
   committedAgentUserContent = buildTabRefContext(referenceSnapshots) + committedAgentUserContent;
 

@@ -1035,7 +1035,7 @@ function makeOpenTabTool(session: TabSessionController): BrowserAgentTool {
     name: 'browser_open_tab',
     label: 'Open Tab',
     description:
-      'Open a new browser tab with the given http/https URL and make it the current operating target — subsequent page tools (click, fill, read, etc.) act on this new tab until you switch again. Only tabs opened this way can later be targeted with browser_switch_tab or browser_close_tab.',
+      'Open a new browser tab with the given http/https URL and make it the current operating target — subsequent page tools (click, fill, read, etc.) act on this new tab until you switch again. Only tabs opened this way can later be closed with browser_close_tab; browser_switch_tab also reaches the read-only tabs the user referenced with @.',
     parameters: Type.Object({
       url: Type.String({ description: 'URL to open, must be http or https.' }),
     }),
@@ -1057,7 +1057,11 @@ function makeSwitchTabTool(session: TabSessionController): BrowserAgentTool {
     name: 'browser_switch_tab',
     label: 'Switch Tab',
     description:
-      'Switch the current operating target to a tab previously opened with browser_open_tab. You can only switch to tabs already in the tracked list — call browser_list_tabs to see it.',
+      'Switch the current operating target to a tab already in the tracked list — call browser_list_tabs to see it. '
+      + 'That list holds both the tabs you opened with browser_open_tab (read/write) and the tabs the user referenced with @ (read-only). '
+      + 'Switching to an @-referenced tab is allowed and expected: it is how you read more of that page than the one-time snapshot '
+      + 'gave you (browser_read_page, browser_query_dom, browser_get_html, ...). Write tools stay refused on it — to modify a page, '
+      + 'open your own copy with browser_open_tab.',
     parameters: Type.Object({
       tabId: Type.Number({ description: 'Target tab id, from browser_open_tab or browser_list_tabs.' }),
     }),
@@ -1075,7 +1079,9 @@ function makeCloseTabTool(session: TabSessionController): BrowserAgentTool {
     name: 'browser_close_tab',
     label: 'Close Tab',
     description:
-      'Close a tab previously opened with browser_open_tab. Cannot close the tab the side panel itself is attached to. If you close the current operating target, it falls back to the panel tab.',
+      'Close a tab you previously opened with browser_open_tab. Cannot close the tab the side panel itself is attached to, '
+      + 'and cannot close a tab the user referenced with @ — those are read-only, closing them is not covered by the reference. '
+      + 'If you close the current operating target, it falls back to the panel tab.',
     parameters: Type.Object({
       tabId: Type.Number({ description: 'Tab id to close, from browser_open_tab or browser_list_tabs.' }),
     }),
