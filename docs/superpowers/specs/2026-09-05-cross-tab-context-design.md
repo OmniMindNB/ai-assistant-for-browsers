@@ -111,7 +111,7 @@ tool-policy 预算 → beforeToolCallPermissionGate → decideTabAccess → reso
 
 ## 5. 数据流
 
-1. **列表**：`@` 触发时，面板发新 MessageType `LIST_WINDOW_TABS`（无 payload；`MessageType` 联合、payload/result 接口、`handleMessage` 分支按 CLAUDE.md 的既定流程一并加齐）。background 取面板绑定 tab 的 `windowId` 做 `tabs.query`，过滤到只剩 http/https 页——与 `browser_navigate` 同一条边界。受限页（`chrome://`、扩展页、Web Store）在列表里就不出现：列出来只会让用户选中一个 `executeScript` 根本打不进去的死项。返回 `{ id, title, url, favIconUrl }[]`，**只在面板本地渲染，不进模型上下文**。
+1. **列表**：`@` 触发时，面板发新 MessageType `LIST_WINDOW_TABS`（无 payload；`MessageType` 联合、payload/result 接口、`handleMessage` 分支按 CLAUDE.md 的既定流程一并加齐）。background 取面板绑定 tab 的 `windowId` 做 `tabs.query`，过滤到只剩 http/https 页——与 `browser_navigate` 同一条边界。受限页（`chrome://`、扩展页、Web Store）在列表里就不出现：列出来只会让用户选中一个 `executeScript` 根本打不进去的死项。返回 `{ id, title, url, favIconUrl }[]`，**只在面板本地渲染，不进模型上下文**。它是面板专用消息，因此**不加入 `background.ts` 的 `SUPPORTED_MESSAGE_TYPES`**——那张表是「模型可见/可调用」的清单（`SET_AGENT_OVERLAY` 同样有意缺席）。
 2. **点选**：面板本地状态维护引用列表，渲染成 chip。
 3. **抓快照**：在**发送时**、而不是点选时，对每个引用 tab 发 `EXTRACT_PAGE`。放在发送时是因为用户很可能选完之后又去那个页面点了两下；复用 `EXTRACT_PAGE` 的理由见 §3.4。
 4. **字符预算**：新增纯函数 `planTabRefBudget(n): number`，总预算 `TAB_REF_TOTAL_MAX_CHARS = 24000` 按引用数均分——1 个引用拿满 12000（与现有 `pagePrefetch` 行为完全一致），5 个各 4800。截断在这里不是信息丢失：模型要更多就 `browser_switch_tab` 过去 `browser_read_page`，这正是混合方案存在的理由。
@@ -131,7 +131,7 @@ tool-policy 预算 → beforeToolCallPermissionGate → decideTabAccess → reso
 |------|------|
 | 发送时目标已关闭 | 静默剔除该引用 + 面板一条非阻塞提示；**不阻塞发送**，其余引用照常 |
 | 发送时 `EXTRACT_PAGE` 失败（受限页、内容脚本未注入） | 静默降级，不设该 tab 的快照；模型仍可切过去自己读。与现有 `pagePrefetch` 的降级策略一致 |
-| 运行中标签页被关闭 | `resolveTargetTab` 已经会抛"目标标签页已关闭"，工具层有现成路径；`TabSessionController` 在 background 既有的 `tabs.onRemoved` 监听里摘掉该引用 |
+| 运行中标签页被关闭 | `resolveTargetTab` 已经会抛"目标标签页已关闭"，工具层有现成路径；chip 由**面板自己**监听 `browser.tabs.onRemoved` 摘掉（面板是扩展页，本来就能用 `tabs` API）。background 侧不做清理：session 以面板 tab 为键持久化，要摘掉一个被引用的 tab 得扫描整张 `storage.session` 表，而这对正确性并无必要——`reference()` 每轮全量同步，下一次发送就会自愈 |
 | 引用页被用户导航到别处 | 不做检测（§2 非目标）。chip 显示实时 title 已足够让用户看出来 |
 
 ## 8. 持久化
@@ -157,7 +157,7 @@ tool-policy 预算 → beforeToolCallPermissionGate → decideTabAccess → reso
 - `README.md` / `README.en.md` 的功能列表
 - `docs/chrome-store-listing.*.md`
 - `docs/privacy-policy*.md`
-- `lib/agent/system-prompt.ts`：模型需要知道引用 tab 是只读的，否则它会先试写、被拒、再重试
+- `lib/agent/tools.ts` 的 `browser_list_tabs` 描述 + `formatTabList` 的备注列：模型需要知道引用 tab 是只读的，否则会先试写、被拒、再重试。**不动 `system-prompt.ts`**——那里目前根本没有标签页章节，为一句话新开一节不成比例；工具描述、列表备注和拒绝理由三处已经足够
 
 `browser_list_tabs` 会列出被引用的 tab 并标注其 `access`——不列出来模型就无法寻址；但它仍然看不到任何未被点选的标签页。
 
