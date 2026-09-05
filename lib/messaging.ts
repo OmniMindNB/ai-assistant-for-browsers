@@ -10,6 +10,7 @@ export type MessageType =
   | 'GET_ACTIVE_TAB'
   | 'GET_TAB_URL'
   | 'QUERY_DOM'
+  | 'FIND_TEXT'
   | 'GET_HTML'
   | 'GET_SCRIPTS'
   | 'GET_STYLESHEETS'
@@ -131,6 +132,29 @@ export interface QueryDomResult {
   droppedFrames?: number;
   /** 主框架读取失败（注入被 CSP 拒绝/帧已销毁）：顶层字段为空，命中都在 frames[] 里。 */
   mainFrameUnavailable?: true;
+}
+
+export interface FindTextPayload {
+  text: string;
+  mode?: 'contains' | 'exact';
+  limit?: number;
+}
+
+export interface FindTextMatch {
+  fieldId: string;
+  tag: string;
+  text: string;
+  visible: boolean;
+  clickable: boolean;
+  context?: string;
+  /** 该匹配所属子帧（iframe）的 origin；主框架匹配为 undefined。同 FormFieldDescriptor.frameOrigin。 */
+  frameOrigin?: string;
+}
+
+export interface FindTextResult {
+  matches: FindTextMatch[];
+  /** 命中数超过 limit，或某一帧内部触发了它自己的安全上限。 */
+  truncated: boolean;
 }
 
 export interface GetHtmlPayload {

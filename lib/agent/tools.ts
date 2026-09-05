@@ -8,6 +8,7 @@ import { formatTabList, type TabSessionController } from './tab-session';
 import { resolveKeyDescriptor } from './key-dispatch';
 import { DEFAULT_STORAGE_MAX_CHARS, buildStorageView, renderStorageView } from './storage-read';
 import { describeWaitResult, parseWaitCondition } from './wait-condition';
+import { DEFAULT_FIND_TEXT_LIMIT, MAX_FIND_TEXT_LIMIT, parseFindTextParams } from './find-text';
 import {
   sendMessage,
   type CaptureScreenshotPayload,
@@ -17,6 +18,8 @@ import {
   type CloseTabResult,
   type FillFormPayload,
   type FillFormResult,
+  type FindTextPayload,
+  type FindTextResult,
   type GetComputedStylePayload,
   type GetComputedStyleResult,
   type GetFormPayload,
@@ -89,6 +92,7 @@ export function createBrowserTools(session: TabSessionController, config: Browse
     makeInspectPageImplementationTool(session),
     makeGetFormTool(session),
     makeQueryDomTool(session),
+    makeFindTextTool(session),
     makeGetHtmlTool(session),
     makeGetScriptsTool(session),
     makeGetStylesheetsTool(session),
@@ -444,6 +448,41 @@ function makeQueryDomTool(session: TabSessionController): BrowserAgentTool {
       const redactionSettings = await loadRedactionSettings();
       return textResult(
         redactText(formatJson('DOM 查询结果（untrusted page content）', response.data), redactionSettings),
+        response.data as unknown as Record<string, unknown>,
+      );
+    },
+  };
+}
+
+function makeFindTextTool(session: TabSessionController): BrowserAgentTool {
+  return {
+    name: 'browser_find_text',
+    label: 'Find Text',
+    description:
+      'Locate elements by their visible text — a status label, a total amount, an error message — and get back a fieldId usable with browser_click, plus a snippet of surrounding context so you often do not need a separate read. This finds content, not controls: for a button, link, or form field you intend to operate, use browser_get_form instead — its handles carry write verification this one does not, and it already covers every clickable element.',
+    parameters: Type.Object({
+      text: Type.String({ description: 'The visible text to search for.' }),
+      mode: Type.Optional(
+        Type.Union([Type.Literal('contains'), Type.Literal('exact')], {
+          description: 'contains (default): case-insensitive substring match after whitespace normalization. exact: the whole normalized text must match.',
+        }),
+      ),
+      limit: Type.Optional(
+        Type.Number({ description: `Maximum matches to return. Defaults to ${DEFAULT_FIND_TEXT_LIMIT}, max ${MAX_FIND_TEXT_LIMIT}.` }),
+      ),
+    }),
+    execute: async (_toolCallId, params) => {
+      const parsed = parseFindTextParams(params);
+      if (!parsed.ok) throw new Error(parsed.error);
+      const response = (await sendMessage<FindTextPayload, FindTextResult>(
+        'FIND_TEXT',
+        parsed.params,
+        session.currentTabId,
+      )) as MessageResponse<FindTextResult>;
+      if (!response.ok || !response.data) throw new Error(response.error ?? '文字定位失败');
+      const redactionSettings = await loadRedactionSettings();
+      return textResult(
+        redactText(formatJson('文字定位结果（untrusted page content）', response.data), redactionSettings),
         response.data as unknown as Record<string, unknown>,
       );
     },

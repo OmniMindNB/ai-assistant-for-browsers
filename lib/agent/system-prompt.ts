@@ -180,6 +180,7 @@ function buildToolStrategy(options: SystemPromptOptions): string[] {
     '- 读取或填写表单字段（输入框、下拉、勾选框、提交按钮）：用 browser_get_form 拿 fieldId，再用一次 browser_fill_form 批量写入，详见 <form_workflow>。',
     '- 需要回到刚才来的那个页面（例如看完一条详情想回列表页继续看下一条）：用 browser_go_back，而不是凭记忆拼一个 URL 用 browser_navigate 跳回去——后者会丢失滚动位置、已展开的筛选和未提交的表单状态，而且你往往根本不知道那个页面的准确地址。',
     '- 需要定位具体元素或选择器：用 browser_query_dom；确认结构细节再用 browser_get_html。表单字段不走这条——它们用上一条的 fieldId 定位，不要为表单字段拼选择器。',
+    '- 需要按页面上一段可见文字定位内容（一个状态标签、一个总计金额、一条错误提示），而不是定位可点击控件：用 browser_find_text，它会给出 fieldId（可配合 browser_click 使用）和这段文字周边的 context，往往省掉再单独读一次的一轮往返。目标是按钮、链接或表单字段时仍然用 browser_get_form，不要用 browser_find_text 代替它。',
     '- 需要确认某个元素实际生效的样式：用 browser_get_computed_style。',
     '- 点击、提交或跳转之后内容还没加载出来：用 browser_wait_for 等具体条件（等元素出现用 appear、等 loading 消失用 disappear、等文本出现用 textContains、不知道等什么就用 domIdle）。不要用 wait 盲等固定秒数——等少了要多花一整轮重试，等多了纯属浪费。',
     '- 需要看页面存了什么本地状态，或核对 browser_set_storage 是否真的写进去了：用 browser_get_storage。不带 key 会一次列出两个存储区的全部键，需要某个键的完整值时再带 key 单取。疑似凭证的键（token、session、api key 等）只会给出键名和长度，值永远拿不到——不要反复尝试，改用别的途径。',

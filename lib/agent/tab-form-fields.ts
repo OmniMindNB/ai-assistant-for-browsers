@@ -23,6 +23,17 @@ export interface FormFieldHandle {
 export interface FormFieldTable {
   /** 发放句柄时页面的 URL，写入时比对，用于识别「表已过期」。 */
   url: string;
+  /**
+   * fieldId → 句柄。三种前缀共存于同一张表：browser_get_form 发放 f*（表单字段/通用可点击
+   * 元素）与 s*（可滚动容器），browser_find_text 发放 t*（按可见文字定位的内容节点，见
+   * lib/agent/find-text.ts 的 mergeFindTextHandles）。
+   *
+   * 两者的覆写范围不同，这是有意的语义，不是缺陷：browser_get_form 每次调用整表覆写
+   * （含 t*——重新采集意味着模型认为页面状态已经变了，此时旧的文字句柄同样不该继续被
+   * 信任）；browser_find_text 每次调用只替换自己的 t*，保留现有的 f*／s*（除非页面已经
+   * 换了地址，那时连 f*／s* 也一并丢弃）。将来读到"我的 t3 怎么没了"时，先看是不是中间
+   * 调用过 browser_get_form，而不是当作 bug 修掉（ref: 设计文档 §4.4）。
+   */
   fields: Record<string, FormFieldHandle>;
   /**
    * 上一次快照里全部字段的指纹（按文档序）。下一次采集时与它做多重集差集，

@@ -17,6 +17,7 @@ export const READ_ONLY_TOOL_NAMES = new Set([
   'browser_read_page',
   'browser_get_active_tab',
   'browser_query_dom',
+  'browser_find_text',
   'browser_inspect_page_implementation',
   'browser_get_html',
   'browser_get_scripts',

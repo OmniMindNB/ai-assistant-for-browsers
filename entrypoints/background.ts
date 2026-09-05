@@ -6,6 +6,9 @@ import {
   type FillFormFieldOutcome,
   type FillFormPayload,
   type FillFormResult,
+  type FindTextPayload,
+  type FindTextResult,
+  type FindTextMatch,
   type FormFieldDescriptor,
   type ScrollableContainerDescriptor,
   type GetComputedStylePayload,
@@ -107,6 +110,7 @@ import {
   skippedFrameGroupOutcomes,
   type FormFillFrameGroup,
 } from '@/lib/agent/fill-form-request';
+import { DEFAULT_FIND_TEXT_LIMIT, MAX_FIND_TEXT_LIMIT, mergeFindTextHandles } from '@/lib/agent/find-text';
 import {
   applyFormFill,
   clickElementInPage,
@@ -121,6 +125,7 @@ import {
   type ApplyFillItem,
   type CollectFormInput,
 } from '@/lib/agent/form-dom';
+import { findTextInPage, type RawTextMatch } from '@/lib/agent/find-text-dom';
 import { findNewFieldIds, sanitizeFieldText, sanitizePageText, toFieldDescriptor, toScrollableContainerDescriptor, type FormFieldPathStep } from '@/lib/agent/form-schema';
 import { getFormFieldsForTab, setFormFieldsForTab, type FormFieldHandle } from '@/lib/agent/tab-form-fields';
 import { mergeFrameCollections, mergeReadResultsByFrame, type MergedCollection } from '@/lib/agent/frame-merge';
@@ -146,6 +151,7 @@ const SUPPORTED_MESSAGE_TYPES = [
   'ASK_SELECTION',
   'GET_ACTIVE_TAB',
   'QUERY_DOM',
+  'FIND_TEXT',
   'GET_HTML',
   'GET_SCRIPTS',
   'GET_STYLESHEETS',
@@ -451,6 +457,9 @@ async function handleMessage(message: Message, sender?: MessageSender): Promise<
     case 'QUERY_DOM':
       return queryDom(message.payload as QueryDomPayload, requireTabId(message));
 
+    case 'FIND_TEXT':
+      return findText(message.payload as FindTextPayload, requireTabId(message));
+
     case 'GET_HTML':
       return getHtml(message.payload as GetHtmlPayload, requireTabId(message));
 
@@ -617,6 +626,59 @@ const queryDomInPage = (
 async function queryDom(payload: QueryDomPayload, tabId: number): Promise<QueryDomResult> {
   const frames = await executeInAllFrames(tabId, () => payload, queryDomInPage);
   return mergeReadResultsByFrame(frames, (output) => output.count > 0);
+}
+
+async function findText(payload: FindTextPayload, tabId: number): Promise<FindTextResult> {
+  const text = typeof payload?.text === 'string' ? payload.text.trim() : '';
+  const mode: 'contains' | 'exact' = payload?.mode === 'exact' ? 'exact' : 'contains';
+  const rawLimit = payload?.limit;
+  const limit =
+    typeof rawLimit === 'number' && Number.isFinite(rawLimit)
+      ? Math.min(MAX_FIND_TEXT_LIMIT, Math.max(1, Math.floor(rawLimit)))
+      : DEFAULT_FIND_TEXT_LIMIT;
+
+  const frames = await executeInAllFrames(tabId, () => ({ text, mode }), findTextInPage);
+  const main = frames.find((frame) => frame.isMain);
+  const children = frames.filter((frame) => !frame.isMain);
+  const ordered = main ? [main, ...children] : children;
+
+  const flat: { frameId: number; frameOrigin: string; raw: RawTextMatch }[] = [];
+  for (const frame of ordered) {
+    for (const raw of frame.output.matches) {
+      flat.push({ frameId: frame.frameId, frameOrigin: frame.origin, raw });
+    }
+  }
+  const truncated = frames.some((frame) => frame.output.truncated) || flat.length > limit;
+  const kept = flat.slice(0, limit);
+
+  const currentUrl = main?.output.url ?? '';
+  const existingTable = await getFormFieldsForTab(tabId);
+  const table = mergeFindTextHandles(
+    existingTable,
+    currentUrl,
+    kept.map((entry) => ({
+      path: entry.raw.path,
+      tag: entry.raw.tag,
+      type: entry.raw.type,
+      name: entry.raw.name,
+      href: entry.raw.href,
+      frameId: entry.frameId,
+      frameOrigin: entry.frameOrigin,
+    })),
+  );
+  await setFormFieldsForTab(tabId, table);
+
+  const matches: FindTextMatch[] = kept.map((entry, index) => ({
+    fieldId: `t${index + 1}`,
+    tag: entry.raw.tag,
+    text: sanitizeFieldText(entry.raw.text).text ?? '',
+    visible: entry.raw.visible,
+    clickable: entry.raw.clickable,
+    context: sanitizeFieldText(entry.raw.context).text,
+    frameOrigin: entry.frameId === 0 ? undefined : entry.frameOrigin,
+  }));
+
+  return { matches, truncated };
 }
 
 const MAX_FORM_FIELDS = 120;
