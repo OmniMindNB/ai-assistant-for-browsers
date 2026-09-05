@@ -32,6 +32,8 @@ Provider 设置、API Key、界面偏好和对话历史保存在你的本机浏�
 | 界面偏好 | 语言偏好和主题偏好 | 保存在 `chrome.storage.local` | Runi 不会将其发送给 AI Provider |
 | 会话状态 | 标签页对应的对话、当前多标签页操作目标、页面执行遮罩是否生效 | 保存在 `chrome.storage.session`；这是浏览器会话级存储，Runi 不进行同步 | 不会以会话记录的形式发送给 AI Provider |
 
+被 `@` 引用的标签页内容会与当前页面内容同等处理：正文同样经过脱敏管线，同样只在用户发起请求时才会被发送到 AI Provider。
+
 就 Chrome Web Store 披露而言，Runi 将 `Website content` 以及可能出现在用户输入的对话或用户选择文件中的适用类别标记为收集/处理，因为这些内容会为了核心功能传输到用户自行选择的 AI Provider。Runi 开发者不会通过 Runi 后端接收这些内容。
 
 ## 3. 数据用途

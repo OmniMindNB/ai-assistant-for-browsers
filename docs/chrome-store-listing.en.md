@@ -39,6 +39,7 @@ Use Runi to:
 • Attach text files, images, and PDFs to a request. PDF text is extracted locally before analysis.
 • Inspect page evidence such as readable text, HTML, DOM structure, scripts, stylesheets, and computed styles for technical analysis.
 • Request page transformations and browser-page actions. Known actions run automatically; detected form submissions ask for approval every time.
+• Bring context across multiple tabs in the same window. Type `@` in the composer to pick other tabs and send their content together to the AI. Referenced tabs are read-only — the model can read and analyze them, but write operations are refused.
 • Connect your own OpenAI-compatible or Anthropic-compatible AI provider, including a custom endpoint.
 
 Before first use, configure your own AI provider and API key. Using DeepSeek as an example:

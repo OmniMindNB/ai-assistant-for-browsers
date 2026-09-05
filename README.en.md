@@ -32,6 +32,7 @@ See the [Provider setup guide](docs/provider-setup.en.md) for more detail and tr
 - ⚡ **Shortcuts**: built-in "Summarize page / Explain selection / Translate selection", each editable, deletable, and restorable to defaults, plus your own custom entries. Every shortcut declares its context scope (current page / selected text / no page context). Type `/` in the composer to bring them up
 - 🖱️ **Ask about a selection**: select text on a page and an in-place button appears — one click opens the side panel with the selection quoted
 - 🪟 **Per-tab conversations**: the side panel is enabled and bound per tab, so switching back to a tab restores that tab's own conversation
+- 🔗 **Cross-tab context**: Type `@` in the composer to pick other tabs in the current window and bring their content into the conversation. Referenced tabs are **read-only** — the model can read them and investigate further, but any write operations (clicking, filling forms, navigating, closing) are refused. The agent still cannot enumerate your tabs on its own; only the tabs you pick enter the conversation
 - 🌓 **Interface preferences**: three-state language switch (Follow browser / 中文 / English) and theme (light / dark / follow system); messages can be edited and resent, past conversations browsed, opened, and deleted from a history drawer, and tool calls surface as a live step timeline
 
 ## Tech stack

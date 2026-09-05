@@ -1,6 +1,8 @@
-// 一轮/多轮对话共享的"agent 自己打开过哪些标签页、当前在操作哪个"的状态。
-// 只由 browser_open_tab 追加 trackedTabs——不查询、不暴露用户自己开着的其他标签页
-// （ref: 2026-08-26-multi-tab-orchestration-design.md §3.2 隐私边界）。
+// 一轮/多轮对话共享的"agent 能操作哪些标签页、当前在操作哪个"的状态。
+// 隐私边界：agent 永远不能自主枚举用户的标签页。trackedTabs 只有两个来源——
+// browser_open_tab 自己打开的（access: 'full'，读写皆可），以及用户在 @ 选择器里
+// 显式点选引用的（access: 'read'，只读，写工具由 tab-access.ts 拒绝）。
+// ref: 2026-08-26-multi-tab-orchestration-design.md §3.2、2026-09-05-cross-tab-context-design.md §9
 
 export interface TrackedTab {
   id: number;

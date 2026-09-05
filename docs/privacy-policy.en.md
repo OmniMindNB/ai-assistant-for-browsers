@@ -32,6 +32,8 @@ Provider settings, API keys, interface preferences, and conversation history are
 | Interface preferences | Language preference and theme preference | Stored in `chrome.storage.local` | Not sent to the AI provider by Runi |
 | Session state | The conversation associated with a tab, the current multi-tab operating target, and whether the in-page execution overlay is active | Stored in `chrome.storage.session`, which is browser-session storage and is not synced by Runi | Not sent as session records to the AI provider |
 
+Content from tabs referenced via `@` is treated the same as current-page content: text goes through the same redaction pipeline and is sent to your AI provider only when you initiate a request.
+
 For Chrome Web Store disclosure purposes, Runi treats `Website content` and the applicable categories that may appear in user-entered conversations or user-selected files as collected/processed because that content is transmitted off-device to the AI provider selected by the user for the core feature. Runi’s developer does not receive that content through a Runi backend.
 
 ## 3. How data is used
