@@ -128,6 +128,26 @@ describe('describeToolActivity', () => {
     expect(describeToolActivity('browser_something_new', {}, 'done')).toBe('Browser action');
   });
 
+  // 这两个工具一度落到 default 分支，在活动时间线上显示成泛泛的 "Browser action"
+  // （ref: 2026-09-05 final review Important #4）。
+  it('describes go_back as a plain label and find_text by its query text', () => {
+    expect(describeToolActivity('browser_go_back', {}, 'running')).toBe('Go back');
+    expect(describeToolActivity('browser_go_back', {}, 'done')).toBe('Go back');
+    expect(describeToolActivity('browser_go_back', {}, 'failed')).toBe('Go back failed');
+    expect(describeToolActivity('browser_find_text', { text: '确认收货' }, 'running')).toBe('Finding text "确认收货"');
+    expect(describeToolActivity('browser_find_text', { text: '确认收货' }, 'done')).toBe('Found text "确认收货"');
+    expect(describeToolActivity('browser_find_text', { text: '确认收货' }, 'failed')).toBe(
+      'Failed to find text "确认收货"',
+    );
+  });
+
+  it('truncates a long find_text query the same way other targets are truncated', () => {
+    const longText = 'x'.repeat(200);
+    const result = describeToolActivity('browser_find_text', { text: longText }, 'running');
+    expect(result).toContain('…');
+    expect(result.length).toBeLessThan(longText.length);
+  });
+
   it('describes browser_type with both the selector and the typed text, truncating each independently', () => {
     expect(describeToolActivity('browser_type', { selector: 'input.name', text: '张三' }, 'running')).toBe(
       'Typing "张三" into "input.name"',

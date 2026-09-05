@@ -323,7 +323,11 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
       if (!context.isError && toolName === REPORT_TASK_OUTCOME_TOOL_NAME) outcomeReported = true;
 
       if (!context.isError) {
-        if (toolName === 'browser_navigate' || toolName === 'browser_open_tab') {
+        // browser_go_back 与 browser_navigate 同属"自己就知道退/跳到哪"的一类：结果里
+        // 已经带回了落地 URL（NavigateHistoryResult.url），直接记账即可。漏掉它会让后退
+        // 之后的下一次写工具拿旧 URL 去比对，凭空多发一条"页面地址已变化"的 steer
+        // （ref: 2026-09-05 final review Important #5）。
+        if (toolName === 'browser_navigate' || toolName === 'browser_open_tab' || toolName === 'browser_go_back') {
           const url = (context.result.details as { url?: string } | undefined)?.url;
           if (url) lastKnownUrl.set(session.currentTabId, url);
         } else if (NAVIGATION_WATCH_TOOLS.has(toolName)) {

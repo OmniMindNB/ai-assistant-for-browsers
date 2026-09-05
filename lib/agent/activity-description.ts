@@ -109,6 +109,12 @@ export function describeToolActivity(toolName: string, args: unknown, status: Ac
     }
     case 'browser_navigate':
       return withTarget(status, 'agentActivity.now.navigate', 'agentActivity.done.navigate', 'agentActivity.failed.navigate', str('url'));
+    // browser_navigate 的兄弟，但没有可展示的目标参数（退到哪只有执行完才知道），
+    // 所以走 plain 而不是 withTarget。
+    case 'browser_go_back':
+      return plain(status, 'agentActivity.tool.goBack');
+    case 'browser_find_text':
+      return withTarget(status, 'agentActivity.now.findText', 'agentActivity.done.findText', 'agentActivity.failed.findText', str('text'));
     case 'browser_set_storage':
       return withTarget(status, 'agentActivity.now.setStorage', 'agentActivity.done.setStorage', 'agentActivity.failed.setStorage', str('key'));
     case 'browser_fill_form': {
