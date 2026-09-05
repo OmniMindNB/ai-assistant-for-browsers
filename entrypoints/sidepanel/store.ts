@@ -2,10 +2,17 @@ import { create } from 'zustand';
 import {
   sendMessage,
   type ActiveTabInfo,
+  type ListWindowTabsResult,
   type MessageResponse,
   type PageContent,
   type PageSelection,
 } from '@/lib/messaging';
+import {
+  buildTabRefContext,
+  planTabRefBudget,
+  type ReferencableTab,
+  type TabRefSnapshot,
+} from '@/lib/chat/tab-reference';
 import {
   ensureDevProvider,
   getActiveProvider,
@@ -34,7 +41,7 @@ import { buildShortcutExecution, MAX_SHORTCUT_SELECTION_CHARS, type PagePrefetch
 import { type ActivityStep } from '@/lib/agent/activity-steps';
 import { getConversationIdForTab, setConversationIdForTab } from '@/lib/agent/tab-conversation';
 import { clearTabSession, loadTabSession, saveTabSession } from '@/lib/agent/tab-session-storage';
-import { createTabSession } from '@/lib/agent/tab-session';
+import { createTabSession, MAX_REFERENCED_TABS } from '@/lib/agent/tab-session';
 import { supportsVision } from '@/lib/agent/vision';
 import { clearPendingAskForTab, getPendingAskForTab, pendingAskStorageKey } from '@/lib/agent/tab-pending-ask';
 import { buildSelectionAskTemplate, truncateSelectionText } from '@/lib/selection-ask';
@@ -87,6 +94,11 @@ export type PageContextState =
   | { status: 'restricted'; tabId: number; title: string; url: string }
   | { status: 'error'; message: string };
 
+/** 面板侧的引用条目。snapshotSent 决定这一轮要不要再抓一次正文——授权持续，快照只注入一次。 */
+export interface TabReference extends ReferencableTab {
+  snapshotSent: boolean;
+}
+
 interface ChatState {
   messages: UIMessage[];
   activitySteps: ActivityStep[];
@@ -96,6 +108,8 @@ interface ChatState {
   quotedSelection: string | null;
   /** 待发送附件的瞬态生命周期；只有 ready 元数据会进入历史。 */
   pendingAttachments: PendingAttachment[];
+  /** 用户在 @ 选择器里点选的只读引用标签页；随每轮 startRun 全量同步给 background。 */
+  referencedTabs: TabReference[];
   busy: boolean;
   error: string | null;
   /** 重试上一次导致 `error` 的动作（重新解析 tab/取选区/发送等前置失败），供顶部错误横幅的重试按钮调用；无可重试动作或 error 已清空时为 null。 */
@@ -139,6 +153,9 @@ interface ChatState {
   respondToConfirmation: (approved: boolean) => void;
   respondToQuestion: (answer: string) => void;
   restoreTabConversation: () => Promise<void>;
+  loadReferencableTabs: () => Promise<ReferencableTab[]>;
+  addTabReference: (tab: ReferencableTab) => void;
+  removeTabReference: (id: number) => void;
 }
 
 interface ConversationOrigin {
@@ -589,6 +606,7 @@ export const useChat = create<ChatState>((set, get) => ({
   pendingFocusToken: 0,
   quotedSelection: null,
   pendingAttachments: [],
+  referencedTabs: [],
   busy: false,
   error: null,
   retryAction: null,
@@ -978,6 +996,32 @@ export const useChat = create<ChatState>((set, get) => ({
     await consumePendingAskForTab(tabId);
   },
 
+  loadReferencableTabs: async (): Promise<ReferencableTab[]> => {
+    // panelTabId 是本文件的模块级变量（不是 store 字段），restoreTabConversation 里赋值。
+    if (panelTabId === null) return [];
+    try {
+      const response = (await sendMessage(
+        'LIST_WINDOW_TABS',
+        undefined,
+        panelTabId,
+      )) as MessageResponse<ListWindowTabsResult>;
+      return response.ok && response.data ? response.data.tabs : [];
+    } catch {
+      return [];
+    }
+  },
+
+  addTabReference: (tab: ReferencableTab): void => {
+    const current = get().referencedTabs;
+    if (current.some((item) => item.id === tab.id)) return;
+    if (current.length >= MAX_REFERENCED_TABS) return;
+    set({ referencedTabs: [...current, { ...tab, snapshotSent: false }] });
+  },
+
+  removeTabReference: (id: number): void => {
+    set({ referencedTabs: get().referencedTabs.filter((item) => item.id !== id) });
+  },
+
   removeConversation: async (id) => {
     ++conversationOpenRequestId;
     const removingActive = get().conversationId === id;
@@ -1055,6 +1099,14 @@ browser.tabs?.onUpdated?.addListener((tabId, changeInfo) => {
   if (tabId !== panelTabId) return;
   if (changeInfo.status !== 'complete' && changeInfo.url === undefined) return;
   void useChat.getState().refreshPageContext();
+});
+
+// 引用的标签页被用户关掉时立刻摘掉 chip。面板是扩展页，本来就能用 tabs API；
+// background 侧不做清理——session 以面板 tab 为键，摘一个被引用的 tab 要扫全表，
+// 而 reference() 每轮全量同步，下一次发送本来就会自愈（ref: 设计文档 §7）。
+browser.tabs?.onRemoved?.addListener((tabId) => {
+  const state = useChat.getState();
+  if (state.referencedTabs.some((item) => item.id === tabId)) state.removeTabReference(tabId);
 });
 
 interface RunAgentOptions {
@@ -1306,6 +1358,44 @@ async function runAgent(
     committedImages = images.length ? images : undefined;
   }
   if (options.clearAttachments) cancelPendingAttachments(get().pendingAttachments);
+
+  // 引用页正文：只对还没注入过的引用抓一次。授权持续到用户移除，但快照不持续——
+  // 每轮重注入 24000 字符会把 MAX_CONTEXT_MESSAGES 的窗口吃光
+  // （ref: 2026-09-05-cross-tab-context-design.md §5.6）。
+  const references = get().referencedTabs;
+  const pendingReferences = references.filter((item) => !item.snapshotSent);
+  const referenceBudget = planTabRefBudget(pendingReferences.length);
+  const referenceSnapshots: TabRefSnapshot[] = [];
+  const closedReferenceIds = new Set<number>();
+  for (const item of pendingReferences) {
+    try {
+      const response = (await sendMessage(
+        'EXTRACT_PAGE',
+        undefined,
+        item.id,
+      )) as MessageResponse<PageContent>;
+      if (response.ok && response.data) {
+        referenceSnapshots.push({
+          id: item.id,
+          title: response.data.title,
+          url: response.data.url,
+          text: response.data.text.slice(0, referenceBudget),
+        });
+      } else {
+        closedReferenceIds.add(item.id);
+      }
+    } catch {
+      // 抓不到就当这个引用失效：标签页可能已经关了，也可能是内容脚本注入不进去。
+      // 不阻塞发送——其余引用照常，模型仍可切过去自己读。
+      closedReferenceIds.add(item.id);
+    }
+  }
+  const survivingReferences = references
+    .filter((item) => !closedReferenceIds.has(item.id))
+    .map((item) => ({ ...item, snapshotSent: true }));
+  set({ referencedTabs: survivingReferences });
+  committedAgentUserContent = buildTabRefContext(referenceSnapshots) + committedAgentUserContent;
+
   set({
     messages: [...history, committedDisplay, makeMessage('assistant', '')],
     activitySteps: [],
@@ -1343,6 +1433,7 @@ async function runAgent(
     images: committedImages,
     readToolCallBudget: DEFAULT_READ_TOOL_CALL_BUDGET,
     writeToolCallBudget: DEFAULT_WRITE_TOOL_CALL_BUDGET,
+    referencedTabs: survivingReferences.map(({ id, title, url }) => ({ id, title, url })),
   });
   return true;
 }

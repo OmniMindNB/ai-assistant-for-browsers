@@ -189,6 +189,7 @@ describe('chat store page context', () => {
       providers: [],
       selectedProviderId: null,
       selectedModel: '',
+      referencedTabs: [],
     });
   });
 
@@ -1541,6 +1542,72 @@ describe('chat store page context', () => {
       expect(startRun.agentUserContent).toBe('continue after disposal');
       const userMessage = useChat.getState().messages.find((message) => message.role === 'user')!;
       expect(userMessage.attachments).toBeUndefined();
+    });
+  });
+
+  describe('跨标签页引用', () => {
+    function lastStartRun() {
+      const calls = mocks.runPortPostMessage.mock.calls.filter((call) => call[0]?.type === 'startRun');
+      return calls[calls.length - 1][0];
+    }
+
+    it('caps references and refuses duplicates', () => {
+      for (const id of [2, 3, 4, 5, 6, 7]) {
+        useChat.getState().addTabReference({ id, title: `T${id}`, url: `https://e${id}.example.com` });
+      }
+      useChat.getState().addTabReference({ id: 2, title: 'T2', url: 'https://e2.example.com' });
+      expect(useChat.getState().referencedTabs).toHaveLength(5);
+      expect(useChat.getState().referencedTabs.map((t) => t.id)).toEqual([2, 3, 4, 5, 6]);
+    });
+
+    it('injects each reference snapshot exactly once and keeps the authorization afterwards', async () => {
+      // 走 connectPort() 建立一次真正的 Port 连接：直接复用文件末尾遗留的 runPort 虽然在
+      // "整份文件跑" 时能通过（前面的用例已经建好连接），但 handleRunPortMessage 的注册
+      // （runPortListener）在每个用例的 beforeEach 里都会被清空，emitSnapshot 需要它才能把
+      // 第一轮的 busy 状态送回 false——不重新握手一次，第二轮 send() 会被 get().busy 挡掉。
+      await connectPort();
+      useChat.getState().addTabReference({ id: 7, title: 'Docs', url: 'https://docs.example.com' });
+      // GET_ACTIVE_TAB 走独立分支返回一个合法的当前标签页——不能跟 EXTRACT_PAGE 共用兜底
+      // 分支，否则 resolveActiveTab 会因为 data.id 不是 number 直接抛错，send() 根本发不出去。
+      mocks.sendMessage.mockImplementation(async (type: string) => {
+        if (type === 'GET_ACTIVE_TAB') {
+          return { ok: true, data: { id: DEFAULT_TAB_ID, title: 'Current', url: 'https://current.example.com/' } };
+        }
+        if (type === 'EXTRACT_PAGE') {
+          return { ok: true, data: { title: 'Docs', url: 'https://docs.example.com', text: '引用正文', lang: 'zh', length: 4 } };
+        }
+        return { ok: true, data: {} };
+      });
+
+      await useChat.getState().send('第一轮');
+      expect(lastStartRun().agentUserContent).toContain('引用正文');
+      expect(lastStartRun().referencedTabs).toEqual([
+        { id: 7, title: 'Docs', url: 'https://docs.example.com' },
+      ]);
+
+      // 第一轮的 run 要先"跑完"（busy: false），send() 才不会因为 get().busy 仍是 true 而拒绝第二轮。
+      emitSnapshot({ tabId: DEFAULT_TAB_ID, conversationId: useChat.getState().conversationId, busy: false });
+
+      await useChat.getState().send('第二轮');
+      expect(lastStartRun().agentUserContent).not.toContain('引用正文');
+      // 授权还在——只是快照不再重复注入。
+      expect(lastStartRun().referencedTabs).toHaveLength(1);
+    });
+
+    it('drops a reference whose tab is gone at send time without blocking the send', async () => {
+      await connectPort();
+      useChat.getState().addTabReference({ id: 7, title: 'Docs', url: 'https://docs.example.com' });
+      mocks.sendMessage.mockImplementation(async (type: string) => {
+        if (type === 'GET_ACTIVE_TAB') {
+          return { ok: true, data: { id: DEFAULT_TAB_ID, title: 'Current', url: 'https://current.example.com/' } };
+        }
+        if (type === 'EXTRACT_PAGE') return { ok: false, error: '标签页已关闭' };
+        return { ok: true, data: {} };
+      });
+
+      await useChat.getState().send('照常发送');
+      expect(useChat.getState().referencedTabs).toHaveLength(0);
+      expect(lastStartRun().referencedTabs).toEqual([]);
     });
   });
 });
