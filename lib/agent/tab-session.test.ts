@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TabSessionController, createTabSession, formatTabList } from './tab-session';
+import { TabSessionController, createTabSession, formatTabList, tabAccessOf, MAX_REFERENCED_TABS } from './tab-session';
 
 describe('TabSessionController', () => {
   it('defaults to a single tracked tab: the panel tab itself', () => {
@@ -98,5 +98,63 @@ describe('formatTabList', () => {
     expect(text).toContain('https://example.com');
     expect(text).toContain('面板');
     expect(text).toContain('当前操作目标');
+  });
+});
+
+describe('TabSessionController.reference', () => {
+  it('registers user-picked tabs as read-only without moving the current target', () => {
+    const session = createTabSession(1);
+    session.reference([{ id: 7, title: 'Docs', url: 'https://docs.example.com' }]);
+    expect(session.currentTabId).toBe(1);
+    expect(session.trackedTabs).toEqual([
+      { id: 1 },
+      { id: 7, title: 'Docs', url: 'https://docs.example.com', access: 'read' },
+    ]);
+  });
+
+  it('full-syncs: a reference dropped from the list is removed', () => {
+    const session = createTabSession(1);
+    session.reference([{ id: 7 }, { id: 8 }]);
+    session.reference([{ id: 8 }]);
+    expect(session.trackedTabs.map((t) => t.id)).toEqual([1, 8]);
+  });
+
+  it('never touches tabs the agent opened itself', () => {
+    const session = createTabSession(1);
+    session.openAndSwitch({ id: 2, title: 'Opened', url: 'https://a.example.com' });
+    session.reference([{ id: 7 }]);
+    session.reference([]);
+    expect(session.trackedTabs).toEqual([
+      { id: 1 },
+      { id: 2, title: 'Opened', url: 'https://a.example.com' },
+    ]);
+    expect(session.currentTabId).toBe(2);
+  });
+
+  it('ignores the panel tab and never downgrades an already-full tab', () => {
+    const session = createTabSession(1);
+    session.openAndSwitch({ id: 2, url: 'https://a.example.com' });
+    session.reference([{ id: 1 }, { id: 2 }]);
+    expect(session.trackedTabs.every((t) => t.access === undefined)).toBe(true);
+  });
+
+  it('caps references at MAX_REFERENCED_TABS', () => {
+    const session = createTabSession(1);
+    session.reference([{ id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }, { id: 6 }, { id: 7 }]);
+    expect(session.trackedTabs.filter((t) => tabAccessOf(t) === 'read')).toHaveLength(MAX_REFERENCED_TABS);
+  });
+
+  it('falls back to the panel tab when the current target was a dropped reference', () => {
+    const session = createTabSession(1);
+    session.reference([{ id: 7 }]);
+    session.switchTo(7);
+    expect(session.currentTabId).toBe(7);
+    session.reference([]);
+    expect(session.currentTabId).toBe(1);
+  });
+
+  it('treats a snapshot without access as full (backward compatible)', () => {
+    const session = new TabSessionController(1, { currentTabId: 1, trackedTabs: [{ id: 1 }, { id: 9 }] });
+    expect(tabAccessOf(session.trackedTabs[1])).toBe('full');
   });
 });

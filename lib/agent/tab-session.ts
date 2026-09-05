@@ -6,6 +6,19 @@ export interface TrackedTab {
   id: number;
   title?: string;
   url?: string;
+  /**
+   * 'full' = agent 通过 browser_open_tab 自己打开的，读写皆可；
+   * 'read' = 用户在 @ 选择器里点选引用进来的，只读。
+   * 缺省视为 'full'——兼容本字段出现之前已持久化到 storage.session 的快照。
+   */
+  access?: 'full' | 'read';
+}
+
+/** 一次会话最多引用多少个用户标签页。与 MAX_ATTACHMENTS_PER_MESSAGE 对齐，用户对这个数已有直觉。 */
+export const MAX_REFERENCED_TABS = 5;
+
+export function tabAccessOf(tab: TrackedTab): 'full' | 'read' {
+  return tab.access === 'read' ? 'read' : 'full';
 }
 
 export interface TabSessionSnapshot {
@@ -68,6 +81,39 @@ export class TabSessionController {
     const fellBackToPanelTab = this.currentTabId === tabId;
     if (fellBackToPanelTab) this.currentTabId = this.panelTabId;
     return { ok: true, fellBackToPanelTab };
+  }
+
+  /**
+   * 用户在 @ 选择器里点选的标签页，以只读身份登记（ref: 2026-09-05-cross-tab-context-design.md §4.1）。
+   *
+   * 语义是**按传入列表全量同步 'read' 项**（新增/更新/移除），'full' 项一律不动：
+   * 每一轮 StartRunRequest 都会带上面板当前的完整引用列表，增量语义下"用户移除了某个 chip"
+   * 这件事根本传不过来，授权会悄悄留在后台。
+   *
+   * 不改变 currentTabId——引用不等于把操作目标挪过去。
+   */
+  reference(tabs: TrackedTab[]): void {
+    const isFullTracked = (id: number) =>
+      this.trackedTabs.some((tracked) => tracked.id === id && tabAccessOf(tracked) === 'full');
+    // 面板 tab 和 agent 自己开的 tab 都已经是 full，点选它们不该降级，直接跳过。
+    const accepted = tabs
+      .filter((tab) => tab.id !== this.panelTabId && !isFullTracked(tab.id))
+      .slice(0, MAX_REFERENCED_TABS);
+
+    const keep = new Set(accepted.map((tab) => tab.id));
+    this.trackedTabs = this.trackedTabs.filter(
+      (tab) => tabAccessOf(tab) === 'full' || keep.has(tab.id),
+    );
+    for (const tab of accepted) {
+      const entry: TrackedTab = { ...tab, access: 'read' };
+      const index = this.trackedTabs.findIndex((tracked) => tracked.id === tab.id);
+      if (index >= 0) this.trackedTabs[index] = entry;
+      else this.trackedTabs.push(entry);
+    }
+
+    // 上一轮 agent 可能已经 switchTo 到某个引用页，而这一轮用户把它移除了——
+    // 不回退的话 currentTabId 会指向一个不再被追踪的 tab，后续每个工具调用都会被闸门拒。
+    if (!this.isTracked(this.currentTabId)) this.currentTabId = this.panelTabId;
   }
 
   snapshot(): TabSessionSnapshot {
