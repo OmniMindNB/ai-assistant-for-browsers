@@ -88,11 +88,16 @@ export const findTextInPage = (mainInput: FindTextInput, childInput: FindTextInp
 
   // 与 form-dom.ts collectFormFields 里的 buildPath 同一算法，独立内联一份（理由同上）。
   // 不产出 shadow 步进——本函数不遍历 shadow DOM，见文件顶部注释。
+  //
+  // ⚠️ 必须一路走到真正的文档根（含 body / html 两级步进），不能停在 body：
+  // applyFormFill 的 resolve() 从 `let scope = document` 起步，第一步就要靠
+  // `document.querySelectorAll(':scope > tag')` 命中，而 document 唯一的子元素是
+  // <html>。少了 html/body 两级，t* 句柄交给 browser_click 时会一律解析成 not_found
+  // （ref: 2026-09-05 final review Critical #1）。
   const buildPath = (element: Element): FormFieldPathStep[] => {
     const steps: FormFieldPathStep[] = [];
     let current: Element | null = element;
-    const body = element.ownerDocument.body;
-    while (current && current !== body) {
+    while (current) {
       const parent: Element | null = current.parentElement;
       const scope: ParentNode | null = parent ?? current.ownerDocument;
       const tag = current.tagName.toLowerCase();

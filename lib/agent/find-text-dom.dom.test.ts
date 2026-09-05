@@ -96,10 +96,16 @@ describe('findTextInPage', () => {
     expect(output.matches[0].href).toBe('/detail/1');
   });
 
-  it('returns a path that resolves back to the same element via :scope selectors', () => {
+  // 路径必须从真正的文档根（html）起步：applyFormFill 的 resolve() 从 document 出发，
+  // 第一步只能靠 `document.querySelectorAll(':scope > html')` 命中。少了 html/body
+  // 两级，t* 句柄给 browser_click 时会一律 not_found——见 find-text-click-roundtrip.dom.test.ts
+  // 里那条真正跑通 resolve 的往返测试（ref: 2026-09-05 final review Critical #1/#2）。
+  it('returns a root-anchored path that resolves back to the same element via :scope selectors', () => {
     document.body.innerHTML = '<div><p>x</p><p>总计</p></div>';
     const output = run('总计');
     expect(output.matches[0].path).toEqual([
+      { kind: 'selector', selector: 'html', index: 0 },
+      { kind: 'selector', selector: 'body', index: 0 },
       { kind: 'selector', selector: 'div', index: 0 },
       { kind: 'selector', selector: 'p', index: 1 },
     ]);
