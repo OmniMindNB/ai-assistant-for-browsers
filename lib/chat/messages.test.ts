@@ -201,6 +201,18 @@ describe('toMessageRecords', () => {
     expect(records[0].attachments).toBeUndefined();
   });
 
+  it('保留 tabReferences（只有元数据，不含正文）', () => {
+    const records = toMessageRecords('c-1', [
+      { id: 'a', role: 'user', content: '问', createdAt: 1000, tabReferences: [{ id: 7, title: 'Docs', url: 'https://docs.example.com' }] },
+    ]);
+    expect(records[0].tabReferences).toEqual([{ id: 7, title: 'Docs', url: 'https://docs.example.com' }]);
+  });
+
+  it('没有引用时 tabReferences 为 undefined', () => {
+    const records = toMessageRecords('c-1', [msg('a', 'user', '问')]);
+    expect(records[0].tabReferences).toBeUndefined();
+  });
+
   it('保留 taskOutcome', () => {
     const records = toMessageRecords('c-1', [
       { id: 'a', role: 'assistant', content: '已完成', createdAt: 1000, taskOutcome: { outcome: 'success', reason: '已提交表单。' } },

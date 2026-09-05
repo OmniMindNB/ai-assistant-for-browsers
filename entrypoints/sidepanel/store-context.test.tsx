@@ -1635,5 +1635,27 @@ describe('chat store page context', () => {
       // 正文只进 agentUserContent（本轮 prompt），不进落库的消息。
       expect(JSON.stringify(persisted)).not.toContain('引用正文');
     });
+
+    // 与 taskOutcome 的 "restores a persisted task outcome when reopening a conversation"
+    // 是同一条路径：toMessageRecords 落库、getConversationMessages 读回、openConversation
+    // 映射回 UIMessage——tabReferences 必须走完整这一圈，否则关闭/重开面板或切回旧会话时，
+    // App.tsx 渲染的引用 chip 就会凭空消失（这正是本任务存在的原因）。
+    it('restores persisted tab reference metadata when reopening a conversation', async () => {
+      mocks.getConversationMessages.mockResolvedValueOnce([
+        {
+          role: 'user',
+          content: '带引用的一轮',
+          createdAt: 1,
+          tabReferences: [{ id: 7, title: 'Docs', url: 'https://docs.example.com' }],
+        },
+      ]);
+
+      await useChat.getState().openConversation('with-tab-reference');
+
+      const restored = useChat.getState().messages.at(-1);
+      expect(restored?.tabReferences).toEqual([
+        { id: 7, title: 'Docs', url: 'https://docs.example.com' },
+      ]);
+    });
   });
 });

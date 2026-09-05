@@ -949,6 +949,7 @@ export const useChat = create<ChatState>((set, get) => ({
         kind: r.kind,
         quotedText: r.quotedText,
         attachments: r.attachments,
+        tabReferences: r.tabReferences,
         taskOutcome: r.taskOutcome,
         stopped: r.stopped,
         activitySteps: r.activitySteps,

@@ -105,6 +105,7 @@ export function toMessageRecords(
     kind: message.kind,
     quotedText: message.quotedText,
     attachments: message.attachments,
+    tabReferences: message.tabReferences,
     taskOutcome: message.taskOutcome,
     stopped: message.stopped,
     activitySteps: message.activitySteps,
