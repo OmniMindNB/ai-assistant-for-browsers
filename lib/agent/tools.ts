@@ -1095,7 +1095,11 @@ function makeListTabsTool(session: TabSessionController): BrowserAgentTool {
   return {
     name: 'browser_list_tabs',
     label: 'List Tabs',
-    description: 'List the tabs currently tracked in this conversation (the panel tab plus any tabs opened via browser_open_tab), and which one is the current operating target.',
+    description:
+      'List the tabs currently tracked in this conversation and which one is the current operating target. '
+      + 'Tabs marked 用户引用（只读） were picked by the user with @ — you may read them with any read-only tool, '
+      + 'but every write tool (click, fill, type, navigate, close, ...) will be refused on them. '
+      + 'To modify a page, use browser_open_tab to open your own copy instead.',
     parameters: Type.Object({}),
     execute: async () => {
       return textResult(formatTabList(session), session.snapshot() as unknown as Record<string, unknown>);

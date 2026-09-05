@@ -131,6 +131,8 @@ export function formatTabList(session: TabSessionController): string {
     const marks = [
       tab.id === session.panelTabId ? '面板' : '',
       tab.id === session.currentTabId ? '当前操作目标' : '',
+      // 不标出来的话，模型会对引用页反复尝试写操作、被拒、再重试，白烧预算。
+      tabAccessOf(tab) === 'read' ? '用户引用（只读）' : '',
     ]
       .filter(Boolean)
       .join('、');

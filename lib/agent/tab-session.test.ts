@@ -99,6 +99,14 @@ describe('formatTabList', () => {
     expect(text).toContain('面板');
     expect(text).toContain('当前操作目标');
   });
+
+  it('marks referenced tabs as read-only in the model-facing table', () => {
+    const session = createTabSession(1);
+    session.reference([{ id: 7, title: 'Docs', url: 'https://docs.example.com' }]);
+    const table = formatTabList(session);
+    expect(table).toContain('用户引用（只读）');
+    expect(table.split('\n').find((line) => line.includes('| 7 |'))).toContain('用户引用（只读）');
+  });
 });
 
 describe('TabSessionController.reference', () => {
