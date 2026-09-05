@@ -626,7 +626,7 @@ export function WorkbenchComposer({
               {pageContext.status === 'available' && (
                 <li className="flex items-center gap-2 px-3 py-2 text-sm text-neutral-500">
                   <span className="truncate">{pageContext.title}</span>
-                  <span className="ml-auto shrink-0 text-xs">当前页面 · 默认已包含</span>
+                  <span className="ml-auto shrink-0 text-xs">{t('workbench.currentPageIncluded')}</span>
                 </li>
               )}
               {mentionMatches.map((tab) => (

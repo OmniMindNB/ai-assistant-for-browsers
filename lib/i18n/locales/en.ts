@@ -131,6 +131,8 @@ export const en: Record<keyof typeof zh, string> = {
   'workbench.dropPdfPrompt': 'Drop to add PDF',
   'workbench.retryNamedAttachment': 'Retry {name}',
   'workbench.removeNamedAttachment': 'Remove {name}',
+  'workbench.removeTabReference': 'Remove reference {title}',
+  'workbench.currentPageIncluded': 'Current page · included by default',
   'banner.noProviderPrefix': 'No model provider detected. Go to',
   'banner.noProviderSuffix': 'to enter an API key.',
   'settings.backAriaLabel': 'Back to chat',

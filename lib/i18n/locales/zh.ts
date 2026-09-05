@@ -128,6 +128,8 @@ export const zh = {
   'workbench.dropPdfPrompt': '松开即可添加 PDF',
   'workbench.retryNamedAttachment': '重试 {name}',
   'workbench.removeNamedAttachment': '移除 {name}',
+  'workbench.removeTabReference': '移除引用 {title}',
+  'workbench.currentPageIncluded': '当前页面 · 默认已包含',
   'banner.noProviderPrefix': '未检测到模型 Provider，请前往',
   'banner.noProviderSuffix': '填写 API Key。',
   'settings.backAriaLabel': '返回对话',

@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConversationRecord } from '@/lib/db';
 import type { PendingAttachment } from '@/lib/chat/attachments';
-import { LocaleProvider } from '@/lib/i18n';
+import { interpolate, LocaleProvider } from '@/lib/i18n';
 import { en } from '@/lib/i18n/locales/en';
 import { zh } from '@/lib/i18n/locales/zh';
 import type { ProviderConfig } from '@/lib/settings';
@@ -1872,7 +1872,7 @@ describe('composer tab picker', () => {
     // composerProps.pageContext 默认是 available/Example article。
     const row = await screen.findByText(/Example article/);
     expect(row).toBeInTheDocument();
-    expect(screen.getByText(/默认已包含/)).toBeInTheDocument();
+    expect(screen.getByText(en['workbench.currentPageIncluded'])).toBeInTheDocument();
     expect(row.closest('button')).toBeNull();
   });
 
@@ -1885,7 +1885,8 @@ describe('composer tab picker', () => {
         onRemoveTabReference={onRemoveTabReference}
       />,
     );
-    await user.click(screen.getByRole('button', { name: /移除引用 Docs/ }));
+    const removeLabel = interpolate(en['workbench.removeTabReference'], { title: 'Docs' });
+    await user.click(screen.getByRole('button', { name: removeLabel }));
     expect(onRemoveTabReference).toHaveBeenCalledWith(7);
   });
 });

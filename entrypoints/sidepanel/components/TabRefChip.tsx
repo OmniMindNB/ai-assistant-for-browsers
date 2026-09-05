@@ -1,3 +1,4 @@
+import { useTranslation } from '@/lib/i18n';
 import type { TabReference } from '../store';
 
 interface TabRefChipProps {
@@ -13,6 +14,7 @@ interface TabRefChipProps {
  * （ref: 2026-09-05-cross-tab-context-design.md §11）。
  */
 export function TabRefChip({ reference, onRemove }: TabRefChipProps) {
+  const { t } = useTranslation();
   return (
     <span
       className="inline-flex max-w-[14rem] items-center gap-1 rounded-full border border-neutral-300 bg-neutral-50 px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-800"
@@ -24,7 +26,7 @@ export function TabRefChip({ reference, onRemove }: TabRefChipProps) {
       <span className="truncate">{reference.title}</span>
       <button
         type="button"
-        aria-label={`移除引用 ${reference.title}`}
+        aria-label={t('workbench.removeTabReference', { title: reference.title })}
         className="shrink-0 text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
         onClick={() => onRemove(reference.id)}
       >
