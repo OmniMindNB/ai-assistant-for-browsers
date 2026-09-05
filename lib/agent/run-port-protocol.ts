@@ -5,6 +5,7 @@ import type { ChatMessage } from '@/lib/chat/messages';
 import type { ActivityStep } from './activity-steps';
 import type { ProviderConfig } from '@/lib/settings';
 import type { ImageContent } from '@earendil-works/pi-ai';
+import type { TrackedTab } from './tab-session';
 
 export const AGENT_RUN_PORT_NAME = 'agent-run';
 
@@ -49,6 +50,12 @@ export interface StartRunRequest {
   images?: ImageContent[];
   readToolCallBudget: number;
   writeToolCallBudget: number;
+  /**
+   * 用户通过 @ 引用进来的只读标签页——面板当前的**完整**列表，语义是全量同步。
+   * 每轮都带全量而不是增量，是因为"用户移除了某个 chip"这件事只有面板知道
+   * （ref: 2026-09-05-cross-tab-context-design.md §4.1）。
+   */
+  referencedTabs?: TrackedTab[];
 }
 
 export interface RespondConfirmMessage {

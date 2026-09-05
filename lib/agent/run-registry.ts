@@ -314,6 +314,10 @@ export async function startRun(request: StartRunRequest): Promise<void> {
   await clearTakeoverForTab(request.tabId).catch(() => undefined);
 
   const session = await loadTabSession(request.tabId).catch(() => createTabSession(request.tabId));
+  // 面板每轮都带全量引用列表：新增、更新和移除都在这一次调用里落地。
+  session.reference(request.referencedTabs ?? []);
+  await saveTabSession(session).catch(() => undefined);
+
   const placeholder: ChatMessage = { id: `a-${Date.now()}`, role: 'assistant', content: '', createdAt: Date.now() };
   const state: RunState = {
     tabId: request.tabId,

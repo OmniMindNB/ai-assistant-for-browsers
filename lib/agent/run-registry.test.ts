@@ -1,17 +1,41 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { ChatMessageRecord } from '@/lib/db';
 
-const mocks = vi.hoisted(() => ({
-  createBrowserAgent: vi.fn(),
-  replaceConversationMessages: vi.fn(
-    async (_conversationId: string, _records: ChatMessageRecord[], _title: string) => undefined,
-  ),
-  loadTabSession: vi.fn(async (tabId: number) => ({ panelTabId: tabId, currentTabId: tabId, trackedTabs: [], snapshot: () => ({}) })),
-  saveTabSession: vi.fn(async () => undefined),
-  clearOverlayForTab: vi.fn(async () => undefined),
-  setOverlayForTab: vi.fn(async () => undefined),
-  clearTakeoverForTab: vi.fn(async () => undefined),
-}));
+const mocks = vi.hoisted(() => {
+  const sessionCache = new Map<number, any>();
+
+  return {
+    createBrowserAgent: vi.fn(),
+    replaceConversationMessages: vi.fn(
+      async (_conversationId: string, _records: ChatMessageRecord[], _title: string) => undefined,
+    ),
+    loadTabSession: vi.fn(async (tabId: number) => {
+      if (!sessionCache.has(tabId)) {
+        const session = { panelTabId: tabId, currentTabId: tabId, trackedTabs: [{ id: tabId }] as any[], snapshot: () => ({}) };
+        (session as any).reference = (tabs: any[]) => {
+          // 全量同步 read-only 项（简化版本，供测试用）
+          const keep = new Set(tabs.map((tab) => tab.id));
+          // 保留 full-access 的 tabs（包括面板 tab）和新引用的 tabs
+          session.trackedTabs = session.trackedTabs.filter(
+            (tab) => (tab.access === undefined) || keep.has(tab.id),
+          );
+          for (const tab of tabs) {
+            const entry = { ...tab, access: 'read' as const };
+            const index = session.trackedTabs.findIndex((tracked) => tracked.id === tab.id);
+            if (index >= 0) session.trackedTabs[index] = entry;
+            else session.trackedTabs.push(entry);
+          }
+        };
+        sessionCache.set(tabId, session);
+      }
+      return sessionCache.get(tabId)!;
+    }),
+    saveTabSession: vi.fn(async () => undefined),
+    clearOverlayForTab: vi.fn(async () => undefined),
+    setOverlayForTab: vi.fn(async () => undefined),
+    clearTakeoverForTab: vi.fn(async () => undefined),
+  };
+});
 
 vi.mock('./agent', () => ({ createBrowserAgent: mocks.createBrowserAgent }));
 vi.mock('@/lib/db', () => ({ replaceConversationMessages: mocks.replaceConversationMessages }));
@@ -691,11 +715,13 @@ describe('run-registry confirmation summary target tab', () => {
   it('annotates the summary with the operating tab when it is not the panel tab', async () => {
     const agent = makeFakeAgent([]);
     mocks.createBrowserAgent.mockReturnValue(agent);
-    mocks.loadTabSession.mockResolvedValueOnce({
+    const customSession: any = {
       panelTabId: 70,
       currentTabId: 88,
       trackedTabs: [{ id: 70 }, { id: 88, title: '网上银行', url: 'https://bank.example/pay' }],
-    } as never);
+      reference: () => {}, // 空实现，这个测试用例不关心引用
+    };
+    mocks.loadTabSession.mockResolvedValueOnce(customSession);
     const posted: any[] = [];
     attachPort(70, { postMessage: (message) => posted.push(message) });
 
@@ -954,5 +980,33 @@ describe('用户接管暂停', () => {
     await startRun(makeRequest({ tabId: 83 }));
 
     expect(mocks.clearTakeoverForTab).toHaveBeenCalledWith(83);
+  });
+});
+
+describe('run-registry referenced tabs', () => {
+  it('registers referenced tabs as read-only on the tab session', async () => {
+    const agent = makeFakeAgent([]);
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    await startRun(makeRequest({
+      tabId: 1,
+      referencedTabs: [{ id: 7, title: 'Docs', url: 'https://docs.example.com' }],
+    }));
+    const session = await mocks.loadTabSession(1);
+    expect(session.trackedTabs).toContainEqual({
+      id: 7,
+      title: 'Docs',
+      url: 'https://docs.example.com',
+      access: 'read',
+    });
+    expect(session.currentTabId).toBe(1);
+  });
+
+  it('drops a reference the panel no longer sends', async () => {
+    const agent = makeFakeAgent([]);
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    await startRun(makeRequest({ tabId: 1, referencedTabs: [{ id: 7 }] }));
+    await startRun(makeRequest({ tabId: 1, referencedTabs: [] }));
+    const session = await mocks.loadTabSession(1);
+    expect(session.trackedTabs.map((tab: any) => tab.id)).toEqual([1]);
   });
 });
