@@ -2,7 +2,7 @@
 
 - 日期：2026-09-04
 - 来源：2026-09-04 对 30 个工具做能力盘点后识别出的两处低成本缺口。iframe 寻址那一项体量大得多，单独立篇（`2026-09-04-iframe-addressing-design.md`）
-- 状态：待实现
+- 状态：已实现（未做真实浏览器验收——见 lib/agent/find-text-dom.dom.test.ts / lib/agent/history-nav.test.ts 的单测覆盖范围）
 - 依赖：`browser_find_text` 的句柄要带 `frameId`，因此排在 iframe 那篇之后实现
 
 ## 1. 问题
