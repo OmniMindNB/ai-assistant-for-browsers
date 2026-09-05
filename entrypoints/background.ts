@@ -62,9 +62,11 @@ import {
   type TypeTextResult,
   type WaitForPayload,
   type WaitForResult,
+  type ListWindowTabsResult,
   newMessageId,
   registerLocalDispatcher,
 } from '@/lib/messaging';
+import { selectReferencableTabs } from '@/lib/chat/tab-reference';
 import { loadRedactionSettings, redactText } from '@/lib/redaction';
 import { fetchPageResourceText } from '@/lib/page-resource-fetch';
 import { resolveTargetTab } from '@/lib/agent/tab-target';
@@ -439,6 +441,9 @@ async function handleMessage(message: Message, sender?: MessageSender): Promise<
     case 'GET_ACTIVE_TAB':
       return getActiveTab();
 
+    case 'LIST_WINDOW_TABS':
+      return listWindowTabs(requireTabId(message));
+
     case 'GET_TAB_URL':
       return getTabUrl(requireTabId(message));
 
@@ -554,6 +559,18 @@ async function getActiveTab() {
 async function getTabUrl(tabId: number): Promise<GetTabUrlResult> {
   const tab = await browser.tabs.get(tabId);
   return { url: tab.url ?? '', title: tab.title };
+}
+
+/**
+ * 面板所在窗口的可引用标签页。只查这一个窗口——用户心里的"这几个标签页"几乎总是同一个窗口，
+ * 而把全部窗口的标题一次性摆到面板上，标签页开得多的人会觉得冒犯
+ * （ref: 2026-09-05-cross-tab-context-design.md §3.3）。
+ */
+async function listWindowTabs(panelTabId: number): Promise<ListWindowTabsResult> {
+  const panelTab = await browser.tabs.get(panelTabId).catch(() => undefined);
+  if (!panelTab || panelTab.windowId === undefined) return { tabs: [] };
+  const tabs = await browser.tabs.query({ windowId: panelTab.windowId });
+  return { tabs: selectReferencableTabs(tabs, panelTabId) };
 }
 
 async function extractActivePage(tabId: number): Promise<PageContent> {

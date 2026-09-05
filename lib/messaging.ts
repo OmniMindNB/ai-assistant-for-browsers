@@ -1,6 +1,8 @@
 // 统一消息协议（ref: technical-plan.md §3.3）
 // 用于 Side Panel ↔ Service Worker ↔ Content Script 之间的通信。
 
+import type { ReferencableTab } from '@/lib/chat/tab-reference';
+
 export type MessageType =
   | 'PING'
   | 'EXTRACT_PAGE'
@@ -8,6 +10,7 @@ export type MessageType =
   | 'ASK_SELECTION'
   | 'AGENT_TAKEOVER'
   | 'GET_ACTIVE_TAB'
+  | 'LIST_WINDOW_TABS'
   | 'GET_TAB_URL'
   | 'QUERY_DOM'
   | 'FIND_TEXT'
@@ -67,6 +70,15 @@ export interface ActiveTabInfo {
   id: number;
   title?: string;
   url?: string;
+}
+
+/**
+ * LIST_WINDOW_TABS 的返回：面板所在窗口里可被 @ 引用的标签页。
+ * 只在面板本地渲染候选列表用，不进模型上下文——因此它有意不在 background.ts 的
+ * SUPPORTED_MESSAGE_TYPES 里（那张表是模型可见/可调用的清单）。
+ */
+export interface ListWindowTabsResult {
+  tabs: ReferencableTab[];
 }
 
 /** EXTRACT_PAGE 返回的页面数据 */
