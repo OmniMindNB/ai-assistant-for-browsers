@@ -26,6 +26,7 @@ import { getTakeoverForTab } from './tab-takeover';
 import { createBrowserTools, type BrowserAgentTool } from './tools';
 import { supportsVision } from './vision';
 import { createTabSession, type TabSessionController } from './tab-session';
+import { decideTabAccess } from './tab-access';
 import { getFormFieldsForTab } from './tab-form-fields';
 import { isChildFrameHandle } from './fill-form-request';
 import { createAgentToolPolicy } from './tool-policy';
@@ -278,6 +279,18 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
         },
       });
       if (permissionBlock) return recordPreExecutionBlock(permissionBlock);
+
+      // 按目标标签页分级：用户 @ 引用进来的标签页只读，写操作一律拒绝。
+      // 排在权限门之后——被全局分级拦下的调用不该再惊动下游任何一层；
+      // 排在接管门之前——接管提示是体贴（见 takeover-gate.ts），tab-access 是硬边界，
+      // 硬边界排在软提示后面的话，用户会为一个注定被拒绝的调用白被打断一次。
+      const tabAccess = decideTabAccess(
+        context.toolCall.name,
+        session.trackedTabs.find((tab) => tab.id === session.currentTabId),
+      );
+      if (!tabAccess.allowed) {
+        return recordPreExecutionBlock({ block: true, reason: tabAccess.reason });
+      }
 
       if (isWriteTool) {
         // 只在写之前查：读操作不会和用户抢页面，为它停下来只是拖慢。

@@ -33,7 +33,7 @@ import {
 import { DEFAULT_WRITE_TOOL_CALL_BUDGET } from './system-prompt';
 import { browserOpenAIStream } from './openai-stream';
 import { browserAnthropicStream } from './anthropic-stream';
-import { createTabSession } from './tab-session';
+import { createTabSession, type TabSessionController } from './tab-session';
 import { describeToolActivity } from './activity-description';
 import type { BrowserAgentTool } from './tools';
 
@@ -1304,5 +1304,44 @@ describe('上下文窗口：迟滞重切，保证前缀在两次重切之间只�
     messages.push(...pairs(1, 'later'));
     await hooks.transformContext!(messages);
     expect(onContextTruncated).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('tab-access 闸门', () => {
+  function optionsWithSession(session: TabSessionController, extra: Record<string, unknown> = {}) {
+    return createBrowserAgentOptions({
+      provider: baseProvider,
+      tabId: 1,
+      tools: [],
+      readToolCallBudget: 10,
+      writeToolCallBudget: 10,
+      steer: vi.fn(),
+      session,
+      ...extra,
+    });
+  }
+
+  it('拒绝落在只读引用标签页上的写操作，且不触发接管提示、不亮遮罩', async () => {
+    const onTakeover = vi.fn();
+    const onOverlay = vi.fn();
+    const session = createTabSession(1);
+    session.reference([{ id: 7, url: 'https://docs.example.com' }]);
+    session.switchTo(7);
+
+    const hooks = optionsWithSession(session, { onTakeover, onOverlay });
+    const result = await hooks.beforeToolCall?.(beforeContext('browser_click', { fieldId: 'f1' }));
+
+    expect(result).toMatchObject({ block: true });
+    expect((result as { reason: string }).reason).toContain('只读');
+    expect(onTakeover).not.toHaveBeenCalled();
+    expect(onOverlay).not.toHaveBeenCalled();
+  });
+
+  it('读工具落在只读引用标签页上照常放行', async () => {
+    const session = createTabSession(1);
+    session.reference([{ id: 7 }]);
+    session.switchTo(7);
+    const hooks = optionsWithSession(session);
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_read_page', {}))).toBeUndefined();
   });
 });
