@@ -10,13 +10,15 @@ import { useTranslation } from '@/lib/i18n';
 import { providerModels, type ProviderConfig } from '@/lib/settings';
 import type { ShortcutConfig, ResolvedShortcut } from '@/lib/shortcuts';
 import { filterShortcutCommands, isUsableShortcutCommand } from '@/lib/workbench/presentation';
-import type { PageContextState } from '../store';
+import type { PageContextState, TabReference } from '../store';
 import {
   hasBusyAttachments,
   isAttachmentReady,
   type PendingAttachment,
 } from '@/lib/chat/attachments';
+import { findMentionQuery, type MentionQuery, type ReferencableTab } from '@/lib/chat/tab-reference';
 import { AttachmentChip } from './AttachmentChip';
+import { TabRefChip } from './TabRefChip';
 import { IconCheck, IconChevronDown, IconClose, IconPaperclip, IconPlus, IconSend, IconStop } from '../icons';
 
 export interface WorkbenchComposerProps {
@@ -44,9 +46,14 @@ export interface WorkbenchComposerProps {
   onAddAttachmentFiles(files: FileList | File[]): void;
   onRemoveAttachment(id: string): void;
   onRetryAttachment(id: string): void;
+  /** 用户 @ 引用进来的只读标签页；chip 常驻显示，直到用户移除。 */
+  tabReferences: TabReference[];
+  onLoadReferencableTabs(): Promise<ReferencableTab[]>;
+  onAddTabReference(tab: ReferencableTab): void;
+  onRemoveTabReference(id: number): void;
 }
 
-type Popover = 'commands' | 'models' | 'insert' | null;
+type Popover = 'commands' | 'models' | 'insert' | 'tabs' | null;
 
 function startsSlashCommand(input: string): boolean {
   return input.trim().startsWith('/');
@@ -72,6 +79,10 @@ export function WorkbenchComposer({
   onAddAttachmentFiles,
   onRemoveAttachment,
   onRetryAttachment,
+  tabReferences,
+  onLoadReferencableTabs,
+  onAddTabReference,
+  onRemoveTabReference,
 }: WorkbenchComposerProps) {
   const { t } = useTranslation();
   // 按键级别的草稿只有这个组件自己需要：留在全局 store 里会导致每次按键都触发整个 App
@@ -87,6 +98,8 @@ export function WorkbenchComposer({
   const [highlightedCommand, setHighlightedCommand] = useState(0);
   const [composing, setComposing] = useState(false);
   const [fileDragActive, setFileDragActive] = useState(false);
+  const [tabCandidates, setTabCandidates] = useState<ReferencableTab[]>([]);
+  const [mention, setMention] = useState<MentionQuery | null>(null);
   const slashCommands = filterShortcutCommands(shortcuts, input);
   const commands = startsSlashCommand(input) || openPopover === 'commands'
     ? startsSlashCommand(input) ? slashCommands : filterShortcutCommands(shortcuts, '/')
@@ -102,6 +115,40 @@ export function WorkbenchComposer({
     providerModels(provider).map((model) => ({ provider, model })),
   );
   const quickShortcuts = shortcuts.filter(isUsableShortcutCommand).slice(0, 4);
+
+  // @ 提及必须按光标定位，不能照抄 / 的整串前缀判断——@ 会出现在句子中间。
+  const syncMention = (value: string, caret: number) => {
+    const next = findMentionQuery(value, caret);
+    setMention(next);
+    if (next && openPopover !== 'tabs') {
+      setOpenPopover('tabs');
+      void onLoadReferencableTabs().then(setTabCandidates);
+    }
+    if (!next && openPopover === 'tabs') setOpenPopover(null);
+  };
+
+  const mentionMatches = mention
+    ? tabCandidates
+        .filter((tab) => !tabReferences.some((item) => item.id === tab.id))
+        .filter((tab) =>
+          mention.query === ''
+          || `${tab.title} ${tab.url}`.toLowerCase().includes(mention.query.toLowerCase()),
+        )
+        .slice(0, 8)
+    : [];
+
+  const pickTab = (tab: ReferencableTab) => {
+    onAddTabReference(tab);
+    // 选完把 "@query" 从输入框里删掉：引用已经变成 chip，留着这段文字只会混淆。
+    if (mention) {
+      const element = textareaRef.current;
+      const caret = element?.selectionStart ?? input.length;
+      setInput(input.slice(0, mention.start) + input.slice(caret));
+    }
+    setMention(null);
+    setOpenPopover(null);
+  };
+
   const pageContextNotice =
     pageContext.status === 'error'
       ? { message: t('workbench.pageContextUnavailable', { message: pageContext.message }), retryable: true }
@@ -444,6 +491,14 @@ export function WorkbenchComposer({
           </div>
         )}
 
+        {tabReferences.length > 0 && (
+          <div className="flex flex-wrap gap-1 px-2 pb-1">
+            {tabReferences.map((reference) => (
+              <TabRefChip key={reference.id} reference={reference} onRemove={onRemoveTabReference} />
+            ))}
+          </div>
+        )}
+
         <div
           data-testid="composer-drop-zone"
           onDragEnter={handleDragEnter}
@@ -515,7 +570,10 @@ export function WorkbenchComposer({
           <textarea
             ref={textareaRef}
             value={input}
-            onChange={(event) => setInput(event.target.value)}
+            onChange={(event) => {
+              setInput(event.target.value);
+              syncMention(event.target.value, event.target.selectionStart ?? event.target.value.length);
+            }}
             onKeyDown={handleTextareaKeyDown}
             onCompositionStart={() => setComposing(true)}
             onCompositionEnd={() => setComposing(false)}
@@ -559,6 +617,32 @@ export function WorkbenchComposer({
               ))}
               {commands.length === 0 && <div role="status" aria-live="polite" className="px-3 py-2 text-sm text-neutral-500">{t('chat.noMatchingSlashCommands')}</div>}
             </div>
+          )}
+
+          {openPopover === 'tabs' && (mentionMatches.length > 0 || pageContext.status === 'available') && (
+            <ul id="workbench-tab-picker" className="absolute bottom-full mb-1 w-full overflow-hidden rounded-md border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+              {/* 面板绑定的那个 tab 本来就是默认上下文。不列出来的话，用户会疑惑"我当前这个页面
+                  为什么不在候选里"；列成可选项又会让它被重复计进 5 个上限。所以列成不可点的一行。 */}
+              {pageContext.status === 'available' && (
+                <li className="flex items-center gap-2 px-3 py-2 text-sm text-neutral-500">
+                  <span className="truncate">{pageContext.title}</span>
+                  <span className="ml-auto shrink-0 text-xs">当前页面 · 默认已包含</span>
+                </li>
+              )}
+              {mentionMatches.map((tab) => (
+                <li key={tab.id}>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                    onClick={() => pickTab(tab)}
+                  >
+                    {tab.favIconUrl && <img src={tab.favIconUrl} alt="" className="h-4 w-4 shrink-0" />}
+                    <span className="truncate">{tab.title}</span>
+                    <span className="ml-auto truncate text-xs text-neutral-500">{tab.url}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       </div>

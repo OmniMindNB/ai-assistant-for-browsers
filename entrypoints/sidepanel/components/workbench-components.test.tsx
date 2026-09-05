@@ -43,11 +43,15 @@ const chatStore = {
   // 必须和 store.ts 的初值一致：非 0 会让 composer 以为收到了划词提问，在挂载时抢走焦点。
   pendingFocusToken: 0,
   pendingAttachments: [],
+  referencedTabs: [],
   clearQuotedSelection: vi.fn(),
   addAttachmentFiles: vi.fn(),
   removeAttachment: vi.fn(),
   retryAttachment: vi.fn(),
   disposeAttachments: vi.fn(),
+  loadReferencableTabs: vi.fn().mockResolvedValue([]),
+  addTabReference: vi.fn(),
+  removeTabReference: vi.fn(),
   refreshProvider: vi.fn(),
   refreshShortcuts: vi.fn(),
   refreshConversations: vi.fn(),
@@ -164,6 +168,7 @@ beforeEach(() => {
     pendingConfirmation: null,
     pendingFocusToken: 0,
     pendingAttachments: [],
+    referencedTabs: [],
     shortcuts: [],
     pageContext: {
       status: 'available' as const,
@@ -242,6 +247,10 @@ const composerProps: WorkbenchComposerProps = {
   onAddAttachmentFiles: vi.fn(),
   onRemoveAttachment: vi.fn(),
   onRetryAttachment: vi.fn(),
+  tabReferences: [],
+  onLoadReferencableTabs: async () => [],
+  onAddTabReference: vi.fn(),
+  onRemoveTabReference: vi.fn(),
 };
 
 const configuredProvider: ProviderConfig = {
@@ -1817,5 +1826,66 @@ describe('workbench history', () => {
     await user.click(within(screen.getByRole('banner')).getByRole('button', { name: 'Settings' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not open Settings. Please try again.');
+  });
+});
+
+describe('composer tab picker', () => {
+  const docsTab = { id: 7, title: 'Docs', url: 'https://docs.example.com' };
+  const blogTab = { id: 8, title: 'Blog', url: 'https://blog.example.com' };
+
+  it('opens the tab picker when @ is typed and inserts the picked tab as a chip', async () => {
+    const user = userEvent.setup();
+    const onAddTabReference = vi.fn();
+    render(
+      <ComposerHarness
+        onLoadReferencableTabs={async () => [docsTab]}
+        onAddTabReference={onAddTabReference}
+      />,
+    );
+
+    await user.type(screen.getByRole('textbox'), '对比 @');
+    expect(await screen.findByText('Docs')).toBeInTheDocument();
+
+    await user.click(screen.getByText('Docs'));
+    expect(onAddTabReference).toHaveBeenCalledWith(docsTab);
+  });
+
+  it('filters candidates by the mention query', async () => {
+    const user = userEvent.setup();
+    render(<ComposerHarness onLoadReferencableTabs={async () => [docsTab, blogTab]} />);
+    await user.type(screen.getByRole('textbox'), '@blo');
+    await waitFor(() => expect(screen.getByText('Blog')).toBeInTheDocument());
+    expect(screen.queryByText('Docs')).not.toBeInTheDocument();
+  });
+
+  it('does not open the picker for an email address', async () => {
+    const user = userEvent.setup();
+    render(<ComposerHarness onLoadReferencableTabs={async () => [docsTab]} />);
+    await user.type(screen.getByRole('textbox'), 'me@example.com');
+    expect(screen.queryByText('Docs')).not.toBeInTheDocument();
+  });
+
+  it('shows the panel tab as already included and not pickable', async () => {
+    const user = userEvent.setup();
+    render(<ComposerHarness onLoadReferencableTabs={async () => [docsTab]} />);
+    await user.type(screen.getByRole('textbox'), '@');
+    // composerProps.pageContext 默认是 available/Example article。
+    const row = await screen.findByText(/Example article/);
+    expect(row).toBeInTheDocument();
+    expect(screen.getByText(/默认已包含/)).toBeInTheDocument();
+    expect(row.closest('button')).toBeNull();
+  });
+
+  it('renders reference chips and removes one on click', async () => {
+    const user = userEvent.setup();
+    const onRemoveTabReference = vi.fn();
+    render(
+      <ComposerHarness
+        tabReferences={[{ ...docsTab, snapshotSent: false }]}
+        onRemoveTabReference={onRemoveTabReference}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: /移除引用 Docs/ }));
+    expect(onRemoveTabReference).toHaveBeenCalledWith(7);
   });
 });

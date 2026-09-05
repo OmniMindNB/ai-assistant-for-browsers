@@ -41,6 +41,7 @@ export default function App() {
     pendingFocusToken,
     quotedSelection,
     pendingAttachments,
+    referencedTabs,
     busy,
     error,
     retryAction,
@@ -59,6 +60,9 @@ export default function App() {
     removeAttachment,
     retryAttachment,
     disposeAttachments,
+    loadReferencableTabs,
+    addTabReference,
+    removeTabReference,
     refreshProvider,
     refreshShortcuts,
     refreshConversations,
@@ -393,6 +397,10 @@ export default function App() {
             onAddAttachmentFiles={addAttachmentFiles}
             onRemoveAttachment={removeAttachment}
             onRetryAttachment={retryAttachment}
+            tabReferences={referencedTabs}
+            onLoadReferencableTabs={loadReferencableTabs}
+            onAddTabReference={addTabReference}
+            onRemoveTabReference={removeTabReference}
           />
       </div>
     </div>
