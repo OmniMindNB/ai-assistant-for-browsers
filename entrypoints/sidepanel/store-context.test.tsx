@@ -1609,5 +1609,31 @@ describe('chat store page context', () => {
       expect(useChat.getState().referencedTabs).toHaveLength(0);
       expect(lastStartRun().referencedTabs).toEqual([]);
     });
+
+    it('records reference metadata on the persisted user message but no page text', async () => {
+      // 同 injects each reference snapshot 那个用例一样：GET_ACTIVE_TAB 得单独给出合法的
+      // id，不能跟 EXTRACT_PAGE 共用兜底分支，否则 resolveActiveTab 会直接抛错，send()
+      // 根本发不出去，lastStartRun() 也就取不到任何一次 startRun 调用。
+      await connectPort();
+      useChat.getState().addTabReference({ id: 7, title: 'Docs', url: 'https://docs.example.com' });
+      mocks.sendMessage.mockImplementation(async (type: string) => {
+        if (type === 'GET_ACTIVE_TAB') {
+          return { ok: true, data: { id: DEFAULT_TAB_ID, title: 'Current', url: 'https://current.example.com/' } };
+        }
+        if (type === 'EXTRACT_PAGE') {
+          return { ok: true, data: { title: 'Docs', url: 'https://docs.example.com', text: '引用正文', lang: 'zh', length: 4 } };
+        }
+        return { ok: true, data: {} };
+      });
+
+      await useChat.getState().send('带引用的一轮');
+
+      const persisted = lastStartRun().displayMessage;
+      expect(persisted.tabReferences).toEqual([
+        { id: 7, title: 'Docs', url: 'https://docs.example.com' },
+      ]);
+      // 正文只进 agentUserContent（本轮 prompt），不进落库的消息。
+      expect(JSON.stringify(persisted)).not.toContain('引用正文');
+    });
   });
 });

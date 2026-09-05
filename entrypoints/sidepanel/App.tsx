@@ -493,6 +493,19 @@ const Message = memo(function Message({
             ))}
           </div>
         )}
+        {message.tabReferences && message.tabReferences.length > 0 && (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {message.tabReferences.map((reference) => (
+              <span
+                key={reference.id}
+                title={reference.url}
+                className="inline-flex max-w-[12rem] items-center rounded-full border border-neutral-300 px-2 py-0.5 text-xs text-neutral-500 dark:border-neutral-700"
+              >
+                <span className="truncate">{reference.title}</span>
+              </span>
+            ))}
+          </div>
+        )}
         {/* max-w 必须挂在这一行上：它是 items-end 列的直接子项，百分比才会参照消息列宽度。
             若挂到里面的气泡上，参照系会退化成气泡自身被内容撑出的宽度，短文本也会被截到 85% 而换行。 */}
         <div className="group flex max-w-[85%] items-center gap-1.5">

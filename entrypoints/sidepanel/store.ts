@@ -1396,6 +1396,15 @@ async function runAgent(
   set({ referencedTabs: survivingReferences });
   committedAgentUserContent = buildTabRefContext(referenceSnapshots) + committedAgentUserContent;
 
+  // 落库只留身份信息（id/title/url），正文不进 committedDisplay——回看历史能看出这一轮
+  // 引用过哪些标签页，但不恢复授权（tab id 重启即失效，见 lib/chat/tab-reference.ts）。
+  if (survivingReferences.length > 0) {
+    committedDisplay = {
+      ...committedDisplay,
+      tabReferences: survivingReferences.map(({ id, title, url }) => ({ id, title, url })),
+    };
+  }
+
   set({
     messages: [...history, committedDisplay, makeMessage('assistant', '')],
     activitySteps: [],

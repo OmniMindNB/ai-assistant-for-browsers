@@ -82,6 +82,13 @@ export function buildTabRefContext(snapshots: TabRefSnapshot[]): string {
   ].join('\n\n');
 }
 
+/** 落库用的引用投影：只有身份信息，没有正文。 */
+export interface TabReferenceMeta {
+  id: number;
+  title: string;
+  url: string;
+}
+
 export interface MentionQuery {
   /** '@' 本身在原字符串中的下标，替换文本时用。 */
   start: number;

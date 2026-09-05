@@ -3,6 +3,7 @@ import type { MessageAttachment } from './attachments';
 import type { TaskOutcome } from '@/lib/agent/task-outcome';
 import type { ActivityStep } from '@/lib/agent/activity-steps';
 import type { ShortcutRerun } from './shortcut-rerun';
+import type { TabReferenceMeta } from './tab-reference';
 
 // 侧边栏消息的形状与派生规则（ref: docs/superpowers/specs/2026-07-26-edit-history-message-design.md §3）。
 // 本功能的全部可测逻辑集中在这里：vitest 只覆盖 lib/**，entrypoints/ 没有测试基建。
@@ -19,6 +20,8 @@ export interface ChatMessage {
   quotedText?: string;
   /** 已就绪附件的历史安全投影（文本/图片/PDF 元数据）；不重新进入后续轮次的 prompt。 */
   attachments?: MessageAttachment[];
+  /** 本轮用户显式引用的标签页（只有 title/url 元数据，不含正文）。重开会话不恢复授权。 */
+  tabReferences?: TabReferenceMeta[];
   /** 本轮任务成败信号；仅当模型在一个动过页面的回合里调用了 report_task_outcome 才会有值。 */
   taskOutcome?: TaskOutcome;
   /** 本轮是否被用户点了"停止"中断；仅 assistant 消息可能为 true，用于跟正常完成区分开渲染。 */
