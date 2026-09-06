@@ -673,7 +673,7 @@ describe('chat store page context', () => {
     useChat.setState({ conversationId: 'A', messages: [] });
 
     const shortcut = useChat.getState().runShortcut({
-      id: 'builtin:explain-selection', origin: 'builtin', scope: 'selection', customized: false,
+      id: 'builtin:translate-selection', origin: 'builtin', scope: 'selection', customized: false,
     });
     useChat.getState().clear();
     const replacementId = useChat.getState().conversationId;
@@ -908,7 +908,7 @@ describe('chat store page context', () => {
         .mockResolvedValueOnce({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } })
         .mockResolvedValueOnce({ ok: false, error: 'no selection' });
       const shortcut = {
-        id: 'builtin:explain-selection', origin: 'builtin' as const, scope: 'selection' as const, customized: false,
+        id: 'builtin:translate-selection', origin: 'builtin' as const, scope: 'selection' as const, customized: false,
       };
 
       await useChat.getState().runShortcut(shortcut);

@@ -3,9 +3,14 @@ import { en } from './i18n/locales/en';
 import { zh } from './i18n/locales/zh';
 import type { Translate, TranslationKey } from './i18n';
 import {
-  BUILTIN_EXPLAIN_ID,
+  BUILTINS_REVISION,
+  BUILTIN_FILL_FORM_ID,
+  BUILTIN_FOCUS_READ_ID,
+  BUILTIN_POLISH_ID,
   BUILTIN_SUMMARIZE_ID,
   BUILTIN_TRANSLATE_ID,
+  RETIRED_EXPLAIN_ID,
+  SHORTCUTS_REVISION_STORAGE_KEY,
   SHORTCUTS_STORAGE_KEY,
   defaultShortcutConfigs,
   loadShortcutConfigs,
@@ -36,7 +41,12 @@ function installStorage(initial: Record<string, unknown> = {}) {
   (globalThis as any).browser = {
     storage: {
       local: {
-        get: async (key: string) => (key in data ? { [key]: data[key] } : {}),
+        get: async (keys: string | string[]) => {
+          const wanted = Array.isArray(keys) ? keys : [keys];
+          return Object.fromEntries(
+            wanted.filter((key) => key in data).map((key) => [key, data[key]]),
+          );
+        },
         set,
       },
     },
@@ -51,12 +61,25 @@ afterEach(() => {
 });
 
 describe('shortcut defaults and localization', () => {
-  it('creates the three stable defaults in canonical order', () => {
+  it('creates the stable defaults in canonical order, page-scoped ones first', () => {
     expect(defaultShortcutConfigs().map((item) => item.id)).toEqual([
       BUILTIN_SUMMARIZE_ID,
-      BUILTIN_EXPLAIN_ID,
+      BUILTIN_FOCUS_READ_ID,
+      BUILTIN_FILL_FORM_ID,
       BUILTIN_TRANSLATE_ID,
+      BUILTIN_POLISH_ID,
     ]);
+  });
+
+  it('no longer offers the retired explain built-in', () => {
+    expect(defaultShortcutConfigs().map((item) => item.id)).not.toContain(RETIRED_EXPLAIN_ID);
+  });
+
+  it('gives the write-capable built-ins page scope so they receive browser tools', () => {
+    const scopes = new Map(defaultShortcutConfigs().map((item) => [item.id, item.scope]));
+    expect(scopes.get(BUILTIN_FOCUS_READ_ID)).toBe('page');
+    expect(scopes.get(BUILTIN_FILL_FORM_ID)).toBe('page');
+    expect(scopes.get(BUILTIN_POLISH_ID)).toBe('selection');
   });
 
   it('resolves an unedited built-in through the current locale', () => {
@@ -66,9 +89,21 @@ describe('shortcut defaults and localization', () => {
   });
 
   it('resolves the translate built-in through the current locale', () => {
-    const translateShortcut = defaultShortcutConfigs()[2];
+    const translateShortcut = defaultShortcutConfigs()[3];
     expect(resolveShortcut(translateShortcut, translator(zh)).name).toBe('翻译划词');
     expect(resolveShortcut(translateShortcut, translator(en)).name).toBe('Translate selection');
+  });
+
+  it('resolves the new built-ins through the current locale', () => {
+    const byId = new Map(defaultShortcutConfigs().map((item) => [item.id, item]));
+    const name = (id: string, dict: Record<TranslationKey, string>) =>
+      resolveShortcut(byId.get(id)!, translator(dict)).name;
+    expect(name(BUILTIN_FOCUS_READ_ID, zh)).toBe('专注阅读');
+    expect(name(BUILTIN_FOCUS_READ_ID, en)).toBe('Focus mode');
+    expect(name(BUILTIN_FILL_FORM_ID, zh)).toBe('帮我填表');
+    expect(name(BUILTIN_FILL_FORM_ID, en)).toBe('Fill this form');
+    expect(name(BUILTIN_POLISH_ID, zh)).toBe('润色改写');
+    expect(name(BUILTIN_POLISH_ID, en)).toBe('Polish selection');
   });
 
   it('keeps customized built-in text fixed across locales', () => {
@@ -89,16 +124,20 @@ describe('shortcut defaults and localization', () => {
 });
 
 describe('shortcut storage semantics', () => {
-  it('persists defaults when the storage key is absent', async () => {
+  it('persists defaults and the current revision when the storage key is absent', async () => {
     const { data, set } = installStorage();
     const loaded = await loadShortcutConfigs();
     expect(loaded.shortcuts).toEqual(defaultShortcutConfigs());
     expect(data[SHORTCUTS_STORAGE_KEY]).toEqual(defaultShortcutConfigs());
+    expect(data[SHORTCUTS_REVISION_STORAGE_KEY]).toBe(BUILTINS_REVISION);
     expect(set).toHaveBeenCalledTimes(1);
   });
 
-  it('preserves an explicitly stored empty array', async () => {
-    const { set } = installStorage({ [SHORTCUTS_STORAGE_KEY]: [] });
+  it('preserves an explicitly stored empty array once it is already at the current revision', async () => {
+    const { set } = installStorage({
+      [SHORTCUTS_STORAGE_KEY]: [],
+      [SHORTCUTS_REVISION_STORAGE_KEY]: BUILTINS_REVISION,
+    });
     const loaded = await loadShortcutConfigs();
     expect(loaded).toEqual({ shortcuts: [], errors: [] });
     expect(set).not.toHaveBeenCalled();
@@ -143,10 +182,10 @@ describe('shortcut storage semantics', () => {
     expect(result.errors).toHaveLength(1);
   });
 
-  it('filters a forged uncustomized explain shortcut before it can receive page tools', async () => {
+  it('filters a forged uncustomized selection shortcut before it can receive page tools', async () => {
     const forged = [
       {
-        id: BUILTIN_EXPLAIN_ID,
+        id: BUILTIN_TRANSLATE_ID,
         origin: 'builtin',
         scope: 'page',
         customized: false,
@@ -203,11 +242,16 @@ describe('shortcut storage semantics', () => {
   });
 
   it('reloads the latest array before applying a mutation', async () => {
-    installStorage({ [SHORTCUTS_STORAGE_KEY]: defaultShortcutConfigs() });
+    installStorage({
+      [SHORTCUTS_STORAGE_KEY]: defaultShortcutConfigs(),
+      [SHORTCUTS_REVISION_STORAGE_KEY]: BUILTINS_REVISION,
+    });
     await updateShortcutConfigs((items) => items.slice(1));
     expect((await loadShortcutConfigs()).shortcuts.map((item) => item.id)).toEqual([
-      BUILTIN_EXPLAIN_ID,
+      BUILTIN_FOCUS_READ_ID,
+      BUILTIN_FILL_FORM_ID,
       BUILTIN_TRANSLATE_ID,
+      BUILTIN_POLISH_ID,
     ]);
   });
 
@@ -230,6 +274,7 @@ describe('shortcut storage semantics', () => {
     };
     const { data, set } = installStorage({
       [SHORTCUTS_STORAGE_KEY]: [valid, invalid],
+      [SHORTCUTS_REVISION_STORAGE_KEY]: BUILTINS_REVISION,
     });
 
     const loaded = await loadShortcutConfigs();
@@ -261,6 +306,110 @@ describe('shortcut storage semantics', () => {
   });
 });
 
+describe('built-in retirement and revision migration', () => {
+  const legacy = (overrides: Record<string, unknown> = {}) => ({
+    id: RETIRED_EXPLAIN_ID,
+    origin: 'builtin',
+    scope: 'selection',
+    customized: false,
+    ...overrides,
+  });
+
+  it('drops an untouched retired built-in instead of reporting invalid config', async () => {
+    installStorage({
+      [SHORTCUTS_STORAGE_KEY]: [
+        { id: BUILTIN_SUMMARIZE_ID, origin: 'builtin', scope: 'page', customized: false },
+        legacy(),
+      ],
+    });
+
+    const loaded = await loadShortcutConfigs();
+
+    expect(loaded.errors).toEqual([]);
+    expect(loaded.shortcuts.map((item) => item.id)).not.toContain(RETIRED_EXPLAIN_ID);
+  });
+
+  it('keeps a customized retired built-in as a custom shortcut in place', async () => {
+    installStorage({
+      [SHORTCUTS_STORAGE_KEY]: [
+        { id: BUILTIN_SUMMARIZE_ID, origin: 'builtin', scope: 'page', customized: false },
+        legacy({ customized: true, name: '我的解释', prompt: '我自己的提示词' }),
+        { id: BUILTIN_TRANSLATE_ID, origin: 'builtin', scope: 'selection', customized: false },
+      ],
+    });
+
+    const loaded = await loadShortcutConfigs();
+
+    expect(loaded.errors).toEqual([]);
+    expect(loaded.shortcuts[1]).toEqual({
+      id: RETIRED_EXPLAIN_ID,
+      origin: 'custom',
+      scope: 'selection',
+      customized: true,
+      name: '我的解释',
+      prompt: '我自己的提示词',
+    });
+  });
+
+  it('appends the newly introduced built-ins after the user list and records the revision', async () => {
+    const { data } = installStorage({
+      [SHORTCUTS_STORAGE_KEY]: [
+        { id: BUILTIN_TRANSLATE_ID, origin: 'builtin', scope: 'selection', customized: false },
+        { id: BUILTIN_SUMMARIZE_ID, origin: 'builtin', scope: 'page', customized: false },
+      ],
+    });
+
+    const loaded = await loadShortcutConfigs();
+
+    expect(loaded.shortcuts.map((item) => item.id)).toEqual([
+      BUILTIN_TRANSLATE_ID,
+      BUILTIN_SUMMARIZE_ID,
+      BUILTIN_FOCUS_READ_ID,
+      BUILTIN_FILL_FORM_ID,
+      BUILTIN_POLISH_ID,
+    ]);
+    expect(data[SHORTCUTS_REVISION_STORAGE_KEY]).toBe(BUILTINS_REVISION);
+  });
+
+  it('adds only the newly introduced built-ins to a list the user had emptied', async () => {
+    installStorage({ [SHORTCUTS_STORAGE_KEY]: [] });
+
+    const loaded = await loadShortcutConfigs();
+
+    expect(loaded.shortcuts.map((item) => item.id)).toEqual([
+      BUILTIN_FOCUS_READ_ID,
+      BUILTIN_FILL_FORM_ID,
+      BUILTIN_POLISH_ID,
+    ]);
+  });
+
+  it('does not resurrect a new built-in the user deleted after the migration ran', async () => {
+    installStorage({ [SHORTCUTS_STORAGE_KEY]: [] });
+    await loadShortcutConfigs();
+
+    await updateShortcutConfigs((items) =>
+      items.filter((item) => item.id !== BUILTIN_FILL_FORM_ID),
+    );
+
+    expect((await loadShortcutConfigs()).shortcuts.map((item) => item.id)).toEqual([
+      BUILTIN_FOCUS_READ_ID,
+      BUILTIN_POLISH_ID,
+    ]);
+  });
+
+  it('leaves malformed storage untouched instead of migrating on top of it', async () => {
+    const { set } = installStorage({
+      [SHORTCUTS_STORAGE_KEY]: [{ id: 'bad', origin: 'custom', scope: 'unknown' }],
+    });
+
+    const loaded = await loadShortcutConfigs();
+
+    expect(loaded.errors).toHaveLength(1);
+    expect(loaded.shortcuts).toEqual([]);
+    expect(set).not.toHaveBeenCalled();
+  });
+});
+
 describe('shortcut list operations', () => {
   it('restores only missing built-ins at the end without replacing same-name custom items', () => {
     const custom: ShortcutConfig = {
@@ -274,9 +423,11 @@ describe('shortcut list operations', () => {
     const restored = restoreDefaultShortcuts([custom, defaultShortcutConfigs()[1]]);
     expect(restored.map((item) => item.id)).toEqual([
       'custom-1',
-      BUILTIN_EXPLAIN_ID,
+      BUILTIN_FOCUS_READ_ID,
       BUILTIN_SUMMARIZE_ID,
+      BUILTIN_FILL_FORM_ID,
       BUILTIN_TRANSLATE_ID,
+      BUILTIN_POLISH_ID,
     ]);
   });
 
@@ -287,9 +438,11 @@ describe('shortcut list operations', () => {
     ] satisfies ShortcutConfig[];
     expect(moveShortcut(items, 'custom-1', 'up').map((item) => item.id)).toEqual([
       BUILTIN_SUMMARIZE_ID,
-      BUILTIN_EXPLAIN_ID,
-      'custom-1',
+      BUILTIN_FOCUS_READ_ID,
+      BUILTIN_FILL_FORM_ID,
       BUILTIN_TRANSLATE_ID,
+      'custom-1',
+      BUILTIN_POLISH_ID,
     ]);
   });
 

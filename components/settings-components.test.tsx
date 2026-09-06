@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocaleProvider } from '@/lib/i18n';
+import { BUILTINS_REVISION, SHORTCUTS_REVISION_STORAGE_KEY } from '@/lib/shortcuts';
 import OptionsApp from '@/entrypoints/options/App';
 import ProviderSettings from './ProviderSettings';
 import RedactionSettings from './RedactionSettings';
@@ -54,9 +55,12 @@ describe('grouped options settings', () => {
           },
         ],
       },
+      // 带上当前内置版本号，免得 loadShortcutConfigs 的升级迁移往这个精简 fixture
+      // 里补进新内置，把下面按 id 断言的排序/删除用例冲掉。
+      [SHORTCUTS_REVISION_STORAGE_KEY]: BUILTINS_REVISION,
       'runi:shortcuts': [
         {
-          id: 'builtin:explain-selection',
+          id: 'builtin:translate-selection',
           origin: 'builtin',
           scope: 'selection',
           customized: false,
@@ -450,7 +454,7 @@ describe('grouped options settings', () => {
     const persisted = set.mock.calls.at(-1)?.[0]['runi:shortcuts'];
     expect(persisted.map((item: { id: string }) => item.id)).toEqual([
       'builtin:summarize-page',
-      'builtin:explain-selection',
+      'builtin:translate-selection',
     ]);
   });
 
@@ -458,17 +462,17 @@ describe('grouped options settings', () => {
     const set = (globalThis as any).browser.storage.local.set as ReturnType<typeof vi.fn>;
     renderWithLocale(<ShortcutSettings />);
     const summarize = (await screen.findByText('Summarize page')).closest('li')!;
-    const explain = screen.getByText('Explain selection').closest('li')!;
+    const translate = screen.getByText('Translate selection').closest('li')!;
     const dataTransfer = { effectAllowed: '', setData: vi.fn() };
 
     fireEvent.dragStart(summarize, { dataTransfer });
-    fireEvent.drop(explain, { dataTransfer });
+    fireEvent.drop(translate, { dataTransfer });
 
     await waitFor(() => {
       const persisted = set.mock.calls.at(-1)?.[0]['runi:shortcuts'];
       expect(persisted.map((item: { id: string }) => item.id)).toEqual([
         'builtin:summarize-page',
-        'builtin:explain-selection',
+        'builtin:translate-selection',
       ]);
     });
     expect(screen.getByRole('button', { name: 'Move Summarize page down' })).toBeEnabled();
@@ -484,7 +488,7 @@ describe('grouped options settings', () => {
 
     const persisted = set.mock.calls.at(-1)?.[0]['runi:shortcuts'];
     expect(persisted.map((item: { id: string }) => item.id)).toEqual([
-      'builtin:explain-selection',
+      'builtin:translate-selection',
     ]);
   });
 

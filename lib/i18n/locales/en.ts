@@ -265,16 +265,21 @@ export const en: Record<keyof typeof zh, string> = {
   'askUser.placeholder': 'Type your answer…',
   'askUser.submit': 'Send answer',
   'chat.summarizeChipLabel': 'Summarize page',
-  'chat.explainChipLabel': 'Explain selection',
   'shortcut.builtinSummarizeName': 'Summarize page',
   'shortcut.builtinSummarizePrompt':
     "Summarize the current page: first identify the page type (news/article, product, documentation/reference, forum/Q&A, listing/search results, etc.) and tailor the summary to it. Lead with a one-sentence takeaway or main point, then list 3-5 supporting points with concrete specifics (numbers, conclusions, names) rather than vague filler like \"this page discusses...\". If the extracted text is clearly incomplete or dominated by navigation/ads with too little real content, say so instead of guessing. Don't open with process narration like \"I read the page\". Respond in English.",
-  'shortcut.builtinExplainName': 'Explain selection',
-  'shortcut.builtinExplainPrompt':
-    "Explain the selected text: first identify whether it's a term/abbreviation, a name (person/product), a hard-to-parse sentence, or a code snippet, then explain it accordingly (definition and typical usage for a term, the expansion and meaning for an abbreviation, a plain-language rephrasing for a hard sentence, what it does for code). If the selection is ambiguous without more context, list the plausible readings instead of guessing one. Keep the answer to two or three sentences unless the selection itself is long enough to warrant more; don't restate the original text. Respond in English.",
+  'shortcut.builtinFocusReadName': 'Focus mode',
+  'shortcut.builtinFocusReadPrompt':
+    "Rework the current page for distraction-free reading: first locate the real article container plus the distractions around it (ad slots, floating bars, cookie notices, subscription popups, sidebar recommendations, sticky toolbars), then hide those distractions and give the article a larger font, more line height, and a narrower measure. Do not hide the article itself, the main navigation, or anything tied to login state — under-hide rather than break the page. Use as few calls as possible: fold distractions of the same kind into one selector and handle them in a single call instead of one at a time. When done, say in one sentence what you hid and what you adjusted; don't list the CSS. Respond in English.",
+  'shortcut.builtinFillFormName': 'Fill this form',
+  'shortcut.builtinFillFormPrompt':
+    "Fill in the form on the current page: first read every field and work out what kind of form this is (sign-up, registration, application, checkout, etc.). Fill anything you can infer from the page context or from what I've already told you; for required fields you cannot infer, ask me for all the missing information at once rather than one field at a time. Never fill passwords or payment card fields — tell me to enter those myself. Afterwards, check what was actually written and report in one sentence which fields you filled and which you skipped. Do not submit the form unless I explicitly ask you to. Respond in English.",
   'shortcut.builtinTranslateName': 'Translate selection',
   'shortcut.builtinTranslatePrompt':
     "Translate the selected text into English; if it is already in English, translate it into Chinese instead. Preserve the original meaning, tone, and formatting (line breaks, list structure); keep proper nouns, code, and formulas as-is when they shouldn't be translated. Output only the translation itself, without a preamble like \"Here's the translation:\" or extra commentary.",
+  'shortcut.builtinPolishName': 'Polish selection',
+  'shortcut.builtinPolishPrompt':
+    "Polish and rewrite the selected text: first work out its genre and setting (email, comment, social post, commit message, formal document, etc.) and adjust tone and wording to match. Preserve the meaning, the original language, and the existing formatting (line breaks, lists, code, links stay as they are); don't add or drop facts, and don't inflate any commitments. Aim for clearer, more natural, more concise — cut filler and stilted phrasing rather than piling on flourishes. Output only the rewritten text, with no preamble like \"Here's the rewrite:\" and no explanation of what you changed; if the original is already good, return it unchanged.",
   'shortcut.selectionAskBubbleLabel': SELECTION_ASK_BUBBLE_LABEL.en,
   'shortcut.selectionAskToggleLabel': 'Enable selection-ask bubble',
   'shortcut.heading': 'Shortcuts',
