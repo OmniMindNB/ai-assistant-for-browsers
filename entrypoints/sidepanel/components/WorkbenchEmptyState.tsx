@@ -1,5 +1,3 @@
-import type { ShortcutConfig } from '@/lib/shortcuts';
-import { isUsableShortcutCommand, type ResolvedShortcutCommand } from '@/lib/workbench/presentation';
 import { useTranslation } from '@/lib/i18n';
 
 /**
@@ -19,16 +17,17 @@ const WRITE_EXAMPLE_KEYS = [
 ] as const;
 
 export interface WorkbenchEmptyStateProps {
-  shortcuts: readonly ResolvedShortcutCommand[];
   busy: boolean;
-  onRunShortcut(shortcut: ShortcutConfig): void;
   /** 把示例填进输入框（不发送）。不传则不展示示例区。 */
   onPickExample?(text: string): void;
 }
 
-export function WorkbenchEmptyState({ shortcuts, busy, onRunShortcut, onPickExample }: WorkbenchEmptyStateProps) {
+/**
+ * 空状态只负责"教会用户我能动手"，不再自己摆一排快捷指令胶囊——那排和输入区里的是同一份
+ * `slice(0, 4)` 数据的两次渲染，首屏会把同样四个指令说两遍。一键执行的入口只留常驻的输入区。
+ */
+export function WorkbenchEmptyState({ busy, onPickExample }: WorkbenchEmptyStateProps) {
   const { t } = useTranslation();
-  const suggestions = shortcuts.filter(isUsableShortcutCommand).slice(0, 4);
 
   return (
     <div className="m-auto flex w-full max-w-md flex-col items-center text-center">
@@ -44,8 +43,7 @@ export function WorkbenchEmptyState({ shortcuts, busy, onRunShortcut, onPickExam
         {t('workbench.emptyDescription')}
       </p>
       {onPickExample && (
-        <div className="mt-5 flex w-full flex-col gap-1.5">
-          <p className="text-xs text-neutral-400 dark:text-neutral-500">{t('workbench.examplesLabel')}</p>
+        <div className="mt-4 flex w-full flex-col gap-1.5">
           {WRITE_EXAMPLE_KEYS.map((key) => {
             const text = t(key);
             return (
@@ -60,23 +58,6 @@ export function WorkbenchEmptyState({ shortcuts, busy, onRunShortcut, onPickExam
               </button>
             );
           })}
-        </div>
-      )}
-      {suggestions.length > 0 && (
-        <div className="mt-5 flex flex-wrap justify-center gap-2">
-          {suggestions.map(({ config, resolved }) => (
-            <button
-              key={config.id}
-              type="button"
-              disabled={busy}
-              onClick={() => onRunShortcut(config)}
-              aria-label={resolved.name}
-              title={resolved.name}
-              className="inline-flex max-w-48 items-center rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs text-neutral-700 transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
-            >
-              <span className="truncate">{resolved.name}</span>
-            </button>
-          ))}
         </div>
       )}
     </div>

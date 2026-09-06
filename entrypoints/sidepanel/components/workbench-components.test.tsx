@@ -768,6 +768,28 @@ describe('workbench composer', () => {
     expect(onSelectProviderModel).toHaveBeenCalledWith(configuredProvider.id, 'model-two');
   });
 
+  // 400px 的侧栏里，"火山引擎 deepseek-v4-flash" 这种带 provider 前缀的按钮会把工具条挤到折行，
+  // 而 provider 名在下拉里每个分组标题上都写着，触发器上重复一遍并不增加信息。
+  it('模型触发器只显示模型名，provider 名收进 title', () => {
+    render(<ComposerHarness providers={[configuredProvider]} selectedProviderId={configuredProvider.id} selectedModel="model-one" />);
+
+    const trigger = screen.getByRole('button', { name: 'Select provider and model' });
+    expect(trigger).toHaveTextContent('model-one');
+    expect(trigger).not.toHaveTextContent('Configured provider');
+    expect(trigger).toHaveAttribute('title', 'Configured provider · model-one');
+  });
+
+  // 工具条一旦折行就把输入框往下顶，输入框的位置会随快捷指令条数变化而跳动。
+  it('工具条横向滚动而不是折行，输入框位置固定', () => {
+    render(<ComposerHarness providers={[configuredProvider]} selectedProviderId={configuredProvider.id} selectedModel="model-one" />);
+
+    expect(screen.getByTestId('composer-toolbar')).not.toHaveClass('flex-wrap');
+    // 只有胶囊那一层滚：模型选择器不该被滚出视野，而且它的 absolute 菜单会被任何
+    // 夹在它和最外层 relative 容器之间的 overflow 裁掉。
+    expect(screen.getByTestId('composer-shortcuts')).toHaveClass('flex-nowrap', 'overflow-x-auto');
+    expect(screen.getByTestId('composer-toolbar')).not.toHaveClass('overflow-x-auto');
+  });
+
   it('anchors the model menu to the full composer width at narrow sidepanel sizes', async () => {
     const user = userEvent.setup();
     render(<ComposerHarness providers={[configuredProvider]} selectedProviderId={configuredProvider.id} selectedModel="model-one" />);
@@ -1431,13 +1453,13 @@ describe('confirmation card', () => {
 });
 
 describe('workbench context controls', () => {
-  it('disables empty-state shortcuts while an attachment is parsing', async () => {
+  it('disables composer shortcuts while an attachment is parsing', async () => {
     const user = userEvent.setup();
     (chatStore as any).shortcuts = emptyStateShortcuts.map(({ config }) => config);
     (chatStore as any).pendingAttachments = [parsingPdf];
     render(<LocaleProvider><App /></LocaleProvider>);
 
-    const shortcut = within(screen.getByRole('main')).getByRole('button', { name: 'Shortcut 1' });
+    const shortcut = screen.getByRole('button', { name: 'Shortcut 1' });
     expect(shortcut).toBeDisabled();
     await user.click(shortcut);
     expect(chatStore.runShortcut).not.toHaveBeenCalled();
@@ -1544,7 +1566,7 @@ describe('workbench context controls', () => {
   it('shows a single unified empty-state message regardless of intent', () => {
     render(
       <LocaleProvider>
-        <WorkbenchEmptyState shortcuts={emptyStateShortcuts} busy={false} onRunShortcut={vi.fn()} />
+        <WorkbenchEmptyState busy={false} />
       </LocaleProvider>,
     );
 
@@ -1554,15 +1576,14 @@ describe('workbench context controls', () => {
     ).toBeVisible();
   });
 
-  it('limits empty-state shortcuts to four entries', () => {
-    render(
-      <LocaleProvider>
-        <WorkbenchEmptyState shortcuts={emptyStateShortcuts} busy={false} onRunShortcut={vi.fn()} />
-      </LocaleProvider>,
-    );
+  // 空状态和输入区曾经各渲染一排 `slice(0, 4)` 出来的胶囊，取的是同一份数据，
+  // 于是首屏永远把同样四个快捷指令摆两遍。入口只留常驻的输入区那一处。
+  it('首屏每个快捷指令只出现一次，空状态不再重复渲染一排胶囊', () => {
+    (chatStore as any).shortcuts = emptyStateShortcuts.map(({ config }) => config);
+    render(<LocaleProvider><App /></LocaleProvider>);
 
-    expect(screen.getAllByRole('button', { name: /Shortcut/ })).toHaveLength(4);
-    expect(screen.queryByRole('button', { name: 'Shortcut 5' })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Shortcut 1' })).toHaveLength(1);
+    expect(within(screen.getByRole('main')).queryByRole('button', { name: /Shortcut/ })).not.toBeInTheDocument();
   });
 
   // 三个内置快捷指令全是读操作，只摆它们会把产品定位成"页面问答"，
@@ -1570,12 +1591,7 @@ describe('workbench context controls', () => {
   it('展示写操作示例，让空状态不止有读操作', () => {
     render(
       <LocaleProvider>
-        <WorkbenchEmptyState
-          shortcuts={emptyStateShortcuts}
-          busy={false}
-          onRunShortcut={vi.fn()}
-          onPickExample={vi.fn()}
-        />
+        <WorkbenchEmptyState busy={false} onPickExample={vi.fn()} />
       </LocaleProvider>,
     );
 
@@ -1587,30 +1603,36 @@ describe('workbench context controls', () => {
   it('点击示例是交给调用方填进输入框，而不是直接执行', async () => {
     const user = userEvent.setup();
     const onPickExample = vi.fn();
-    const onRunShortcut = vi.fn();
     render(
       <LocaleProvider>
-        <WorkbenchEmptyState
-          shortcuts={emptyStateShortcuts}
-          busy={false}
-          onRunShortcut={onRunShortcut}
-          onPickExample={onPickExample}
-        />
+        <WorkbenchEmptyState busy={false} onPickExample={onPickExample} />
       </LocaleProvider>,
     );
 
     await user.click(screen.getByRole('button', { name: 'Fill in the form on this page for me' }));
     expect(onPickExample).toHaveBeenCalledWith('Fill in the form on this page for me');
-    expect(onRunShortcut).not.toHaveBeenCalled();
   });
 
   it('不传 onPickExample 时不展示示例区', () => {
     render(
       <LocaleProvider>
-        <WorkbenchEmptyState shortcuts={emptyStateShortcuts} busy={false} onRunShortcut={vi.fn()} />
+        <WorkbenchEmptyState busy={false} />
       </LocaleProvider>,
     );
+    expect(screen.queryByRole('button', { name: 'Fill in the form on this page for me' })).not.toBeInTheDocument();
+  });
+
+  // 三条示例卡片本身就是祈使句，上面再顶一行"也可以让我直接动手："是把同一件事说了两遍，
+  // 还在窄侧栏里多占一层视觉层级。
+  it('示例区不再多一层小标题，整个空状态只有三个可点目标', () => {
+    render(
+      <LocaleProvider>
+        <WorkbenchEmptyState busy={false} onPickExample={vi.fn()} />
+      </LocaleProvider>,
+    );
+
     expect(screen.queryByText('Or have me act on the page:')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button')).toHaveLength(3);
   });
 });
 

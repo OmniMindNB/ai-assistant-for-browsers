@@ -112,6 +112,9 @@ export function WorkbenchComposer({
     && (input.trim().length > 0 || hasReadyAttachment);
   const selectedProvider = providers.find((provider) => provider.id === selectedProviderId);
   const currentModel = selectedModel || selectedProvider?.model || '';
+  const modelLabel = currentModel || t('chat.noModelSelected');
+  // 触发器上只留模型名，provider 名退到 title 里——鼠标悬停仍拿得到完整信息。
+  const modelTriggerTitle = selectedProvider ? `${selectedProvider.name} · ${modelLabel}` : modelLabel;
   const modelOptions = providers.flatMap((provider) =>
     providerModels(provider).map((model) => ({ provider, model })),
   );
@@ -442,9 +445,14 @@ export function WorkbenchComposer({
             )}
           </div>
         )}
-        <div className="mb-2 flex flex-wrap items-center gap-2">
+        {/* 工具条永不折行：一旦 flex-wrap 生效，它会随快捷指令条数在一行/两行之间跳，
+            把下面的输入框一起顶上顶下。宽度不够时让胶囊横向滚出去。
+            滚动只加在胶囊那一层，不加在整条工具条上，有两个原因：模型选择器不该被滚出视野；
+            而且模型菜单是 absolute 定位、containing block 是最外层那个 relative 容器，
+            任何夹在两者之间的 overflow 容器都会把它裁掉。 */}
+        <div data-testid="composer-toolbar" className="mb-2 flex items-center gap-2">
           {providers.length > 0 && (
-            <div>
+            <div className="shrink-0">
               <button
                 ref={modelTriggerRef}
                 type="button"
@@ -454,10 +462,11 @@ export function WorkbenchComposer({
                 aria-haspopup="menu"
                 aria-expanded={openPopover === 'models'}
                 aria-controls={openPopover === 'models' ? 'workbench-model-menu' : undefined}
-                className="inline-flex max-w-[60vw] items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
+                title={modelTriggerTitle}
+                className="inline-flex max-w-[60vw] shrink-0 items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
               >
-                {selectedProvider && <span className="shrink-0 text-neutral-400 dark:text-neutral-500">{selectedProvider.name}</span>}
-                <span className="truncate font-medium text-neutral-700 dark:text-neutral-200">{currentModel || t('chat.noModelSelected')}</span>
+                {/* provider 名不上触发器：下拉里每个分组标题都写着它，重复一遍只是在窄侧栏里吃宽度。 */}
+                <span className="truncate font-medium text-neutral-700 dark:text-neutral-200">{modelLabel}</span>
                 <IconChevronDown className="h-3.5 w-3.5 shrink-0 text-neutral-400 dark:text-neutral-500" />
               </button>
               {openPopover === 'models' && (
@@ -492,20 +501,26 @@ export function WorkbenchComposer({
             </div>
           )}
 
-          {quickShortcuts.map(({ config, resolved }) => (
-            <button
-              key={config.id}
-              type="button"
-              disabled={requestBlocked}
-              onClick={() => onRunShortcut(config)}
-              aria-label={resolved.name}
-              title={resolved.name}
-              className="inline-flex max-w-40 items-center rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
-            >
-              <span className="truncate">{resolved.name}</span>
-            </button>
-          ))}
+          <div
+            data-testid="composer-shortcuts"
+            className="flex min-w-0 flex-1 flex-nowrap items-center gap-2 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
+            {quickShortcuts.map(({ config, resolved }) => (
+              <button
+                key={config.id}
+                type="button"
+                disabled={requestBlocked}
+                onClick={() => onRunShortcut(config)}
+                aria-label={resolved.name}
+                title={resolved.name}
+                className="inline-flex max-w-40 shrink-0 items-center rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
+              >
+                <span className="truncate">{resolved.name}</span>
+              </button>
+            ))}
+          </div>
         </div>
+
 
         {quotedSelection && (
           <div

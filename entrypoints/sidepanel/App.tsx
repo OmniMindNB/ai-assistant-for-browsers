@@ -294,12 +294,7 @@ export default function App() {
             <main ref={scrollRef} className="h-full overflow-y-auto">
               <div className="mx-auto flex min-h-full max-w-3xl flex-col gap-6 px-4 py-6">
                 {messages.length === 0 ? (
-                  <WorkbenchEmptyState
-                    shortcuts={resolvedShortcuts}
-                    busy={requestBlocked}
-                    onRunShortcut={executeShortcut}
-                    onPickExample={pickExample}
-                  />
+                  <WorkbenchEmptyState busy={requestBlocked} onPickExample={pickExample} />
                 ) : (
                   messages.map((m, i) => (
                     <Message

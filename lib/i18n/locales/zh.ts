@@ -99,7 +99,6 @@ export const zh = {
   'sidebar.confirmDeleteConversationAriaLabel': '确认删除会话 {title}？再次点击即删除。',
   'workbench.history': '对话历史',
   'workbench.composerPlaceholder': '提问，或让我直接动手…',
-  'workbench.examplesLabel': '也可以让我直接动手：',
   'workbench.exampleFillForm': '帮我把这个页面上的表单填好',
   'workbench.exampleReadable': '把正文调成适合阅读的样式，去掉干扰元素',
   'workbench.exampleExtract': '把这一页的关键信息整理成一张表',
