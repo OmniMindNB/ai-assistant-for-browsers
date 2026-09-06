@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { createAgentToolPolicy } from './tool-policy';
+import {
+  createAgentToolPolicy,
+  MAX_FREE_FAILED_CALLS,
+  MAX_FREE_WAIT_CALLS,
+} from './tool-policy';
 
 describe('AgentToolPolicy budgets', () => {
   it('blocks reads after the read budget', () => {
@@ -16,7 +20,9 @@ describe('AgentToolPolicy budgets', () => {
     expect(policy.preflight('browser_click', { selector: '#save' }, true)).toBeUndefined();
     policy.approveWrite();
     expect(policy.preflight('browser_click', { selector: '#save' }, true)).toBeUndefined();
-    expect(policy.currentBudget).toBe(4);
+    // 写档是在已用次数之上追加的额度，不是与读档共享的总上限：读满 2 次再动手，
+    // 仍然拿得到完整的 4 次写入额度。
+    expect(policy.currentBudget).toBe(6);
   });
 
   it('does not expand unless approveWrite is called', () => {
@@ -27,6 +33,16 @@ describe('AgentToolPolicy budgets', () => {
     expect(policy.preflight('browser_get_html', {}, false)?.block).toBe(true);
   });
 
+  it('pins the write phase to the first approval', () => {
+    const policy = createAgentToolPolicy({ readToolCallBudget: 2, writeToolCallBudget: 4 });
+    policy.recordExecution('browser_read_page', {}, false);
+    policy.approveWrite();
+    expect(policy.currentBudget).toBe(5);
+    policy.recordExecution('browser_click', { selector: '#a' }, false);
+    policy.approveWrite();
+    expect(policy.currentBudget).toBe(5);
+  });
+
   it('allows only one pending write tool at the read boundary', () => {
     const policy = createAgentToolPolicy({ readToolCallBudget: 2, writeToolCallBudget: 4 });
     policy.recordExecution('browser_read_page', {}, false);
@@ -35,6 +51,48 @@ describe('AgentToolPolicy budgets', () => {
     expect(policy.currentBudget).toBe(2);
     expect(policy.preflight('browser_type', { selector: '#name', text: 'Ada' }, true)).toMatchObject({ block: true });
     expect(policy.currentBudget).toBe(2);
+  });
+});
+
+// 等待类工具不产出任何页面信息，却和一次 browser_get_html 扣得一样多：慢页面上等三次
+// 就等于少读三次。给它们一份独立的免费配额，同时用配额上限堵住"无限空转"这个漏洞。
+describe('AgentToolPolicy waiting tools', () => {
+  it('does not charge waiting tools against the budget', () => {
+    const policy = createAgentToolPolicy({ readToolCallBudget: 2, writeToolCallBudget: 4 });
+    policy.recordExecution('wait', { seconds: 1 }, false);
+    policy.recordExecution('browser_wait_for', { appear: '.ready' }, false);
+    expect(policy.remaining).toBe(2);
+    expect(policy.preflight('browser_get_html', {}, false)).toBeUndefined();
+  });
+
+  it('starts charging waiting tools once the free quota is spent', () => {
+    const policy = createAgentToolPolicy({ readToolCallBudget: 10, writeToolCallBudget: 20 });
+    for (let i = 0; i < MAX_FREE_WAIT_CALLS; i += 1) {
+      policy.recordExecution('wait', { seconds: i }, false);
+    }
+    expect(policy.remaining).toBe(10);
+    policy.recordExecution('wait', { seconds: 99 }, false);
+    expect(policy.remaining).toBe(9);
+  });
+});
+
+// 猜错选择器最需要留余量重试，而修复前失败调用照样扣预算，等于在最该给机会的时候收紧。
+describe('AgentToolPolicy failure grace', () => {
+  it('does not charge the first failed calls', () => {
+    const policy = createAgentToolPolicy({ readToolCallBudget: 10, writeToolCallBudget: 20 });
+    for (let i = 0; i < MAX_FREE_FAILED_CALLS; i += 1) {
+      policy.recordExecution('browser_query_dom', { selector: `.miss-${i}` }, true);
+    }
+    expect(policy.remaining).toBe(10);
+    policy.recordExecution('browser_query_dom', { selector: '.miss-again' }, true);
+    expect(policy.remaining).toBe(9);
+  });
+
+  it('keeps charging successful calls while the failure grace is unspent', () => {
+    const policy = createAgentToolPolicy({ readToolCallBudget: 10, writeToolCallBudget: 20 });
+    policy.recordExecution('browser_query_dom', { selector: '.miss' }, true);
+    policy.recordExecution('browser_read_page', {}, false);
+    expect(policy.remaining).toBe(9);
   });
 });
 
@@ -134,8 +192,8 @@ describe('AgentToolPolicy budget warnings', () => {
     drain(policy, 7);
     expect(policy.budgetWarning()).toContain('5');
     policy.approveWrite();
-    // 预算 12 → 24，remaining 回到 17：不该因为「又跌回 5」而重复提醒。
-    drain(policy, 12);
+    // 预算 12 → 7+24=31，remaining 回到 24：不该因为「又跌回 5」而重复提醒。
+    drain(policy, 19);
     expect(policy.remaining).toBe(5);
     expect(policy.budgetWarning()).toBeUndefined();
     // 但更紧的那一档仍然要能触发。

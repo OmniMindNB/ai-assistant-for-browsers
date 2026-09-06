@@ -4,6 +4,7 @@ export type SettingsSection =
   | 'appearance'
   | 'language'
   | 'providers'
+  | 'budget'
   | 'shortcuts'
   | 'privacy'
   | 'about';
@@ -57,6 +58,7 @@ export default function SettingsShell({
     appearance: null,
     language: null,
     providers: null,
+    budget: null,
     shortcuts: null,
     privacy: null,
     about: null,

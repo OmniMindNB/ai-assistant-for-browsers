@@ -32,11 +32,12 @@ import {
   isEditableMessage,
   type ChatMessage,
 } from '@/lib/chat/messages';
+import { buildSystemPrompt } from '@/lib/agent/system-prompt';
 import {
-  buildSystemPrompt,
-  DEFAULT_READ_TOOL_CALL_BUDGET,
-  DEFAULT_WRITE_TOOL_CALL_BUDGET,
-} from '@/lib/agent/system-prompt';
+  DEFAULT_TOOL_BUDGET_PROFILE_ID,
+  loadToolBudgetProfileId,
+  resolveToolBudgetProfile,
+} from '@/lib/agent/budget-profile';
 import { buildShortcutExecution, MAX_SHORTCUT_SELECTION_CHARS, type PagePrefetch } from '@/lib/chat/shortcut-prompts';
 import { type ActivityStep } from '@/lib/agent/activity-steps';
 import { getConversationIdForTab, setConversationIdForTab } from '@/lib/agent/tab-conversation';
@@ -1310,6 +1311,12 @@ async function runAgent(
   const tabId = tab.id;
   run.tabId = tabId;
   const tabSession = await loadTabSession(tabId).catch(() => createTabSession(tabId));
+  // 每轮现读一次，不做模块级缓存：用户在设置页改完档位后，下一条消息就该按新档位跑，
+  // 而不用重开面板。读失败按标准档处理——预算档位不该成为发不出消息的理由。
+  const budget = resolveToolBudgetProfile(
+    await loadToolBudgetProfileId().catch(() => DEFAULT_TOOL_BUDGET_PROFILE_ID),
+  );
+  if (!isCurrentRun(run, get)) return false;
 
   // 截断必须放在 Provider 校验与 resolveActiveTabId 之后：那两处失败会 set({ error }) 直接 return，
   // 若此时历史已被截断，用户的消息就被不可恢复地丢弃了，而这是用户完全没有预期的失败路径
@@ -1445,8 +1452,7 @@ async function runAgent(
     provider: agentProvider,
     systemPrompt: buildSystemPrompt({
       locale: getCurrentLocale(),
-      readToolCallBudget: DEFAULT_READ_TOOL_CALL_BUDGET,
-      writeToolCallBudget: DEFAULT_WRITE_TOOL_CALL_BUDGET,
+      ...budget,
       now: new Date(),
       page: options.withoutBrowserTools ? undefined : { tabId, title: tab.title, url: tab.url },
       constraints: options.systemPromptSuffix,
@@ -1461,8 +1467,7 @@ async function runAgent(
     displayMessage: committedDisplay,
     agentUserContent: committedAgentUserContent,
     images: committedImages,
-    readToolCallBudget: DEFAULT_READ_TOOL_CALL_BUDGET,
-    writeToolCallBudget: DEFAULT_WRITE_TOOL_CALL_BUDGET,
+    ...budget,
     referencedTabs: survivingReferences.map(({ id, title, url }) => ({ id, title, url })),
   });
   return true;

@@ -290,13 +290,21 @@ describe('buildSystemPrompt runtime context', () => {
 describe('buildSystemPrompt options', () => {
   it('states the default read and write tool budgets', () => {
     expect(SYSTEM_PROMPT).toContain(`读取和分析最多 ${DEFAULT_READ_TOOL_CALL_BUDGET} 次`);
-    expect(SYSTEM_PROMPT).toContain(`开始写入或交互后，本轮总预算最多 ${DEFAULT_WRITE_TOOL_CALL_BUDGET} 次`);
+    expect(SYSTEM_PROMPT).toContain(`开始写入或交互后，再追加最多 ${DEFAULT_WRITE_TOOL_CALL_BUDGET} 次`);
   });
 
+  // 写档是"在已用次数之上追加"，不是与读档共享的总上限（ref: tool-policy.ts 的 writePhaseStart）。
+  // 提示词必须照实说，否则模型会按一个比真实值更紧的上限自我设限。
   it('states custom read and write tool budgets', () => {
     const prompt = buildSystemPrompt({ readToolCallBudget: 3, writeToolCallBudget: 7 });
     expect(prompt).toContain('读取和分析最多 3 次');
-    expect(prompt).toContain('开始写入或交互后，本轮总预算最多 7 次');
+    expect(prompt).toContain('开始写入或交互后，再追加最多 7 次');
+  });
+
+  // 追加语义下写档不该再被读档夹住：写 2 读 9 是完全合法的一组配置。
+  it('does not clamp a write budget smaller than the read budget', () => {
+    const prompt = buildSystemPrompt({ readToolCallBudget: 9, writeToolCallBudget: 2 });
+    expect(prompt).toContain('开始写入或交互后，再追加最多 2 次');
   });
 
   it('omits session_constraints when no constraint is given', () => {

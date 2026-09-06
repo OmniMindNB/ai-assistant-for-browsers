@@ -96,6 +96,7 @@ vi.mock('@/lib/chat/pdfjs-runtime', () => ({
   extractPdfAttachment: mocks.extractPdfAttachment,
 }));
 
+import { TOOL_BUDGET_PROFILES, TOOL_BUDGET_STORAGE_KEY } from '@/lib/agent/budget-profile';
 import { useChat } from './store';
 
 const provider = {
@@ -371,6 +372,33 @@ describe('chat store page context', () => {
     // 该轮明确不读取当前页面，因此不能把页面标题/地址注入系统提示词。
     expect(startRun.systemPrompt).not.toContain('https://example.com/');
     expect(startRun.systemPrompt).not.toContain('id=7');
+  });
+
+  // 预算档位是用户在设置页里选的，必须真的一路送到 background 的 run（startRun 的两个
+  // budget 字段）和系统提示词里——只送一边的话，模型自我设限的数字会和实际闸门对不上。
+  it('sends the standard tool budgets when no profile is stored', async () => {
+    await connectPort();
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+
+    await useChat.getState().send('hello');
+
+    expect(lastStartRunCall()).toEqual(expect.objectContaining(TOOL_BUDGET_PROFILES.standard));
+  });
+
+  it('applies the stored tool budget profile to both the run and the system prompt', async () => {
+    await connectPort();
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    (globalThis as any).browser.storage.local.get = vi
+      .fn()
+      .mockResolvedValue({ [TOOL_BUDGET_STORAGE_KEY]: 'generous' });
+
+    await useChat.getState().send('hello');
+
+    const startRun = lastStartRunCall();
+    const generous = TOOL_BUDGET_PROFILES.generous;
+    expect(startRun).toEqual(expect.objectContaining(generous));
+    expect(startRun.systemPrompt).toContain(`读取和分析最多 ${generous.readToolCallBudget} 次`);
+    expect(startRun.systemPrompt).toContain(`再追加最多 ${generous.writeToolCallBudget} 次`);
   });
 
   it('injects the pinned tab and current time into the system prompt on a normal send', async () => {

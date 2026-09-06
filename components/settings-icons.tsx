@@ -64,6 +64,16 @@ export function IconPrivacy({ className }: IconProps) {
   );
 }
 
+export function IconBudget({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M12 3a9 9 0 1 0 9 9" />
+      <path d="M12 3a9 9 0 0 1 9 9h-9z" />
+      <path d="M12 8v4" />
+    </Svg>
+  );
+}
+
 export function IconAbout({ className }: IconProps) {
   return (
     <Svg className={className}>

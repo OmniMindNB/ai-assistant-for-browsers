@@ -15,6 +15,26 @@ export interface ToolPreflightBlock {
  */
 const BUDGET_WARNING_THRESHOLDS = [2, 5] as const;
 
+/**
+ * 只等待、不产出任何页面信息的工具。它们此前和一次 browser_get_html 扣得一样多，
+ * 于是"页面加载慢"这件与任务难度无关的事直接吃掉了读预算。
+ * 注意这里只免记账，连续失败拦截照常适用。
+ */
+const FREE_WAIT_TOOL_NAMES = new Set(['wait', 'browser_wait_for']);
+
+/**
+ * 免费等待的次数上限。不设上限的话，模型可以用参数各不相同的 wait 无限空转——
+ * 连续失败拦截只认失败，认不出"每次都成功地等了 1 秒"。
+ */
+export const MAX_FREE_WAIT_CALLS = 5;
+
+/**
+ * 前若干次失败不计入预算。猜错选择器恰恰是最需要留余量重试的时刻，
+ * 而修复前失败照样扣预算，等于在最该给机会的地方收紧。
+ * 同样有上限：越过配额后失败恢复正常计费，配合连续失败拦截兜住失控的循环。
+ */
+export const MAX_FREE_FAILED_CALLS = 3;
+
 export interface AgentToolPolicy {
   readonly completedToolCalls: number;
   readonly currentBudget: number;
@@ -53,9 +73,13 @@ export function toolSignature(toolName: string, args: unknown): string {
 }
 
 export function createAgentToolPolicy(options: AgentToolPolicyOptions): AgentToolPolicy {
-  const writeToolCallBudget = Math.max(options.readToolCallBudget, options.writeToolCallBudget);
+  const writeToolCallBudget = Math.max(0, options.writeToolCallBudget);
   let completedToolCalls = 0;
   let writeApproved = false;
+  /** 写入获批那一刻已经用掉的次数；写档从这里往上追加，不与读档共享同一个总上限。 */
+  let writePhaseStart = 0;
+  let freeWaitCalls = 0;
+  let freeFailedCalls = 0;
   let boundaryWriteReserved = false;
   let consecutiveFailure: { signature: string; count: number } | undefined;
   let consecutivePreExecutionBlocks = 0;
@@ -67,7 +91,7 @@ export function createAgentToolPolicy(options: AgentToolPolicyOptions): AgentToo
       return completedToolCalls;
     },
     get currentBudget() {
-      return writeApproved ? writeToolCallBudget : options.readToolCallBudget;
+      return writeApproved ? writePhaseStart + writeToolCallBudget : options.readToolCallBudget;
     },
     get exhausted() {
       return completedToolCalls >= this.currentBudget;
@@ -107,13 +131,25 @@ export function createAgentToolPolicy(options: AgentToolPolicyOptions): AgentToo
       return undefined;
     },
     approveWrite() {
+      // 只认第一次：每次写入都重新起算的话，写档就成了永不耗尽的滚动窗口。
+      if (writeApproved) return;
       writeApproved = true;
+      writePhaseStart = completedToolCalls;
     },
     recordPreExecutionBlock() {
       consecutivePreExecutionBlocks += 1;
     },
     recordExecution(toolName, args, isError) {
-      completedToolCalls += 1;
+      // 两份免费配额，各自独立且都有上限：等待类工具不产出信息，失败调用最需要重试余量。
+      // 等待优先于失败判定——一次失败的 wait 归等待配额，不该白白吃掉重试余量。
+      if (FREE_WAIT_TOOL_NAMES.has(toolName) && freeWaitCalls < MAX_FREE_WAIT_CALLS) {
+        freeWaitCalls += 1;
+      } else if (isError && freeFailedCalls < MAX_FREE_FAILED_CALLS) {
+        freeFailedCalls += 1;
+      } else {
+        completedToolCalls += 1;
+      }
+
       if (!isError) {
         consecutiveFailure = undefined;
         consecutivePreExecutionBlocks = 0;

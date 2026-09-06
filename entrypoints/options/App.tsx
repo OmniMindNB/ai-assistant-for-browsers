@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import AgentBudgetSettings from '@/components/AgentBudgetSettings';
 import AppearanceSettings from '@/components/AppearanceSettings';
 import LanguageSettings from '@/components/LanguageSettings';
 import ProviderSettings from '@/components/ProviderSettings';
@@ -6,6 +7,7 @@ import RedactionSettings from '@/components/RedactionSettings';
 import {
   IconAbout,
   IconAppearance,
+  IconBudget,
   IconLanguage,
   IconModelProviders,
   IconPrivacy,
@@ -31,6 +33,7 @@ export default function App() {
       label: t('settings.groupAiTools'),
       sections: [
         { id: 'providers', label: t('settings.navProviders'), icon: IconModelProviders },
+        { id: 'budget', label: t('settings.navBudget'), icon: IconBudget },
       ],
     },
     {
@@ -67,6 +70,7 @@ export default function App() {
       {section === 'appearance' && <SettingsPanel><AppearanceSettings mode={mode} onSet={setMode} /></SettingsPanel>}
       {section === 'language' && <SettingsPanel><LanguageSettings mode={locale} onSet={setLocale} /></SettingsPanel>}
       {section === 'providers' && <SettingsPanel><ProviderSettings /></SettingsPanel>}
+      {section === 'budget' && <SettingsPanel><AgentBudgetSettings /></SettingsPanel>}
       {section === 'shortcuts' && <SettingsPanel><ShortcutSettings /></SettingsPanel>}
       {section === 'privacy' && <PrivacySection />}
       {section === 'about' && <AboutSection />}

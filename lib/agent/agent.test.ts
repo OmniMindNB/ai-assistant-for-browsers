@@ -97,9 +97,12 @@ describe('createBrowserAgentOptions tool policy hooks', () => {
     await hooks.afterToolCall?.(afterContext('browser_read_page', {}, false));
     expect(await hooks.beforeToolCall?.(beforeContext('browser_click', { selector: '#menu' }))).toBeUndefined();
     await hooks.afterToolCall?.(afterContext('browser_click', { selector: '#menu' }, false));
+    // 写档在「已用 1 次」之上追加 2 次，总上限 3：写入开始后仍拿得到完整的写入额度。
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_read_page', {}))).toBeUndefined();
+    await hooks.afterToolCall?.(afterContext('browser_read_page', {}, false));
     expect(await hooks.beforeToolCall?.(beforeContext('browser_read_page', {}))).toMatchObject({
       block: true,
-      reason: expect.stringContaining('2'),
+      reason: expect.stringContaining('3'),
     });
   });
 
@@ -109,9 +112,11 @@ describe('createBrowserAgentOptions tool policy hooks', () => {
     await hooks.afterToolCall?.(afterContext('browser_read_page', {}, false));
     expect(await hooks.beforeToolCall?.(beforeContext('browser_click', { selector: '#submit' }))).toBeUndefined();
     await hooks.afterToolCall?.(afterContext('browser_click', { selector: '#submit' }, false));
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_read_page', {}))).toBeUndefined();
+    await hooks.afterToolCall?.(afterContext('browser_read_page', {}, false));
     expect(await hooks.beforeToolCall?.(beforeContext('browser_read_page', {}))).toMatchObject({
       block: true,
-      reason: expect.stringContaining('2'),
+      reason: expect.stringContaining('3'),
     });
   });
 

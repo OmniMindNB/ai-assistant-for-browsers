@@ -110,10 +110,9 @@ export interface SystemPromptOptions {
  */
 export function buildSystemPrompt(options: SystemPromptOptions = {}): string {
   const readToolCallBudget = options.readToolCallBudget ?? DEFAULT_READ_TOOL_CALL_BUDGET;
-  const writeToolCallBudget = Math.max(
-    readToolCallBudget,
-    options.writeToolCallBudget ?? DEFAULT_WRITE_TOOL_CALL_BUDGET,
-  );
+  // 不再拿读档去夹住写档：写档是在已用次数之上"追加"的额度（ref: tool-policy.ts 的
+  // writePhaseStart），两者不共享同一个总上限，写档比读档小是合法配置。
+  const writeToolCallBudget = Math.max(0, options.writeToolCallBudget ?? DEFAULT_WRITE_TOOL_CALL_BUDGET);
   const constraints = options.constraints?.trim();
 
   const sections = [
@@ -155,7 +154,7 @@ export function buildSystemPrompt(options: SystemPromptOptions = {}): string {
     section(
       'task_execution',
       [
-        `多步任务要一次做完，不要做到一半就把剩下的步骤交回给用户。工具预算：读取和分析最多 ${readToolCallBudget} 次；开始写入或交互后，本轮总预算最多 ${writeToolCallBudget} 次。这些是上限而不是目标，够用就停。预算耗尽或工具被拒绝时，立即基于已有证据回答，并标出仍不确定的部分。`,
+        `多步任务要一次做完，不要做到一半就把剩下的步骤交回给用户。工具预算：读取和分析最多 ${readToolCallBudget} 次；开始写入或交互后，再追加最多 ${writeToolCallBudget} 次。纯等待（wait / browser_wait_for）和最初几次失败的调用不计入预算，不必为了省预算而跳过必要的等待或重试。这些是上限而不是目标，够用就停。预算耗尽或工具被拒绝时，立即基于已有证据回答，并标出仍不确定的部分。`,
         '需要连续做多个写操作时，先用一两句话说明打算改哪几处再开始调用工具。执行过程中保持简短，全部完成后再给一次完整说明。',
         '同一个工具用同样的参数连续失败两次，就换思路：换选择器、换工具，或先读一次 DOM 结构再试，不要第三次重复同样的调用。选择器匹配到 0 个元素时，先用 browser_query_dom 确认真实结构，不要连续盲猜。如果连续几次调用都没带来新信息，停下来向用户说明卡在哪里，而不是继续消耗预算。',
         '如果本轮修改或操作了当前页面，收尾前必须调用一次 report_task_outcome，明确声明这次任务是 success/partial/failure 并给出一句话原因；纯问答、没有实际操作页面的轮次不需要调用它。',

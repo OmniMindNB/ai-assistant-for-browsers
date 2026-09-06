@@ -32,6 +32,15 @@ export const en: Record<keyof typeof zh, string> = {
   'settings.navLanguage': 'Language',
   'settings.navShortcuts': 'Shortcuts',
   'settings.navProviders': 'Model providers',
+  'settings.navBudget': 'Task budget',
+  'budget.heading': 'Tool call budget',
+  'budget.description':
+    'How many tool calls the agent may make for one message. When it hits the ceiling it wraps up immediately with what it already has. Pure waits and the first few failed calls are not counted.',
+  'budget.standard': 'Standard',
+  'budget.generous': 'Generous',
+  'budget.detail': '{read} reads, plus {write} more once writing starts',
+  'budget.generousHint':
+    'Long forms and multi-page flows get interrupted less often; the cost is that a task that goes off track also runs longer.',
   'settings.navPrivacy': 'Privacy & permissions',
   'settings.navAboutVersion': 'About · v{version}',
   'settings.groupPreferences': 'Preferences',

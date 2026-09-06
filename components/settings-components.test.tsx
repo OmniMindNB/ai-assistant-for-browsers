@@ -136,12 +136,49 @@ describe('grouped options settings', () => {
 
     expect(labels).toEqual([
       'Model providers',
+      'Task budget',
       'Appearance',
       'Language',
       'Shortcuts',
       'Privacy & permissions',
       'About · v1.1.0',
     ]);
+  });
+
+  // 工具预算档位是"撞到上限"这条抱怨的用户侧出口（ref: lib/agent/budget-profile.ts）。
+  it('preselects the standard budget profile when nothing is stored', async () => {
+    const user = userEvent.setup();
+    renderWithLocale(<OptionsApp />);
+
+    await user.click(screen.getByRole('button', { name: 'Task budget' }));
+
+    expect(await screen.findByRole('radio', { name: /Standard/ })).toBeChecked();
+    expect(screen.getByRole('radio', { name: /Generous/ })).not.toBeChecked();
+  });
+
+  it('preselects the stored budget profile', async () => {
+    storageData['runi:tool-budget-profile'] = 'generous';
+    const user = userEvent.setup();
+    renderWithLocale(<OptionsApp />);
+
+    await user.click(screen.getByRole('button', { name: 'Task budget' }));
+
+    expect(await screen.findByRole('radio', { name: /Generous/ })).toBeChecked();
+  });
+
+  it('persists the chosen budget profile', async () => {
+    const user = userEvent.setup();
+    renderWithLocale(<OptionsApp />);
+
+    await user.click(screen.getByRole('button', { name: 'Task budget' }));
+    await user.click(await screen.findByRole('radio', { name: /Generous/ }));
+
+    await waitFor(() => {
+      expect((globalThis as any).browser.storage.local.set).toHaveBeenCalledWith({
+        'runi:tool-budget-profile': 'generous',
+      });
+    });
+    expect(screen.getByRole('radio', { name: /Generous/ })).toBeChecked();
   });
 
   it('shows the About footer item with the current version and opens the About panel', async () => {

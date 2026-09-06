@@ -27,13 +27,15 @@ export const READ_ONLY_TOOL_NAMES = new Set([
   'browser_get_storage',
   'browser_screenshot',
   'browser_get_form',
-  // 只等待、不修改任何状态；因此不触发执行遮罩、不进写预算，但仍计入读预算。
+  // 只等待、不修改任何状态；因此不触发执行遮罩、不进写预算。
+  // 也不计入读预算（有配额上限，ref: tool-policy.ts 的 FREE_WAIT_TOOL_NAMES）——
+  // "页面加载慢"与任务难度无关，不该吃掉本该用来读页面的额度。
   'browser_wait_for',
   'browser_switch_tab',
   'browser_list_tabs',
   // 不修改页面或浏览器状态——它本身就是"停下来问用户"，不需要写确认闸门再问一遍。
   'ask_user',
-  // 同上：纯粹的计时等待，不碰页面或浏览器状态。
+  // 同上：纯粹的计时等待，不碰页面或浏览器状态，同样不计入预算。
   'wait',
   // 不修改页面或浏览器状态——只是让模型显式声明这轮任务的成败信号。
   'report_task_outcome',
