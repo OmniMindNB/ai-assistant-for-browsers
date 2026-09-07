@@ -193,6 +193,15 @@ export async function listProviders(): Promise<ProviderConfig[]> {
   return (await loadSettings()).providers;
 }
 
+/**
+ * 「模型（默认）」+「其他可用模型」文本 → 去重后的候选模型列表（默认模型在首位）。
+ * 同时供表单保存 models 和渲染「支持图片的模型」勾选项使用，二者不会各自算出一份不同的列表。
+ */
+export function modelCandidates(model: string, extrasText: string): string[] {
+  const all = [model, ...extrasText.split(',')].map((s) => s.trim()).filter(Boolean);
+  return [...new Set(all)];
+}
+
 /** 返回 Provider 的可用模型列表（保证非空，至少含 model）。 */
 export function providerModels(provider: ProviderConfig): string[] {
   return provider.models?.length ? provider.models : [provider.model];

@@ -11,6 +11,7 @@ import {
   applyPresetToDraft,
   draftPlaceholders,
   hasDuplicateProviderName,
+  modelCandidates,
   presetDisplayName,
   resolvePresetSelection,
   trimProviderDraft,
@@ -37,30 +38,17 @@ function extrasOf(p: ProviderConfig): string {
 
 /** 根据默认模型 + 其他模型文本，重建去重后的 models 列表。 */
 function withExtras(p: ProviderConfig, extrasText: string): ProviderConfig {
-  const extras = extrasText
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-  const models = [p.model, ...extras].filter(Boolean);
-  const seen = new Set<string>();
-  const deduped = models.filter((m) => (seen.has(m) ? false : (seen.add(m), true)));
-  return { ...p, models: deduped.length ? deduped : undefined };
+  const models = modelCandidates(p.model, extrasText);
+  return { ...p, models: models.length ? models : undefined };
 }
 
-/** 支持图片输入的模型列表（逗号分隔展示）。 */
-function visionModelsOf(p: ProviderConfig): string {
-  return (p.visionModels ?? []).join(', ');
-}
-
-/** 根据「支持图片的模型」文本，重建去重后的 visionModels 列表。 */
-function withVisionModels(p: ProviderConfig, visionModelsText: string): ProviderConfig {
-  const models = visionModelsText
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-  const seen = new Set<string>();
-  const deduped = models.filter((m) => (seen.has(m) ? false : (seen.add(m), true)));
-  return { ...p, visionModels: deduped.length ? deduped : undefined };
+/**
+ * 勾选集合 ∩ 候选模型：改过模型列表后残留的勾选（已不在 models 里）在保存时丢弃——
+ * 它们对 supportsVision 本就无效，留着只会让存储里堆积对不上号的模型名。
+ */
+function withVisionModels(p: ProviderConfig, checked: Set<string>): ProviderConfig {
+  const picked = (p.models ?? []).filter((m) => checked.has(m));
+  return { ...p, visionModels: picked.length ? picked : undefined };
 }
 
 export default function ProviderSettings({ onChange }: { onChange?: () => void }) {
@@ -72,7 +60,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
   // 独立于 draft 的原始文本，避免每次按键都经过 withExtras 的去重/过滤——
   // 那样会在用户粘贴的内容恰好等于「模型（默认）」时把输入静默清空（看起来像粘贴无效）。
   const [extrasText, setExtrasText] = useState('');
-  const [visionModelsText, setVisionModelsText] = useState('');
+  const [visionModels, setVisionModels] = useState<Set<string>>(() => new Set());
   const [selectedPreset, setSelectedPreset] = useState('');
   const [toast, setToast] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -146,7 +134,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
   function loadDraft(p: ProviderConfig) {
     setDraft(p);
     setExtrasText(extrasOf(p));
-    setVisionModelsText(visionModelsOf(p));
+    setVisionModels(new Set(p.visionModels ?? []));
     setSelectedPreset('');
     setEditingRemoved(false);
     setEditorOpen(true);
@@ -158,7 +146,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
     restoreAddFocusRef.current = restoreAddFocus;
     setDraft(EMPTY_DRAFT);
     setExtrasText('');
-    setVisionModelsText('');
+    setVisionModels(new Set());
     setSelectedPreset('');
     setEditingRemoved(false);
     setEditorOpen(false);
@@ -169,6 +157,15 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
   function beginAdd() {
     resetDraft();
     setEditorOpen(true);
+  }
+
+  function toggleVisionModel(model: string, checked: boolean) {
+    setVisionModels((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(model);
+      else next.delete(model);
+      return next;
+    });
   }
 
   async function persist(next: Settings) {
@@ -198,7 +195,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
       flash(t('provider.flashFillRequired'));
       return;
     }
-    const finalDraft = withVisionModels(withExtras(trimmed, extrasText), visionModelsText);
+    const finalDraft = withVisionModels(withExtras(trimmed, extrasText), visionModels);
     const newId = newProviderId();
     setSaving(true);
     try {
@@ -291,6 +288,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
   }
 
   const placeholders = draftPlaceholders(selectedPreset, resolved);
+  const visionCandidates = modelCandidates(draft.model, extrasText);
 
   return (
     <>
@@ -475,12 +473,35 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
             placeholder={placeholders.extras}
             onChange={setExtrasText}
           />
-          <Field
-            label={t('provider.visionModels')}
-            value={visionModelsText}
-            placeholder={t('provider.visionModelsHint')}
-            onChange={setVisionModelsText}
-          />
+          <fieldset className="mb-3">
+            <legend className="text-xs text-neutral-500 dark:text-neutral-400">
+              {t('provider.visionModels')}
+            </legend>
+            <p className="mt-1 text-[11px] leading-relaxed text-neutral-400 dark:text-neutral-500">
+              {t('provider.visionModelsHint')}
+            </p>
+            {visionCandidates.length === 0 ? (
+              <p className="mt-2 text-xs text-neutral-400 dark:text-neutral-500">
+                {t('provider.visionModelsEmpty')}
+              </p>
+            ) : (
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
+                {visionCandidates.map((m) => (
+                  <label
+                    key={m}
+                    className="flex items-center gap-1.5 text-xs text-neutral-700 dark:text-neutral-200"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={visionModels.has(m)}
+                      onChange={(e) => toggleVisionModel(m, e.target.checked)}
+                    />
+                    <span className="break-all">{m}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </fieldset>
           <Field
             key={`api-key:${draft.id || 'new'}`}
             label="API Key"

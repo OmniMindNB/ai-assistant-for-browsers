@@ -5,6 +5,7 @@ import {
   CUSTOM_PRESET_VALUE,
   draftPlaceholders,
   hasDuplicateProviderName,
+  modelCandidates,
   presetDisplayName,
   resolvePresetSelection,
   resolveProviderApi,
@@ -52,6 +53,28 @@ describe('trimProviderDraft', () => {
   it('preserves id and models', () => {
     const draft: ProviderConfig = { ...baseDraft, id: 'p-1', name: ' A ', models: ['a', 'b'] };
     expect(trimProviderDraft(draft)).toEqual({ ...draft, name: 'A' });
+  });
+});
+
+describe('modelCandidates', () => {
+  it('默认模型排在第一位，其后是其他可用模型', () => {
+    expect(modelCandidates('a', 'b, c')).toEqual(['a', 'b', 'c']);
+  });
+
+  it('去掉空白项并 trim 每一项', () => {
+    expect(modelCandidates(' a ', ' b ,, , c ')).toEqual(['a', 'b', 'c']);
+  });
+
+  it('去重：其他模型里重复的默认模型不会出现两次', () => {
+    expect(modelCandidates('a', 'a, b, b')).toEqual(['a', 'b']);
+  });
+
+  it('默认模型为空时只返回其他模型', () => {
+    expect(modelCandidates('', 'b, c')).toEqual(['b', 'c']);
+  });
+
+  it('全空时返回空数组', () => {
+    expect(modelCandidates('', '  ')).toEqual([]);
   });
 });
 

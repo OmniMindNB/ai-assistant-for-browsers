@@ -45,6 +45,8 @@ describe('grouped options settings', () => {
             apiKey: 'key-a',
             model: 'deepseek-v4-pro',
             models: ['deepseek-v4-pro', 'deepseek-v4-flash'],
+            // 'retired-model' 已不在 models 里：模拟用户改过模型列表后残留的失效声明。
+            visionModels: ['deepseek-v4-flash', 'retired-model'],
           },
           {
             id: 'other',
@@ -225,6 +227,56 @@ describe('grouped options settings', () => {
 
     expect(screen.getByRole('form', { name: 'Provider editor' })).toBeVisible();
     expect(screen.getByLabelText('Name')).toHaveValue('DeepSeek');
+  });
+
+  it('offers a vision checkbox per candidate model, checked from the stored declaration', async () => {
+    const user = userEvent.setup();
+    renderWithLocale(<ProviderSettings />);
+
+    await user.click(await screen.findByRole('button', { name: 'Edit DeepSeek' }));
+
+    const group = screen.getByRole('group', { name: 'Models that accept images' });
+    expect(within(group).getByRole('checkbox', { name: 'deepseek-v4-flash' })).toBeChecked();
+    expect(within(group).getByRole('checkbox', { name: 'deepseek-v4-pro' })).not.toBeChecked();
+    expect(within(group).queryByRole('checkbox', { name: 'retired-model' })).not.toBeInTheDocument();
+  });
+
+  it('saves the checked models and drops declarations no longer offered as candidates', async () => {
+    const user = userEvent.setup();
+    const set = (globalThis as any).browser.storage.local.set as ReturnType<typeof vi.fn>;
+    renderWithLocale(<ProviderSettings />);
+
+    await user.click(await screen.findByRole('button', { name: 'Edit DeepSeek' }));
+    await user.click(screen.getByRole('checkbox', { name: 'deepseek-v4-pro' }));
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    const persisted = set.mock.calls.at(-1)?.[0]['runi:settings'];
+    const saved = persisted.providers.find((p: { id: string }) => p.id === 'deepseek');
+    expect(saved.visionModels).toEqual(['deepseek-v4-pro', 'deepseek-v4-flash']);
+  });
+
+  it('follows the model inputs when offering vision candidates', async () => {
+    const user = userEvent.setup();
+    renderWithLocale(<ProviderSettings />);
+
+    await user.click(await screen.findByRole('button', { name: 'Edit Other' }));
+    const group = screen.getByRole('group', { name: 'Models that accept images' });
+    expect(within(group).getByRole('checkbox', { name: 'other-model' })).toBeVisible();
+
+    await user.type(screen.getByLabelText('Other available models (comma-separated, optional)'), 'other-vision');
+
+    expect(within(group).getByRole('checkbox', { name: 'other-vision' })).toBeVisible();
+  });
+
+  it('explains why no vision candidates are offered while the model field is blank', async () => {
+    const user = userEvent.setup();
+    renderWithLocale(<ProviderSettings />);
+
+    await user.click(await screen.findByRole('button', { name: 'Add provider' }));
+
+    const group = screen.getByRole('group', { name: 'Models that accept images' });
+    expect(within(group).queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(group).toHaveTextContent('Fill in the model above first');
   });
 
   it('tests the connection using the current unsaved draft, showing success or a formatted failure', async () => {
