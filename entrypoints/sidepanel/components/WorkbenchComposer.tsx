@@ -445,12 +445,12 @@ export function WorkbenchComposer({
             )}
           </div>
         )}
-        {/* 工具条永不折行：一旦 flex-wrap 生效，它会随快捷指令条数在一行/两行之间跳，
-            把下面的输入框一起顶上顶下。宽度不够时让胶囊横向滚出去。
-            滚动只加在胶囊那一层，不加在整条工具条上，有两个原因：模型选择器不该被滚出视野；
-            而且模型菜单是 absolute 定位、containing block 是最外层那个 relative 容器，
-            任何夹在两者之间的 overflow 容器都会把它裁掉。 */}
-        <div data-testid="composer-toolbar" className="mb-2 flex items-center gap-2">
+        {/* 工具条允许折行：横向滚动虽然能保持输入框位置固定，但把后面的快捷指令胶囊
+            裁没了，用户根本发现不了还有更多（2026-09-07 反馈）。改为整条工具条折行，
+            模型选择器和胶囊挤满第一行后，多出来的胶囊掉到第二行、贴左对齐——
+            代价是侧栏宽度变化时工具条可能在一行/两行间跳动，把输入框顶上顶下，
+            但这比"内容看不见"更可接受。 */}
+        <div data-testid="composer-toolbar" className="mb-2 flex flex-wrap items-center gap-2">
           {providers.length > 0 && (
             <div className="shrink-0">
               <button
@@ -501,10 +501,10 @@ export function WorkbenchComposer({
             </div>
           )}
 
-          <div
-            data-testid="composer-shortcuts"
-            className="flex min-w-0 flex-1 flex-nowrap items-center gap-2 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          >
+          {/* display:contents：胶囊要作为 composer-toolbar 的直接 flex 子项参与折行，
+              而不是被关在自己的盒子里各自换行——那样第二行会顶着模型选择器的宽度缩进，
+              而不是贴到最左边。这个 div 只用来保留 quickShortcuts.map 的 key 分组和测试用的 testid。 */}
+          <div data-testid="composer-shortcuts" className="contents">
             {quickShortcuts.map(({ config, resolved }) => (
               <button
                 key={config.id}

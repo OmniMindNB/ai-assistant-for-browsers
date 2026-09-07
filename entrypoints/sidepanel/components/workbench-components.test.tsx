@@ -779,14 +779,15 @@ describe('workbench composer', () => {
     expect(trigger).toHaveAttribute('title', 'Configured provider · model-one');
   });
 
-  // 工具条一旦折行就把输入框往下顶，输入框的位置会随快捷指令条数变化而跳动。
-  it('工具条横向滚动而不是折行，输入框位置固定', () => {
+  // 快捷指令多时横向滚动会把后面的胶囊裁没，用户根本看不到（2026-09-07 反馈）。
+  // 改为整条工具条折行：模型选择器和胶囊挤满第一行后，多出来的胶囊掉到第二行、贴左对齐。
+  it('工具条允许折行，快捷指令不会被裁切', () => {
     render(<ComposerHarness providers={[configuredProvider]} selectedProviderId={configuredProvider.id} selectedModel="model-one" />);
 
-    expect(screen.getByTestId('composer-toolbar')).not.toHaveClass('flex-wrap');
-    // 只有胶囊那一层滚：模型选择器不该被滚出视野，而且它的 absolute 菜单会被任何
-    // 夹在它和最外层 relative 容器之间的 overflow 裁掉。
-    expect(screen.getByTestId('composer-shortcuts')).toHaveClass('flex-nowrap', 'overflow-x-auto');
+    expect(screen.getByTestId('composer-toolbar')).toHaveClass('flex-wrap');
+    // composer-shortcuts 不再单独占一个滚动盒子，胶囊直接是 toolbar 的 flex 子项，
+    // 才能和模型选择器一起参与同一次折行计算。
+    expect(screen.getByTestId('composer-shortcuts')).not.toHaveClass('overflow-x-auto');
     expect(screen.getByTestId('composer-toolbar')).not.toHaveClass('overflow-x-auto');
   });
 
