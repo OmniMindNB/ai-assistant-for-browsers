@@ -13,6 +13,7 @@ export interface HistoryDrawerProps {
   onNewChat(): void;
   onPick(id: string): void;
   onRemove(id: string): void;
+  onClearAll(): void;
   returnFocusRef?: RefObject<HTMLButtonElement | null>;
 }
 
@@ -40,15 +41,18 @@ export function HistoryDrawer({
   onNewChat,
   onPick,
   onRemove,
+  onClearAll,
   returnFocusRef,
 }: HistoryDrawerProps) {
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [confirmingClearAll, setConfirmingClearAll] = useState(false);
   const dialogRef = useRef<HTMLElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const wasOpenRef = useRef(false);
   const confirmTimeoutRef = useRef<number | null>(null);
+  const clearAllTimeoutRef = useRef<number | null>(null);
   // 打开的第一帧先按"关闭态"（透明/偏移）渲染，下一帧翻到"打开态"，靠 transition-* 类
   // 过渡出滑入效果。关闭不做退场动画——直接卸载，保持"焦点立刻还给触发按钮、对话框
   // 立刻从 DOM 消失"的既有行为（测试对此有强断言，退场动画得配合延迟卸载会破坏它）。
@@ -99,6 +103,7 @@ export function HistoryDrawer({
   useEffect(() => {
     return () => {
       if (confirmTimeoutRef.current !== null) window.clearTimeout(confirmTimeoutRef.current);
+      if (clearAllTimeoutRef.current !== null) window.clearTimeout(clearAllTimeoutRef.current);
     };
   }, []);
 
@@ -122,6 +127,24 @@ export function HistoryDrawer({
     onRemove(conversation.id);
   }
 
+  function requestClearAll() {
+    if (clearAllTimeoutRef.current !== null) window.clearTimeout(clearAllTimeoutRef.current);
+    setConfirmingClearAll(true);
+    clearAllTimeoutRef.current = window.setTimeout(() => {
+      setConfirmingClearAll(false);
+      clearAllTimeoutRef.current = null;
+    }, 3000);
+  }
+
+  function clearAllConversations() {
+    if (clearAllTimeoutRef.current !== null) {
+      window.clearTimeout(clearAllTimeoutRef.current);
+      clearAllTimeoutRef.current = null;
+    }
+    setConfirmingClearAll(false);
+    onClearAll();
+  }
+
   if (!open) return null;
 
   return (
@@ -142,14 +165,37 @@ export function HistoryDrawer({
       >
         <div className="flex items-center gap-2 border-b border-neutral-200 px-3 py-3 dark:border-neutral-800">
           <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">{t('workbench.history')}</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label={t('common.close')}
-            className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded-md text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
-          >
-            <IconClose className="h-5 w-5" />
-          </button>
+          <div className="ml-auto flex items-center gap-1">
+            {conversations.length > 0 && (
+              <button
+                type="button"
+                onClick={confirmingClearAll ? clearAllConversations : requestClearAll}
+                aria-label={
+                  confirmingClearAll
+                    ? t('sidebar.confirmClearAllHistoryAriaLabel')
+                    : t('sidebar.clearAllHistoryAriaLabel')
+                }
+                className={
+                  confirmingClearAll
+                    ? 'inline-flex h-7 shrink-0 items-center gap-1 rounded-md bg-red-600 px-2 text-xs font-medium text-white transition-colors hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500'
+                    : 'inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-xs font-medium text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-red-400'
+                }
+              >
+                <IconTrash className="h-3.5 w-3.5 shrink-0" />
+                <span className="whitespace-nowrap">
+                  {confirmingClearAll ? t('sidebar.confirmClearAllHistory') : t('sidebar.clearAllHistory')}
+                </span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label={t('common.close')}
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
+            >
+              <IconClose className="h-5 w-5" />
+            </button>
+          </div>
         </div>
         <div className="border-b border-neutral-200 p-3 dark:border-neutral-800">
           <button

@@ -151,6 +151,7 @@ interface ChatState {
   refreshConversations: () => Promise<void>;
   openConversation: (id: string) => Promise<boolean>;
   removeConversation: (id: string) => Promise<void>;
+  clearAllConversations: () => Promise<void>;
   respondToConfirmation: (approved: boolean) => void;
   respondToQuestion: (answer: string) => void;
   restoreTabConversation: () => Promise<void>;
@@ -1067,6 +1068,20 @@ export const useChat = create<ChatState>((set, get) => ({
         });
       }
     }
+  },
+
+  // 逐个走 removeConversation 同款的 tombstone 管道（通知 background、Dexie 删除、失败回滚），
+  // 批量收尾——不区分"是否正在看被清空的会话"：一键清空之后，面板本就该落在一个全新的空会话上。
+  clearAllConversations: async () => {
+    const ids = get().conversations.map((conversation) => conversation.id);
+    if (ids.length === 0) return;
+    for (const id of ids) notifyConversationDeleted(id, true);
+    const results = await Promise.allSettled(ids.map((id) => beginConversationDeletion(id)));
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') notifyConversationDeleted(ids[index], false);
+    });
+    await get().refreshConversations();
+    get().clear();
   },
 }));
 

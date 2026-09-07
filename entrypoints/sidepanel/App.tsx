@@ -76,6 +76,7 @@ export default function App() {
     clear,
     openConversation,
     removeConversation,
+    clearAllConversations,
     respondToConfirmation,
     respondToQuestion,
     restoreTabConversation,
@@ -265,6 +266,7 @@ export default function App() {
         onNewChat={newChat}
         onPick={pickConversation}
         onRemove={removeConversation}
+        onClearAll={clearAllConversations}
         returnFocusRef={historyTriggerRef}
       />
 

@@ -65,6 +65,7 @@ const chatStore = {
   clear: vi.fn(),
   openConversation: vi.fn(),
   removeConversation: vi.fn(),
+  clearAllConversations: vi.fn(),
   respondToConfirmation: vi.fn(),
   restoreTabConversation: vi.fn(),
 };
@@ -109,24 +110,26 @@ function Harness() {
         onNewChat={vi.fn()}
         onPick={vi.fn()}
         onRemove={vi.fn()}
+        onClearAll={vi.fn()}
         returnFocusRef={triggerRef}
       />
     </LocaleProvider>
   );
 }
 
-function renderDrawer(onRemove = vi.fn()) {
+function renderDrawer(onRemove = vi.fn(), onClearAll = vi.fn(), conversations = records) {
   return render(
     <LocaleProvider>
       <HistoryDrawer
         open
-        conversations={records}
+        conversations={conversations}
         activeConversationId="google"
         now={now}
         onClose={vi.fn()}
         onNewChat={vi.fn()}
         onPick={vi.fn()}
         onRemove={onRemove}
+        onClearAll={onClearAll}
       />
     </LocaleProvider>,
   );
@@ -145,6 +148,7 @@ function renderDrawerWithBackground() {
         onNewChat={vi.fn()}
         onPick={vi.fn()}
         onRemove={vi.fn()}
+        onClearAll={vi.fn()}
       />
     </LocaleProvider>,
   );
@@ -1719,6 +1723,23 @@ describe('workbench history', () => {
     expect(onRemove).toHaveBeenCalledWith('shopping');
   });
 
+  it('only clears all history after a second confirming click, not the first', async () => {
+    const user = userEvent.setup();
+    const onClearAll = vi.fn();
+    renderDrawer(vi.fn(), onClearAll);
+
+    await user.click(screen.getByRole('button', { name: 'Clear all conversation history' }));
+    expect(onClearAll).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Confirm clear all conversation history? Click again to delete everything.' }));
+    expect(onClearAll).toHaveBeenCalledOnce();
+  });
+
+  it('hides the clear-all control when there is no history', () => {
+    renderDrawer(vi.fn(), vi.fn(), []);
+    expect(screen.queryByRole('button', { name: 'Clear all conversation history' })).not.toBeInTheDocument();
+  });
+
   it('齿轮按钮直接打开设置，不再经过"更多"菜单', async () => {
     const user = userEvent.setup();
     const onOpenSettings = vi.fn();
@@ -1814,18 +1835,20 @@ describe('workbench history', () => {
     renderDrawerWithBackground();
 
     const search = screen.getByRole('searchbox');
-    const close = screen.getByRole('button', { name: 'Close' });
+    // "清空全部" 现在是抽屉里 DOM 顺序最靠前的可聚焦控件（在关闭按钮之前），焦点陷阱的边界
+    // 因此从 close 挪到了它身上。
+    const firstDrawerControl = screen.getByRole('button', { name: 'Clear all conversation history' });
     const lastDrawerControl = screen.getByRole('button', { name: 'Delete conversation Shopping comparison' });
     const background = screen.getByRole('button', { name: 'Background control' });
 
     await waitFor(() => expect(search).toHaveFocus());
-    close.focus();
+    firstDrawerControl.focus();
     await user.tab({ shift: true });
     expect(lastDrawerControl).toHaveFocus();
     expect(background).not.toHaveFocus();
 
     await user.tab();
-    expect(close).toHaveFocus();
+    expect(firstDrawerControl).toHaveFocus();
     expect(background).not.toHaveFocus();
   });
 

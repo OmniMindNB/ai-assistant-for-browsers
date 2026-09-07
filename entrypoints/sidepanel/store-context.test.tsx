@@ -667,6 +667,74 @@ describe('chat store page context', () => {
     expect(useChat.getState().messages).toEqual([]);
   });
 
+  describe('clearAllConversations', () => {
+    it('clears every conversation and resets the view to a new empty conversation', async () => {
+      useChat.setState({
+        conversations: [
+          { id: 'A', title: 'A', createdAt: 1, updatedAt: 1 },
+          { id: 'B', title: 'B', createdAt: 2, updatedAt: 2 },
+        ],
+        conversationId: 'A',
+        messages: [{ id: 'm1', role: 'user', content: 'hi', createdAt: 1 }],
+      });
+
+      await useChat.getState().clearAllConversations();
+
+      expect(mocks.deleteConversation).toHaveBeenCalledWith('A');
+      expect(mocks.deleteConversation).toHaveBeenCalledWith('B');
+      expect(mocks.listConversations).toHaveBeenCalled();
+      expect(useChat.getState()).toMatchObject({ messages: [], conversations: [], busy: false });
+      expect(useChat.getState().conversationId).not.toBe('A');
+    });
+
+    it('does nothing when there are no conversations to clear', async () => {
+      useChat.setState({ conversations: [] });
+
+      await useChat.getState().clearAllConversations();
+
+      expect(mocks.deleteConversation).not.toHaveBeenCalled();
+      expect(mocks.listConversations).not.toHaveBeenCalled();
+    });
+
+    it('tells background every conversation was deleted so an in-flight run cannot resurrect any of them', async () => {
+      await connectPort();
+      useChat.setState({
+        conversations: [
+          { id: 'A', title: 'A', createdAt: 1, updatedAt: 1 },
+          { id: 'B', title: 'B', createdAt: 2, updatedAt: 2 },
+        ],
+      });
+
+      await useChat.getState().clearAllConversations();
+
+      expect(mocks.runPortPostMessage).toHaveBeenCalledWith({
+        type: 'conversationDeleted', tabId: 7, conversationId: 'A', deleted: true,
+      });
+      expect(mocks.runPortPostMessage).toHaveBeenCalledWith({
+        type: 'conversationDeleted', tabId: 7, conversationId: 'B', deleted: true,
+      });
+    });
+
+    it('withdraws the deletion notice for a conversation that fails to delete, while still clearing the rest', async () => {
+      await connectPort();
+      mocks.deleteConversation.mockImplementation((id: string) =>
+        id === 'B' ? Promise.reject(new Error('db is on fire')) : Promise.resolve(undefined));
+      useChat.setState({
+        conversations: [
+          { id: 'A', title: 'A', createdAt: 1, updatedAt: 1 },
+          { id: 'B', title: 'B', createdAt: 2, updatedAt: 2 },
+        ],
+      });
+
+      await useChat.getState().clearAllConversations();
+
+      expect(mocks.runPortPostMessage).toHaveBeenCalledWith({
+        type: 'conversationDeleted', tabId: 7, conversationId: 'B', deleted: false,
+      });
+      expect(mocks.listConversations).toHaveBeenCalled();
+    });
+  });
+
   it('does not start a selection shortcut after its active-tab preflight loses the conversation', async () => {
     let resolveTab!: (value: unknown) => void;
     mocks.sendMessage.mockImplementationOnce(() => new Promise((resolve) => { resolveTab = resolve; }));
