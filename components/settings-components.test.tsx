@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocaleProvider } from '@/lib/i18n';
-import { BUILTINS_REVISION, SHORTCUTS_REVISION_STORAGE_KEY } from '@/lib/shortcuts';
+import { BUILTINS_REVISION, SHORTCUTS_REVISION_STORAGE_KEY, defaultShortcutConfigs } from '@/lib/shortcuts';
 import OptionsApp from '@/entrypoints/options/App';
 import ProviderSettings from './ProviderSettings';
 import RedactionSettings from './RedactionSettings';
@@ -528,6 +528,38 @@ describe('grouped options settings', () => {
       ]);
     });
     expect(screen.getByRole('button', { name: 'Move Summarize page down' })).toBeEnabled();
+  });
+
+  // 「恢复预设」是出厂重置：顺序、文案、集合全部回到默认，自定义条目一并丢弃。
+  // 因为它会删数据，和单条删除一样要先确认。
+  it('resets shortcuts to the factory defaults after confirmation', async () => {
+    const user = userEvent.setup();
+    const set = (globalThis as any).browser.storage.local.set as ReturnType<typeof vi.fn>;
+    storageData['runi:shortcuts'] = [
+      { id: 'custom-1', origin: 'custom', scope: 'none', customized: true, name: 'Mine', prompt: 'P' },
+      { id: 'builtin:translate-selection', origin: 'builtin', scope: 'selection', customized: false },
+    ];
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    renderWithLocale(<ShortcutSettings />);
+
+    await user.click(await screen.findByRole('button', { name: 'Restore presets' }));
+
+    const persisted = set.mock.calls.at(-1)?.[0]['runi:shortcuts'];
+    expect(persisted).toEqual(defaultShortcutConfigs());
+    expect(screen.queryByText('Mine')).not.toBeInTheDocument();
+  });
+
+  it('keeps the shortcut list untouched when the restore confirmation is declined', async () => {
+    const user = userEvent.setup();
+    const set = (globalThis as any).browser.storage.local.set as ReturnType<typeof vi.fn>;
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    renderWithLocale(<ShortcutSettings />);
+    await screen.findByText('Translate selection');
+    set.mockClear();
+
+    await user.click(screen.getByRole('button', { name: 'Restore presets' }));
+
+    expect(set).not.toHaveBeenCalled();
   });
 
   it('confirms shortcut deletion before persisting it', async () => {

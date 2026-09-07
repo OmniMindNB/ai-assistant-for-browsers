@@ -296,6 +296,7 @@ export const zh = {
   'shortcut.deleteAria': '删除快捷方式 {name}',
   'shortcut.save': '保存',
   'shortcut.confirmDelete': '确定删除这个快捷方式吗？',
+  'shortcut.confirmRestore': '恢复预设会清空自定义快捷方式，并把改过的内建文案还原，确定继续吗？',
   'shortcut.moveUp': '上移',
   'shortcut.moveDown': '下移',
   'shortcut.moveUpAria': '上移 {name}',

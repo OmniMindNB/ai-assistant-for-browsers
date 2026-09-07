@@ -63,11 +63,11 @@ const BUILTINS = [
     promptKey: 'shortcut.builtinSummarizePrompt',
   },
   {
-    id: BUILTIN_FOCUS_READ_ID,
-    scope: 'page',
-    since: 2,
-    nameKey: 'shortcut.builtinFocusReadName',
-    promptKey: 'shortcut.builtinFocusReadPrompt',
+    id: BUILTIN_TRANSLATE_ID,
+    scope: 'selection',
+    since: 1,
+    nameKey: 'shortcut.builtinTranslateName',
+    promptKey: 'shortcut.builtinTranslatePrompt',
   },
   {
     id: BUILTIN_FILL_FORM_ID,
@@ -77,18 +77,18 @@ const BUILTINS = [
     promptKey: 'shortcut.builtinFillFormPrompt',
   },
   {
-    id: BUILTIN_TRANSLATE_ID,
-    scope: 'selection',
-    since: 1,
-    nameKey: 'shortcut.builtinTranslateName',
-    promptKey: 'shortcut.builtinTranslatePrompt',
-  },
-  {
     id: BUILTIN_POLISH_ID,
     scope: 'selection',
     since: 2,
     nameKey: 'shortcut.builtinPolishName',
     promptKey: 'shortcut.builtinPolishPrompt',
+  },
+  {
+    id: BUILTIN_FOCUS_READ_ID,
+    scope: 'page',
+    since: 2,
+    nameKey: 'shortcut.builtinFocusReadName',
+    promptKey: 'shortcut.builtinFocusReadPrompt',
   },
 ] as const;
 
@@ -306,14 +306,6 @@ export async function updateShortcutConfigs(
   const next = mutate(current.shortcuts.map((item) => ({ ...item })));
   await saveShortcutConfigs(next);
   return next;
-}
-
-export function restoreDefaultShortcuts(shortcuts: readonly ShortcutConfig[]): ShortcutConfig[] {
-  const existingIds = new Set(shortcuts.map((item) => item.id));
-  return [
-    ...shortcuts.map((item) => ({ ...item })),
-    ...defaultShortcutConfigs().filter((item) => !existingIds.has(item.id)),
-  ];
 }
 
 export function moveShortcut(

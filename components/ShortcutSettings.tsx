@@ -9,12 +9,12 @@ import { useTranslation } from '@/lib/i18n';
 import { normalizeShortcutCommand } from '@/lib/workbench/presentation';
 import {
   SHORTCUTS_STORAGE_KEY,
+  defaultShortcutConfigs,
   loadShortcutConfigs,
   moveShortcut,
   newShortcutId,
   repairShortcutConfigs,
   resolveShortcut,
-  restoreDefaultShortcuts,
   updateShortcutConfigs,
   validateShortcutConfigs,
   type MoveDirection,
@@ -259,14 +259,14 @@ export default function ShortcutSettings() {
     }
   }
 
+  // 出厂重置：顺序、文案、集合全部回到默认。会连带删掉用户自建的快捷方式和改过的
+  // 内建文案，所以和单条删除一样先确认。
   async function restore() {
-    if (saving) return;
+    if (saving || !window.confirm(t('shortcut.confirmRestore'))) return;
     setSaving(true);
     setErrors([]);
     try {
-      const next = await updateShortcutConfigs((current) =>
-        restoreDefaultShortcuts(current),
-      );
+      const next = await updateShortcutConfigs(() => defaultShortcutConfigs());
       setItems(next);
       setFlash(t('shortcut.restored'));
     } catch (error) {

@@ -315,7 +315,7 @@ describe('shortcut settings wiring', () => {
 
   it('provides reusable CRUD, restore, drag, and keyboard reorder controls', () => {
     expect(componentSource).toContain('updateShortcutConfigs');
-    expect(componentSource).toContain('restoreDefaultShortcuts');
+    expect(componentSource).toContain('defaultShortcutConfigs()');
     expect(componentSource).toContain('moveShortcut');
     expect(componentSource).toContain('draggable');
     expect(componentSource).toContain("move(item.id, 'up')");

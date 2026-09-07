@@ -304,6 +304,7 @@ export const en: Record<keyof typeof zh, string> = {
   'shortcut.deleteAria': 'Delete {name}',
   'shortcut.save': 'Save',
   'shortcut.confirmDelete': 'Delete this shortcut?',
+  'shortcut.confirmRestore': 'Restoring presets removes your custom shortcuts and reverts edited built-in text. Continue?',
   'shortcut.moveUp': 'Move up',
   'shortcut.moveDown': 'Move down',
   'shortcut.moveUpAria': 'Move {name} up',
