@@ -1,6 +1,7 @@
 import { memo, type ComponentPropsWithoutRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github.css';
 
@@ -40,7 +41,10 @@ export const HIGHLIGHT_LANGUAGES = {
 // remarkPlugins/rehypePlugins/components 数组和对象字面量提到模块作用域：
 // 内联在组件体里会在每次渲染都创建新的数组/对象实例，即使 content 没变，
 // react-markdown 也会认为插件配置变化而跳过内部的 memo 优化。
-const REMARK_PLUGINS = [remarkGfm];
+// remarkBreaks：CommonMark 把段内单个换行当空格处理，划词翻译/润色等场景里
+// 选中文本常是单换行分隔的多行/多段（浏览器 selection.toString() 不会插入空行），
+// 模型照原文换行结构回传后，不加这个插件会被渲染成挤在一起的一段话。
+const REMARK_PLUGINS = [remarkGfm, remarkBreaks];
 const REHYPE_PLUGINS: [typeof rehypeHighlight, { languages: typeof HIGHLIGHT_LANGUAGES }][] = [
   [rehypeHighlight, { languages: HIGHLIGHT_LANGUAGES }],
 ];

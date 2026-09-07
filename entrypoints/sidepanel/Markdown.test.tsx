@@ -39,3 +39,16 @@ describe('Markdown link rendering', () => {
     expect(screen.getByRole('link', { name: 'Chrome 文档' })).toHaveAttribute('target', '_blank');
   });
 });
+
+describe('Markdown soft line break rendering', () => {
+  // 划词翻译/润色场景：选中文本常是单换行分隔的多行/多段（selection.toString()
+  // 不会插入空行），CommonMark 默认把段内单换行当空格处理，不加 remark-breaks
+  // 会把这些行挤成一段话，丢失原文的换行/段落结构。
+  it('renders a single newline within a paragraph as a line break', () => {
+    const { container } = render(<Markdown content={'第一行\n第二行\n第三行'} />);
+    const paragraph = container.querySelector('p');
+    expect(paragraph).not.toBeNull();
+    expect(paragraph?.querySelectorAll('br')).toHaveLength(2);
+    expect(paragraph?.textContent).toBe('第一行\n第二行\n第三行');
+  });
+});
