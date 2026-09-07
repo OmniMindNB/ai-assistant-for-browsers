@@ -795,6 +795,16 @@ describe('workbench composer', () => {
     expect(screen.getByTestId('composer-toolbar')).not.toHaveClass('overflow-x-auto');
   });
 
+  // 曾经只渲染前 4 条，设置页有 5 条时第 5 条在侧边栏里凭空消失，用户只能靠 / 面板找到它
+  // （2026-09-07 反馈）。工具条既然会折行，就没有截断的理由了。
+  it('渲染全部可用快捷指令，不再只取前 4 条', () => {
+    render(<ComposerHarness shortcuts={emptyStateShortcuts} />);
+
+    for (const { resolved } of emptyStateShortcuts) {
+      expect(screen.getByRole('button', { name: resolved.name })).toBeVisible();
+    }
+  });
+
   it('anchors the model menu to the full composer width at narrow sidepanel sizes', async () => {
     const user = userEvent.setup();
     render(<ComposerHarness providers={[configuredProvider]} selectedProviderId={configuredProvider.id} selectedModel="model-one" />);
@@ -1581,8 +1591,8 @@ describe('workbench context controls', () => {
     ).toBeVisible();
   });
 
-  // 空状态和输入区曾经各渲染一排 `slice(0, 4)` 出来的胶囊，取的是同一份数据，
-  // 于是首屏永远把同样四个快捷指令摆两遍。入口只留常驻的输入区那一处。
+  // 空状态和输入区曾经各渲染一排胶囊，取的是同一份快捷指令数据，
+  // 于是首屏永远把同样几个快捷指令摆两遍。入口只留常驻的输入区那一处。
   it('首屏每个快捷指令只出现一次，空状态不再重复渲染一排胶囊', () => {
     (chatStore as any).shortcuts = emptyStateShortcuts.map(({ config }) => config);
     render(<LocaleProvider><App /></LocaleProvider>);

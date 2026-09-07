@@ -52,8 +52,8 @@ const RETIRED_BUILTIN_IDS: ReadonlySet<string> = new Set([RETIRED_EXPLAIN_ID]);
  */
 export const BUILTINS_REVISION = 2;
 
-// 顺序即侧边栏展示顺序，而侧边栏只把前 4 个渲染成芯片。page scope 在任何页面
-// 都能点，selection scope 没选中文字会直接报错，所以 page 的排在前面。
+// 顺序即侧边栏展示顺序：侧边栏会把每一条可用快捷指令都渲染成芯片（工具条自动折行），
+// 所以排在后面的不会被藏掉。
 const BUILTINS = [
   {
     id: BUILTIN_SUMMARIZE_ID,

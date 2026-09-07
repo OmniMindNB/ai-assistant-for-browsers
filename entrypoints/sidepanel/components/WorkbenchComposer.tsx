@@ -118,7 +118,9 @@ export function WorkbenchComposer({
   const modelOptions = providers.flatMap((provider) =>
     providerModels(provider).map((model) => ({ provider, model })),
   );
-  const quickShortcuts = shortcuts.filter(isUsableShortcutCommand).slice(0, 4);
+  // 不截断：工具条会折行，多出来的胶囊掉到下一行，而不是被藏起来。曾经只渲染前 4 条，
+  // 于是设置页里排第 5 的快捷指令在侧边栏凭空消失，只能靠 / 面板找回来。
+  const quickShortcuts = shortcuts.filter(isUsableShortcutCommand);
 
   // @ 提及必须按光标定位，不能照抄 / 的整串前缀判断——@ 会出现在句子中间。
   const syncMention = (value: string, caret: number) => {

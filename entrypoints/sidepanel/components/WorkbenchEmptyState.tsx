@@ -24,7 +24,7 @@ export interface WorkbenchEmptyStateProps {
 
 /**
  * 空状态只负责"教会用户我能动手"，不再自己摆一排快捷指令胶囊——那排和输入区里的是同一份
- * `slice(0, 4)` 数据的两次渲染，首屏会把同样四个指令说两遍。一键执行的入口只留常驻的输入区。
+ * 快捷指令数据的两次渲染，首屏会把同样几个指令说两遍。一键执行的入口只留常驻的输入区。
  */
 export function WorkbenchEmptyState({ busy, onPickExample }: WorkbenchEmptyStateProps) {
   const { t } = useTranslation();
