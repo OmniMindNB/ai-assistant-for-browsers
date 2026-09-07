@@ -340,6 +340,14 @@ describe('表单作业流程', () => {
     expect(SYSTEM_PROMPT).toContain('已脱敏');
     expect(SYSTEM_PROMPT).toContain('不要通过 browser_fill_form/browser_type 原样写回页面');
   });
+
+  // 实测事故（2026-09-07，demoqa.com/automation-practice-form）：客户端渲染 + 广告较多的
+  // 页面首次 get_form 可能在表单渲染完成前就返回 0 个字段，模型没有"先等再重试"的指引，
+  // 转而凭空编造 fieldId 去调 fill_form，全部 not_found（写入校验兜住了，但任务失败）。
+  it('tells the model to wait and retry instead of guessing a fieldId when get_form returns nothing', () => {
+    expect(SYSTEM_PROMPT).toContain('不要凭空构造或猜测 fieldId');
+    expect(SYSTEM_PROMPT).toContain('domIdle');
+  });
 });
 
 // 写工具现在会在结果尾部自动回报新出现的可交互元素，并同步刷新句柄表。
