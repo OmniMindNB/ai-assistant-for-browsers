@@ -1,13 +1,11 @@
-import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Resvg } from '@resvg/resvg-js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const assetRoot = join(root, 'docs', 'store-assets');
 const icon = `data:image/png;base64,${readFileSync(join(assetRoot, 'icon-128.png')).toString('base64')}`;
-const temporarySvg = join(tmpdir(), 'runi-store-asset.svg');
 
 const locales = {
   en: {
@@ -203,13 +201,23 @@ function thread(locale, sceneName) {
   return markup;
 }
 
+// resvg 逐字形回退时不沿用 font-weight：Segoe UI 没有中文字形，中文字符回退到 CJK 字体后
+// 粗细会丢失，headline 的 font-weight:800 会渲染成常规字重（rsvg-convert 没有这个问题，
+// 换渲染器后才暴露出来）。中文素材因此把自带 Bold 的 Microsoft YaHei 放在首位；英文素材
+// 维持 Segoe UI 优先，它的 Bold 本来就解析正常。
+function fontStack(locale) {
+  return locale === 'zh-CN'
+    ? '"Microsoft YaHei","Microsoft YaHei UI","Segoe UI",Arial,sans-serif'
+    : '-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",Arial,sans-serif';
+}
+
 function screenshotSvg(locale, sceneName) {
   const c = locales[locale];
   const scene = c.scenes[sceneName];
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800" viewBox="0 0 1280 800">
     ${commonDefs}
     <style>
-      text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",Arial,sans-serif}
+      text{font-family:${fontStack(locale)}}
       .brand{fill:#f8fbff;font-size:20px;font-weight:750}
       .headline{fill:#f8fbff;font-size:44px;font-weight:800;letter-spacing:-1.8px}.subtitle{fill:#cbdcf7;font-size:19px;font-weight:500}
       .toolbar{fill:#718096;font-size:11px;font-weight:650}.kicker{fill:#0e766e;font-size:11px;font-weight:800;letter-spacing:1.4px}
@@ -245,7 +253,7 @@ function promoSvg(locale) {
   const c = locales[locale];
   return `<svg xmlns="http://www.w3.org/2000/svg" width="440" height="280" viewBox="0 0 440 280">
     <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#07142f"/><stop offset=".66" stop-color="#0b2c5e"/><stop offset="1" stop-color="#104276"/></linearGradient><radialGradient id="promoGlow" cx="80%" cy="13%" r="58%"><stop stop-color="#4d9dff" stop-opacity=".4"/><stop offset="1" stop-color="#4d9dff" stop-opacity="0"/></radialGradient><filter id="promoShadow" x="-30%" y="-30%" width="170%" height="190%"><feDropShadow dx="0" dy="14" stdDeviation="14" flood-opacity=".36"/></filter></defs>
-    <style>text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",Arial,sans-serif}.promo-brand{fill:#fff;font-size:25px;font-weight:800}.tagline{fill:#d8e8ff;font-size:16px;font-weight:650}</style>
+    <style>text{font-family:${fontStack(locale)}}.promo-brand{fill:#fff;font-size:25px;font-weight:800}.tagline{fill:#d8e8ff;font-size:16px;font-weight:650}</style>
     <rect width="440" height="280" fill="url(#bg)"/><rect width="440" height="280" fill="url(#promoGlow)"/>
     <image href="${icon}" x="32" y="30" width="48" height="48"/>${text(92, 62, 'Runi', 'class="promo-brand"')}${text(33, 109, c.tagline, 'class="tagline"')}
     <g transform="translate(131 107) rotate(-4 165 102)" filter="url(#promoShadow)"><rect width="330" height="205" rx="16" fill="#f3f7fb" stroke="#ddebff"/><rect width="330" height="28" rx="16" fill="#eaf1f8"/><rect y="16" width="330" height="12" fill="#eaf1f8"/><circle cx="14" cy="14" r="3" fill="#91a6bc"/><circle cx="24" cy="14" r="3" fill="#91a6bc"/><circle cx="34" cy="14" r="3" fill="#91a6bc"/>
@@ -257,10 +265,23 @@ function promoSvg(locale) {
   </svg>`;
 }
 
+// 用 @resvg/resvg-js 而不是 shell 出去调 rsvg-convert：后者在 Windows 上没有任何
+// 包管理器提供现成二进制（winget 搜 rsvg/librsvg 均无结果），装它要么拖进整套 MSYS2
+// 工具链，要么手动下载来路不明的二进制。resvg-js 是预编译的 npm 依赖，pnpm install
+// 之后本机、新机器和 CI 都能直接重出图。
 function render(svg, output, width, height) {
   mkdirSync(dirname(output), { recursive: true });
-  writeFileSync(temporarySvg, svg);
-  execFileSync('rsvg-convert', ['--width', String(width), '--height', String(height), '--output', output, temporarySvg]);
+  const rendered = new Resvg(svg, {
+    // SVG 根节点已声明 width/height 且 viewBox 同比，按宽定标即可。
+    fitTo: { mode: 'width', value: width },
+    // 文案用的是 Segoe UI / 微软雅黑 等系统字体；不读系统字体表的话中文会整片渲染成空白。
+    font: { loadSystemFonts: true },
+  }).render();
+  // 商店对截图尺寸是硬性要求（1280x800），渲染结果对不上必须当场炸掉而不是悄悄出一张废图。
+  if (rendered.width !== width || rendered.height !== height) {
+    throw new Error(`${output}: 期望 ${width}x${height}，实际渲染 ${rendered.width}x${rendered.height}`);
+  }
+  writeFileSync(output, rendered.asPng());
 }
 
 for (const locale of Object.keys(locales)) {
@@ -272,5 +293,4 @@ for (const locale of Object.keys(locales)) {
   render(screenshotSvg(locale, 'attachments'), join(destination, 'screenshot-04-attachments.png'), 1280, 800);
 }
 
-rmSync(temporarySvg, { force: true });
 console.log('Generated 10 localized Runi store assets.');
