@@ -23,7 +23,7 @@ export const zh = {
   'language.zh': '中文',
   'language.en': 'English',
   'settings.pageTitle': 'Runi 设置',
-  'settings.descriptionPrefix': '配置 OpenAI 兼容的模型 Provider。API Key 保存在本机',
+  'settings.descriptionPrefix': '配置 OpenAI 兼容或 Anthropic 兼容的模型 Provider。API Key 保存在本机',
   'settings.optionsDescriptionSuffix': '，仅在你发起请求时发送到配置的 Provider，且不会通过浏览器同步（ref: technical-plan.md §6）。',
   'settings.navAppearance': '外观',
   'settings.navLanguage': '语言',

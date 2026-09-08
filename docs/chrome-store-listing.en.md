@@ -40,6 +40,11 @@ Use Runi to:
 • Inspect page evidence such as readable text, HTML, DOM structure, scripts, stylesheets, and computed styles for technical analysis.
 • Request page transformations and browser-page actions. Known actions run automatically; detected form submissions ask for approval every time.
 • Bring context across multiple tabs in the same window. Type `@` in the composer to pick other tabs and send their content together to the AI. Referenced tabs are read-only — the model can read and analyze them, but write operations are refused.
+• Start common tasks from a shortcut chip: Summarize page, Translate selection, Fill this form, Polish selection, and Focus mode are built in, and you can add your own.
+• Select text on a page and click the Ask Runi bubble to ask about exactly that selection.
+• Let the model look at a screenshot when the answer depends on what the page looks like — canvas-rendered content, iframe content, whether a button appears disabled, layout problems. Enable it by marking the model as image-capable in Settings.
+• Take over at any time while Runi is working: if it detects your own mouse or keyboard input, it pauses and asks whether to continue or stop there.
+• Redact page content before it is sent: phone number, email, ID number, and bank card rules are built in, and you can add your own. A match is replaced with a placeholder in full, so no original characters reach the model. Screenshots are images and are not covered by these text rules.
 • Connect your own OpenAI-compatible or Anthropic-compatible AI provider, including a custom endpoint.
 
 Before first use, configure your own AI provider and API key. Using DeepSeek as an example:

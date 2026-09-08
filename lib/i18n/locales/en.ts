@@ -25,7 +25,7 @@ export const en: Record<keyof typeof zh, string> = {
   'language.en': 'English',
   'settings.pageTitle': 'Runi Settings',
   'settings.descriptionPrefix':
-    'Configure an OpenAI-compatible model provider. The API key is stored on this device in',
+    'Configure an OpenAI-compatible or Anthropic-compatible model provider. The API key is stored on this device in',
   'settings.optionsDescriptionSuffix':
     ', is sent only to your configured provider when you initiate a request, and is not browser-synced (ref: technical-plan.md §6).',
   'settings.navAppearance': 'Appearance',
