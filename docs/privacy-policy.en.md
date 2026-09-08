@@ -10,7 +10,7 @@ language_navigation_label: Language
 ---
 # Runi Privacy Policy
 
-Effective date: 2026-08-21
+Effective date: 2026-09-08
 
 This policy describes how the Runi browser extension processes data. “Runi” means the extension and its developer.
 
@@ -25,7 +25,7 @@ Provider settings, API keys, interface preferences, and conversation history are
 | Data category | What may be processed | Local handling | External transmission |
 |---|---|---|---|
 | Current-page identity and content | Page title, URL, language, readable text, selected text, HTML, DOM structure and attributes, page metadata, inline or external scripts and stylesheets, and computed styles, depending on the tools used for your request | Held in runtime memory and tool context; page tool results are not added to Runi’s persistent conversation database | Relevant text and tool results are sent directly to your configured AI provider so it can answer or act on your request |
-| Visible-tab screenshot | An image of the visible area of the active target tab, only when the screenshot tool is used | Held transiently as a data URL in tool details and not added to Runi’s persistent conversation database | In version `1.1.3`, the screenshot image bytes are not included in the AI-provider request; the provider receives only a text notice that a screenshot was captured and its data-URL length |
+| Visible-tab screenshot | An image of the visible area of the active target tab, only when the screenshot tool is used | Resized and re-encoded as JPEG in the run context for the current task, and not added to Runi’s persistent conversation database | The screenshot tool is offered to the model only when you have declared your selected model image-capable; when it runs, the screenshot is sent directly to your configured AI provider as image input. A screenshot is pixels, so the text redaction rules described in this section do not apply to it, and anything visible on screen at capture time can reach the provider |
 | User-selected attachments | File name, MIME type, size, and the content of a text file, image, or PDF that you explicitly attach to a request | Text and image attachment content may be stored with browser-local conversation history. PDF text is extracted locally for the current request; only PDF metadata is stored, while extracted PDF text is not persisted | When you send the request, text content, image bytes, or locally extracted PDF text are sent directly to your configured AI provider so it can answer your request |
 | Conversation content | Your prompts, quick-action prompts, recent conversation history, and AI responses; this content may include personal or confidential information that you choose to enter | Conversation messages are stored in browser-local IndexedDB | The current prompt and recent conversation context are sent directly to your configured AI provider |
 | Provider configuration and credentials | Provider name, Base URL, model, protocol, and API key | Stored in `chrome.storage.local` and not synced by Runi | The Base URL selects the destination. The model and request content are sent to that endpoint, and the API key is sent to that endpoint as an authentication header |
@@ -54,7 +54,7 @@ When you initiate an Agent request, you direct Runi to send your current prompt,
 - Conversation messages are stored in browser-local IndexedDB.
 - Text and image attachment contents may be stored with their browser-local conversation messages. For PDFs, only metadata is stored; locally extracted PDF text is transient to the current request.
 - Tab-to-conversation state, the multi-tab operating target, and execution-overlay state are stored temporarily in `chrome.storage.session`.
-- Page tool results and screenshot data URLs are not written to Runi’s persistent conversation database.
+- Page tool results and screenshot images are not written to Runi’s persistent conversation database.
 
 You can delete individual conversations and remove provider configurations in Runi. Clearing the extension’s browser data or uninstalling Runi removes its local data. Deleting Runi’s local data does not delete copies already processed or retained by your AI provider; use that provider’s controls and policy for those copies.
 
@@ -70,7 +70,7 @@ Use an HTTPS Base URL for every remote provider. Runi sends requests to the conf
 
 ## 7. Browser permissions
 
-Runi `1.1.3` uses this permission set:
+Runi `1.3.0` uses this permission set:
 
 | Permission | Purpose |
 |---|---|
@@ -79,6 +79,7 @@ Runi `1.1.3` uses this permission set:
 | `scripting` | Runs packaged read and structured-write functions in the target page |
 | `storage` | Stores provider settings, API keys, shortcuts, language, theme, and workbench preferences, plus temporary tab-to-conversation state, the multi-tab operating target, and execution-overlay state |
 | `sidePanel` | Hosts Runi’s primary interface |
+| `alarms` | Keeps the extension service worker alive while a user-initiated Agent task is running, and clears the alarm when the task ends; not used to schedule any background work |
 | Host access: `<all_urls>` | Lets the same current-page Agent work on user-selected HTTP and HTTPS sites and fetch page-referenced resources |
 
 Read-only tools and known page actions may run after you initiate an Agent request. Detected form submissions require approval every time. Runi does not passively build a browsing-history profile.

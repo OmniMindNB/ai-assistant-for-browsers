@@ -1,6 +1,6 @@
 # Runi Chrome Web Store Listing — English
 
-Paste-ready fields for the default English Chrome Web Store listing.
+Paste-ready fields for the `en` localization of the Chrome Web Store listing. Simplified Chinese is the default Store language.
 
 ## Name
 

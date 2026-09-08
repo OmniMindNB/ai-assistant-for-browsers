@@ -1,8 +1,8 @@
-# Chrome Web Store `1.1.3` 更新操作指南
+# Chrome Web Store `1.3.0` 更新操作指南
 
-最后更新：2026-08-24
+最后更新：2026-09-08
 
-本指南用于更新**现有的 Runi Chrome Web Store 商品**到 `1.1.3`。必须继续使用现有商品 ID，不要新建另一个商品。
+本指南用于更新**现有的 Runi Chrome Web Store 商品**到 `1.3.0`。必须继续使用现有商品 ID，不要新建另一个商品。
 
 ## 1. 准备并核验上传包
 
@@ -17,9 +17,9 @@ pnpm zip
 
 上传前确认：
 
-- 产物为 `.output/runi-1.1.3-chrome.zip`。
-- 产物 `manifest.json` 中 `version` 为 `1.1.3`，`default_locale` 为 `en`。
-- 权限为 `sidePanel`、`storage`、`scripting`、`activeTab`、`tabs`，主机访问权限为 `<all_urls>`；不包含 `userScripts`。
+- 产物为 `.output/runi-1.3.0-chrome.zip`。
+- 产物 `manifest.json` 中 `version` 为 `1.3.0`，`default_locale` 为 `zh_CN`。
+- 权限为 `sidePanel`、`storage`、`scripting`、`activeTab`、`tabs`、`alarms`，主机访问权限为 `<all_urls>`；不包含 `userScripts`。
 - `_locales/en/` 与 `_locales/zh_CN/` 均已包含在 ZIP 中。
 - ZIP 不包含 API Key、个人邮箱截图、测试账号信息或无关文件。
 
@@ -27,34 +27,17 @@ pnpm zip
 
 1. 登录 Chrome Web Store Developer Dashboard。
 2. 打开现有 Runi 商品，核对现有商品 ID 和当前发布状态。
-3. 在该商品的 Package 页面上传 `.output/runi-1.1.3-chrome.zip`。
+3. 在该商品的 Package 页面上传 `.output/runi-1.3.0-chrome.zip`。
 4. 不要通过任何“新商品”流程重复发布 Runi。
 5. 上传后再次检查 Dashboard 解析出的版本号和权限差异；如果出现计划外的新权限，停止并回到源码核查。
 
-## 3. 填写默认英文商品详情
+## 3. 填写默认简体中文商品详情
 
-英文是默认 Store 语言。
+简体中文是默认 Store 语言。该商品此前以英文为默认语言，需在 Store listing 页面的语言选择器中把默认语言切换为 `zh_CN`。默认语言决定所有没有对应本地化的用户看到的商品文案，因此切换前先按第 4 节把英文文案作为 `en` 本地化保留下来，避免英文详情随默认语言切换一起丢失。
 
-1. 从 [chrome-store-listing.en.md](chrome-store-listing.en.md) 粘贴名称、简短说明、类别、单一用途和详细说明。
+1. 从 [chrome-store-listing.zh-CN.md](chrome-store-listing.zh-CN.md) 粘贴名称、简短说明、类别、单一用途和详细说明。
    - 确认详细说明仍包含首次使用前配置 Provider/API Key 的步骤，以及 DeepSeek 预设示例。
 2. 类别选择 `Productivity`。
-3. 上传英文素材目录 `docs/store-assets/en/` 中的文件：
-   - `promo-small-440x280.png`
-   - `screenshot-01-summary.png`
-   - `screenshot-02-evidence.png`
-   - `screenshot-03-confirm.png`
-   - `screenshot-04-attachments.png`
-4. 按英文 listing 文档中的顺序填写四条截图说明。
-5. 隐私政策默认路由使用当前已部署的 `https://omnimindnb.github.io/ai-assistant-for-browsers/privacy-policy/`。
-6. 支持邮箱使用 `liudong.ucas@gmail.com`。
-
-如果 `docs/store-assets/en/` 尚未生成或图片尺寸不正确，停止；先完成本发布计划的本地化素材任务。
-
-## 4. 添加 `zh_CN` 本地化
-
-1. 在 Store listing 的本地化管理中添加 `zh_CN`。
-2. 从 [chrome-store-listing.zh-CN.md](chrome-store-listing.zh-CN.md) 粘贴名称、简短说明、类别、单一用途和详细说明。
-   - 确认详细说明仍包含首次使用前配置 Provider/API Key 的步骤，以及 DeepSeek 预设示例。
 3. 上传简体中文素材目录 `docs/store-assets/zh-CN/` 中的文件：
    - `promo-small-440x280.png`
    - `screenshot-01-summary.png`
@@ -62,9 +45,26 @@ pnpm zip
    - `screenshot-03-confirm.png`
    - `screenshot-04-attachments.png`
 4. 按中文 listing 文档中的顺序填写四条截图说明。
-5. 中文隐私政策路由为当前已部署的 `https://omnimindnb.github.io/ai-assistant-for-browsers/privacy-policy/zh-CN/`。
+5. 隐私政策默认路由使用当前已部署的 `https://omnimindnb.github.io/ai-assistant-for-browsers/privacy-policy/zh-CN/`。
+6. 支持邮箱使用 `liudong.ucas@gmail.com`。
 
-如果 `docs/store-assets/zh-CN/` 尚未生成、图片混有英文界面或尺寸不正确，停止；不要用英文素材代替中文本地化素材。
+如果 `docs/store-assets/zh-CN/` 尚未生成、图片混有英文界面或尺寸不正确，停止；不要用英文素材代替中文素材。
+
+## 4. 添加 `en` 本地化
+
+1. 在 Store listing 的本地化管理中添加 `en`。
+2. 从 [chrome-store-listing.en.md](chrome-store-listing.en.md) 粘贴名称、简短说明、类别、单一用途和详细说明。
+   - 确认详细说明仍包含首次使用前配置 Provider/API Key 的步骤，以及 DeepSeek 预设示例。
+3. 上传英文素材目录 `docs/store-assets/en/` 中的文件：
+   - `promo-small-440x280.png`
+   - `screenshot-01-summary.png`
+   - `screenshot-02-evidence.png`
+   - `screenshot-03-confirm.png`
+   - `screenshot-04-attachments.png`
+4. 按英文 listing 文档中的顺序填写四条截图说明。
+5. 如果 Dashboard 的隐私政策 URL 按语言分别填写，`en` 本地化填当前已部署的 `https://omnimindnb.github.io/ai-assistant-for-browsers/privacy-policy/`；如果该字段是商品级的单一字段，保持第 3 节填入的中文路由不变——两条路由的页面都带语言切换。
+
+如果 `docs/store-assets/en/` 尚未生成或图片尺寸不正确，停止；先完成本发布计划的本地化素材任务。
 
 ## 5. 填写 Privacy practices
 
@@ -111,7 +111,7 @@ pnpm zip
 ## 8. 最终草稿检查
 
 - 软件包版本、默认语言、权限和商品 ID 均正确。
-- 英文默认 listing 与 `zh_CN` listing 都已保存。
+- 中文默认 listing 与 `en` listing 都已保存。
 - 两种 listing 的详细说明均包含 Provider/API Key 首次配置步骤，且字段名与当前设置页一致。
 - 两套本地化素材均来自对应目录，尺寸和语言正确。
 - 四条截图说明与图片顺序一致。

@@ -76,8 +76,8 @@ describe('maintained privacy disclosure contract', () => {
       /^生效日期：(\d{4}-\d{2}-\d{2})$/m,
     )?.[1];
 
-    expect(englishDate).toBe('2026-08-21');
-    expect(chineseDate).toBe('2026-08-21');
+    expect(englishDate).toBe('2026-09-08');
+    expect(chineseDate).toBe('2026-09-08');
     expect(englishDate).toBe(chineseDate);
   });
 

@@ -1,9 +1,9 @@
 # Chrome Web Store Permission and Data-Use Answers
 
-Paste-ready answers for the Chrome Web Store Developer Dashboard. The `1.1.3` Store build uses this permission set:
+Paste-ready answers for the Chrome Web Store Developer Dashboard. The `1.3.0` Store build uses this permission set:
 
 ```text
-permissions: sidePanel, storage, scripting, activeTab, tabs
+permissions: sidePanel, storage, scripting, activeTab, tabs, alarms
 host_permissions: <all_urls>
 ```
 
@@ -93,6 +93,20 @@ Used to host Runi’s primary user interface: the AI conversation and page-actio
 用于承载 Runi 的主要用户界面，即 AI 对话与页面操作侧边栏。
 ```
 
+## `alarms`
+
+**English**
+
+```text
+Used to keep the extension service worker alive with a short periodic alarm while a user-initiated Agent task is still running, so that a long task is not cut off when Chrome suspends the service worker. The alarm is created when such a task starts and cleared when it ends. Runi schedules no background work of its own and creates no alarm while no user-initiated task is running.
+```
+
+**简体中文**
+
+```text
+用于在用户发起的 Agent 任务运行期间，通过一个短周期 alarm 维持扩展 Service Worker 存活，避免长任务因 Chrome 回收 Service Worker 而中断。该 alarm 在任务开始时创建、任务结束时清除。Runi 不会安排自己的后台任务；没有用户发起的任务在运行时不会创建任何 alarm。
+```
+
 ## Host access: `<all_urls>`
 
 **English**
@@ -120,13 +134,13 @@ Mark **collected/processed** for the core feature.
 **English**
 
 ```text
-When the user initiates a request, Runi may process the current page’s title, URL, readable text, selected text, HTML, DOM structure and attributes, metadata, scripts, stylesheets, computed styles, and a visible-tab screenshot, depending on the tools used. Relevant text and page-derived tool results are sent directly to the AI provider endpoint configured by the user solely to answer or carry out that request. Runi has no developer-operated backend, does not sell this data, and does not use it for advertising, profiling, credit decisions, or unrelated purposes. In version 1.1.3, screenshot image bytes remain transient in tool details and are not included in the provider request.
+When the user initiates a request, Runi may process the current page’s title, URL, readable text, selected text, HTML, DOM structure and attributes, metadata, scripts, stylesheets, computed styles, and a visible-tab screenshot, depending on the tools used. Relevant text and page-derived tool results are sent directly to the AI provider endpoint configured by the user solely to answer or carry out that request. Runi has no developer-operated backend, does not sell this data, and does not use it for advertising, profiling, credit decisions, or unrelated purposes. The screenshot tool is offered to the model only when the user has declared the selected model image-capable; when it runs, the captured image is resized, re-encoded as JPEG, and sent to the configured provider as image input. A screenshot is pixels, so Runi’s text redaction rules do not apply to it, and anything visible on screen at capture time can reach the provider. Screenshot images are not written to Runi’s persistent conversation database.
 ```
 
 **简体中文**
 
 ```text
-用户发起请求后，Runi 可能会根据所用工具处理当前页面的标题、URL、可读正文、选中文本、HTML、DOM 结构与属性、元信息、脚本、样式表、计算样式和可见标签页截图。与请求有关的文本和页面工具结果会直接发送到用户配置的 AI Provider 端点，仅用于回答或执行该请求。Runi 不运营开发者后端，不出售这些数据，也不会将其用于广告、画像、信贷判断或无关用途。在 1.1.3 中，截图图片字节仅短暂保存在工具详情中，不会包含在 Provider 请求里。
+用户发起请求后，Runi 可能会根据所用工具处理当前页面的标题、URL、可读正文、选中文本、HTML、DOM 结构与属性、元信息、脚本、样式表、计算样式和可见标签页截图。与请求有关的文本和页面工具结果会直接发送到用户配置的 AI Provider 端点，仅用于回答或执行该请求。Runi 不运营开发者后端，不出售这些数据，也不会将其用于广告、画像、信贷判断或无关用途。只有在用户声明所选模型支持图片输入时，截图工具才会提供给模型；调用时，截取的图片会缩放并重编码为 JPEG，作为图片输入发送到已配置的 Provider。截图是像素，Runi 的文本脱敏规则对它不生效，截图时屏幕上可见的内容都可能到达 Provider。截图图片不会写入 Runi 的持久化对话数据库。
 ```
 
 ### `Web history` / web browsing activity
@@ -159,7 +173,7 @@ When the user explicitly attaches a text file, image, or PDF, Runi processes its
 - **Health information / financial and payment information:** Mark these categories collected/processed because arbitrary user-selected attachments may contain them and their content is sent to the configured AI provider when the user sends the request. Runi does not solicit or use this content for profiling, creditworthiness, lending, or advertising.
 - **Location / user activity:** Leave unchecked. Runi does not collect precise location or behavioral analytics; user-approved page actions are executed as core functionality rather than recorded as activity data.
 
-For `1.1.3`, the conservative Dashboard selection is: Personally identifiable information, Health information, Financial and payment information, Authentication information, Personal communications, Web history, and Website content. Leave Location and User activity unchecked. Re-check the live category wording before saving.
+For `1.3.0`, the conservative Dashboard selection is: Personally identifiable information, Health information, Financial and payment information, Authentication information, Personal communications, Web history, and Website content. Leave Location and User activity unchecked. Re-check the live category wording before saving.
 
 ### Required use certifications
 
