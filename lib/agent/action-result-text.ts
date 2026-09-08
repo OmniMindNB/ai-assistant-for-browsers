@@ -4,7 +4,7 @@
 // 模型对下一步的判断几乎完全依赖这句文案：旧版的「已滚动到 (0, 800)。」不含
 // 「还剩多少没看」「有没有滚动」这类信息，模型只能盲目重复同一次调用。
 // 这里全部是纯函数，与消息通道解耦，便于单测。
-import type { ClickElementResult, FormFieldDescriptor, NavigateHistoryResult, NavigateTabResult, PressKeyResult, ScrollPageResult } from '@/lib/messaging';
+import type { BatchClickOutcome, ClickElementResult, FormFieldDescriptor, NavigateHistoryResult, NavigateTabResult, PressKeyResult, ScrollPageResult } from '@/lib/messaging';
 
 /** 新元素最多列举这么多个，其余只报个数——一次展开几十个选项时全列出来会淹没工具结果。 */
 const MAX_LISTED_NEW_FIELDS = 8;
@@ -63,6 +63,31 @@ export function describeClickResult(result: ClickElementResult, fieldId: string 
     ? '⚠️ 该链接在新标签页打开，当前标签页内容不会变化，你也无法操作新标签页。'
     : '';
   return `已点击${target}${label}。${newTab}`;
+}
+
+/**
+ * 批量点击的结果文案。计数放在第一行：模型不必自己数几个成功几个失败，就不会在
+ * 「3 个成功 1 个失败」的情况下把整批当成失败重来一遍。
+ */
+export function describeBatchClickResult(outcomes: BatchClickOutcome[]): string {
+  const succeeded = outcomes.filter((outcome) => outcome.status === 'ok').length;
+  const failed = outcomes.length - succeeded;
+  const head =
+    failed === 0
+      ? `已批量点击 ${outcomes.length} 个目标：全部成功。`
+      : `已批量点击 ${outcomes.length} 个目标：成功 ${succeeded} 个，失败 ${failed} 个。`;
+
+  const lines = outcomes.map((outcome) => {
+    const label = outcome.label ? `（"${outcome.label}"）` : '';
+    if (outcome.status !== 'ok') {
+      return `- ${outcome.fieldId}${label}：失败——${outcome.detail ?? outcome.status}`;
+    }
+    // 新标签页必须点破：当前标签页不会变化，否则模型会一直等它变（同 describeClickResult）。
+    const newTab = outcome.opensNewTab ? '（在新标签页打开，当前标签页内容不会变化）' : '';
+    return `- ${outcome.fieldId}${label}：已点击${newTab}`;
+  });
+
+  return [head, ...lines].join('\n');
 }
 
 export function describeNavigateResult(result: NavigateTabResult): string {

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { FormFieldDescriptor } from '@/lib/messaging';
 import {
+  fieldExpectation,
   findNewFieldIds,
   isSensitiveField,
+  MAX_EXPECT_TEXT_CHARS,
   MAX_FIELD_TEXT_CHARS,
   pickFieldLabel,
   resolveFieldKind,
@@ -443,5 +445,36 @@ describe('toScrollableContainerDescriptor', () => {
     expect(descriptor.fieldId).toBe('s2');
     expect(descriptor.tag).toBe('section');
     expect(descriptor.label).toBe('聊天记录');
+  });
+});
+
+describe('fieldExpectation', () => {
+  it('带上勾选类字段的 value：同组选项只有它和文案能区分', () => {
+    const option = raw({ type: 'radio', name: 'q1', value: 'B', ancestorLabelText: 'B' });
+    expect(fieldExpectation(option).value).toBe('B');
+  });
+
+  it('不带文本框的 value：那是用户正在输入的内容，比对它等于禁止边填边重采', () => {
+    const input = raw({ type: 'text', name: 'email', value: 'a@b.c' });
+    expect(fieldExpectation(input).value).toBeUndefined();
+  });
+
+  it('带上通用可点击元素的自身文案', () => {
+    const option = raw({ tag: 'div', interactive: true, elementText: 'A. 甲' });
+    expect(fieldExpectation(option).text).toBe('A. 甲');
+  });
+
+  it('文案按 MAX_EXPECT_TEXT_CHARS 截断，避免整段长文进 storage.session', () => {
+    const long = raw({ tag: 'button', elementText: 'x'.repeat(200) });
+    expect(fieldExpectation(long).text).toHaveLength(MAX_EXPECT_TEXT_CHARS);
+  });
+
+  it('没有自身文案的字段不带 text，不给写入平添一道约束', () => {
+    expect(fieldExpectation(raw({ type: 'text', name: 'email' })).text).toBeUndefined();
+  });
+
+  it('原样保留结构判别位', () => {
+    const link = raw({ tag: 'a', href: '/detail/1', elementText: '详情', ariaLabel: '详情' });
+    expect(fieldExpectation(link)).toMatchObject({ tag: 'a', href: '/detail/1', label: '详情' });
   });
 });

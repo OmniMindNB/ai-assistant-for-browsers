@@ -56,6 +56,29 @@ export interface FindTextHandleInput {
   frameOrigin: string;
 }
 
+/**
+ * 从上一张句柄表里挑出该留给下一张表的 t* 条目——mergeFindTextHandles 的对称面。
+ *
+ * background 的 snapshotFields 每次都整表重建，只装它自己发的 f、s 两种前缀；而它在每次
+ * 成功写操作之后都会被 collectNewFieldsAfterWrite 悄悄重跑一遍。没有这一步，模型上一轮
+ * browser_find_text 拿到的一整批 t* 会在它点掉其中一个之后集体消失，剩下的再点就是
+ * 「未知的 fieldId」——而那次重采模型根本不知道发生过。
+ *
+ * 模型主动重新调用 browser_get_form 时整表覆写（含 t*）是另一回事，那是它自己表示
+ * 「页面状态已经变了」，旧的文字句柄本就不该继续被信任（ref: tab-form-fields.ts）。
+ */
+export function keepFindTextHandles(
+  previous: FormFieldTable | undefined,
+  currentUrl: string,
+): Record<string, FormFieldHandle> {
+  if (!previous || previous.url !== currentUrl) return {};
+  const kept: Record<string, FormFieldHandle> = {};
+  for (const [fieldId, handle] of Object.entries(previous.fields)) {
+    if (fieldId.startsWith('t')) kept[fieldId] = handle;
+  }
+  return kept;
+}
+
 // 把这一轮 find_text 命中并入现有句柄表：保留 f*/s*（browser_get_form 发放的句柄），
 // 只替换上一轮 find_text 自己发放的 t*——这一轮的命中集合已经变了，旧的不该继续被信任，
 // 与 browser_get_form 每次整表覆写是同一个理由（ref: 设计文档 §4.4）。

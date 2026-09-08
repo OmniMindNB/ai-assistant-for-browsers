@@ -182,3 +182,15 @@ describe('describeToolActivity', () => {
     expect(describeToolActivity('browser_list_tabs', {}, 'done')).toBe('List tabs');
   });
 });
+
+describe('describeToolActivity 的批量点击', () => {
+  it('把批量目标列进时间线：面板是用户唯一能看见 agent 动了什么的地方', () => {
+    expect(describeToolActivity('browser_click', { fieldIds: ['f3', 'f4', 'f5'] }, 'running')).toBe(
+      'Clicking "f3、f4、f5"',
+    );
+  });
+
+  it('单目标写法不受影响', () => {
+    expect(describeToolActivity('browser_click', { fieldId: 'f7' }, 'running')).toBe('Clicking "f7"');
+  });
+});

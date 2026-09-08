@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { ClickElementResult, FormFieldDescriptor, NavigateHistoryResult, NavigateTabResult, ScrollPageResult } from '@/lib/messaging';
-import { describeClickResult, describeGoBackResult, describeNavigateResult, describeNewFields, describeScrollResult } from './action-result-text';
+import type { BatchClickOutcome, ClickElementResult, FormFieldDescriptor, NavigateHistoryResult, NavigateTabResult, ScrollPageResult } from '@/lib/messaging';
+import { describeBatchClickResult, describeClickResult, describeGoBackResult, describeNavigateResult, describeNewFields, describeScrollResult } from './action-result-text';
 
 function scroll(overrides: Partial<ScrollPageResult> = {}): ScrollPageResult {
   return { x: 0, y: 800, scrolledBy: 800, pixelsAbove: 800, pixelsBelow: 2400, viewportHeight: 1200, ...overrides };
@@ -178,5 +178,43 @@ describe('describeGoBackResult', () => {
     expect(describeGoBackResult({ url: 'chrome://extensions/', moved: true })).toBe(
       '已后退到 "chrome://extensions/"。⚠️ 已退回到扩展无法操作的页面，后续的读取或写入工具会持续失败，请改用其它方式继续任务。',
     );
+  });
+});
+
+describe('describeBatchClickResult', () => {
+  const outcome = (overrides: Partial<BatchClickOutcome> = {}): BatchClickOutcome => ({
+    fieldId: 'f1',
+    status: 'ok',
+    ...overrides,
+  });
+
+  it('先给出成败计数，模型不必自己数', () => {
+    const text = describeBatchClickResult([
+      outcome({ fieldId: 'f1', label: 'A. 甲' }),
+      outcome({ fieldId: 'f2', label: 'B. 乙' }),
+      outcome({ fieldId: 'f3', status: 'mismatch', detail: '该位置的元素与读取时不一致。' }),
+    ]);
+    expect(text.split('\n')[0]).toBe('已批量点击 3 个目标：成功 2 个，失败 1 个。');
+  });
+
+  it('逐条列出目标与结果，失败的带上原因', () => {
+    const text = describeBatchClickResult([
+      outcome({ fieldId: 'f1', label: 'A. 甲' }),
+      outcome({ fieldId: 'f3', status: 'mismatch', detail: '该位置的元素与读取时不一致。' }),
+    ]);
+    expect(text.split('\n').slice(1)).toEqual([
+      '- f1（"A. 甲"）：已点击',
+      '- f3：失败——该位置的元素与读取时不一致。',
+    ]);
+  });
+
+  it('全部成功时不写「失败 0 个」这种噪声', () => {
+    const text = describeBatchClickResult([outcome({ fieldId: 'f1' }), outcome({ fieldId: 'f2' })]);
+    expect(text.split('\n')[0]).toBe('已批量点击 2 个目标：全部成功。');
+  });
+
+  it('把新标签页警告带出来：当前页不会变化这件事必须点破', () => {
+    const text = describeBatchClickResult([outcome({ fieldId: 'f1', opensNewTab: true })]);
+    expect(text).toContain('新标签页');
   });
 });

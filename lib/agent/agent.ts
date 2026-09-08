@@ -169,12 +169,17 @@ export function buildSubmitIntentProbePayload(
 async function resolveOverlayCursor(toolName: string, args: unknown, tabId: number): Promise<boolean> {
   try {
     const record = (args ?? {}) as Record<string, unknown>;
+    // 批量点击取第一个目标：整批本来就来自同一次 get_form，落在不同帧的情况极少，
+    // 而这只是个「要不要画模拟光标」的观感判断，取第一个足够。
+    const batchFieldId = Array.isArray(record.fieldIds)
+      ? (record.fieldIds as unknown[]).find((id): id is string => typeof id === 'string')
+      : undefined;
     const fieldId =
       toolName === 'browser_fill_form'
         ? (record.submit as { fieldId?: string } | undefined)?.fieldId
         : typeof record.fieldId === 'string'
           ? record.fieldId
-          : undefined;
+          : batchFieldId;
     if (!fieldId) return true;
     const table = await getFormFieldsForTab(tabId);
     const handle = table?.fields[fieldId];

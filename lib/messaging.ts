@@ -305,6 +305,34 @@ export interface ClickElementPayload {
   index?: number;
   /** browser_get_form 发放的字段句柄，优先于 selector。 */
   fieldId?: string;
+  /**
+   * 批量点击：一次点完多选题的若干个选项。与 fieldId/selector 互斥。
+   * 逐个派发、逐个回报，一个失败不影响其余
+   * （ref: docs/superpowers/specs/2026-09-08-batch-click-design.md）。
+   */
+  fieldIds?: string[];
+}
+
+/** 批量点击里单个目标的结果。 */
+export interface BatchClickOutcome {
+  fieldId: string;
+  status:
+    | 'ok'
+    | 'not_found'
+    | 'mismatch'
+    | 'not_clickable'
+    /** 句柄表里没有这个 id。 */
+    | 'unknown_field'
+    /** 该 id 是可滚动容器，不是可点击元素。 */
+    | 'wrong_kind'
+    /** 同一个 id 在本次调用里重复出现，只点了第一次。 */
+    | 'duplicate'
+    /** 前面某个目标点完后页面导航了，本目标没有尝试。 */
+    | 'skipped_stale';
+  detail?: string;
+  /** 被点元素的可见文案。页面可控，已净化截断。 */
+  label?: string;
+  opensNewTab?: boolean;
 }
 
 export interface ClickElementResult {
@@ -321,6 +349,8 @@ export interface ClickElementResult {
   opensNewTab?: boolean;
   /** 本次点击之后页面新出现的可交互元素（下拉建议、展开的菜单项等）。句柄表已同步刷新。 */
   newFields?: FormFieldDescriptor[];
+  /** 仅批量点击（payload.fieldIds）时有值：逐个目标的结果，顺序与请求一致。 */
+  outcomes?: BatchClickOutcome[];
 }
 
 export interface TypeTextPayload {

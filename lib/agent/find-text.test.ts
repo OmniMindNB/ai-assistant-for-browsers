@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_FIND_TEXT_LIMIT,
   MAX_FIND_TEXT_LIMIT,
+  keepFindTextHandles,
   matchesFindText,
   mergeFindTextHandles,
   normalizeFindText,
@@ -100,6 +101,29 @@ function hit(overrides: Partial<Parameters<typeof mergeFindTextHandles>[2][numbe
     ...overrides,
   };
 }
+
+describe('keepFindTextHandles', () => {
+  const withT = () =>
+    table({ fields: { ...table().fields, t1: hit() as never, t2: hit() as never } });
+
+  it('hands back the t* entries so a re-snapshot can keep them', () => {
+    expect(Object.keys(keepFindTextHandles(withT(), 'https://a.test/orders'))).toEqual(['t1', 't2']);
+  });
+
+  it('never hands back f*/s* — those are the re-snapshot\'s own to reissue', () => {
+    const kept = keepFindTextHandles(withT(), 'https://a.test/orders');
+    expect(kept.f1).toBeUndefined();
+    expect(kept.s1).toBeUndefined();
+  });
+
+  it('drops everything once the page has navigated', () => {
+    expect(keepFindTextHandles(withT(), 'https://a.test/other')).toEqual({});
+  });
+
+  it('tolerates a missing previous table', () => {
+    expect(keepFindTextHandles(undefined, 'https://a.test/orders')).toEqual({});
+  });
+});
 
 describe('mergeFindTextHandles', () => {
   it('assigns sequential t* fieldIds starting at t1', () => {

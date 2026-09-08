@@ -408,3 +408,75 @@ describe('多标签页编排工具：browser_open_tab / browser_switch_tab / bro
     expect(sendMessage).not.toHaveBeenCalled();
   });
 });
+
+function clickTool() {
+  const tool = createBrowserTools(createTabSession(1)).find((candidate) => candidate.name === 'browser_click');
+  if (!tool) throw new Error('browser_click 未注册');
+  return tool;
+}
+
+describe('browser_click 批量入口', () => {
+  it('把 fieldIds 原样送进 CLICK_ELEMENT', async () => {
+    sendMessage.mockResolvedValueOnce({
+      id: '1',
+      ok: true,
+      data: { status: 'ok', outcomes: [{ fieldId: 'f1', status: 'ok' }, { fieldId: 'f2', status: 'ok' }] },
+    });
+    await clickTool().execute('call-1', { fieldIds: ['f1', 'f2'] });
+    expect(sendMessage).toHaveBeenCalledWith('CLICK_ELEMENT', { fieldIds: ['f1', 'f2'] }, 1);
+  });
+
+  it('部分失败不算整体失败：逐条回报，不抛错', async () => {
+    sendMessage.mockResolvedValueOnce({
+      id: '1',
+      ok: true,
+      data: {
+        status: 'ok',
+        outcomes: [
+          { fieldId: 'f1', status: 'ok', label: 'A. 甲' },
+          { fieldId: 'f2', status: 'mismatch', detail: '该位置的元素与读取时不一致。' },
+        ],
+      },
+    });
+    const output = await clickTool().execute('call-1', { fieldIds: ['f1', 'f2'] });
+    const text = (output.content[0] as { text: string }).text;
+    expect(text).toContain('成功 1 个，失败 1 个');
+    expect(text).toContain('f2');
+  });
+
+  it('一个都没点成时才抛错——模型必须知道这一轮什么也没发生', async () => {
+    sendMessage.mockResolvedValueOnce({
+      id: '1',
+      ok: true,
+      data: {
+        status: 'not_found',
+        outcomes: [
+          { fieldId: 'f1', status: 'unknown_field', detail: '未知的 fieldId。' },
+          { fieldId: 'f2', status: 'unknown_field', detail: '未知的 fieldId。' },
+        ],
+      },
+    });
+    await expect(clickTool().execute('call-1', { fieldIds: ['f1', 'f2'] })).rejects.toThrow();
+  });
+
+  it('句柄表整体失效时要求重新读表单', async () => {
+    sendMessage.mockResolvedValueOnce({ id: '1', ok: true, data: { status: 'not_found', fieldsTableStale: true, outcomes: [] } });
+    await expect(clickTool().execute('call-1', { fieldIds: ['f1'] })).rejects.toThrow('browser_get_form');
+  });
+
+  it('fieldIds 与 fieldId 同时给出时拒绝，不猜哪个是模型的本意', async () => {
+    // sendMessage 是整个文件共用的 mock，用增量比对而不是 not.toHaveBeenCalled()
+    const before = sendMessage.mock.calls.length;
+    await expect(clickTool().execute('call-1', { fieldId: 'f1', fieldIds: ['f2'] })).rejects.toThrow();
+    expect(sendMessage.mock.calls.length).toBe(before);
+  });
+
+  it('空的 fieldIds 拒绝', async () => {
+    await expect(clickTool().execute('call-1', { fieldIds: [] })).rejects.toThrow();
+  });
+
+  it('超过 10 个目标拒绝：再多说明模型在乱点', async () => {
+    const fieldIds = Array.from({ length: 11 }, (_, index) => `f${index}`);
+    await expect(clickTool().execute('call-1', { fieldIds })).rejects.toThrow('10');
+  });
+});

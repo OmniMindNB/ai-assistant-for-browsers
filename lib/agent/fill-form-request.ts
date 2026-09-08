@@ -233,6 +233,45 @@ export function planFieldClick(fieldId: string, table: FormFieldTable | undefine
   return { ok: true, submit: { fieldId, path: handle.path, expect: handle.expect } };
 }
 
+export interface BatchFieldClickPlan {
+  fieldId: string;
+  ok: boolean;
+  reason?: 'no_table' | 'unknown_field' | 'wrong_kind' | 'duplicate';
+  submit?: { fieldId: string; path: FormFieldHandle['path']; expect: FormFieldHandle['expect'] };
+  /** 该目标所在帧；background 据此决定往哪个帧注入。 */
+  frameId?: number;
+  /** 传给注入函数的 expectOrigin，语义同 planProbeTarget（主框架句柄不转发）。 */
+  expectOrigin?: string;
+}
+
+/**
+ * browser_click 批量入口的查表：逐个复用 planFieldClick，一个目标查不到不影响其余
+ * （失败语义由用户拍板：继续点完、逐个回报）。
+ *
+ * 重复的 fieldId 只认第一次：勾选类元素点两次等于没点，模型多半是把同一个选项写了两遍，
+ * 与其真的去点两下，不如明确回报一条 duplicate。
+ */
+export function planFieldClicks(
+  fieldIds: string[],
+  table: FormFieldTable | undefined,
+): BatchFieldClickPlan[] {
+  const seen = new Set<string>();
+  return fieldIds.map((fieldId) => {
+    if (seen.has(fieldId)) return { fieldId, ok: false, reason: 'duplicate' as const };
+    seen.add(fieldId);
+    const plan = planFieldClick(fieldId, table);
+    if (!plan.ok || !plan.submit) return { fieldId, ok: false, reason: plan.reason };
+    const handle = table?.fields[fieldId];
+    return {
+      fieldId,
+      ok: true,
+      submit: plan.submit,
+      frameId: handle?.frameId,
+      expectOrigin: resolveExpectOrigin(handle),
+    };
+  });
+}
+
 export interface FieldScrollPlan {
   ok: boolean;
   reason?: 'no_table' | 'unknown_field' | 'wrong_kind';

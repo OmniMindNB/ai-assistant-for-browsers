@@ -8,9 +8,14 @@ import type { FormFieldPathStep } from './form-schema';
 export interface FormFieldHandle {
   path: FormFieldPathStep[];
   /** 写入前用来做字面比对的期望结构，不符即 mismatch（ref: Spec-0005 §写入校验矩阵）。 */
-  expect: { tag: string; type?: string; name?: string; label?: string; href?: string };
+  expect: { tag: string; type?: string; name?: string; label?: string; href?: string; text?: string; value?: string };
   sensitive: boolean;
   kind: FormFieldKind;
+  /**
+   * 元素的稳定身份（见 field-id-allocation.ts 的 fieldIdentity）。下一次重采靠它把同一个
+   * 元素认回来、继续沿用同一个 fieldId；缺省 = 本次改动之前存下的旧表，无从继承。
+   */
+  identity?: string;
   /** 该字段所在帧；缺省 = 主框架，旧版本存下的表读回来仍然有效（ref: 设计文档 §3.2）。 */
   frameId?: number;
   /**
@@ -33,6 +38,12 @@ export interface FormFieldTable {
    * 信任）；browser_find_text 每次调用只替换自己的 t*，保留现有的 f*／s*（除非页面已经
    * 换了地址，那时连 f*／s* 也一并丢弃）。将来读到"我的 t3 怎么没了"时，先看是不是中间
    * 调用过 browser_get_form，而不是当作 bug 修掉（ref: 设计文档 §4.4）。
+   *
+   * 唯一的例外是写操作之后由 collectNewFieldsAfterWrite 触发的那次内部重采：它走的是同一个
+   * snapshotFields，但模型并不知道它发生过，把 t* 一并抹掉等于凭空作废模型手里的句柄，
+   * 因此那条路径显式保留 t*（snapshotFields 的 keepTextHandles 参数）。
+   *
+   * f* 的号码不再按文档序重发，而是按元素身份继承上一张表——见 field-id-allocation.ts。
    */
   fields: Record<string, FormFieldHandle>;
   /**

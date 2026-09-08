@@ -6,6 +6,7 @@ import {
   isChildFrameHandle,
   mergeFillOutcomes,
   planFieldClick,
+  planFieldClicks,
   planFieldScroll,
   planFormFill,
   planFrameGroupExecution,
@@ -473,5 +474,37 @@ describe('skippedFrameGroupOutcomes', () => {
     expect(
       skippedFrameGroupOutcomes({ frameId: undefined, frameOrigin: undefined, items: [] }),
     ).toEqual([]);
+  });
+});
+
+describe('planFieldClicks', () => {
+  const options = table({
+    f1: handle({ kind: 'checkbox', expect: { tag: 'input', type: 'checkbox', name: 'q1', value: 'A' } }),
+    f2: handle({ kind: 'checkbox', expect: { tag: 'input', type: 'checkbox', name: 'q1', value: 'B' } }),
+    s1: handle({ kind: 'scrollable', expect: { tag: 'div' } }),
+  });
+
+  it('按传入顺序逐个查表', () => {
+    const plans = planFieldClicks(['f2', 'f1'], options);
+    expect(plans.map((plan) => plan.fieldId)).toEqual(['f2', 'f1']);
+    expect(plans.every((plan) => plan.ok)).toBe(true);
+  });
+
+  it('单个目标查不到不影响其余目标', () => {
+    const plans = planFieldClicks(['f1', 'f9', 'f2'], options);
+    expect(plans.map((plan) => plan.reason)).toEqual([undefined, 'unknown_field', undefined]);
+  });
+
+  it('滚动容器句柄按 wrong_kind 挡下，不会被当成可点击元素', () => {
+    expect(planFieldClicks(['s1'], options)[0]).toMatchObject({ ok: false, reason: 'wrong_kind' });
+  });
+
+  it('重复的 fieldId 只点一次：勾选类元素点两次等于没点', () => {
+    const plans = planFieldClicks(['f1', 'f1'], options);
+    expect(plans.map((plan) => plan.reason)).toEqual([undefined, 'duplicate']);
+  });
+
+  it('整张表都没有时逐个报 no_table，而不是抛错', () => {
+    expect(planFieldClicks(['f1', 'f2'], undefined).map((plan) => plan.reason)).toEqual(['no_table', 'no_table']);
   });
 });

@@ -330,6 +330,35 @@ export function collectFormFields(
   // 已知限制：祖先抑制发生在同一次 walk() 迭代内；若命中的祖先本身还有一个 open shadow root，
   // 其内部的 cursor 命中后代不会被抑制——host 的 collectedElements 登记发生在其 shadow 内容
   // 被遍历之后。三个验收用例均为纯 light DOM，未覆盖这一层，属于已知限制。
+
+  // 通用配额（链接 / role / tabindex / cursor 命中）先到先得会被排在正文前面的一大片
+  // 可点元素吃光——导航栏、答题页侧边那张几十格的答题卡——正文里真正要操作的元素反而
+  // 一个都采不到。视口内的元素可以顶掉一个视口外的：agent 正在看的那一屏就是它要操作
+  // 的地方（ref: docs/superpowers/specs/2026-09-08-field-handle-stability-design.md §2.3）。
+  // 标准表单字段不受此规则约束，它们本来就不占通用配额。
+  const genericEntries: { rawIndex: number; inViewport: boolean }[] = [];
+  const isInViewport = (element: Element): boolean => {
+    const view = element.ownerDocument.defaultView;
+    if (!view) return false;
+    const rect = element.getBoundingClientRect();
+    return rect.bottom > 0 && rect.top < view.innerHeight && rect.right > 0 && rect.left < view.innerWidth;
+  };
+  /**
+   * 移走第 entryIndex 个通用元素，给一个视口内的元素腾位置。
+   * 被移走的元素仍留在 collectedElements 里，它那些仅靠 cursor 命中的后代因此继续被抑制——
+   * 保守但安全：放开抑制会让一张卡片被顶掉后，它内部十几个 span 反过来涌进配额。
+   */
+  const evictGeneric = (entryIndex: number): void => {
+    const victim = genericEntries[entryIndex];
+    raws.splice(victim.rawIndex, 1);
+    fieldElements.splice(victim.rawIndex, 1);
+    genericEntries.splice(entryIndex, 1);
+    for (const entry of genericEntries) {
+      if (entry.rawIndex > victim.rawIndex) entry.rawIndex -= 1;
+    }
+    genericCollected -= 1;
+  };
+
   const collectedElements = new Set<Element>();
   const hasCollectedAncestor = (element: Element): boolean => {
     let parent = element.parentElement;
@@ -380,19 +409,32 @@ export function collectFormFields(
       if (interactiveKind === 'cursor' && hasCollectedAncestor(element)) continue;
 
       const isGeneric = !isStandardFieldTag(element);
+      const inViewport = isGeneric ? isInViewport(element) : false;
+      // 配额已满时，视口内的元素可以顶掉一个视口外的；两边都在视口外就照旧丢弃。
+      let evictIndex = -1;
       if (isGeneric && genericCollected >= genericFieldQuota) {
-        truncated = true;
-        continue;
+        evictIndex = inViewport ? genericEntries.findIndex((entry) => !entry.inViewport) : -1;
+        if (evictIndex < 0) {
+          truncated = true;
+          continue;
+        }
       }
-      if (raws.length >= maxFields) {
+      // 顶替不增加总数，因此不受 maxFields 硬上限约束。
+      if (evictIndex < 0 && raws.length >= maxFields) {
         truncated = true;
         return;
       }
       const raw = describe(element, interactiveKind === 'cursor');
       const hidden = (raw.type || '').toLowerCase() === 'hidden' || !raw.visible;
+      // 驱逐必须排在这道过滤之后：不能为了一个最终没被收进来的隐藏元素白丢一个好元素。
       if (hidden && !includeHidden) continue;
+      if (evictIndex >= 0) {
+        evictGeneric(evictIndex);
+        truncated = true;
+      }
       raws.push(raw);
       fieldElements.push(element);
+      if (isGeneric) genericEntries.push({ rawIndex: raws.length - 1, inViewport });
       // 全屏/近全屏元素若被正常收录（例如一个真的占满全屏的 role="button"），不能把它计入
       // collectedElements 去抑制后代——那等于把「cursor 路径专用」的全屏护栏意外扩散到语义
       // 检测路径，会让一个全屏遮罩层的 role/tabindex 命中吞掉整页所有 cursor 命中的子元素。
@@ -500,7 +542,23 @@ export function collectFormFields(
 export interface ApplyFillItem {
   fieldId: string;
   path: FormFieldPathStep[];
-  expect: { tag: string; type?: string; name?: string; label?: string; href?: string };
+  /**
+   * 写入/点击前的字面比对基准。text 与 value 是内容判别位：同一道单选题的几个选项
+   * tag/type/name 完全相同，没有这两项，一次落到隔壁选项上的写入会带着 ok 返回
+   * （ref: field-id-allocation.ts 顶部注释里的同一个失效场景）。
+   * 两者都只在句柄记下了它们时才校验——browser_find_text 发的 t* 句柄没有这两项。
+   */
+  expect: {
+    tag: string;
+    type?: string;
+    name?: string;
+    label?: string;
+    href?: string;
+    /** 元素自身可见文本，空白已压缩并截断到 MAX_EXPECT_TEXT_CHARS。 */
+    text?: string;
+    /** 仅勾选类字段：静态的 value（与 describe() 一样取 property，不取 attribute）。 */
+    value?: string;
+  };
   kind: string;
   value?: string;
   checked?: boolean;
@@ -598,6 +656,17 @@ export async function applyFormFill(input: ApplyFillInput): Promise<ApplyFillOut
     if (expected.href !== undefined) {
       const actualHref = element.getAttribute('href') || undefined;
       if (actualHref !== expected.href) return false;
+    }
+    if (expected.value !== undefined) {
+      const actualValue = (element as HTMLInputElement).value;
+      if ((typeof actualValue === 'string' ? actualValue : undefined) !== expected.value) return false;
+    }
+    if (expected.text !== undefined) {
+      // ⚠️ 这里的 80 必须与 form-schema.ts 的 MAX_EXPECT_TEXT_CHARS 一致：句柄里存的是截断
+      // 后的文案，不截断本地这一侧就会让任何长文案元素永远比不上。本函数被 executeScript
+      // 序列化注入页面，引用不到那个常量，只能内联——改一处必须同步另一处。
+      const actualText = (element.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+      if (actualText !== expected.text) return false;
     }
     return true;
   };

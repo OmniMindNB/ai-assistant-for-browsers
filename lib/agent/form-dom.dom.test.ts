@@ -148,6 +148,37 @@ describe('collectFormFields', () => {
     expect(output.truncated).toBe(true); // most of the 50 links got dropped by the generic quota
   });
 
+  // 通用配额先到先得的后果：答题页侧边那张几十格的答题卡排在正文前面，配额在遍历到
+  // 题目选项之前就被吃光，真正要点的选项一个 fieldId 都拿不到（ref: docs/superpowers/
+  // specs/2026-09-08-field-handle-stability-design.md §2.3）。agent 正在看的那一屏才是它要
+  // 操作的地方，视口内的元素应当能挤掉视口外的。
+  const offscreen = (element: Element): void => {
+    Object.defineProperty(element, 'getBoundingClientRect', {
+      value: () => ({ ...NON_ZERO_RECT, top: -1000, bottom: -980, y: -1000 }),
+      configurable: true,
+    });
+  };
+
+  it('lets an in-viewport clickable displace an off-screen one once the generic quota is full', () => {
+    const card = '<div role="button" tabindex="0">题号</div>'.repeat(8);
+    const options = ['A', 'B'].map((key) => `<div role="button" tabindex="0">${key}. 选项</div>`).join('');
+    render(`<aside>${card}</aside><main>${options}</main>`);
+    document.querySelectorAll('aside div').forEach(offscreen);
+
+    // maxFields 10 → 通用配额 5，光答题卡就有 8 格
+    const output = collectFormFields({ ...INPUT, maxFields: 10 });
+
+    expect(output.raws.map((raw) => raw.elementText)).toContain('A. 选项');
+    expect(output.raws.map((raw) => raw.elementText)).toContain('B. 选项');
+    expect(output.truncated).toBe(true);
+  });
+
+  it('still collects off-screen clickables while the generic quota has room', () => {
+    render(`<nav><a href="/l">页脚链接</a></nav>`);
+    document.querySelectorAll('a').forEach(offscreen);
+    expect(collectFormFields(INPUT).raws.some((raw) => raw.elementText === '页脚链接')).toBe(true);
+  });
+
   it('skips hidden fields unless includeHidden is set', () => {
     render(`<form><input name="visible" /><input name="secret" type="hidden" /></form>`);
     expect(collectFormFields(INPUT).raws.some((raw) => raw.name === 'secret')).toBe(false);
@@ -802,6 +833,74 @@ describe('applyFormFill', () => {
       submit: { fieldId: 'f1', path: linkRaw.path, expect: { tag: 'a', href: '/different-page' } },
     });
     expect(mismatchOutput.submitted?.status).toBe('mismatch');
+  });
+
+  // 同一道单选题的几个选项 tag/type/name 完全相同，只有文案和 value 能把它们区分开。
+  // 少了这一层，一次落到隔壁选项上的点击会带着 ok 状态返回，模型和用户都看不出选错了。
+  it('mismatches a click target whose visible text no longer matches the handle', async () => {
+    render(`<div role="button" tabindex="0">B. 乙</div>`);
+    const optionRaw = collectFormFields(INPUT).raws.find((raw) => raw.tag === 'div')!;
+    const clicks: string[] = [];
+    document.querySelector('div')!.addEventListener('click', () => clicks.push('clicked'));
+
+    const output = await applyFormFill({
+      url: location.href,
+      items: [],
+      submit: { fieldId: 'f1', path: optionRaw.path, expect: { tag: 'div', text: 'A. 甲' } },
+    });
+
+    expect(output.submitted?.status).toBe('mismatch');
+    expect(clicks).toEqual([]);
+  });
+
+  it('clicks through when the visible text still matches the handle', async () => {
+    render(`<div role="button" tabindex="0">B. 乙</div>`);
+    const optionRaw = collectFormFields(INPUT).raws.find((raw) => raw.tag === 'div')!;
+    const clicks: string[] = [];
+    document.querySelector('div')!.addEventListener('click', () => clicks.push('clicked'));
+
+    const output = await applyFormFill({
+      url: location.href,
+      items: [],
+      submit: { fieldId: 'f1', path: optionRaw.path, expect: { tag: 'div', text: 'B. 乙' } },
+    });
+
+    expect(output.submitted?.status).toBe('ok');
+    expect(clicks).toEqual(['clicked']);
+  });
+
+  it('mismatches a radio whose value no longer matches the handle, and writes nothing', async () => {
+    render(`<form><label><input type="radio" name="q1" value="B" />选项</label></form>`);
+    const radioRaw = collectFormFields(INPUT).raws.find((raw) => raw.type === 'radio')!;
+
+    const output = await applyFormFill({
+      url: location.href,
+      items: [
+        item({
+          path: radioRaw.path,
+          expect: { tag: 'input', type: 'radio', name: 'q1', value: 'A' },
+          kind: 'radio',
+          checked: true,
+          value: undefined,
+        }),
+      ],
+    });
+
+    expect(output.outcomes[0].status).toBe('mismatch');
+    expect(document.querySelector<HTMLInputElement>('input')!.checked).toBe(false);
+  });
+
+  it('leaves handles that carry no text/value expectation unconstrained (find_text handles)', async () => {
+    render(`<div role="button" tabindex="0">B. 乙</div>`);
+    const optionRaw = collectFormFields(INPUT).raws.find((raw) => raw.tag === 'div')!;
+
+    const output = await applyFormFill({
+      url: location.href,
+      items: [],
+      submit: { fieldId: 't1', path: optionRaw.path, expect: { tag: 'div' } },
+    });
+
+    expect(output.submitted?.status).toBe('ok');
   });
 
   it('dispatches a full hover + pointer/mouse sequence for the submit target, with real PointerEvents', async () => {

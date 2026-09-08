@@ -70,11 +70,12 @@ const FORM_WORKFLOW = [
   '2. 用 get_form 返回的 fieldId 定位字段，不要自己拼 CSS 选择器。',
   '3. 一次 browser_fill_form 填完所有字段。禁止为表单字段逐个调用 browser_type/browser_select——每次调用都是一次完整的模型往返，填 7 个字段就白等 7 轮。browser_type 只用于表单之外的一次性输入。',
   '4. 读 outcomes 再决定下一步：只有 ok 表示值真的写进了页面。出现 mismatch 或字段表失效说明页面已变化，必须重新调用 browser_get_form，不要原样重试同一次调用。',
-  '5. 写操作（fill_form / click / type）成功后会自动回报页面新出现的可交互元素，并同步刷新句柄表：直接用它给出的新 fieldId 继续操作，不要为了发现下拉建议或展开的菜单而再调一次 browser_get_form；也不要继续使用写操作之前拿到的旧 fieldId。',
-  '6. 收到 blocked_sensitive 时不要尝试换选择器绕过，直接告诉用户这个字段需要他们自己填写。',
-  '7. 表单字段按所在框架分组：带「嵌入框架」标题的字段位于 iframe 内，同样可以正常读取、填写和点击，不要因为它在 iframe 里就放弃。',
-  '8. 字段值形如「[XXX已脱敏]」（如 [手机号已脱敏]、[邮箱已脱敏]）是隐私脱敏管线插入的占位符，不是真实数据：不要把它抄进其他字段，也不要通过 browser_fill_form/browser_type 原样写回页面；如果任务确实需要真实值，如实告诉用户该字段已被脱敏，请用户自己提供或填写。',
-  '9. 页面刚打开就调用 browser_get_form 却返回 0 个字段，且页面标题或正文明显有表单内容时，优先怀疑页面还没渲染完（客户端渲染的页面、广告较多的页面尤其常见），用 browser_wait_for(domIdle) 等它渲染完再重新调用一次 browser_get_form，不要凭空构造或猜测 fieldId 去调用 browser_fill_form/browser_click——这类 fieldId 一定是无效的。',
+  '5. 写操作（fill_form / click / type）成功后会自动回报页面新出现的可交互元素，并同步刷新句柄表：直接用它给出的新 fieldId 继续操作，不要为了发现下拉建议或展开的菜单而再调一次 browser_get_form。同一个页面上，写操作之前拿到的 fieldId 在写操作之后依然指向同一个元素，可以继续用；只有当工具结果明确说字段表已失效、或页面已经导航到别的地址时，才需要重新调用 browser_get_form。',
+  '6. 需要点击多个已经在句柄表里的元素时（多选题的几个选项、一排筛选标签），用 browser_click 的 fieldIds 参数一次点完，不要一个一个点——每多一次调用就是一次完整的模型往返。每个目标独立校验、独立回报，其中一个失败不影响其余，你只需补那一个。表单提交按钮不能放进 fieldIds，单独点它。',
+  '7. 收到 blocked_sensitive 时不要尝试换选择器绕过，直接告诉用户这个字段需要他们自己填写。',
+  '8. 表单字段按所在框架分组：带「嵌入框架」标题的字段位于 iframe 内，同样可以正常读取、填写和点击，不要因为它在 iframe 里就放弃。',
+  '9. 字段值形如「[XXX已脱敏]」（如 [手机号已脱敏]、[邮箱已脱敏]）是隐私脱敏管线插入的占位符，不是真实数据：不要把它抄进其他字段，也不要通过 browser_fill_form/browser_type 原样写回页面；如果任务确实需要真实值，如实告诉用户该字段已被脱敏，请用户自己提供或填写。',
+  '10. 页面刚打开就调用 browser_get_form 却返回 0 个字段，且页面标题或正文明显有表单内容时，优先怀疑页面还没渲染完（客户端渲染的页面、广告较多的页面尤其常见），用 browser_wait_for(domIdle) 等它渲染完再重新调用一次 browser_get_form，不要凭空构造或猜测 fieldId 去调用 browser_fill_form/browser_click——这类 fieldId 一定是无效的。',
 ].join('\n');
 
 /** 注入进 <runtime_context> 的页面信息长度上限：标题和地址都由网页控制，必须截断。 */

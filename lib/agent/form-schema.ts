@@ -124,6 +124,52 @@ export function fieldFingerprint(raw: RawFormField): string {
   return [raw.tag.toLowerCase(), raw.type ?? '', raw.name ?? '', pickFieldLabel(raw) ?? ''].join('|');
 }
 
+/**
+ * 句柄里存的文案上限。整段长文进 storage.session 既占配额也没有额外判别力；
+ * ⚠️ form-dom.ts 的 matchesExpect 内联了同一个 80，改这里必须同步那里。
+ */
+export const MAX_EXPECT_TEXT_CHARS = 80;
+
+/**
+ * 写入/点击前做字面比对的期望结构。除了 tag/type/name/href 这些结构判别位，再带上两个
+ * 内容判别位：勾选类字段的静态 value，以及元素自身的可见文案。
+ *
+ * 为什么需要内容判别位：同一道单选题的几个选项 tag/type/name 完全相同，只靠结构指纹，
+ * 一次落到隔壁选项上的点击会带着 ok 状态返回，模型和用户都看不出选错了
+ * （ref: field-id-allocation.ts 顶部注释）。
+ *
+ * value 只对勾选类取：文本框的 value 是用户正在输入的内容，把它写进期望结构等于让
+ * 「边填边重采」必然 mismatch。
+ *
+ * 已知代价：文案会自己变的元素（验证码「重新发送(59)」这类倒计时、「购物车(3)」这类计数）
+ * 在读表单与点击之间跳了一格，就会报一次 mismatch。那是一次可恢复的显式失败——工具结果
+ * 会告诉模型重新 browser_get_form 再点，代价是一轮往返；而放行它换来的是一次点在隔壁选项
+ * 上、却带着 ok 返回的静默错误。按 Spec-0005「写入没落地就报失败，绝不假成功」的取向，
+ * 这笔交换是划算的。
+ */
+export function fieldExpectation(raw: RawFormField): {
+  tag: string;
+  type?: string;
+  name?: string;
+  label?: string;
+  href?: string;
+  text?: string;
+  value?: string;
+} {
+  const kind = resolveFieldKind(raw);
+  const isToggle = kind === 'radio' || kind === 'checkbox';
+  const text = (raw.elementText ?? '').replace(/\s+/g, ' ').trim().slice(0, MAX_EXPECT_TEXT_CHARS);
+  return {
+    tag: raw.tag,
+    type: raw.type,
+    name: raw.name,
+    label: pickFieldLabel(raw),
+    href: raw.href,
+    text: text || undefined,
+    value: isToggle ? raw.value : undefined,
+  };
+}
+
 export function toFieldDescriptor(
   raw: RawFormField & { frameOrigin?: string; frameId?: number },
   fieldId: string,

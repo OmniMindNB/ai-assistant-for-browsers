@@ -1,4 +1,5 @@
 import {
+  type BatchClickOutcome,
   type CaptureScreenshotPayload,
   type CaptureScreenshotResult,
   type ClickElementPayload,
@@ -104,6 +105,7 @@ import {
   isChildFrameHandle,
   mergeFillOutcomes,
   planFieldClick,
+  planFieldClicks,
   planFieldScroll,
   planFormFill,
   planFrameGroupExecution,
@@ -112,7 +114,13 @@ import {
   skippedFrameGroupOutcomes,
   type FormFillFrameGroup,
 } from '@/lib/agent/fill-form-request';
-import { DEFAULT_FIND_TEXT_LIMIT, MAX_FIND_TEXT_LIMIT, mergeFindTextHandles } from '@/lib/agent/find-text';
+import { allocateFieldIds } from '@/lib/agent/field-id-allocation';
+import {
+  DEFAULT_FIND_TEXT_LIMIT,
+  MAX_FIND_TEXT_LIMIT,
+  keepFindTextHandles,
+  mergeFindTextHandles,
+} from '@/lib/agent/find-text';
 import {
   applyFormFill,
   clickElementInPage,
@@ -128,7 +136,7 @@ import {
   type CollectFormInput,
 } from '@/lib/agent/form-dom';
 import { findTextInPage, type RawTextMatch } from '@/lib/agent/find-text-dom';
-import { findNewFieldIds, sanitizeFieldText, sanitizePageText, toFieldDescriptor, toScrollableContainerDescriptor, type FormFieldPathStep } from '@/lib/agent/form-schema';
+import { fieldExpectation, findNewFieldIds, sanitizeFieldText, sanitizePageText, toFieldDescriptor, toScrollableContainerDescriptor, type FormFieldPathStep } from '@/lib/agent/form-schema';
 import { getFormFieldsForTab, setFormFieldsForTab, type FormFieldHandle } from '@/lib/agent/tab-form-fields';
 import { mergeFrameCollections, mergeReadResultsByFrame, type MergedCollection } from '@/lib/agent/frame-merge';
 import { decideEnterSubmitIntent, decideSubmitIntent } from '@/lib/agent/form-submit';
@@ -720,13 +728,25 @@ interface FieldSnapshot {
 }
 
 /**
- * 采一次字段快照：发放新的 fieldId 句柄表、与上一次快照做差集标出新元素，并存回 session。
+ * 采一次字段快照：发放 fieldId 句柄表、与上一次快照做差集标出新元素，并存回 session。
  *
- * 写操作之后也会调用它——句柄表因此被刷新，模型手上旧的 fieldId 可能指向别的元素。
- * 这是安全的：applyFormFill / planFieldClick 在动手前都会比对 expect，对不上直接报
- * mismatch 而不会误点（ref: Spec-0005 §写入校验矩阵）。
+ * 写操作之后也会调用它。号码按元素身份继承上一张表（allocateFieldIds），所以模型手上
+ * 写操作之前拿到的 fieldId 在同一个页面上依然指着同一个元素。
+ *
+ * ⚠️ 这里曾经写着「号码变了也没关系，动手前会比对 expect」——那句话是错的，2026-09-08
+ * 排查答题页点击失效时被推翻：planFieldClick 的 path 与 expect 取自同一张刷新后的表，
+ * 两者永远自洽，比对因此不可能发现「模型说的 f4 已经不是它当初看到的那个元素」。当时的
+ * 实测结果是一次点击落在隔壁选项上、却带着 ok 返回。号码稳定是第一道防线，expect 里的
+ * 内容判别位（fieldExpectation 的 text/value）是第二道。
  */
-async function snapshotFields(tabId: number, payload: GetFormPayload = {}): Promise<FieldSnapshot> {
+async function snapshotFields(
+  tabId: number,
+  payload: GetFormPayload = {},
+  /** 是否保留 browser_find_text 发的 t*：写操作后的内部重采要留（模型不知道发生过这次
+   *  重采），模型主动调用 browser_get_form 时不留（那是它自己表示页面状态已经变了，
+   *  旧的文字句柄同样不该继续被信任，ref: tab-form-fields.ts）。 */
+  keepTextHandles = false,
+): Promise<FieldSnapshot> {
   const previous = await getFormFieldsForTab(tabId);
   const frames = await executeInAllFrames(
     tabId,
@@ -746,12 +766,21 @@ async function snapshotFields(tabId: number, payload: GetFormPayload = {}): Prom
   const collected = mergeFrameCollections(scoped);
 
   const fields: FormFieldDescriptor[] = [];
-  const handles: Record<string, FormFieldHandle> = {};
+  // browser_find_text 发的 t* 原样留着：本函数在每次成功写操作后都会被重跑，而那次重采
+  // 模型并不知情，把它上一轮拿到的文字句柄一并抹掉等于凭空作废（ref: keepFindTextHandles）。
+  const handles: Record<string, FormFieldHandle> = keepTextHandles
+    ? keepFindTextHandles(previous, collected.url)
+    : {};
   const orphanFieldIds: string[] = [];
   let textTruncated = false;
 
+  // 号码按身份继承上一张表，不按文档序重编（ref: field-id-allocation.ts 顶部注释）：
+  // 本函数在每次成功写操作后都会被 collectNewFieldsAfterWrite 重跑一遍，位置编号会让
+  // 模型手里那批写操作之前拿到的 fieldId 集体指向邻居。
+  const { fieldIds, identities } = allocateFieldIds(collected.raws, previous, collected.url);
+
   collected.raws.forEach((raw, index) => {
-    const fieldId = `f${index + 1}`;
+    const fieldId = fieldIds[index];
     // FormFieldDescriptor.frameOrigin 是「模型该把这个字段当子帧」的分组信号，只在真的是子帧
     // 时才传：mergeFrameCollections 给主框架的 raw 也挂了 frameOrigin（值为主站自己的 origin，
     // 供下面 handles 表的写入前 origin 比对使用），如果原样转发给 toFieldDescriptor，主框架
@@ -764,13 +793,16 @@ async function snapshotFields(tabId: number, payload: GetFormPayload = {}): Prom
     fields.push(descriptor);
     handles[fieldId] = {
       path: raw.path,
-      expect: { tag: raw.tag, type: raw.type, name: raw.name, label: descriptor.label, href: raw.href },
+      // 内容判别位（text/value）也一并存下：光靠 tag/type/name，同一道单选题的几个选项
+      // 在写入前的比对里完全看不出差别（ref: form-schema.ts 的 fieldExpectation）。
+      expect: fieldExpectation(raw),
       sensitive: descriptor.sensitive,
       kind: descriptor.kind,
       // mergeFrameCollections 已经把每条 raw 挂上了它所在帧的 frameId/origin
       // （主框架也不例外，值为 0/主框架 origin）——写入前的 origin 比对靠这两个字段。
       frameId: raw.frameId,
       frameOrigin: raw.frameOrigin,
+      identity: identities[index],
     };
     if (!descriptor.formId) orphanFieldIds.push(fieldId);
     if (sanitizeFieldText(raw.precedingText, 'tail').truncated) textTruncated = true;
@@ -911,7 +943,7 @@ async function fillForm(payload: FillFormPayload, tabId: number): Promise<FillFo
  */
 async function collectNewFieldsAfterWrite(tabId: number): Promise<FormFieldDescriptor[] | undefined> {
   try {
-    const snapshot = await snapshotFields(tabId);
+    const snapshot = await snapshotFields(tabId, {}, true);
     return snapshot.newFields.length > 0 ? snapshot.newFields : undefined;
   } catch {
     return undefined;
@@ -1313,6 +1345,9 @@ async function modifyDom(payload: ModifyDomPayload, tabId: number): Promise<Modi
 }
 
 async function clickElement(payload: ClickElementPayload, tabId: number): Promise<ClickElementResult> {
+  if (payload?.fieldIds?.length) {
+    return clickElementsByFieldIds(payload.fieldIds, tabId);
+  }
   if (payload?.fieldId) {
     return clickElementByFieldId(payload.fieldId, tabId);
   }
@@ -1402,6 +1437,112 @@ async function clickElementByFieldId(fieldId: string, tabId: number): Promise<Cl
     label: submitted.label,
     opensNewTab: submitted.opensNewTab,
     newFields: submitted.status === 'ok' ? await collectNewFieldsAfterWrite(tabId) : undefined,
+  };
+}
+
+/** 查表失败的原因翻成模型能读的一句话；与单目标分支的文案保持一致。 */
+const BATCH_CLICK_PLAN_DETAIL: Record<string, string> = {
+  no_table: '本标签页还没有字段表，请先调用 browser_get_form。',
+  unknown_field: '未知的 fieldId，请重新调用 browser_get_form。',
+  wrong_kind: '该 fieldId 是一个可滚动容器，不是可点击元素，请改用 browser_scroll。',
+  duplicate: '同一个 fieldId 在本次调用里重复出现，只点击了第一次。',
+};
+
+/**
+ * 批量点击：一次点完多选题的若干个选项。贵的是模型往返而不是 executeScript，所以这里
+ * 逐个复用单目标那次注入（applyFormFill 的 submit 分支），不新增任何注入函数——注入函数
+ * 改一次要连带改它那套「不得引用模块作用域」的约束和全部 dom 测试，不值当。
+ *
+ * ⚠️ 安全边界：只要有一个目标被判定为表单提交，整批拒绝、一个都不点。确认卡片是
+ * 「一次提交一次确认」的语义（ref: confirm-gate.ts），把提交混进批量会让用户在一张卡片上
+ * 看不清究竟在提交什么。这是拒绝而不是确认，比闸门更强：批量路径下提交根本走不到。
+ */
+async function clickElementsByFieldIds(fieldIds: string[], tabId: number): Promise<ClickElementResult> {
+  const table = await getFormFieldsForTab(tabId);
+  const plans = planFieldClicks(fieldIds, table);
+
+  for (const plan of plans) {
+    if (!plan.ok) continue;
+    const intent = await probeSubmitIntent({ submitFieldId: plan.fieldId }, tabId);
+    if (intent.isSubmit) {
+      return {
+        selector: '',
+        matched: 0,
+        clickedIndex: null,
+        status: 'not_found',
+        detail: `目标 ${plan.fieldId} 是一个表单提交按钮，批量点击不接受提交目标。请先批量点完其余目标，再单独调用 browser_click 点击它。`,
+        outcomes: [],
+      };
+    }
+  }
+
+  const outcomes: BatchClickOutcome[] = [];
+  let navigatedAway = false;
+
+  for (const plan of plans) {
+    if (navigatedAway) {
+      outcomes.push({ fieldId: plan.fieldId, status: 'skipped_stale', detail: '前一个目标点击后页面已导航，本目标未尝试。' });
+      continue;
+    }
+    if (!plan.ok || !plan.submit) {
+      outcomes.push({
+        fieldId: plan.fieldId,
+        status: (plan.reason ?? 'unknown_field') as BatchClickOutcome['status'],
+        detail: BATCH_CLICK_PLAN_DETAIL[plan.reason ?? 'unknown_field'],
+      });
+      continue;
+    }
+
+    const handle = table?.fields[plan.fieldId];
+    const applied = await executeInTab(
+      tabId,
+      {
+        url: table!.url,
+        items: [],
+        submit: plan.submit,
+        expectOrigin: plan.expectOrigin,
+        isChildFrame: isChildFrameHandle(handle),
+      },
+      applyFormFill,
+      { frameId: plan.frameId },
+    );
+
+    if (applied.fieldsTableStale) {
+      // 页面在这一批中途导航了：后面的句柄全部对着旧页面，继续点会点到新页面上去。
+      navigatedAway = true;
+      outcomes.push({ fieldId: plan.fieldId, status: 'skipped_stale', detail: '页面已导航，字段表已失效，请重新调用 browser_get_form。' });
+      continue;
+    }
+
+    const submitted = applied.submitted;
+    outcomes.push({
+      fieldId: plan.fieldId,
+      status: submitted?.status ?? 'not_found',
+      label: submitted?.label,
+      opensNewTab: submitted?.opensNewTab,
+      detail:
+        submitted?.status === 'mismatch'
+          ? '该位置的元素与读取时不一致，页面可能已变化，请重新调用 browser_get_form。'
+          : submitted?.status === 'not_clickable'
+            ? '元素被遮挡、禁用或没有可见布局盒，没有点击。'
+            : submitted?.status === undefined || submitted.status === 'not_found'
+              ? '定位路径已解析不到元素，请重新调用 browser_get_form。'
+              : undefined,
+    });
+  }
+
+  const succeeded = outcomes.filter((outcome) => outcome.status === 'ok').length;
+  return {
+    selector: '',
+    matched: succeeded,
+    clickedIndex: null,
+    status: succeeded > 0 ? 'ok' : 'not_found',
+    outcomes,
+    // 整张表都不在时才算「表失效」——中途导航由逐条的 skipped_stale 表达，不能把已经
+    // 点成的那几个连同结果一起丢掉（工具层看到 fieldsTableStale 会直接抛错）。
+    fieldsTableStale: table ? undefined : true,
+    // 整批只重采一次，而不是每点一个重采一次。
+    newFields: succeeded > 0 ? await collectNewFieldsAfterWrite(tabId) : undefined,
   };
 }
 

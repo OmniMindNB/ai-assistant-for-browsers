@@ -91,8 +91,13 @@ export function describeToolActivity(toolName: string, args: unknown, status: Ac
       return withTarget(status, 'agentActivity.now.setStyle', 'agentActivity.done.setStyle', 'agentActivity.failed.setStyle', str('selector'));
     case 'browser_modify_dom':
       return withTarget(status, 'agentActivity.now.modifyDom', 'agentActivity.done.modifyDom', 'agentActivity.failed.modifyDom', str('selector'));
-    case 'browser_click':
-      return withTarget(status, 'agentActivity.now.click', 'agentActivity.done.click', 'agentActivity.failed.click', str('selector') || str('fieldId'));
+    case 'browser_click': {
+      // 批量点击也要把目标列出来：面板的步骤时间线是用户唯一能看见 agent 动了哪些元素的
+      // 地方，一次点 5 个却只显示「点击」等于把这一步藏起来。
+      const batch = Array.isArray(record.fieldIds) ? (record.fieldIds as unknown[]).filter((id) => typeof id === 'string') : [];
+      const target = str('selector') || str('fieldId') || batch.join('、');
+      return withTarget(status, 'agentActivity.now.click', 'agentActivity.done.click', 'agentActivity.failed.click', target);
+    }
     case 'browser_type': {
       const key = statusKey(status, 'agentActivity.now.type', 'agentActivity.done.type', 'agentActivity.failed.type');
       return t(key, { selector: truncate(str('selector')), text: truncate(str('text')) });

@@ -1,6 +1,6 @@
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import { Type } from '@earendil-works/pi-ai';
-import { describeClickResult, describeGoBackResult, describeNavigateResult, describeNewFields, describePressKeyResult, describeScrollResult } from './action-result-text';
+import { describeBatchClickResult, describeClickResult, describeGoBackResult, describeNavigateResult, describeNewFields, describePressKeyResult, describeScrollResult } from './action-result-text';
 import { renderFormResultForModel } from './form-render';
 import { loadRedactionSettings, redactText } from '@/lib/redaction';
 import { REPORT_TASK_OUTCOME_TOOL_NAME, type TaskOutcome, type TaskOutcomeValue } from './task-outcome';
@@ -663,19 +663,71 @@ function makeModifyDomTool(session: TabSessionController): BrowserAgentTool {
   };
 }
 
+/**
+ * 一次批量点击的目标上限。多选题最多也就 5-8 个选项，再多说明模型不是在答题而是在乱点；
+ * 上限同时限住了一次调用能对页面产生的动作量。
+ */
+const MAX_CLICK_TARGETS_PER_CALL = 10;
+
+/**
+ * 批量点击的结果处理。与单目标分支的关键差别：部分失败不算整体失败——用户拍板的语义是
+ * 「继续点完、逐个回报」，模型据此只补那一个失败的目标，仍然省下大部分往返。
+ * 只有整批一个都没点成时才抛错，那种情况下模型必须知道这一轮什么也没发生。
+ */
+async function clickBatch(
+  payload: ClickElementPayload,
+  session: TabSessionController,
+): Promise<ReturnType<typeof textResult>> {
+  const response = (await sendMessage<ClickElementPayload, ClickElementResult>(
+    'CLICK_ELEMENT',
+    payload,
+    session.currentTabId,
+  )) as MessageResponse<ClickElementResult>;
+  if (!response.ok || !response.data) throw new Error(response.error ?? '点击失败');
+  if (response.data.fieldsTableStale) {
+    throw new Error('字段表已失效（页面已变化或已导航），请重新调用 browser_get_form 获取新的 fieldId 后再点击。');
+  }
+
+  const outcomes = response.data.outcomes ?? [];
+  if (outcomes.length === 0) throw new Error(response.data.detail ?? '批量点击没有产生任何结果。');
+  if (!outcomes.some((outcome) => outcome.status === 'ok')) {
+    throw new Error(describeBatchClickResult(outcomes));
+  }
+
+  const clicked = describeBatchClickResult(outcomes);
+  const appeared = describeNewFields(response.data.newFields ?? []);
+  return textResult(appeared ? `${clicked}\n${appeared}` : clicked, response.data as unknown as Record<string, unknown>);
+}
+
 function makeClickTool(session: TabSessionController): BrowserAgentTool {
   return {
     name: 'browser_click',
     label: 'Click',
     description:
-      'Click an element. Prefer the fieldId returned by browser_get_form — it now also lists links and other clickable elements, not just form fields. Only fall back to a CSS selector for elements browser_get_form did not return (for example, inside an iframe).',
+      'Click an element, or several in one call. Prefer the fieldId returned by browser_get_form — it now also lists links and other clickable elements, not just form fields. When you need to click several elements that are already listed (the options of a multiple-choice question, a set of filter chips), pass them all as fieldIds in ONE call instead of calling this tool once per element: each extra call is a full model round trip. Every target is verified before it is clicked and reported separately, so a stale one cannot silently land on its neighbour. Batch mode refuses form-submit targets — click those on their own. Only fall back to a CSS selector for elements browser_get_form did not return (for example, inside an iframe).',
     parameters: Type.Object({
       fieldId: Type.Optional(Type.String({ description: 'Field id from browser_get_form. Prefer this over selector.' })),
+      fieldIds: Type.Optional(
+        Type.Array(Type.String(), {
+          description: `Click several elements in one call, in the given order. Mutually exclusive with fieldId and selector. Max ${MAX_CLICK_TARGETS_PER_CALL} targets. Use this for the options of a multiple-choice question.`,
+        }),
+      ),
       selector: Type.Optional(Type.String({ description: 'CSS selector fallback for elements browser_get_form did not return.' })),
       index: Type.Optional(Type.Number({ description: 'Which matched element to click when using selector, 0-based. Defaults to 0.' })),
     }),
     execute: async (_toolCallId, params) => {
       const payload = params as ClickElementPayload;
+      const batch = payload?.fieldIds;
+      if (batch && (payload.fieldId || payload.selector)) {
+        throw new Error('fieldIds 与 fieldId/selector 互斥，请只使用其中一种。');
+      }
+      if (batch) {
+        if (batch.length === 0) throw new Error('fieldIds 不能为空。');
+        if (batch.length > MAX_CLICK_TARGETS_PER_CALL) {
+          throw new Error(`一次最多点击 ${MAX_CLICK_TARGETS_PER_CALL} 个目标，本次传入了 ${batch.length} 个。`);
+        }
+        return clickBatch(payload, session);
+      }
       if (!payload?.fieldId && !payload?.selector) {
         throw new Error('必须提供 fieldId 或 selector 之一。');
       }
