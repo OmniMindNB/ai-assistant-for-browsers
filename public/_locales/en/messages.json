@@ -4,7 +4,7 @@
     "description": "Extension name"
   },
   "extDescription": {
-    "message": "AI sidebar agent to understand, transform, and automate the current page—with your approval",
+    "message": "AI sidebar agent to understand, transform, and automate the current page",
     "description": "Extension description shown in the Chrome Web Store"
   },
   "commandOpenPanel": {

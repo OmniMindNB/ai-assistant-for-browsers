@@ -47,8 +47,8 @@ Runi 是浏览器侧边栏中的可控 AI Agent。它帮助你在不离开当前
 1. 登录 DeepSeek 开放平台，创建并复制 API Key。
 2. 打开 Runi 侧边栏，点击未配置提示中的“设置”，或从右上角菜单进入“设置”。
 3. 在“模型 Provider”中点击“添加 Provider”，并从“快速预设”选择 DeepSeek。
-4. 保留预设填写的 OpenAI Chat Completions、https://api.deepseek.com 和 deepseek-v4-pro，在 API Key 字段粘贴密钥后点击“添加”。
-5. 返回侧边栏，确认输入框下方显示 DeepSeek / deepseek-v4-pro，即可开始对话。API 使用可能由 DeepSeek 收费。
+4. 预设会填好 Base URL https://api.deepseek.com 和模型 deepseek-v4-pro；“协议类型”保持默认的“OpenAI 兼容”。在 API Key 字段粘贴密钥后点击“添加”。
+5. 返回侧边栏，确认输入框下方的模型胶囊显示 deepseek-v4-pro，即可开始对话。API 使用可能由 DeepSeek 收费。
 
 Runi 采用本地优先设计：Provider 设置、API Key、界面偏好和对话历史保存在你的浏览器中。文本和图片附件内容可能随本地对话历史保存；PDF 文本会在本地为当前请求提取，不作为 PDF 内容持久化。Runi 不运营开发者后端，不接入分析或广告 SDK。当你发起 Agent 请求时，即表示你指示 Runi 根据完成该请求的需要，将 API Key、当前提示词、近期对话上下文、与当前页面有关的工具结果，以及你为该请求选择的文件内容，由扩展直接发送到你配置的 AI Provider 端点，并由该 Provider 按其自身条款和隐私政策处理。
 

@@ -47,8 +47,8 @@ Before first use, configure your own AI provider and API key. Using DeepSeek as 
 1. Sign in to the DeepSeek Platform, then create and copy an API key.
 2. Open the Runi side panel and use the Settings link in the setup banner, or open Settings from the top-right menu.
 3. Under Model providers, select Add provider and choose DeepSeek from Quick preset.
-4. Keep the preset values OpenAI Chat Completions, https://api.deepseek.com, and deepseek-v4-pro. Paste the key into API Key and select Add.
-5. Return to the side panel and confirm that DeepSeek / deepseek-v4-pro appears below the composer. You can now start a conversation. DeepSeek may charge for API usage.
+4. The preset fills in Base URL https://api.deepseek.com and model deepseek-v4-pro; leave Protocol at its default, OpenAI-compatible. Paste the key into API Key and select Add.
+5. Return to the side panel and confirm that the model chip below the composer reads deepseek-v4-pro. You can now start a conversation. DeepSeek may charge for API usage.
 
 Runi is local-first: provider settings, API keys, interface preferences, and conversation history are stored in your browser. Text and image attachment contents may be stored with local conversation history; PDF text is extracted locally for the current request and is not persisted as PDF content. Runi has no developer-operated backend, analytics, or advertising SDK. When you initiate an Agent request, you direct Runi to transmit your API key, current prompt, recent conversation context, relevant current-page tool results, and the contents of files you selected for that request directly from the extension to the AI provider endpoint you configured as needed to fulfill that request. That provider processes the request under its own terms and privacy policy.
 
