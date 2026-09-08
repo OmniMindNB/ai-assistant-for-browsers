@@ -350,21 +350,22 @@ describe('shortcut settings wiring', () => {
     expect(en['shortcut.invalidConfig']).toBe('The shortcut configuration is invalid.');
   });
 
+  // 确认走应用内的 ConfirmDialog，不再是原生 window.confirm：后者没有暗色模式、
+  // 走不了 Tab 焦点环（ref: 2026-09-08 确认弹窗改造）。
   it('offers a confirmed bilingual repair action without rendering raw invalid records', () => {
     expect(componentSource).toContain('repairShortcutConfigs');
-    expect(componentSource).toContain(
-      "if (!window.confirm(t('shortcut.confirmRepairInvalid'))) return;",
-    );
+    expect(componentSource).not.toContain('window.confirm');
+    expect(componentSource).toContain("setPendingAction('repair')");
     expect(componentSource).toContain('const next = await repairShortcutConfigs();');
     expect(componentSource).toContain("{t('shortcut.repairInvalid')}");
     expect(componentSource).toContain("setFlash(t('shortcut.repaired'))");
     expect(zh['shortcut.repairInvalid']).toBe('删除无效项');
-    expect(zh['shortcut.confirmRepairInvalid']).toBe(
-      '删除无效的快捷方式并保留有效项？此操作无法撤销。',
-    );
+    expect(zh['shortcut.confirmRepairInvalidTitle']).toBe('删除无效的快捷方式？');
+    expect(zh['shortcut.confirmRepairInvalid']).toBe('无效条目会被移除，有效条目保留。此操作无法撤销。');
     expect(en['shortcut.repairInvalid']).toBe('Remove invalid items');
+    expect(en['shortcut.confirmRepairInvalidTitle']).toBe('Remove invalid shortcuts?');
     expect(en['shortcut.confirmRepairInvalid']).toBe(
-      'Remove invalid shortcuts and keep valid ones? This cannot be undone.',
+      'Invalid entries are removed and valid ones are kept. This cannot be undone.',
     );
   });
 

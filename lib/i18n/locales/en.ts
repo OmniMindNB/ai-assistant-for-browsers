@@ -303,8 +303,10 @@ export const en: Record<keyof typeof zh, string> = {
   'shortcut.editAria': 'Edit {name}',
   'shortcut.deleteAria': 'Delete {name}',
   'shortcut.save': 'Save',
-  'shortcut.confirmDelete': 'Delete this shortcut?',
-  'shortcut.confirmRestore': 'Restoring presets removes your custom shortcuts and reverts edited built-in text. Continue?',
+  'shortcut.confirmDeleteAria': 'Confirm delete {name}? Click again to delete.',
+  'shortcut.confirmRestoreTitle': 'Restore preset shortcuts?',
+  'shortcut.confirmRestore':
+    'This removes your custom shortcuts and reverts edited built-in text to the defaults. It cannot be undone.',
   'shortcut.moveUp': 'Move up',
   'shortcut.moveDown': 'Move down',
   'shortcut.moveUpAria': 'Move {name} up',
@@ -318,8 +320,9 @@ export const en: Record<keyof typeof zh, string> = {
   'shortcut.storageError': 'Could not save shortcuts.',
   'shortcut.invalidConfig': 'The shortcut configuration is invalid.',
   'shortcut.repairInvalid': 'Remove invalid items',
+  'shortcut.confirmRepairInvalidTitle': 'Remove invalid shortcuts?',
   'shortcut.confirmRepairInvalid':
-    'Remove invalid shortcuts and keep valid ones? This cannot be undone.',
+    'Invalid entries are removed and valid ones are kept. This cannot be undone.',
   'shortcut.repaired': 'Invalid items removed',
   'chat.composerAriaLabel': 'Message input',
   'chat.stopGenerating': 'Stop generating',

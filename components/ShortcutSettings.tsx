@@ -26,6 +26,7 @@ import {
   loadSelectionAskEnabled,
   saveSelectionAskEnabled,
 } from '@/lib/selection-ask';
+import ConfirmDialog from './ConfirmDialog';
 
 interface ShortcutDraft {
   name: string;
@@ -46,6 +47,8 @@ function normalizedDraft(draft: ShortcutDraft): ShortcutDraft {
   };
 }
 
+const DELETE_CONFIRM_TIMEOUT_MS = 3000;
+
 const EMPTY_DRAFT: ShortcutDraft = {
   name: '',
   scope: 'page',
@@ -64,8 +67,20 @@ export default function ShortcutSettings() {
   const [flash, setFlash] = useState<string | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [selectionAskEnabled, setSelectionAskEnabled] = useState(true);
+  // 会连带删掉用户内容、又需要一段说明文字的两个动作（恢复预设 / 删除无效项）走模态确认框；
+  // 同时只可能挂起一个，所以用一个字段而不是两个布尔。
+  const [pendingAction, setPendingAction] = useState<'restore' | 'repair' | null>(null);
+  // 逐条删除是轻量确认，用行内二次点击（同 RedactionSettings.tsx / HistoryDrawer.tsx）。
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
+  const confirmTimeoutRef = useRef<number | null>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const promptInputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    return () => {
+      if (confirmTimeoutRef.current !== null) window.clearTimeout(confirmTimeoutRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -138,7 +153,6 @@ export default function ShortcutSettings() {
 
   async function repairInvalid() {
     if (saving) return;
-    if (!window.confirm(t('shortcut.confirmRepairInvalid'))) return;
     setSaving(true);
     setErrors([]);
     setFlash(null);
@@ -152,6 +166,7 @@ export default function ShortcutSettings() {
       setErrors([storageErrorMessage(error)]);
     } finally {
       setSaving(false);
+      setPendingAction(null);
     }
   }
 
@@ -238,8 +253,22 @@ export default function ShortcutSettings() {
     }
   }
 
+  function requestDelete(id: string) {
+    if (confirmTimeoutRef.current !== null) window.clearTimeout(confirmTimeoutRef.current);
+    setConfirmingDeleteId(id);
+    confirmTimeoutRef.current = window.setTimeout(() => {
+      setConfirmingDeleteId(null);
+      confirmTimeoutRef.current = null;
+    }, DELETE_CONFIRM_TIMEOUT_MS);
+  }
+
   async function remove(id: string) {
-    if (saving || !window.confirm(t('shortcut.confirmDelete'))) return;
+    if (saving) return;
+    if (confirmTimeoutRef.current !== null) {
+      window.clearTimeout(confirmTimeoutRef.current);
+      confirmTimeoutRef.current = null;
+    }
+    setConfirmingDeleteId(null);
     setSaving(true);
     setErrors([]);
     try {
@@ -260,9 +289,10 @@ export default function ShortcutSettings() {
   }
 
   // 出厂重置：顺序、文案、集合全部回到默认。会连带删掉用户自建的快捷方式和改过的
-  // 内建文案，所以和单条删除一样先确认。
+  // 内建文案，所以先弹确认框把代价说清楚——正是这段说明让它没法退回浏览器原生确认框
+  // （那种弹窗塞不下解释，也没有暗色模式）。
   async function restore() {
-    if (saving || !window.confirm(t('shortcut.confirmRestore'))) return;
+    if (saving) return;
     setSaving(true);
     setErrors([]);
     try {
@@ -273,6 +303,7 @@ export default function ShortcutSettings() {
       setErrors([storageErrorMessage(error)]);
     } finally {
       setSaving(false);
+      setPendingAction(null);
     }
   }
 
@@ -347,7 +378,7 @@ export default function ShortcutSettings() {
           <button
             type="button"
             disabled={saving || hasInvalidConfig}
-            onClick={restore}
+            onClick={() => setPendingAction('restore')}
             className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
           >
             {t('shortcut.restoreDefaults')}
@@ -377,7 +408,7 @@ export default function ShortcutSettings() {
           <button
             type="button"
             disabled={saving}
-            onClick={() => void repairInvalid()}
+            onClick={() => setPendingAction('repair')}
             className="mt-2 rounded-md border border-red-300 bg-white px-3 py-1.5 font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200 dark:hover:bg-red-900/40"
           >
             {t('shortcut.repairInvalid')}
@@ -477,11 +508,21 @@ export default function ShortcutSettings() {
                     <button
                       type="button"
                       disabled={saving || hasInvalidConfig}
-                      onClick={() => void remove(item.id)}
-                      aria-label={t('shortcut.deleteAria', { name: resolved.name })}
-                      className="rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/40"
+                      onClick={() =>
+                        confirmingDeleteId === item.id ? void remove(item.id) : requestDelete(item.id)
+                      }
+                      aria-label={
+                        confirmingDeleteId === item.id
+                          ? t('shortcut.confirmDeleteAria', { name: resolved.name })
+                          : t('shortcut.deleteAria', { name: resolved.name })
+                      }
+                      className={
+                        confirmingDeleteId === item.id
+                          ? 'rounded bg-red-50 px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-100 disabled:opacity-50 dark:bg-red-950/40 dark:text-red-400 dark:hover:bg-red-900/40'
+                          : 'rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/40'
+                      }
                     >
-                      {t('common.delete')}
+                      {confirmingDeleteId === item.id ? t('provider.confirmDelete') : t('common.delete')}
                     </button>
                   </div>
                 </div>
@@ -594,6 +635,26 @@ export default function ShortcutSettings() {
           </div>
         </form>
       )}
+
+      <ConfirmDialog
+        open={pendingAction !== null}
+        title={
+          pendingAction === 'repair'
+            ? t('shortcut.confirmRepairInvalidTitle')
+            : t('shortcut.confirmRestoreTitle')
+        }
+        description={
+          pendingAction === 'repair'
+            ? t('shortcut.confirmRepairInvalid')
+            : t('shortcut.confirmRestore')
+        }
+        confirmLabel={
+          pendingAction === 'repair' ? t('shortcut.repairInvalid') : t('shortcut.restoreDefaults')
+        }
+        busy={saving}
+        onConfirm={() => (pendingAction === 'repair' ? void repairInvalid() : void restore())}
+        onCancel={() => setPendingAction(null)}
+      />
     </section>
   );
 

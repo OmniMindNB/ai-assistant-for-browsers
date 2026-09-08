@@ -531,44 +531,71 @@ describe('grouped options settings', () => {
   });
 
   // 「恢复预设」是出厂重置：顺序、文案、集合全部回到默认，自定义条目一并丢弃。
-  // 因为它会删数据，和单条删除一样要先确认。
-  it('resets shortcuts to the factory defaults after confirmation', async () => {
+  // 因为它会删数据，先弹应用内确认框——原生 window.confirm 没有暗色模式、走不了 Tab
+  // 焦点环，样式也跟其余 UI 割裂（ref: 2026-09-08 确认弹窗改造）。
+  it('resets shortcuts to the factory defaults after confirming in the dialog', async () => {
     const user = userEvent.setup();
     const set = (globalThis as any).browser.storage.local.set as ReturnType<typeof vi.fn>;
     storageData['runi:shortcuts'] = [
       { id: 'custom-1', origin: 'custom', scope: 'none', customized: true, name: 'Mine', prompt: 'P' },
       { id: 'builtin:translate-selection', origin: 'builtin', scope: 'selection', customized: false },
     ];
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     renderWithLocale(<ShortcutSettings />);
 
     await user.click(await screen.findByRole('button', { name: 'Restore presets' }));
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveAccessibleName('Restore preset shortcuts?');
+    await user.click(within(dialog).getByRole('button', { name: 'Restore presets' }));
 
     const persisted = set.mock.calls.at(-1)?.[0]['runi:shortcuts'];
     expect(persisted).toEqual(defaultShortcutConfigs());
     expect(screen.queryByText('Mine')).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('keeps the shortcut list untouched when the restore confirmation is declined', async () => {
+  it('keeps the shortcut list untouched when the restore dialog is cancelled', async () => {
     const user = userEvent.setup();
     const set = (globalThis as any).browser.storage.local.set as ReturnType<typeof vi.fn>;
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
     renderWithLocale(<ShortcutSettings />);
     await screen.findByText('Translate selection');
     set.mockClear();
 
     await user.click(screen.getByRole('button', { name: 'Restore presets' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }));
 
     expect(set).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('confirms shortcut deletion before persisting it', async () => {
+  it('returns focus to the restore button after the dialog closes', async () => {
+    const user = userEvent.setup();
+    renderWithLocale(<ShortcutSettings />);
+
+    const restore = await screen.findByRole('button', { name: 'Restore presets' });
+    await user.click(restore);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    await user.keyboard('{Escape}');
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(restore).toHaveFocus();
+  });
+
+  // 逐条删除是轻量确认，用行内二次点击（同 RedactionSettings.tsx / HistoryDrawer.tsx），
+  // 不为单条快捷方式弹模态框。
+  it('only deletes a shortcut after a second confirming click, not the first', async () => {
     const user = userEvent.setup();
     const set = (globalThis as any).browser.storage.local.set as ReturnType<typeof vi.fn>;
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     renderWithLocale(<ShortcutSettings />);
 
     await user.click(await screen.findByRole('button', { name: 'Delete Summarize page' }));
+
+    expect(set).not.toHaveBeenCalled();
+    expect(screen.getByText('Summarize page')).toBeVisible();
+
+    await user.click(
+      screen.getByRole('button', { name: 'Confirm delete Summarize page? Click again to delete.' }),
+    );
 
     const persisted = set.mock.calls.at(-1)?.[0]['runi:shortcuts'];
     expect(persisted.map((item: { id: string }) => item.id)).toEqual([
@@ -576,16 +603,38 @@ describe('grouped options settings', () => {
     ]);
   });
 
-  it('does not persist shortcut deletion when confirmation is declined', async () => {
+  it('removes invalid shortcuts after confirming in the dialog', async () => {
     const user = userEvent.setup();
     const set = (globalThis as any).browser.storage.local.set as ReturnType<typeof vi.fn>;
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    storageData['runi:shortcuts'] = [
+      'not-a-shortcut',
+      { id: 'builtin:translate-selection', origin: 'builtin', scope: 'selection', customized: false },
+    ];
     renderWithLocale(<ShortcutSettings />);
 
-    await user.click(await screen.findByRole('button', { name: 'Delete Summarize page' }));
+    await user.click(await screen.findByRole('button', { name: 'Remove invalid items' }));
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveAccessibleName('Remove invalid shortcuts?');
+    await user.click(within(dialog).getByRole('button', { name: 'Remove invalid items' }));
+
+    const persisted = set.mock.calls.at(-1)?.[0]['runi:shortcuts'];
+    expect(persisted.map((item: { id: string }) => item.id)).toEqual([
+      'builtin:translate-selection',
+    ]);
+    expect(await screen.findByText('Invalid items removed')).toBeVisible();
+  });
+
+  it('keeps the invalid configuration when the repair dialog is cancelled', async () => {
+    const user = userEvent.setup();
+    const set = (globalThis as any).browser.storage.local.set as ReturnType<typeof vi.fn>;
+    storageData['runi:shortcuts'] = ['not-a-shortcut'];
+    renderWithLocale(<ShortcutSettings />);
+
+    await user.click(await screen.findByRole('button', { name: 'Remove invalid items' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }));
 
     expect(set).not.toHaveBeenCalled();
-    expect(screen.getByText('Summarize page')).toBeVisible();
+    expect(screen.getByText('The shortcut configuration is invalid.')).toBeVisible();
   });
 
   it('defaults the selection-ask toggle to checked and persists a change', async () => {
