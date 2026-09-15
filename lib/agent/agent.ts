@@ -248,7 +248,10 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
       // 在任何闸门之前记下"尝试过写"：被拦下的调用不经过 afterToolCall，放到后面就漏记了。
       // 模型尝试写却失败/被拒之后停下，它的文字是在解释原因，不是早停。
       if (WRITE_TOOL_NAMES.has(context.toolCall.name)) writeToolAttemptedThisRun = true;
-      if (implementationDossierCollected) {
+      // 巡检后的补查限额是给"页面怎么实现的"这类问答收敛用的。一旦尝试过写，说明这是改页面的
+      // 任务，定位下一批元素正是它需要的，再限就会把它卡死在零写入的收尾轮里（ref: 2026-09-15
+      // 专注阅读事故）。之后的收敛交给通用预算与重复失败检测。
+      if (implementationDossierCollected && !writeToolAttemptedThisRun) {
         const toolName = context.toolCall.name;
         if (POST_DOSSIER_BLOCKED_TOOLS.has(toolName)) {
           return recordPreExecutionBlock({
@@ -263,7 +266,7 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
             return recordPreExecutionBlock({
               block: true,
               reason:
-                '页面实现巡检后的定向补查额度已用完，或该工具已经补查过一次。请停止继续调用工具，基于已有证据给出最终回答。',
+                '页面实现巡检后的定向补查额度已用完，或该工具已经补查过一次。如果用户是在询问页面实现，请停止补查，基于已有证据给出最终回答；如果用户要求修改页面，请直接用已知的选择器调用写工具（如 browser_set_style / browser_modify_dom）动手，开始写入后补查限制会自动解除。',
             });
           }
         }
@@ -413,7 +416,7 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
         options.steer({
           role: 'user',
           content:
-            '页面实现巡检已经完成。请优先基于 evidenceSummary 和已有工具结果给出详细、证据驱动的回答；如果仍缺少具体引用证据，最多对 scripts/stylesheets/html/query_dom/computed_style 各补查一次，总补查不超过 4 次，然后必须回答。请点名引用脚本、样式、DOM class、computed style 中的关键线索。',
+            '页面实现巡检已经完成。如果用户是在询问页面实现：请优先基于 evidenceSummary 和已有工具结果给出详细、证据驱动的回答；如果仍缺少具体引用证据，最多对 scripts/stylesheets/html/query_dom/computed_style 各补查一次，总补查不超过 4 次，然后必须回答。请点名引用脚本、样式、DOM class、computed style 中的关键线索。如果用户要求修改页面（隐藏元素、改样式等）：不要停下来作答，直接基于巡检结果调用写工具完成修改。',
           timestamp: Date.now(),
         });
       } else if (implementationDossierCollected) {
@@ -448,11 +451,17 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
         const baseInstruction = budgetExhausted
           ? '工具调用预算已经用完。不要再调用任何工具，请立即基于已有结果给出最终回答，并明确说明仍不确定的部分。'
           : '工具调用连续被阻止，工具调用阶段已经结束。不要再调用任何工具，请立即基于已有结果给出最终回答，并明确说明仍不确定的部分。';
+        // 一次写都没成功过就进收尾轮：没有 report_task_outcome 可强制，界面上也就没有失败徽标，
+        // 模型很容易照着快捷指令里"说明隐藏了什么、调整了什么"的格式编一段完成总结
+        // （ref: 2026-09-15 专注阅读事故）。纯问答运行读到这句也无害。
+        const noWriteNotice = writeToolRanThisRun
+          ? ''
+          : '注意：本次运行没有成功执行任何页面修改操作。如果用户要求的是修改页面，必须如实说明尚未完成以及卡在哪里，不要声称已经隐藏、修改或调整了任何内容。';
         const finalInstruction: AgentMessage = {
           role: 'user',
           content: outcomeStillOwed
             ? `${baseInstruction}唯一的例外是 report_task_outcome：它不占用工具预算，仍然必须调用它，说明这次操作是 success/partial/failure，并给出一句话原因。`
-            : baseInstruction,
+            : `${baseInstruction}${noWriteNotice}`,
           timestamp: Date.now(),
         };
         return {

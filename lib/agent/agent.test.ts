@@ -222,6 +222,52 @@ describe('createBrowserAgentOptions tool policy hooks', () => {
       await hooks.prepareNextTurnWithContext?.({ context: { messages: [], tools: [{}] } } as unknown as PrepareNextTurnContext),
     ).toMatchObject({ context: { tools: [] } });
   });
+
+  // 会让这个用例失败的 production 改动：巡检后的补查限额不区分任务类型——专注阅读这类
+  // 改页面的任务开始写之后，还要定位下一批元素，却被"该工具已经补查过一次"卡死
+  // （ref: 2026-09-15 专注阅读把 query_dom 连拦四次、零写入收尾的事故）。
+  it('lifts the post-dossier follow-up limit once a write has been attempted', async () => {
+    const hooks = createBrowserAgentOptions({
+      provider: baseProvider,
+      tabId: 1,
+      tools: [],
+      readToolCallBudget: 12,
+      writeToolCallBudget: 24,
+      steer: vi.fn(),
+    });
+    await hooks.afterToolCall?.(afterContext('browser_inspect_page_implementation', {}, false));
+    await hooks.afterToolCall?.(afterContext('browser_query_dom', { selector: 'aside' }, false));
+    // 对照组：还没写过，同一工具的第二次补查照旧被拦。
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_query_dom', { selector: 'nav' }))).toMatchObject({
+      block: true,
+    });
+    expect(
+      await hooks.beforeToolCall?.(beforeContext('browser_set_style', { selector: 'aside', styles: { display: 'none' } })),
+    ).toBeUndefined();
+    await hooks.afterToolCall?.(afterContext('browser_set_style', { selector: 'aside', styles: { display: 'none' } }, false));
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_query_dom', { selector: 'nav' }))).toBeUndefined();
+  });
+
+  // 会让这个用例失败的 production 改动：拦截理由和巡检完成的 steer 只说"停止调用工具、给出
+  // 最终回答"，改页面的任务读到它就不再尝试写工具，直接编一段完成总结。
+  it('tells the model it may still act with write tools after the dossier', async () => {
+    const steer = vi.fn();
+    const hooks = createBrowserAgentOptions({
+      provider: baseProvider,
+      tabId: 1,
+      tools: [],
+      readToolCallBudget: 12,
+      writeToolCallBudget: 24,
+      steer,
+    });
+    await hooks.afterToolCall?.(afterContext('browser_inspect_page_implementation', {}, false));
+    expect((steer.mock.calls.at(-1)?.[0] as { content: string }).content).toContain('写工具');
+    await hooks.afterToolCall?.(afterContext('browser_query_dom', { selector: 'aside' }, false));
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_query_dom', { selector: 'nav' }))).toMatchObject({
+      block: true,
+      reason: expect.stringContaining('写工具'),
+    });
+  });
 });
 
 describe('createBrowserAgentOptions task outcome forcing', () => {
@@ -373,7 +419,9 @@ describe('createBrowserAgentOptions task outcome forcing', () => {
     expect(steer).not.toHaveBeenCalled();
   });
 
-  it('keeps the budget-exhaustion branch byte-identical when no report is owed', async () => {
+  // 只读运行不欠汇报：收尾指令里不能混进 report_task_outcome 那句；但因为一次写都没成功过，
+  // 要带上"不要声称已经修改页面"的提示（写过的运行不带，见下一个用例的逐字断言）。
+  it('keeps the report clause out of the budget-exhaustion branch when no report is owed', async () => {
     const steer = vi.fn();
     const hooks = createBrowserAgentOptions({
       provider: baseProvider,
@@ -390,9 +438,12 @@ describe('createBrowserAgentOptions task outcome forcing', () => {
     } as unknown as PrepareNextTurnContext);
 
     expect(next?.context?.tools).toEqual([]);
-    expect((next?.context?.messages.at(-1) as { content: string }).content).toBe(
-      '工具调用预算已经用完。不要再调用任何工具，请立即基于已有结果给出最终回答，并明确说明仍不确定的部分。',
+    const content = (next?.context?.messages.at(-1) as { content: string }).content;
+    expect(content).toBe(
+      '工具调用预算已经用完。不要再调用任何工具，请立即基于已有结果给出最终回答，并明确说明仍不确定的部分。'
+        + '注意：本次运行没有成功执行任何页面修改操作。如果用户要求的是修改页面，必须如实说明尚未完成以及卡在哪里，不要声称已经隐藏、修改或调整了任何内容。',
     );
+    expect(content).not.toContain('report_task_outcome');
   });
 
   it('keeps the budget-exhaustion branch byte-identical when the outcome was already reported', async () => {
@@ -446,6 +497,32 @@ describe('createBrowserAgentOptions task outcome forcing', () => {
     const content = (next?.context?.messages.at(-1) as { content: string }).content;
     expect(content).toContain('工具调用连续被阻止');
     expect(content).toContain('report_task_outcome');
+  });
+
+  // 会让这个用例失败的 production 改动：收尾轮只说"基于已有结果给出最终回答"，一次写都没
+  // 成功过的运行照样套用提示词里"说明隐藏了什么、调整了什么"的格式，编出一段完成总结。
+  it('forbids claiming page changes on the final turn when no write ever ran', async () => {
+    const hooks = createBrowserAgentOptions({
+      provider: baseProvider,
+      tabId: 1,
+      tools: [reportTaskOutcomeTool],
+      readToolCallBudget: 12,
+      writeToolCallBudget: 24,
+      steer: vi.fn(),
+    });
+    await hooks.afterToolCall?.(afterContext('browser_inspect_page_implementation', {}, false));
+    await hooks.beforeToolCall?.(beforeContext('browser_read_page', {}));
+    await hooks.beforeToolCall?.(beforeContext('browser_get_page_meta', {}));
+
+    const next = await hooks.prepareNextTurnWithContext?.({
+      message: toolCallStillPendingMessage('browser_get_page_meta'),
+      context: { messages: [], tools: [{ name: 'still-present' }] },
+    } as unknown as PrepareNextTurnContext);
+
+    expect(next?.context?.tools).toEqual([]);
+    const content = (next?.context?.messages.at(-1) as { content: string }).content;
+    expect(content).toContain('工具调用连续被阻止');
+    expect(content).toContain('没有成功执行任何页面修改');
   });
 
   it('never blocks report_task_outcome on an exhausted budget', async () => {
