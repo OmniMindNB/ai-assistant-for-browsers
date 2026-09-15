@@ -71,6 +71,14 @@ const POST_DOSSIER_ALLOWED_TOOLS = new Set([
   'browser_get_computed_style',
 ]);
 const POST_DOSSIER_BLOCKED_TOOLS = new Set(['browser_get_page_meta', 'browser_read_page']);
+/**
+ * 产出字段句柄（fieldId）的读工具。它们存在的意义就是喂给后续的写操作——拿过句柄却一次都没尝试
+ * 写就以纯文本收尾，几乎一定是早停而不是答完了，这是"未动手就停下"补一轮的唯一触发依据。
+ * 刻意不看 read_page/get_html 之类：纯问答也会调它们，按它们触发会让每次"总结本页"都多等一轮。
+ */
+const HANDLE_PRODUCING_TOOLS = new Set(['browser_get_form', 'browser_find_text']);
+const UNFINISHED_ACTION_NUDGE =
+  '[系统观察] 你已经拿到了可操作的字段句柄（fieldId），但本轮还没有执行任何写入或交互操作就结束了。如果用户的请求需要操作页面（填写、选择、点击、提交等），现在立即用已经拿到的 fieldId 继续执行，不要重复读取已经读过的内容；如果用户确实只是在提问、不需要操作页面，用一句话确认回答已经完整即可。';
 
 export interface BrowserAgentOptions {
   provider: ProviderConfig;
@@ -205,6 +213,11 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
   let writeToolRanThisRun = false;
   let outcomeReported = false;
   let outcomeForceAttempted = false;
+  // "拿到句柄却未动手"补一轮的输入：拿过句柄、尝试过写（含失败和被闸门拦下）、问过用户。
+  let handleCollectedThisRun = false;
+  let writeToolAttemptedThisRun = false;
+  let askedUserThisRun = false;
+  let unfinishedActionNudged = false;
   const toolCallCounts = new Map<string, number>();
   // 上下文窗口起点跨轮保持，两次重切之间不动，让请求前缀只增不改（见 planContextWindow）。
   const contextWindow: ContextWindowState = { start: 0 };
@@ -232,6 +245,9 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
     toolExecution: 'sequential',
     beforeToolCall: async (context, signal) => {
       if (signal?.aborted) return recordPreExecutionBlock({ block: true, reason: '操作已停止。' });
+      // 在任何闸门之前记下"尝试过写"：被拦下的调用不经过 afterToolCall，放到后面就漏记了。
+      // 模型尝试写却失败/被拒之后停下，它的文字是在解释原因，不是早停。
+      if (WRITE_TOOL_NAMES.has(context.toolCall.name)) writeToolAttemptedThisRun = true;
       if (implementationDossierCollected) {
         const toolName = context.toolCall.name;
         if (POST_DOSSIER_BLOCKED_TOOLS.has(toolName)) {
@@ -346,6 +362,8 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
 
       if (!context.isError && WRITE_TOOL_NAMES.has(toolName)) writeToolRanThisRun = true;
       if (!context.isError && toolName === REPORT_TASK_OUTCOME_TOOL_NAME) outcomeReported = true;
+      if (!context.isError && HANDLE_PRODUCING_TOOLS.has(toolName)) handleCollectedThisRun = true;
+      if (toolName === 'ask_user') askedUserThisRun = true;
 
       if (!context.isError) {
         // browser_go_back 与 browser_navigate 同属"自己就知道退/跳到哪"的一类：结果里
@@ -458,6 +476,21 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
           timestamp: Date.now(),
         });
         return { context: { ...context.context, tools: [reportTaskOutcomeTool] } };
+      }
+
+      // 拿到句柄却一次都没尝试写、也没问过用户就以纯文本收尾：补一轮让它继续（ref: 2026-09-14
+      // glm-5.3 答题页连读 15 次后早停）。只 steer、不动工具表——steer 让 getSteeringMessages 非空，
+      // 循环自然多跑一轮。与上面两个分支互斥：预算收尾轮已在前面 return，补调 outcome 要求写过。
+      if (
+        !hasToolCalls &&
+        handleCollectedThisRun &&
+        !writeToolAttemptedThisRun &&
+        !askedUserThisRun &&
+        !unfinishedActionNudged &&
+        !policy.exhausted
+      ) {
+        unfinishedActionNudged = true; // 每次运行最多补一次，绝不循环
+        options.steer({ role: 'user', content: UNFINISHED_ACTION_NUDGE, timestamp: Date.now() });
       }
       return undefined;
     },

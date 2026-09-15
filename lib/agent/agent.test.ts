@@ -498,6 +498,115 @@ describe('createBrowserAgentOptions task outcome forcing', () => {
   });
 });
 
+// 实测（2026-09-14，glm-5.3 答题页）：get_form → get_html → query_dom → get_form → get_html 连读 15 次，
+// 一次写都没做就以纯文本结束了本轮。既有的收尾补调只在"写过之后"才生效，这种早停没有任何兜底。
+// 口径刻意收窄：只有拿过字段句柄（get_form / find_text——它们存在的意义就是喂给后续写操作）
+// 却从未尝试写入时才补一轮，纯问答（总结本页、问实现）不受影响，不多等一次模型往返。
+describe('createBrowserAgentOptions 拿到句柄却未动手就停下时补一轮', () => {
+  function hooks(steer: (m: AgentMessage) => void, readToolCallBudget = 20) {
+    return createBrowserAgentOptions({
+      provider: baseProvider,
+      tabId: 1,
+      tools: [],
+      readToolCallBudget,
+      writeToolCallBudget: 40,
+      steer,
+    });
+  }
+
+  function endTurn(h: ReturnType<typeof hooks>, message: unknown = textOnlyMessage('分析完了')) {
+    return h.prepareNextTurnWithContext?.({
+      message,
+      context: { messages: [], tools: [{ name: 'browser_fill_form' }] },
+    } as unknown as PrepareNextTurnContext);
+  }
+
+  it('get_form 之后又读了几次、没写就以纯文本收尾：steer 一次让它继续，工具表不动', async () => {
+    const steer = vi.fn();
+    const h = hooks(steer);
+    await h.afterToolCall?.(afterContext('browser_get_form', {}, false));
+    await h.afterToolCall?.(afterContext('browser_get_html', { selector: 'form' }, false));
+    await h.afterToolCall?.(afterContext('browser_query_dom', { selector: 'form' }, false));
+
+    expect(await endTurn(h)).toBeUndefined();
+    expect(steer).toHaveBeenCalledTimes(1);
+    expect(steer.mock.calls[0][0]).toMatchObject({ role: 'user', content: expect.stringContaining('fieldId') });
+  });
+
+  it('browser_find_text 同样算拿到了句柄', async () => {
+    const steer = vi.fn();
+    const h = hooks(steer);
+    await h.afterToolCall?.(afterContext('browser_find_text', { text: '提交' }, false));
+    await endTurn(h);
+    expect(steer).toHaveBeenCalledTimes(1);
+  });
+
+  it('每次运行最多补一次，模型补过之后仍不动手也不再追', async () => {
+    const steer = vi.fn();
+    const h = hooks(steer);
+    await h.afterToolCall?.(afterContext('browser_get_form', {}, false));
+    await endTurn(h);
+    await endTurn(h, textOnlyMessage('这只是问答'));
+    expect(steer).toHaveBeenCalledTimes(1);
+  });
+
+  it('get_form 本身失败时不补：模型的文字是在解释失败，不是早停', async () => {
+    const steer = vi.fn();
+    const h = hooks(steer);
+    await h.afterToolCall?.(afterContext('browser_get_form', {}, true));
+    await endTurn(h);
+    expect(steer).not.toHaveBeenCalled();
+  });
+
+  it('尝试过写入但失败时不补', async () => {
+    const steer = vi.fn();
+    const h = hooks(steer);
+    await h.afterToolCall?.(afterContext('browser_get_form', {}, false));
+    expect(await h.beforeToolCall?.(beforeContext('browser_fill_form', { fields: [] }))).toBeUndefined();
+    await h.afterToolCall?.(afterContext('browser_fill_form', { fields: [] }, true));
+    await endTurn(h);
+    expect(steer).not.toHaveBeenCalled();
+  });
+
+  it('写入在执行前就被闸门拦下时也不补（被拦的调用不经过 afterToolCall）', async () => {
+    const steer = vi.fn();
+    const h = hooks(steer);
+    await h.afterToolCall?.(afterContext('browser_get_form', {}, false));
+    // javascript: 导航是 permissions.ts 的硬拒绝，走 beforeToolCall 的阻断分支。
+    expect(await h.beforeToolCall?.(beforeContext('browser_navigate', { url: 'javascript:alert(1)' }))).toMatchObject({
+      block: true,
+    });
+    await endTurn(h);
+    expect(steer).not.toHaveBeenCalled();
+  });
+
+  it('向用户提过问（ask_user）之后不补：停下可能正是用户的回答', async () => {
+    const steer = vi.fn();
+    const h = hooks(steer);
+    await h.afterToolCall?.(afterContext('browser_get_form', {}, false));
+    await h.afterToolCall?.(afterContext('ask_user', { question: '要提交吗？' }, false));
+    await endTurn(h);
+    expect(steer).not.toHaveBeenCalled();
+  });
+
+  it('本轮消息里还有待执行的工具调用时不补', async () => {
+    const steer = vi.fn();
+    const h = hooks(steer);
+    await h.afterToolCall?.(afterContext('browser_get_form', {}, false));
+    await endTurn(h, toolCallStillPendingMessage('browser_get_html'));
+    expect(steer).not.toHaveBeenCalled();
+  });
+
+  it('预算耗尽的收尾轮优先，不叠加补一轮', async () => {
+    const steer = vi.fn();
+    const h = hooks(steer, 1);
+    await h.afterToolCall?.(afterContext('browser_get_form', {}, false));
+    expect(await endTurn(h)).toMatchObject({ context: { tools: [] } });
+    await endTurn(h);
+    expect(steer).not.toHaveBeenCalled();
+  });
+});
+
 describe('执行期遮罩', () => {
   const overlayOptions = (onOverlay: () => void, approve: boolean) =>
     createBrowserAgentOptions({
