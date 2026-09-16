@@ -95,6 +95,21 @@ describe('finishActivityStep', () => {
     expect(next).toEqual([{ id: 'a', description: 'Clicked X', status: 'done' }]);
   });
 
+  it('attaches a result note when one is given', () => {
+    const steps: ActivityStep[] = [{ id: 'a', description: 'Finding "总计"', status: 'running', category: 'read' }];
+    const next = finishActivityStep(steps, 'a', 'done', 'Found "总计"', '6 results');
+    expect(next).toEqual([
+      { id: 'a', description: 'Found "总计"', status: 'done', category: 'read', resultNote: '6 results' },
+    ]);
+  });
+
+  // 显式写 undefined 会把这个键留在对象上，随消息存进 IndexedDB 后就是一堆没用的空字段。
+  it('leaves the resultNote key off entirely when there is no note', () => {
+    const steps: ActivityStep[] = [{ id: 'a', description: 'Clicking X', status: 'running' }];
+    const next = finishActivityStep(steps, 'a', 'done', 'Clicked X');
+    expect(Object.hasOwn(next[0], 'resultNote')).toBe(false);
+  });
+
   it('flips a running step to failed', () => {
     const steps: ActivityStep[] = [{ id: 'a', description: 'Clicking X', status: 'running' }];
     const next = finishActivityStep(steps, 'a', 'failed', 'Failed to click X');
