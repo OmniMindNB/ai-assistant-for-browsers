@@ -9,13 +9,11 @@ import { loadTabSession, saveTabSession } from './tab-session-storage';
 import { summarizeToolCallForConfirmation } from './confirm-summary';
 import { describeToolActivity } from './activity-description';
 import { upsertActivityStep, finishActivityStep, type ActivityStep } from './activity-steps';
-import { toolCategory } from './activity-category';
-import { describeToolResultNote } from './activity-result-note';
 import { toolSignature } from './tool-policy';
 import { replaceConversationMessages } from '@/lib/db';
 import { conversationTitle, toMessageRecords, type ChatMessage } from '@/lib/chat/messages';
 import { t } from '@/lib/i18n';
-import { REPORT_TASK_OUTCOME_TOOL_NAME, type TaskOutcome } from './task-outcome';
+import type { TaskOutcome } from './task-outcome';
 import type {
   PendingConfirmation,
   PendingQuestion,
@@ -189,21 +187,6 @@ function extractLastAssistantText(messages: unknown[]): string {
       .trim();
   }
   return '';
-}
-
-/**
- * 这一轮有没有"还要接着干活"的工具调用。
- *
- * report_task_outcome 被排除在外：它既不动页面也不带回新信息，模型在调它的同一轮里
- * 说的那段话就是最终答案本身。拿"带 toolCall"一刀切会把正文当过场白摘走。
- */
-function hasWorkingToolCall(message: unknown): boolean {
-  const content = (message as { content?: unknown })?.content;
-  if (!Array.isArray(content)) return false;
-  return content.some((part) => {
-    const candidate = part as { type?: unknown; name?: unknown };
-    return candidate?.type === 'toolCall' && candidate.name !== REPORT_TASK_OUTCOME_TOOL_NAME;
-  });
 }
 
 interface LastAssistantInfo {
@@ -442,19 +425,11 @@ export async function startRun(request: StartRunRequest): Promise<void> {
   });
   state.agent = agent;
 
-  // 文本分两层：acc 只累加**当前这一轮**，settled 是已经认定为最终答案、要留在气泡里的那段。
-  // 以前只有一个跨全轮累加的 acc，模型每次调工具前的过场白于是和正文拼成一条消息一起渲染。
-  let settled = '';
   let acc = '';
-  let narrationCount = 0;
-  /** 最近一次被摘走的过场白；收尾时若气泡空着，用它兜底（见下面的还原逻辑）。 */
-  let lastNarration: { id: string; text: string } | null = null;
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
-  // settled 一旦有值，气泡就锁在它上面：此后的轮次（几乎只有 report_task_outcome 补轮）
-  // 再流出文本也不该把已经给出的正文顶掉，哪怕只是流式过程中闪一下。
   const flush = () => {
     if (flushTimer !== null) { clearTimeout(flushTimer); flushTimer = null; }
-    replaceLastAssistant(state, settled || acc);
+    replaceLastAssistant(state, acc);
     pushAndPersist(state);
   };
 
@@ -471,7 +446,6 @@ export async function startRun(request: StartRunRequest): Promise<void> {
         description: describeToolActivity(event.toolName, event.args, 'running'),
         status: 'running',
         tabLabel: currentTabLabel(state),
-        category: toolCategory(event.toolName),
         // 带上签名，让 upsertActivityStep 能把"同一个调用的又一次尝试"并成一行。
         signature: toolSignature(event.toolName, event.args),
       });
@@ -485,7 +459,6 @@ export async function startRun(request: StartRunRequest): Promise<void> {
         description: describeToolActivity(event.toolName, event.args, 'running'),
         status: 'running',
         tabLabel: currentTabLabel(state),
-        category: toolCategory(event.toolName),
         signature: toolSignature(event.toolName, event.args),
       });
       pushAndPersist(state);
@@ -501,36 +474,14 @@ export async function startRun(request: StartRunRequest): Promise<void> {
           event.toolCallId,
           finalStatus,
           describeToolActivity(event.toolName, info?.args, finalStatus),
-          // 失败的一步没有结果可数，计数只在成功时才有意义。
-          event.isError ? undefined : describeToolResultNote(event.toolName, event.result),
         );
         pushAndPersist(state);
       }
     }
 
     if (event.type === 'message_end') {
-      if (flushTimer !== null) { clearTimeout(flushTimer); flushTimer = null; }
-      const turnText = acc.trim();
-      // 这一轮的文本是不是"说完就去干活"的过场白？两种情况都算：
-      //  1. 这一轮还带着（非 report_task_outcome 的）工具调用——后面必然还有话要说；
-      //  2. taskOutcome 已经落定——agent.ts 在模型答完后会补一轮强制 report_task_outcome，
-      //     模型在那一轮的复述会顶掉真正的正文，而成败徽标本来就单独渲染（App.tsx）。
-      if (turnText && (hasWorkingToolCall(event.message) || state.taskOutcome !== null)) {
-        const id = `narration-${state.tabId}-${(narrationCount += 1)}`;
-        lastNarration = { id, text: turnText };
-        state.activitySteps = upsertActivityStep(state.activitySteps, {
-          id,
-          description: turnText,
-          status: 'narration',
-          tabLabel: currentTabLabel(state),
-        });
-      } else if (turnText) {
-        settled = acc;
-      }
-      // 每轮结束都归零：不归零的话下一轮的文本会继续往同一个串上接，正是原来那个 bug。
-      acc = '';
-      replaceLastAssistant(state, settled);
-      pushAndPersist(state);
+      // Flush any pending text before persisting, so state.messages reflects the complete message
+      flush();
       void persistMessages(state);
     }
   });
@@ -540,19 +491,11 @@ export async function startRun(request: StartRunRequest): Promise<void> {
   void (async () => {
     try {
       await agent.prompt(request.agentUserContent, request.images);
-      // 断言而非标注：赋值只发生在上面的事件回调里，TS 的控制流分析追不进去，
-      // 会把这里的 lastNarration 一路收窄成 null（再进一步就是 never）。
-      const narration = lastNarration as { id: string; text: string } | null;
-      if (!settled.trim() && narration) {
-        // 一轮都没留下独立的最终答案（模型调完工具就没话了）。空气泡比一段过场白更糟：
-        // 把最后一段还回气泡，同时从时间线撤掉，免得同一句话在两个地方各出现一次。
-        settled = narration.text;
-        state.activitySteps = state.activitySteps.filter((step) => step.id !== narration.id);
-      } else if (!settled.trim()) {
+      if (!acc.trim()) {
         const last = findLastAssistant(agent.state.messages);
-        settled = extractLastAssistantText(agent.state.messages) || describeEmptyAgentRun(last);
+        acc = extractLastAssistantText(agent.state.messages) || describeEmptyAgentRun(last);
       }
-      replaceLastAssistant(state, settled);
+      replaceLastAssistant(state, acc);
     } catch (e) {
       // 只 console.error 的话（迁移后一度就是这样），占位 assistant 消息会永远停在空内容上：
       // 用户看到轮次结束、busy 熄灭，却没有任何回复也没有任何错误提示。把结果写进消息本身，
@@ -563,16 +506,12 @@ export async function startRun(request: StartRunRequest): Promise<void> {
         // 分支行为一致）；一个字都还没出来时给一句明确的"已中止"，而不是留一条空气泡。
         // 但即便有部分文本，也要标 stopped：不然一段中途截断的回答会跟正常说完的回答
         // 长得一模一样，用户没法区分"模型就说到这"和"被我自己掐断了"。
-        // 被掐断时当前这一轮还没走到 message_end，没机会判定是正文还是过场白，
-        // 所以这里取 settled 和 acc 里当下有内容的那个——半截过场白也比空气泡强。
         wasUserStopped = true;
-        const partial = (settled || acc).trim();
-        replaceLastAssistant(state, partial || t('store.generationAborted'));
+        replaceLastAssistant(state, acc.trim() ? acc : t('store.generationAborted'));
       } else {
         console.error('[Runi] agent.prompt 异常', e);
         const errorText = describeThrownAgentError(e);
-        const partial = (settled || acc).trim();
-        replaceLastAssistant(state, partial ? `${partial}\n\n${errorText}` : errorText);
+        replaceLastAssistant(state, acc.trim() ? `${acc}\n\n${errorText}` : errorText);
       }
     } finally {
       unsubscribe();

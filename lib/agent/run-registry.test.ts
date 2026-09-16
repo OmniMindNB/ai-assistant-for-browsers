@@ -94,8 +94,6 @@ function makeFakeAgent(events: unknown[]) {
     }),
     abort: vi.fn(),
     state: { messages: [] },
-    /** 让用例能在自定义 prompt() 里按自己的顺序补发事件（例如中间夹一次 onTaskOutcome）。 */
-    emit: (event: unknown) => listener?.(event),
   };
 }
 
@@ -161,91 +159,6 @@ describe('run-registry startRun', () => {
     const lastMessage = state?.messages[state.messages.length - 1];
     expect(lastMessage?.content).toBe('Hello');
     expect(posted.length).toBeGreaterThan(0);
-  });
-
-  // 气泡里只该留最终答案。模型在每次工具调用前说的过场白（"让我读取页面…"）以前会被
-  // 累加进同一条 assistant 消息一起渲染，用户读到的前半截全是过程叙述（用户反馈：
-  // "答案的前面很大一部分，都是模型的思考过程，不需要展示给用户"）。
-  it('moves narration from tool-calling turns into the activity timeline instead of the bubble', async () => {
-    const agent = makeFakeAgent([
-      { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '让我先读取页面。' } },
-      {
-        type: 'message_end',
-        message: { role: 'assistant', content: [{ type: 'text', text: '让我先读取页面。' }, { type: 'toolCall', name: 'browser_read_page' }] },
-      },
-      { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '最终答案。' } },
-      { type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: '最终答案。' }] } },
-    ]);
-    mocks.createBrowserAgent.mockReturnValue(agent);
-
-    await startRun(makeRequest({ tabId: 31 }));
-    await vi.waitFor(() => expect(getRunState(31)?.busy).toBe(false));
-
-    const last = getRunState(31)?.messages.at(-1);
-    expect(last?.content).toBe('最终答案。');
-    expect(last?.content).not.toContain('让我先读取页面');
-    expect(last?.activitySteps?.some((step) => step.status === 'narration' && step.description === '让我先读取页面。')).toBe(true);
-  });
-
-  // agent.ts 在模型答完后会再补一轮强制 report_task_outcome，模型在那一轮往往会把结论
-  // 复述一遍。成败徽标已经由 taskOutcome 单独渲染，那段复述不拦住就会顶掉真正的正文。
-  it('keeps the real answer when a forced report_task_outcome turn adds a redundant recap', async () => {
-    const agent = makeFakeAgent([]);
-    mocks.createBrowserAgent.mockReturnValue(agent);
-    agent.prompt = vi.fn(async () => {
-      const options = mocks.createBrowserAgent.mock.calls.at(-1)?.[0] as { onTaskOutcome?: (o: unknown) => void };
-      agent.emit({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '正文答案。' } });
-      agent.emit({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: '正文答案。' }] } });
-      options.onTaskOutcome?.({ outcome: 'partial', reason: '部分达成' });
-      agent.emit({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '已完成汇报：标记为 partial。' } });
-      agent.emit({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: '已完成汇报：标记为 partial。' }] } });
-    });
-
-    await startRun(makeRequest({ tabId: 32 }));
-    await vi.waitFor(() => expect(getRunState(32)?.busy).toBe(false));
-
-    const last = getRunState(32)?.messages.at(-1);
-    expect(last?.content).toBe('正文答案。');
-    expect(last?.taskOutcome).toEqual({ outcome: 'partial', reason: '部分达成' });
-  });
-
-  // report_task_outcome 不改页面也不带来新信息，模型在调它的同一轮里说的就是最终答案本身。
-  // 拿"这一轮带 toolCall"一刀切会把正文误摘走，所以它要从"过程轮"的判定里排除。
-  it('treats a turn whose only tool call is report_task_outcome as the final answer', async () => {
-    const agent = makeFakeAgent([
-      { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '表单已填好。' } },
-      {
-        type: 'message_end',
-        message: { role: 'assistant', content: [{ type: 'text', text: '表单已填好。' }, { type: 'toolCall', name: 'report_task_outcome' }] },
-      },
-    ]);
-    mocks.createBrowserAgent.mockReturnValue(agent);
-
-    await startRun(makeRequest({ tabId: 33 }));
-    await vi.waitFor(() => expect(getRunState(33)?.busy).toBe(false));
-
-    expect(getRunState(33)?.messages.at(-1)?.content).toBe('表单已填好。');
-  });
-
-  // 一轮都没留下独立答案时（模型调完工具就没话了），空气泡比一段过程叙述更糟：
-  // 把最后一段叙述还回气泡，同时从时间线里撤掉，避免同一句话出现两遍。
-  it('restores the last narration into the bubble when no standalone answer ever arrives', async () => {
-    const agent = makeFakeAgent([
-      { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '我已经把标题改好了。' } },
-      {
-        type: 'message_end',
-        message: { role: 'assistant', content: [{ type: 'text', text: '我已经把标题改好了。' }, { type: 'toolCall', name: 'browser_modify_dom' }] },
-      },
-    ]);
-    mocks.createBrowserAgent.mockReturnValue(agent);
-
-    await startRun(makeRequest({ tabId: 34 }));
-    await vi.waitFor(() => expect(getRunState(34)?.busy).toBe(false));
-
-    const last = getRunState(34)?.messages.at(-1);
-    expect(last?.content).toBe('我已经把标题改好了。');
-    // 撤掉唯一一条步骤后列表就空了，归档逻辑对空列表根本不写这个字段，所以 undefined 也算通过。
-    expect(last?.activitySteps?.some((step) => step.status === 'narration') ?? false).toBe(false);
   });
 
   it('marks the final assistant message contextTruncated when the agent reports its context window was recut', async () => {

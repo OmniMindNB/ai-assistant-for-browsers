@@ -911,11 +911,6 @@ describe('activity step list', () => {
     { id: 'call-3', description: 'Typing into "input.name"', status: 'running' },
   ];
 
-  /** 全部跑完且没有失败的列表默认收起，要看明细得先点开折叠头。 */
-  function expandSteps(): void {
-    fireEvent.click(screen.getByRole('button', { name: 'Show execution steps' }));
-  }
-
   it('renders one row per step with a shared status container', () => {
     render(
       <LocaleProvider>
@@ -966,9 +961,7 @@ describe('activity step list', () => {
     expect(running).toContain('font-medium');
   });
 
-  // 运行中限高内滚：40 步的写任务不限高会把输入框顶出视野。跑完之后列表不再增长，
-  // 展开时就让它自然铺开，读起来是一条完整的时间线而不是个小窗口。
-  it('限高只在运行中生效，跑完展开后不再截断', () => {
+  it('gives a running list more height than an all-done (archived) one', () => {
     const { rerender } = render(
       <LocaleProvider>
         <ActivityStepList steps={steps} />
@@ -981,58 +974,7 @@ describe('activity step list', () => {
         <ActivityStepList steps={steps.map((step) => ({ ...step, status: 'done' as const }))} />
       </LocaleProvider>,
     );
-    expandSteps();
-    expect(screen.getByRole('list').className).not.toContain('max-h-');
-  });
-
-  // 跑完就收起，聊天区留给答案本身；点一下就能展开回看。
-  it('全部完成后收起明细，只留一行摘要，点击可展开', () => {
-    render(
-      <LocaleProvider>
-        <ActivityStepList
-          steps={[
-            { id: 'call-1', description: 'Read the page', status: 'done', category: 'read' },
-            { id: 'call-2', description: 'Clicked "#pay"', status: 'done', category: 'interact' },
-          ]}
-        />
-      </LocaleProvider>,
-    );
-
-    expect(screen.queryByRole('list')).not.toBeInTheDocument();
-    expect(screen.getByText('Read the page, Used controls — 2 steps')).toBeVisible();
-
-    expandSteps();
-    expect(screen.getByRole('list')).toBeVisible();
-    expect(screen.getByText('Clicked "#pay"')).toBeVisible();
-  });
-
-  // 失败是最需要被看到的一种结束状态，不该藏在折叠头后面等用户去点。
-  it('这一轮有失败时，跑完也保持展开', () => {
-    render(
-      <LocaleProvider>
-        <ActivityStepList
-          steps={[
-            { id: 'call-1', description: 'Read the page', status: 'done', category: 'read' },
-            { id: 'call-2', description: 'Failed to click "#pay"', status: 'failed', category: 'interact' },
-          ]}
-        />
-      </LocaleProvider>,
-    );
-
-    expect(screen.getByRole('list')).toBeVisible();
-    expect(screen.getByText('Failed to click "#pay"')).toBeVisible();
-  });
-
-  // 摘要句收起时是这一轮活动的全部交代，所以它要能独立读懂。
-  it('运行中的摘要说的是进度，不是已完成的类别', () => {
-    render(
-      <LocaleProvider>
-        <ActivityStepList
-          steps={[{ id: 'call-1', description: 'Reading page', status: 'running', category: 'read' }]}
-        />
-      </LocaleProvider>,
-    );
-    expect(screen.getByText('Working — 1 steps so far')).toBeVisible();
+    expect(screen.getByRole('list').className).toContain('max-h-32');
   });
 
   // 每新增一步整个列表都会重排，挂 aria-live 会让读屏反复重播大段内容。
@@ -1068,61 +1010,27 @@ describe('activity step list', () => {
     expect(screen.getByText('Clicking "#pay"')).toBeVisible();
   });
 
-  // 逐行序号已经去掉：位置感改由折叠头的"共 N 步"承担，行内只留图标和描述。
-  it('不再给步骤编号，总步数由摘要行承担', () => {
+  // 序号给滚动列表位置感：24+ 步的写任务里，没有它用户不知道已经走了多远。
+  it('给工具步骤编号，但跳过流程提示和接管痕迹', () => {
     render(
       <LocaleProvider>
         <ActivityStepList
           steps={[
-            { id: 'c1', description: 'Read page', status: 'done', signature: 'browser_read_page:{}', category: 'read' },
+            { id: 'c1', description: 'Read page', status: 'done', signature: 'browser_read_page:{}' },
             { id: 'takeover-c1', description: 'You took over', status: 'done' },
-            { id: 'c2', description: 'Clicked "#pay"', status: 'done', signature: 'browser_click:{}', category: 'interact' },
+            { id: 'c2', description: 'Clicked "#pay"', status: 'done', signature: 'browser_click:{}' },
+            { id: 'tool-phase-end', description: 'Step limit reached', status: 'notice' },
           ]}
         />
       </LocaleProvider>,
     );
-
-    // 接管痕迹没有 category，不算一步——摘要数的是实际操作次数。
-    expect(screen.getByText('Read the page, Used controls — 2 steps')).toBeVisible();
-
-    expandSteps();
-    for (const row of screen.getAllByRole('listitem')) {
-      expect(row).not.toHaveTextContent(/^\s*\d+\./);
-    }
-  });
-
-  // 图标标的是"做哪类事"，不是成败——同为 done 的读取和点击必须画得不一样。
-  it('按工具类别画图标，并在末行之外画出连接竖线', () => {
-    render(
-      <LocaleProvider>
-        <ActivityStepList
-          steps={[
-            { id: 'c1', description: 'Read page', status: 'done', category: 'read' },
-            { id: 'c2', description: 'Clicked "#pay"', status: 'done', category: 'interact' },
-          ]}
-        />
-      </LocaleProvider>,
-    );
-    expandSteps();
 
     const rows = screen.getAllByRole('listitem');
-    const pathOf = (row: HTMLElement) => row.querySelector('svg path')?.getAttribute('d');
-    expect(pathOf(rows[0])).not.toBe(pathOf(rows[1]));
-    // 竖线连接相邻两步；最后一行不画，否则线会悬空。
-    expect(rows[0].querySelector('.w-px')).not.toBeNull();
-    expect(rows[1].querySelector('.w-px')).toBeNull();
-  });
-
-  it('把结果计数显示在行尾', () => {
-    render(
-      <LocaleProvider>
-        <ActivityStepList
-          steps={[{ id: 'c1', description: 'Found "总计"', status: 'done', category: 'read', resultNote: '6 results' }]}
-        />
-      </LocaleProvider>,
-    );
-    expandSteps();
-    expect(screen.getByText('6 results')).toBeVisible();
+    expect(rows[0]).toHaveTextContent('1.');
+    expect(rows[1]).not.toHaveTextContent('2.');
+    // 接管痕迹没占号，所以下一个工具步骤仍然是 2——编号数的是实际操作次数。
+    expect(rows[2]).toHaveTextContent('2.');
+    expect(rows[3]).not.toHaveTextContent('3.');
   });
 
   // notice 不是一次工具调用，拿 done 的 ✓ 冒充会读成"这件事成功了"。
@@ -1134,34 +1042,8 @@ describe('activity step list', () => {
         />
       </LocaleProvider>,
     );
-    expandSteps();
     const row = screen.getByText('Step limit reached').closest('li');
     expect(row?.className).toContain('text-amber-700');
-  });
-
-  // narration 是模型自己的原话（run-registry 从气泡里摘出来的过场白），既不是操作也不是
-  // 流程提示：不算一步，也不该染上任何表示成败的颜色。
-  it('narration 步骤不计入步数，且用中性斜体而不是成败配色', () => {
-    render(
-      <LocaleProvider>
-        <ActivityStepList
-          steps={[
-            { id: 'c1', description: 'Read page', status: 'done', signature: 'browser_read_page:{}', category: 'read' },
-            { id: 'narration-7-1', description: '让我先读取页面。', status: 'narration' },
-            { id: 'c2', description: 'Clicked "#pay"', status: 'done', signature: 'browser_click:{}', category: 'interact' },
-          ]}
-        />
-      </LocaleProvider>,
-    );
-
-    // 旁白不是"做过的事"，摘要里只数两步。
-    expect(screen.getByText('Read the page, Used controls — 2 steps')).toBeVisible();
-
-    expandSteps();
-    const narrationRow = screen.getByText('让我先读取页面。').closest('li');
-    expect(narrationRow?.className).toContain('italic');
-    expect(narrationRow?.className).not.toContain('text-amber-700');
-    expect(narrationRow?.className).not.toContain('text-red-700');
   });
 
   it('renders a running step description verbatim', () => {
@@ -1203,7 +1085,6 @@ describe('activity step list', () => {
         />
       </LocaleProvider>,
     );
-    expandSteps();
     expect(screen.getByText('《网上银行》Clicking "#a"')).toBeVisible();
     expect(screen.getByText('Clicking "#b"')).toBeVisible();
     expect(screen.queryByText('《网上银行》Clicking "#b"')).not.toBeInTheDocument();
@@ -1218,7 +1099,6 @@ describe('activity step list', () => {
         <ActivityStepList steps={[{ id: 'call-1', description: long, status: 'done' }]} />
       </LocaleProvider>,
     );
-    expandSteps();
 
     const row = screen.getByRole('button', { name: long });
     expect(row.className).toContain('truncate');
