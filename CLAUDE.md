@@ -25,6 +25,10 @@ pnpm test          # vitest run (single run, not watch)
 - `pnpm verify:pdfjs-assets` checks that the PDF.js worker/cmaps/standard_fonts/wasm assets copied by `wxt.config.ts` actually landed in the build output.
 - To exercise the agent against a real LLM during dev, fill in a key in `lib/dev-config.ts` (`DEV_PROVIDER.enabled = true`); this auto-registers a provider in settings on load. Never commit a real key there.
 
+## Git
+
+Commit directly on `main`. Do not create a branch for a change, and do not offer to — this repository's whole history is linear on `main`, and a one-commit side branch only adds a merge step. This overrides the assistant's default "branch first when on the default branch" behaviour.
+
 ## Architecture
 
 ### Three-context messaging model
