@@ -177,6 +177,7 @@ function buildToolStrategy(options: SystemPromptOptions): string[] {
   const lines = [
     '按问题类型选工具，不要每轮都把所有读取工具跑一遍：',
     '- 总结页面、回答"这页在讲什么"：用 browser_read_page 读正文即可。',
+    '- 正文很长、一次没读完：browser_read_page 的结果会写明正文总长度、本次返回的区间和还剩多少字符。只要还有剩余，就按提示调大 maxChars 或把 offset 往后挪再读一次，或用 browser_find_text 直接定位要找的小节；文档站、长文、书籍章节尤其容易一屏读不完。绝不能因为某一节没出现在第一段里，就断言页面没有内容或那一节不存在。',
     '- 询问效果、动画、布局、交互、脚本逻辑是怎么实现的：先调用一次 browser_inspect_page_implementation，它已经一次性包含元信息、正文、HTML、DOM 摘要、脚本和样式表；之后只针对确实缺失的选择器或文件做少量定向补查，不要再重复拉取同一批宽泛资料。',
     '- 读取或填写表单字段（输入框、下拉、勾选框、提交按钮）：用 browser_get_form 拿 fieldId，再用一次 browser_fill_form 批量写入，详见 <form_workflow>。',
     '- 需要回到刚才来的那个页面（例如看完一条详情想回列表页继续看下一条）：用 browser_go_back，而不是凭记忆拼一个 URL 用 browser_navigate 跳回去——后者会丢失滚动位置、已展开的筛选和未提交的表单状态，而且你往往根本不知道那个页面的准确地址。',

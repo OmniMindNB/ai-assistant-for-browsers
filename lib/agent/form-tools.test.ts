@@ -581,12 +581,18 @@ describe('browser_read_page：读取上限与压缩层的硬上限同源', () =>
     return content.map((part) => part.text ?? '').join('\n');
   }
 
+  /** 结果里"正文："之后的那一段，也就是模型真正拿到的页面文字。 */
+  function bodyOf(text: string): string {
+    return text.slice(text.indexOf('\n正文：\n') + '\n正文：\n'.length);
+  }
+
   it('不指定 maxChars 时按默认读取量截断', async () => {
     mockPage('字'.repeat(DEFAULT_READ_MAX_CHARS + 500));
 
     const text = resultText(await readPageTool().execute('call-1', {}));
 
-    expect(text).toContain(`正文已截断到 ${DEFAULT_READ_MAX_CHARS} 字符`);
+    expect(text).toContain(`本次返回：第 0–${DEFAULT_READ_MAX_CHARS} 字符`);
+    expect(bodyOf(text)).toHaveLength(DEFAULT_READ_MAX_CHARS);
   });
 
   // 会让这个用例失败的 production 改动：工具侧只做下限不做上限。那样模型填 60000 会
@@ -597,8 +603,8 @@ describe('browser_read_page：读取上限与压缩层的硬上限同源', () =>
 
     const text = resultText(await readPageTool().execute('call-1', { maxChars: MAX_TOOL_RESULT_CHARS * 2 }));
 
-    expect(text).toContain(`正文已截断到 ${MAX_TOOL_RESULT_CHARS} 字符`);
-    expect(text).not.toContain(`${MAX_TOOL_RESULT_CHARS * 2} 字符`);
+    expect(text).toContain(`本次返回：第 0–${MAX_TOOL_RESULT_CHARS} 字符`);
+    expect(bodyOf(text)).toHaveLength(MAX_TOOL_RESULT_CHARS);
   });
 
   it('硬上限以内的值原样采纳', async () => {
@@ -606,6 +612,29 @@ describe('browser_read_page：读取上限与压缩层的硬上限同源', () =>
 
     const text = resultText(await readPageTool().execute('call-1', { maxChars: 20000 }));
 
-    expect(text).toContain('正文已截断到 20000 字符');
+    expect(text).toContain('本次返回：第 0–20000 字符');
+    expect(bodyOf(text)).toHaveLength(20000);
+  });
+
+  // 线上失效回归：docsify 文档站一章 38641 字符，用户问的小节在 29155——只能从 0 开始读的
+  // 旧实现无论如何都取不到它，模型于是断言"当前标签页没有可用的文档内容"。
+  it('offset 能取到默认窗口之外的正文', async () => {
+    const page = '前'.repeat(29000) + '这里是 4.4.3 节' + '后'.repeat(9000);
+    mockPage(page);
+
+    const text = resultText(await readPageTool().execute('call-1', { offset: 24000 }));
+
+    expect(text).toContain('这里是 4.4.3 节');
+    expect(text).toContain(`本次返回：第 24000–${page.length} 字符`);
+  });
+
+  it('截断提示会告诉模型下一步怎么读，而不是只说一句"已截断"', async () => {
+    mockPage('字'.repeat(38641));
+
+    const text = resultText(await readPageTool().execute('call-1', {}));
+
+    expect(text).toContain('还有 14641 字符未返回');
+    expect(text).toContain('把 maxChars 设为 38641');
+    expect(text).toContain('不要就此认为页面没有内容');
   });
 });
