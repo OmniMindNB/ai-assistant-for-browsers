@@ -31,6 +31,13 @@ import {
   MAX_CONTEXT_MESSAGES,
 } from './agent';
 import { DEFAULT_WRITE_TOOL_CALL_BUDGET } from './system-prompt';
+import {
+  CONTEXT_RECUT_TARGET_CHARS,
+  IMAGE_CHAR_EQUIVALENT,
+  MAX_CONTEXT_CHARS,
+  MAX_TOOL_RESULT_CHARS,
+  contextCostChars,
+} from './context-budget';
 import { browserOpenAIStream } from './openai-stream';
 import { browserAnthropicStream } from './anthropic-stream';
 import { createTabSession, type TabSessionController } from './tab-session';
@@ -1082,7 +1089,9 @@ describe('上下文压缩：只读工具的历史结果压成一句话摘要', (
 
   it('最新一份读取结果超长时仍按 MAX_TOOL_RESULT_CHARS 截断（安全网保留）', async () => {
     const hooks = runtimeOptions();
-    const hugeText = 'A'.repeat(40000);
+    // 长度从常量推，不写死：写死的话每次上调 MAX_TOOL_RESULT_CHARS 都会让这个安全网用例
+    // 悄悄失效（夹具反而比上限还短），而它恰恰是上限变动时最该继续生效的一个。
+    const hugeText = 'A'.repeat(MAX_TOOL_RESULT_CHARS + 10000);
     const messages: AgentMessage[] = [
       assistantToolCallMessage('call-1', 'browser_read_page', {}),
       toolResultMessage('call-1', 'browser_read_page', hugeText),
@@ -1559,5 +1568,204 @@ describe('tab-access 闸门', () => {
     session.switchTo(7);
     const hooks = optionsWithSession(session);
     expect(await hooks.beforeToolCall?.(beforeContext('browser_read_page', {}))).toBeUndefined();
+  });
+});
+
+// 窗口此前只按「消息条数」裁剪（MAX_CONTEXT_MESSAGES），countMessageChars 只是 perf 遥测、
+// 不参与任何决策。这在每条消息都很小的前提下成立，而这个前提有两个现成的破法：
+//   1. 用户附件——单条 user 消息可以带 5 份各 30000 字符的文本、或一份 60000 字符的 PDF 正文，
+//      而 user 消息永远不进 compactAgentMessages 的摘要逻辑；
+//   2. 只读工具的读取上限一旦上调（本次重构的下一步），最新一份结果就能独占几万字符。
+// 两者都不会让条数越线，于是窗口一条都不切，请求直接撞供应商的 400 context length exceeded：
+// 失败发生在服务端，用户等完一整轮却拿不到任何回答，跟 2026-09-01 那次无主 toolResult 的
+// 400 是同一类事故。字符预算就是这道兜底。
+describe('上下文窗口：字符预算兜底', () => {
+  function pairs(count: number, prefix: string): AgentMessage[] {
+    const messages: AgentMessage[] = [];
+    for (let index = 0; index < count; index += 1) {
+      messages.push(assistantToolCallMessage(`${prefix}-${index}`, 'browser_type', { text: `${index}` }));
+      messages.push(toolResultMessage(`${prefix}-${index}`, 'browser_type', `已输入 ${index}。`));
+    }
+    return messages;
+  }
+
+  /** 模拟带附件的 user 消息：正文很长，且永远不会被摘要压缩。 */
+  function bulkyUserMessage(chars: number, tag: string): AgentMessage {
+    return userMessage(`${tag}${'字'.repeat(chars)}`);
+  }
+
+  function screenshotResultMessage(toolCallId: string, base64Chars: number): AgentMessage {
+    return {
+      role: 'toolResult',
+      toolCallId,
+      toolName: 'browser_screenshot',
+      content: [{ type: 'image', data: 'x'.repeat(base64Chars), mimeType: 'image/jpeg' }],
+      isError: false,
+      timestamp: Date.now(),
+    } as unknown as AgentMessage;
+  }
+
+  function costOf(messages: AgentMessage[]): number {
+    return contextCostChars(messages);
+  }
+
+  function firstText(message: AgentMessage): string {
+    return JSON.stringify((message as unknown as { content: unknown }).content);
+  }
+
+  it('条数远未超标但字符数超过高水位时也要重切', async () => {
+    const hooks = runtimeOptions();
+    // 6 条大附件消息，条数远低于 MAX_CONTEXT_MESSAGES(48)，字符数却远超高水位。
+    const messages: AgentMessage[] = [];
+    for (let index = 0; index < 6; index += 1) {
+      messages.push(bulkyUserMessage(Math.floor(MAX_CONTEXT_CHARS / 3), `#${index} `));
+      messages.push(...pairs(1, `call-${index}`));
+    }
+    expect(messages.length).toBeLessThan(MAX_CONTEXT_MESSAGES);
+    expect(costOf(messages)).toBeGreaterThan(MAX_CONTEXT_CHARS);
+
+    const compacted = await hooks.transformContext!(messages);
+
+    expect(compacted.length).toBeLessThan(messages.length);
+  });
+
+  it('重切一次到低水位以下，而不是只切掉溢出的那一条', async () => {
+    const hooks = runtimeOptions();
+    const messages: AgentMessage[] = [];
+    for (let index = 0; index < 6; index += 1) {
+      messages.push(bulkyUserMessage(Math.floor(MAX_CONTEXT_CHARS / 3), `#${index} `));
+      messages.push(...pairs(1, `call-${index}`));
+    }
+
+    const compacted = await hooks.transformContext!(messages);
+
+    expect(costOf(compacted)).toBeLessThanOrEqual(CONTEXT_RECUT_TARGET_CHARS);
+  });
+
+  // 与按条数重切同一个坑：切点落在 toolResult 上就会让窗口以无主的 tool 消息开头，
+  // OpenAI 兼容协议一律判 400。字符重切必须复用同一套边界对齐。
+  it('字符重切的切点同样对齐 tool_call 边界', async () => {
+    const hooks = runtimeOptions();
+    const messages: AgentMessage[] = [userMessage('开始')];
+    for (let index = 0; index < 8; index += 1) {
+      messages.push(assistantToolCallMessage(`c-${index}`, 'browser_get_html', { selector: 'body' }));
+      // 只读结果：只有最新一份保留全文，其余会被压成一句话摘要，所以这里靠 user 消息堆字符。
+      messages.push(toolResultMessage(`c-${index}`, 'browser_get_html', 'x'.repeat(2000)));
+      messages.push(bulkyUserMessage(Math.floor(MAX_CONTEXT_CHARS / 4), `#${index} `));
+    }
+
+    const compacted = await hooks.transformContext!(messages);
+    // 前置条件：这批消息确实触发了字符重切，否则下面的边界检查等于空转。
+    expect(compacted.length).toBeLessThan(messages.length);
+
+    const announced = new Set<string>();
+    for (const message of compacted as unknown as {
+      role: string;
+      toolCallId?: string;
+      content?: { type: string; id?: string }[];
+    }[]) {
+      if (message.role === 'assistant') {
+        for (const part of message.content ?? []) {
+          if (part.type === 'toolCall' && part.id) announced.add(part.id);
+        }
+      }
+      if (message.role === 'toolResult') expect(announced.has(message.toolCallId!)).toBe(true);
+    }
+  });
+
+  // 迟滞的理由与按条数重切完全一样：起点一旦逐轮漂移，供应商前缀缓存每轮全失效
+  // （2026-09-01 实测命中数死钉在系统提示词大小）。
+  it('字符重切之后追加小消息，窗口起点保持不动', async () => {
+    const hooks = runtimeOptions();
+    const messages: AgentMessage[] = [];
+    for (let index = 0; index < 6; index += 1) {
+      messages.push(bulkyUserMessage(Math.floor(MAX_CONTEXT_CHARS / 3), `#${index} `));
+      messages.push(...pairs(1, `call-${index}`));
+    }
+
+    const firstWindow = await hooks.transformContext!(messages);
+    // 前置条件：第一次就必须已经因为字符预算重切过，否则起点不动是白测的。
+    expect(firstWindow.length).toBeLessThan(messages.length);
+    const anchor = firstText(firstWindow[0]);
+
+    for (let round = 0; round < 3; round += 1) {
+      messages.push(...pairs(1, `later-${round}`));
+      const next = await hooks.transformContext!(messages);
+      expect(firstText(next[0])).toBe(anchor);
+    }
+  });
+
+  // 会让这个用例失败的 production 改动：无条件切到低水位以下。用户刚粘进来的长附件
+  // 本身就可能比整个预算还大，切空窗口等于把用户这一轮的提问本身丢掉，模型会对着空
+  // 上下文瞎答——比超预算更糟。
+  it('最后一条消息自己就超过预算时，窗口至少保留它', async () => {
+    const hooks = runtimeOptions();
+    const messages: AgentMessage[] = [
+      ...pairs(3, 'old'),
+      bulkyUserMessage(MAX_CONTEXT_CHARS * 2, '超大附件 '),
+    ];
+
+    const compacted = await hooks.transformContext!(messages);
+
+    expect(compacted.length).toBeLessThan(messages.length);
+    expect(compacted.length).toBeGreaterThanOrEqual(1);
+    expect(firstText(compacted[compacted.length - 1])).toContain('超大附件');
+  });
+
+  it('字符触发的重切同样通知外层', async () => {
+    const onContextTruncated = vi.fn();
+    const hooks = runtimeOptions({ onContextTruncated });
+    const messages: AgentMessage[] = [];
+    for (let index = 0; index < 6; index += 1) {
+      messages.push(bulkyUserMessage(Math.floor(MAX_CONTEXT_CHARS / 3), `#${index} `));
+      messages.push(...pairs(1, `call-${index}`));
+    }
+
+    await hooks.transformContext!(messages);
+
+    expect(onContextTruncated).toHaveBeenCalled();
+  });
+
+  // 会让这个用例失败的 production 改动：按 base64 长度计图片。一张 1280px 截图的 base64
+  // 约 200 万字符（SCREENSHOT_MAX_BYTES 1.5MB），按长度计就等于每次截图都把窗口清空，
+  // 而它换算成 token 只有一千多。图片必须按 token 当量计。
+  // 会让这个用例失败的 production 改动：只数 content 里的文本部分。模型可以往写工具的
+  // 参数里塞几万字符（browser_modify_dom 的 html、browser_fill_form 的多字段值），
+  // 这些字符一样要进请求体，不计就等于预算对最容易失控的那一类内容视而不见。
+  it('工具调用参数计入预算', () => {
+    const call = assistantToolCallMessage('c1', 'browser_modify_dom', { html: 'x'.repeat(50000) });
+
+    expect(contextCostChars([call])).toBeGreaterThan(50000);
+  });
+
+  it('截图按固定当量计入，不按 base64 长度', async () => {
+    const hooks = runtimeOptions();
+    const messages: AgentMessage[] = [
+      ...pairs(3, 'call'),
+      assistantToolCallMessage('shot', 'browser_screenshot', {}),
+      screenshotResultMessage('shot', 2_000_000),
+    ];
+
+    const compacted = await hooks.transformContext!(messages);
+
+    expect(compacted).toHaveLength(messages.length);
+  });
+});
+
+describe('上下文字符预算常量之间的不变量', () => {
+  // 高水位要装得下「一条满额只读结果 + 一张截图」还有富余，否则模型每读满一次就触发重切，
+  // 前缀缓存逐轮失效，正好回到迟滞想修掉的那个问题。
+  it('高水位容得下一条满额工具结果加一张截图', () => {
+    expect(MAX_CONTEXT_CHARS).toBeGreaterThan(MAX_TOOL_RESULT_CHARS + IMAGE_CHAR_EQUIVALENT);
+  });
+
+  it('低水位低于高水位', () => {
+    expect(CONTEXT_RECUT_TARGET_CHARS).toBeLessThan(MAX_CONTEXT_CHARS);
+  });
+
+  // 低水位必须仍然装得下一条满额只读结果：否则一次重切就会把刚读到的页面正文本身切掉，
+  // 模型下一轮只能重读，陷入读—切—重读的循环。
+  it('低水位仍然容得下一条满额工具结果', () => {
+    expect(CONTEXT_RECUT_TARGET_CHARS).toBeGreaterThan(MAX_TOOL_RESULT_CHARS);
   });
 });

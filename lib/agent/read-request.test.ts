@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_READ_MAX_CHARS, MAX_TOOL_RESULT_CHARS, MIN_READ_MAX_CHARS } from './context-budget';
 import { resolveHtmlRequest, resolveResourceRequest } from './read-request';
+import { parseImplementationInspectionParams } from './tools';
 
 describe('resolveHtmlRequest', () => {
   it('缺省选择器是 html', () => {
@@ -68,5 +69,49 @@ describe('resolveResourceRequest', () => {
 
   it('maxChars 低于下限时抬到下限', () => {
     expect(resolveResourceRequest({ maxChars: 0 }).maxChars).toBe(MIN_READ_MAX_CHARS);
+  });
+});
+
+// browser_inspect_page_implementation 的卖点是"一次调用拿齐证据、省掉多轮往返"，但它的
+// 各段预算缺省值合计 74000 字符（正文 2000 + HTML 12000 + 脚本 30000 + 样式表 30000），
+// 远超单条工具结果硬上限——整份结果到了 compactAgentMessages 那里会被直接切掉尾部一截，
+// 而且模型只会看到一条笼统的"工具结果已截断"，不知道少的是脚本还是样式表。
+describe('aggregate 检查工具的分段预算', () => {
+  it('缺省预算合计留在单条工具结果硬上限以内', () => {
+    const budget = parseImplementationInspectionParams({});
+    const total =
+      budget.textMaxChars + budget.htmlMaxChars + budget.scriptMaxChars + budget.stylesheetMaxChars;
+
+    expect(total).toBeLessThanOrEqual(MAX_TOOL_RESULT_CHARS);
+  });
+
+  // 结果里除了这四段还有 meta、DOM 摘要、computed style 和 evidenceSummary，
+  // 四段正文占满硬上限就等于把它们全挤掉了。
+  it('缺省预算给结果里的其它段落留出余量', () => {
+    const budget = parseImplementationInspectionParams({});
+    const total =
+      budget.textMaxChars + budget.htmlMaxChars + budget.scriptMaxChars + budget.stylesheetMaxChars;
+
+    expect(total).toBeLessThanOrEqual(MAX_TOOL_RESULT_CHARS * 0.8);
+  });
+
+  // 会让这个用例失败的 production 改动：某一段的上限比整条结果的硬上限还大（原本脚本和
+  // 样式表各自可以填到 80000）。单段就撑爆整条结果，剩下几段一个字都进不来。
+  it('任何单段的上限都不超过整条结果的硬上限', () => {
+    const budget = parseImplementationInspectionParams({
+      textMaxChars: 999999,
+      htmlMaxChars: 999999,
+      scriptMaxChars: 999999,
+      stylesheetMaxChars: 999999,
+    });
+
+    for (const value of [
+      budget.textMaxChars,
+      budget.htmlMaxChars,
+      budget.scriptMaxChars,
+      budget.stylesheetMaxChars,
+    ]) {
+      expect(value).toBeLessThanOrEqual(MAX_TOOL_RESULT_CHARS);
+    }
   });
 });

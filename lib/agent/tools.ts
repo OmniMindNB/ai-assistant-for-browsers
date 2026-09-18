@@ -296,10 +296,10 @@ function makeInspectPageImplementationTool(session: TabSessionController): Brows
     parameters: Type.Object({
       focus: Type.Optional(Type.String({ description: 'Implementation topic to focus on, such as scroll, animation, layout, or interaction.' })),
       selectors: Type.Optional(Type.Array(Type.String({ description: 'Important CSS selectors to inspect. Defaults include html, body, main, app roots, and scroll-like containers.' }))),
-      textMaxChars: Type.Optional(Type.Number({ description: 'Readable text budget. Defaults to 2000.' })),
-      htmlMaxChars: Type.Optional(Type.Number({ description: 'HTML budget. Defaults to 12000.' })),
-      scriptMaxChars: Type.Optional(Type.Number({ description: 'Script source budget. Defaults to 30000.' })),
-      stylesheetMaxChars: Type.Optional(Type.Number({ description: 'Stylesheet source budget. Defaults to 30000.' })),
+      textMaxChars: Type.Optional(Type.Number({ description: 'Readable text budget. Defaults to 2000, max 4000.' })),
+      htmlMaxChars: Type.Optional(Type.Number({ description: 'HTML budget. Defaults to 10000, max 20000.' })),
+      scriptMaxChars: Type.Optional(Type.Number({ description: 'Script source budget. Defaults to 14000, max 24000.' })),
+      stylesheetMaxChars: Type.Optional(Type.Number({ description: 'Stylesheet source budget. Defaults to 10000, max 16000.' })),
     }),
     execute: async (_toolCallId, params) => {
       const tabId = session.currentTabId;
@@ -1268,7 +1268,7 @@ const IMPLEMENTATION_KEYWORDS = [
   'containertiming',
 ];
 
-function parseImplementationInspectionParams(params: unknown): ImplementationInspectionParams {
+export function parseImplementationInspectionParams(params: unknown): ImplementationInspectionParams {
   const record = params && typeof params === 'object' ? (params as Record<string, unknown>) : {};
   const selectors = Array.isArray(record.selectors)
     ? record.selectors.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
@@ -1289,10 +1289,16 @@ function parseImplementationInspectionParams(params: unknown): ImplementationIns
       '[class*="scroll"]',
       '[class*="Scroll"]',
     ]).slice(0, 10),
-    textMaxChars: readNumber(record.textMaxChars, 2000, 500, 8000),
-    htmlMaxChars: readNumber(record.htmlMaxChars, 12000, 1000, 30000),
-    scriptMaxChars: readNumber(record.scriptMaxChars, 30000, 2000, 80000),
-    stylesheetMaxChars: readNumber(record.stylesheetMaxChars, 30000, 2000, 80000),
+    // 四段预算合计必须留在 MAX_TOOL_RESULT_CHARS 以内，还要给 meta/dom/computedStyles/
+    // evidenceSummary/guidance 留余量。report 的字段顺序是 …scripts → stylesheets →
+    // computedStyles → dom → html → readableText → guidance，所以一旦整条结果被压缩层
+    // 截断，掉的是排在 scripts 之后的全部内容——包括那句叫模型优先看 evidenceSummary 的
+    // guidance 和页面正文本身。旧值（12000/30000/30000）合计 74000，脚本多一点的页面
+    // 每次都会触发这种尾部整段丢失。
+    textMaxChars: readNumber(record.textMaxChars, 2000, 500, 4000),
+    htmlMaxChars: readNumber(record.htmlMaxChars, 10000, 1000, 20000),
+    scriptMaxChars: readNumber(record.scriptMaxChars, 14000, 2000, 24000),
+    stylesheetMaxChars: readNumber(record.stylesheetMaxChars, 10000, 2000, 16000),
   };
 }
 

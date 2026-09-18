@@ -32,7 +32,12 @@ import { isChildFrameHandle } from './fill-form-request';
 import { createAgentToolPolicy } from './tool-policy';
 import { describeToolActivity } from './activity-description';
 import { recordPerfContext } from './perf-trace';
-import { MAX_TOOL_RESULT_CHARS } from './context-budget';
+import {
+  CONTEXT_RECUT_TARGET_CHARS,
+  MAX_CONTEXT_CHARS,
+  MAX_TOOL_RESULT_CHARS,
+  contextCostChars,
+} from './context-budget';
 import {
   DEFAULT_READ_TOOL_CALL_BUDGET,
   DEFAULT_WRITE_TOOL_CALL_BUDGET,
@@ -54,7 +59,6 @@ import {
  */
 export const MAX_CONTEXT_MESSAGES = 48;
 export const CONTEXT_RECUT_TARGET = 32;
-
 /**
  * browser_navigate/browser_open_tab 自己的结果文案已经告诉模型跳到哪了；这里只补这三个
  * 工具可能*隐式*触发的导航（链接点击、表单提交、回车提交），此前对模型完全不可见
@@ -577,6 +581,10 @@ function sleep(ms: number): Promise<void> {
  * 摘要——否则旧 DOM dump 会一直占着上下文，模型还可能照着过期快照继续操作
  * （ref: docs/superpowers/specs/2026-08-31-page-agent-benchmark.md §3.1）。
  *
+ * 窗口有两道闸门，都带迟滞：条数（MAX_CONTEXT_MESSAGES）和字符预算（MAX_CONTEXT_CHARS）。
+ * 前者防"很多条小消息"，后者防"很少条大消息"——带附件的 user 消息不进摘要压缩，条数永远
+ * 不会越线，只有字符预算拦得住（见 context-budget.ts）。
+ *
  * ⚠️ 已知的残留代价：新的只读结果一到，上一份就被就地改写成摘要，请求前缀会在那个位置
  * 断一次，供应商前缀缓存从那里往后失效。这是"不让模型照着过期快照操作"必须付的代价——
  * 要消掉它就得让旧快照原样留在上下文里，反而把窗口撑大。好在只读工具在一次运行里通常
@@ -584,7 +592,58 @@ function sleep(ms: number): Promise<void> {
  * 量级，后者已由 planContextWindow 的迟滞修掉。
  */
 export function compactAgentMessages(messages: AgentMessage[], contextWindow: ContextWindowState): AgentMessage[] {
-  const kept = planContextWindow(messages, contextWindow);
+  let plan = compactWindow(messages, planContextWindow(messages, contextWindow));
+
+  // 字符预算只能在压缩之后量：压缩前的历史里还躺着几份完整的 DOM dump，按原始大小判断
+  // 会把马上就要被压成一句话摘要的消息也切掉。超标时重切一次，且只重切一次——单条消息
+  // 本身就超预算时再切也无济于事，那种情况由 recutStartForCharBudget 保底留住最后一条。
+  if (contextCostChars(plan.compacted) > MAX_CONTEXT_CHARS) {
+    const recut = recutStartForCharBudget(messages, plan);
+    if (recut > contextWindow.start) {
+      contextWindow.start = recut;
+      plan = compactWindow(messages, planContextWindow(messages, contextWindow));
+    }
+  }
+
+  recordPerfContext({
+    messages: plan.compacted.length,
+    chars: countMessageChars(plan.compacted),
+    summarizedReadResults: plan.summarizedReadResults,
+    keptReadResultChars: plan.keptReadResultChars,
+  });
+  return plan.compacted;
+}
+
+interface CompactedWindow {
+  compacted: AgentMessage[];
+  /** compacted[k] 在原始 messages 里的下标，字符重切要靠它把切点映射回绝对位置。 */
+  indices: number[];
+  summarizedReadResults: number;
+  keptReadResultChars: number;
+}
+
+/**
+ * 从窗口末尾往回收，收到低水位为止，返回新的窗口起点（已对齐 tool_call 边界）。
+ *
+ * 末尾那条无条件保留，靠的是 `cut` 的初值就是末尾下标：用户刚粘进来的长附件本身就可能
+ * 比整个预算还大，第一次比较就 break，此时仍然返回末尾那条。切空窗口等于把用户这一轮的
+ * 提问也丢掉，模型会对着空上下文瞎答——比超预算更糟。
+ */
+function recutStartForCharBudget(messages: AgentMessage[], plan: CompactedWindow): number {
+  const last = plan.indices.length - 1;
+  let cost = 0;
+  let cut = last;
+  for (let index = last; index >= 0; index -= 1) {
+    const next = cost + contextCostChars([plan.compacted[index]]);
+    if (next > CONTEXT_RECUT_TARGET_CHARS) break;
+    cost = next;
+    cut = index;
+  }
+  return alignToToolCallBoundary(messages, plan.indices[cut]);
+}
+
+function compactWindow(messages: AgentMessage[], indices: number[]): CompactedWindow {
+  const kept = indices.map((index) => messages[index]);
   const toolCallArgs = collectToolCallArguments(kept);
 
   let lastReadResultIndex = -1;
@@ -645,16 +704,13 @@ export function compactAgentMessages(messages: AgentMessage[], contextWindow: Co
     return { ...message, content: compactedContent };
   });
 
-  recordPerfContext({
-    messages: compacted.length,
-    chars: countMessageChars(compacted),
-    summarizedReadResults,
-    keptReadResultChars,
-  });
-  return compacted;
+  return { compacted, indices, summarizedReadResults, keptReadResultChars };
 }
 
-/** 粗略的上下文规模代理量：只数文本部分的字符数，图片/工具调用参数忽略不计。 */
+/**
+ * perf 遥测用的请求体文本体积：只数文本部分，图片/工具调用参数忽略不计。
+ * 预算判据是另一个函数（context-budget.ts 的 contextCostChars），两者口径不同，别混用。
+ */
 function countMessageChars(messages: AgentMessage[]): number {
   let total = 0;
   for (const message of messages) {
@@ -695,7 +751,7 @@ export interface ContextWindowState {
  * 迟滞重切：只有窗口内消息数超过高水位才重新定起点，且一次切到低水位；否则沿用上一轮的
  * 起点，让请求前缀保持"只增不改"。起点一旦定下就不再逐轮漂移，这正是前缀缓存能命中的前提。
  */
-function planContextWindow(messages: AgentMessage[], state: ContextWindowState): AgentMessage[] {
+function planContextWindow(messages: AgentMessage[], state: ContextWindowState): number[] {
   // 历史被整体替换（换会话、载入旧记录）时绝对下标会失效，越界就重置。
   if (state.start > messages.length) state.start = 0;
   if (messages.length - state.start > MAX_CONTEXT_MESSAGES) {
@@ -711,20 +767,24 @@ function alignToToolCallBoundary(messages: AgentMessage[], index: number): numbe
   return start;
 }
 
-function windowWithIntactToolCalls(messages: AgentMessage[], from: number): AgentMessage[] {
+/** 返回留在窗口内的消息在 messages 里的下标——字符重切要靠下标把切点映射回绝对位置。 */
+function windowWithIntactToolCalls(messages: AgentMessage[], from: number): number[] {
   const start = alignToToolCallBoundary(messages, Math.max(0, from));
 
   const announced = new Set<string>();
-  return messages.slice(start).filter((message) => {
+  const indices: number[] = [];
+  for (let index = start; index < messages.length; index += 1) {
+    const message = messages[index];
     if (message.role === 'assistant') {
       for (const part of message.content) {
         if (part.type === 'toolCall') announced.add(part.id);
       }
-      return true;
+    } else if (message.role === 'toolResult' && !announced.has(message.toolCallId)) {
+      continue;
     }
-    if (message.role === 'toolResult') return announced.has(message.toolCallId);
-    return true;
-  });
+    indices.push(index);
+  }
+  return indices;
 }
 
 function collectToolCallArguments(messages: AgentMessage[]): Map<string, unknown> {

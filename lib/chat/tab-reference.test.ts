@@ -5,7 +5,9 @@ import {
   planTabRefBudget,
   selectReferencableTabs,
   TAB_REF_SINGLE_MAX_CHARS,
+  TAB_REF_TOTAL_MAX_CHARS,
 } from './tab-reference';
+import { CONTEXT_RECUT_TARGET_CHARS } from '@/lib/agent/context-budget';
 
 describe('selectReferencableTabs', () => {
   it('keeps only http(s) tabs and drops the panel tab', () => {
@@ -33,7 +35,7 @@ describe('planTabRefBudget', () => {
   });
 
   it('splits the total budget across references', () => {
-    expect(planTabRefBudget(5)).toBe(4800);
+    expect(planTabRefBudget(5)).toBe(9600);
     expect(planTabRefBudget(2)).toBe(TAB_REF_SINGLE_MAX_CHARS);
   });
 
@@ -78,5 +80,18 @@ describe('findMentionQuery', () => {
 
   it('uses the caret, not the end of the string', () => {
     expect(findMentionQuery('@a 然后 @b', 2)).toEqual({ start: 0, query: 'a' });
+  });
+});
+
+// 引用页正文进的是 user 消息，永远不会被 compactAgentMessages 压成摘要。所以这道总预算
+// 必须自己就留在重切线以内——否则用户一次 @ 五个页，还没开始对话就把窗口顶到重切，
+// 第一轮回答就看不到自己刚引用的内容。
+describe('引用预算与上下文预算的耦合', () => {
+  it('一次引用的总预算不超过上下文重切的低水位', () => {
+    expect(TAB_REF_TOTAL_MAX_CHARS).toBeLessThanOrEqual(CONTEXT_RECUT_TARGET_CHARS);
+  });
+
+  it('单页上限不超过总预算，否则单页封顶形同虚设', () => {
+    expect(TAB_REF_SINGLE_MAX_CHARS).toBeLessThanOrEqual(TAB_REF_TOTAL_MAX_CHARS);
   });
 });

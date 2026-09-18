@@ -7,7 +7,7 @@ import { DEFAULT_READ_MAX_CHARS } from '@/lib/agent/context-budget';
 
 /** 跨全部引用页的正文总预算。引用页正文进的是 user 消息、永远不会被摘要压缩，5 个引用各拿满
  * 单页上限就能自己把上下文顶到 CONTEXT_RECUT_TARGET_CHARS 以上，所以必须有一道总量封顶。 */
-export const TAB_REF_TOTAL_MAX_CHARS = 24000;
+export const TAB_REF_TOTAL_MAX_CHARS = 48000;
 /** 单个引用页的正文上限，与 browser_read_page 的默认 maxChars 同源（lib/agent/context-budget.ts）：
  * 只引 1 个页时行为与 store.ts 的 page-scope 预取一致。 */
 export const TAB_REF_SINGLE_MAX_CHARS = DEFAULT_READ_MAX_CHARS;
