@@ -28,8 +28,53 @@ function statusKey(status: ActivityStatus, nowKey: TranslationKey, doneKey: Tran
   return status === 'running' ? nowKey : status === 'done' ? doneKey : failedKey;
 }
 
-export function describeToolActivity(toolName: string, args: unknown, status: ActivityStatus): string {
+/**
+ * 工具结果里的 details（textResult 的第二个参数，也就是 tool_execution_end 事件上的
+ * `result.details`）。调用参数说的是"打算做什么"，只有它能说"实际发生了什么"——
+ * 两者在重定向和部分失败时会分岔，而步骤时间线是用户唯一能看见这件事的地方。
+ */
+function resultDetails(result: unknown): Record<string, unknown> {
+  const details = result && typeof result === 'object' ? (result as { details?: unknown }).details : undefined;
+  return details && typeof details === 'object' ? (details as Record<string, unknown>) : {};
+}
+
+/** 只差末尾斜杠、默认端口这类归一化差异的两个地址算同一个，不值得标成"重定向"。 */
+function isSameUrl(a: string, b: string): boolean {
+  if (a === b) return true;
+  try {
+    return new URL(a).href === new URL(b).href;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 落地地址与请求地址不一致（重定向，典型如被踢回登录页）时报落地地址并注明；
+ * 其余情况退回按请求地址的常规文案。只在 done 上判断——running 时还没有落地地址，
+ * failed 时该说的是"没跳成"，落地地址反而是噪音。
+ */
+function describeNavigation(
+  status: ActivityStatus,
+  keys: { now: TranslationKey; done: TranslationKey; failed: TranslationKey; redirected: TranslationKey },
+  requested: string,
+  landed: string,
+): string {
+  if (status === 'done' && landed && requested && !isSameUrl(landed, requested)) {
+    return t(keys.redirected, { target: truncate(landed), requested: truncate(requested) });
+  }
+  return withTarget(status, keys.now, keys.done, keys.failed, requested);
+}
+
+export function describeToolActivity(
+  toolName: string,
+  args: unknown,
+  status: ActivityStatus,
+  /** tool_execution_end 事件上的 `result`；running 阶段没有，调用方不传。 */
+  result?: unknown,
+): string {
   const record = args && typeof args === 'object' ? (args as Record<string, unknown>) : {};
+  const details = resultDetails(result);
+  const detailStr = (key: string): string => (typeof details[key] === 'string' ? (details[key] as string) : '');
   const str = (key: string): string => (typeof record[key] === 'string' ? (record[key] as string) : '');
   const num = (key: string): string => (typeof record[key] === 'number' ? String(record[key]) : '');
 
@@ -37,7 +82,17 @@ export function describeToolActivity(toolName: string, args: unknown, status: Ac
     case 'browser_get_active_tab':
       return plain(status, 'agentActivity.tool.getActiveTab');
     case 'browser_open_tab':
-      return withTarget(status, 'agentActivity.now.openTab', 'agentActivity.done.openTab', 'agentActivity.failed.openTab', str('url'));
+      return describeNavigation(
+        status,
+        {
+          now: 'agentActivity.now.openTab',
+          done: 'agentActivity.done.openTab',
+          failed: 'agentActivity.failed.openTab',
+          redirected: 'agentActivity.done.openTabRedirected',
+        },
+        str('url'),
+        detailStr('url'),
+      );
     case 'browser_switch_tab':
       return withTarget(status, 'agentActivity.now.switchTab', 'agentActivity.done.switchTab', 'agentActivity.failed.switchTab', num('tabId'));
     case 'browser_close_tab':
@@ -95,6 +150,15 @@ export function describeToolActivity(toolName: string, args: unknown, status: Ac
       // 批量点击也要把目标列出来：面板的步骤时间线是用户唯一能看见 agent 动了哪些元素的
       // 地方，一次点 5 个却只显示「点击」等于把这一步藏起来。
       const batch = Array.isArray(record.fieldIds) ? (record.fieldIds as unknown[]).filter((id) => typeof id === 'string') : [];
+      // 批量点击只在整批都没点成时才算失败（见 tools.ts 的 clickBatch），所以"部分成功"
+      // 也是 done；此时光把 fieldIds 列出来等于说这几个都点到了。
+      const outcomes = Array.isArray(details.outcomes) ? (details.outcomes as Array<{ status?: unknown }>) : undefined;
+      if (status === 'done' && batch.length > 0 && outcomes) {
+        const landed = outcomes.filter((outcome) => outcome?.status === 'ok').length;
+        if (landed < batch.length) {
+          return t('agentActivity.done.clickPartial', { ok: String(landed), total: String(batch.length) });
+        }
+      }
       const target = str('selector') || str('fieldId') || batch.join('、');
       return withTarget(status, 'agentActivity.now.click', 'agentActivity.done.click', 'agentActivity.failed.click', target);
     }
@@ -113,7 +177,17 @@ export function describeToolActivity(toolName: string, args: unknown, status: Ac
         : plain(status, 'agentActivity.tool.scroll');
     }
     case 'browser_navigate':
-      return withTarget(status, 'agentActivity.now.navigate', 'agentActivity.done.navigate', 'agentActivity.failed.navigate', str('url'));
+      return describeNavigation(
+        status,
+        {
+          now: 'agentActivity.now.navigate',
+          done: 'agentActivity.done.navigate',
+          failed: 'agentActivity.failed.navigate',
+          redirected: 'agentActivity.done.navigateRedirected',
+        },
+        str('url'),
+        detailStr('url'),
+      );
     // browser_navigate 的兄弟，但没有可展示的目标参数（退到哪只有执行完才知道），
     // 所以走 plain 而不是 withTarget。
     case 'browser_go_back':
@@ -124,6 +198,15 @@ export function describeToolActivity(toolName: string, args: unknown, status: Ac
       return withTarget(status, 'agentActivity.now.setStorage', 'agentActivity.done.setStorage', 'agentActivity.failed.setStorage', str('key'));
     case 'browser_fill_form': {
       const fields = Array.isArray(record.fields) ? record.fields.length : 0;
+      // 部分字段没落地时，按参数里的字段数说"已填写 N 个字段"等于把失败的也算成了成功；
+      // 每个字段的写入都做过回读校验，ok 才是真的写进去了（ref: Spec-0005）。
+      const outcomes = Array.isArray(details.outcomes) ? (details.outcomes as Array<{ status?: unknown }>) : undefined;
+      if (status === 'done' && outcomes) {
+        const landed = outcomes.filter((outcome) => outcome?.status === 'ok').length;
+        if (landed < fields) {
+          return t('agentActivity.done.fillFormPartial', { ok: String(landed), total: String(fields) });
+        }
+      }
       return withTarget(status, 'agentActivity.now.fillForm', 'agentActivity.done.fillForm', 'agentActivity.failed.fillForm', String(fields));
     }
     default:

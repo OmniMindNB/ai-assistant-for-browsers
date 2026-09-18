@@ -483,7 +483,9 @@ export async function startRun(request: StartRunRequest): Promise<void> {
           state.activitySteps,
           event.toolCallId,
           finalStatus,
-          describeToolActivity(event.toolName, info?.args, finalStatus),
+          // 结果一并交给文案：调用参数只说"打算做什么"，重定向后的落地地址、
+          // 部分失败的实际落地字段数只有结果里有（见 activity-description.ts）。
+          describeToolActivity(event.toolName, info?.args, finalStatus, event.result),
         );
         pushAndPersist(state);
       }

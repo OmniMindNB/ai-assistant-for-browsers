@@ -77,7 +77,12 @@ export function summarizeToolCallForConfirmation(
         return { summary: `AI 想要在${target}上按下 ${key}${submitTail}。` };
       }
       case 'browser_fill_form': {
-        const rawFields = Array.isArray(record.fields) ? (record.fields as Record<string, unknown>[]) : [];
+        const allFields = Array.isArray(record.fields) ? (record.fields as Record<string, unknown>[]) : [];
+        // 密码/支付字段在请求离开 background 之前就被 planFormFill 丢掉（ref: Spec-0005），
+        // 卡片必须按"真正会被写入的字段"来数和列：把它们算进"要填 N 个字段"是在承诺一件
+        // 不会发生的事，而那个值（模型自己编的）本来也不该出现在卡片上。
+        const sensitiveCount = allFields.filter((field) => field.sensitive === true).length;
+        const rawFields = allFields.filter((field) => field.sensitive !== true);
         const shown = rawFields.slice(0, MAX_CONFIRM_FIELDS).map((field) => {
           // label 与值都来自页面或模型，一律按纯文本净化后呈现，
           // 防止页面用 label 伪造卡片语义（ref: Spec-0005 §安全与隐私）。
@@ -94,7 +99,13 @@ export function summarizeToolCallForConfirmation(
           ? `，并提交表单${submit.formAction ? `到 ${sanitizePageText(submit.formAction, 80)}` : ''}`
           : '';
         const more = rest > 0 ? `，另 ${rest} 个字段` : '';
-        return { summary: `AI 想要填写 ${rawFields.length} 个表单字段${tail}：\n${shown.join('\n')}${more}` };
+        // 少算的那几个不能一声不响地消失：明说它们需要用户自己输入。
+        const sensitiveNote =
+          sensitiveCount > 0
+            ? `\n另有 ${sensitiveCount} 个密码/支付字段，本扩展不会代填，需要你自己输入。`
+            : '';
+        const list = shown.length > 0 ? `：\n${shown.join('\n')}${more}` : '';
+        return { summary: `AI 想要填写 ${rawFields.length} 个表单字段${tail}${list}${sensitiveNote}` };
       }
       case 'browser_type':
         return { summary: `AI 想要在 "${str('selector')}" 中输入文本："${truncate(str('text'))}"。` };

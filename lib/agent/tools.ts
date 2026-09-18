@@ -797,6 +797,12 @@ function makeFillFormTool(session: TabSessionController): BrowserAgentTool {
       }
       const appeared = describeNewFields(response.data.newFields ?? []);
       if (appeared) lines.push(appeared);
+      // 一个字段都没落地时按失败收尾（clickBatch 早就是这条规矩）：返回成功会让面板的
+      // 步骤时间线显示「已填写 N 个字段」，而页面上其实什么都没变。提交按钮点成了是例外，
+      // 那一下确实改变了页面，整轮不能算没发生。
+      if (outcomes.length > 0 && succeeded.length === 0 && response.data.submitted?.status !== 'ok') {
+        throw new Error(lines.join('\n'));
+      }
 
       return textResult(lines.join('\n'), response.data as unknown as Record<string, unknown>);
     },

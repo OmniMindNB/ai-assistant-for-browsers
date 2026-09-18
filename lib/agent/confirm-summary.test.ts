@@ -184,6 +184,31 @@ describe('browser_fill_form summary', () => {
     expect(summary.summary).toContain('<b>粗体</b>'); // 原样呈现为文本，不解释标记
   });
 
+  // planFormFill 会在请求离开 background 之前丢掉密码/支付字段（ref: Spec-0005），
+  // 卡片却是按原始 args 拼的：不剔掉的话它会说"要填 3 个字段"并把一个根本不会被写入的
+  // 密码连值一起摆出来，用户批准的东西和实际发生的事情对不上。
+  it('leaves out sensitive fields that will never be written', () => {
+    const summary = summarizeToolCallForConfirmation('browser_fill_form', {
+      fields: [
+        { fieldId: 'f1', value: 'a@b.c', label: '邮箱' },
+        { fieldId: 'f2', value: 'hunter2', label: '密码', sensitive: true },
+      ],
+    });
+    expect(summary.summary).toContain('填写 1 个表单字段');
+    expect(summary.summary).not.toContain('hunter2');
+    expect(summary.summary).not.toContain('密码：');
+    // 但不能一声不响地少一个字段：明说它需要用户自己输入。
+    expect(summary.summary).toContain('1 个密码/支付字段');
+  });
+
+  it('says nothing about sensitive fields when there are none', () => {
+    const summary = summarizeToolCallForConfirmation('browser_fill_form', {
+      fields: [{ fieldId: 'f1', value: 'a@b.c', label: '邮箱' }],
+    });
+    expect(summary.summary).toContain('填写 1 个表单字段');
+    expect(summary.summary).not.toContain('密码/支付');
+  });
+
   it('says the form will be submitted when a submit target is present', () => {
     const summary = summarizeToolCallForConfirmation('browser_fill_form', {
       fields: [{ fieldId: 'f1', value: 'x', label: '邮箱' }],

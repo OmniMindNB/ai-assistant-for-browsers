@@ -176,6 +176,9 @@ export const zh = {
   'agentActivity.tool.listTabs': '查看标签页列表',
   'agentActivity.now.openTab': '正在打开新标签页 "{target}"',
   'agentActivity.done.openTab': '已打开新标签页 "{target}"',
+  // 落地地址与请求地址不一致时用这条：只报请求地址会让界面指着一个页面根本不在的地址
+  // 说"已打开/已跳转"（典型如被踢回登录页）。
+  'agentActivity.done.openTabRedirected': '已打开新标签页 "{target}"（从 "{requested}" 重定向）',
   'agentActivity.failed.openTab': '打开新标签页 "{target}" 失败',
   'agentActivity.now.switchTab': '正在切换到标签页 {target}',
   'agentActivity.done.switchTab': '已切换到标签页 {target}',
@@ -221,6 +224,7 @@ export const zh = {
   'agentActivity.failed.modifyDom': '修改 "{target}" 失败',
   'agentActivity.now.click': '正在点击 "{target}"',
   'agentActivity.done.click': '已点击 "{target}"',
+  'agentActivity.done.clickPartial': '{total} 个目标中点击成功 {ok} 个',
   'agentActivity.failed.click': '点击 "{target}" 失败',
   'agentActivity.now.type': '正在向 "{selector}" 输入 "{text}"',
   'agentActivity.done.type': '已向 "{selector}" 输入 "{text}"',
@@ -239,6 +243,7 @@ export const zh = {
   'agentActivity.failed.waitFor': '等待 "{target}" 失败',
   'agentActivity.now.navigate': '正在跳转到 "{target}"',
   'agentActivity.done.navigate': '已跳转到 "{target}"',
+  'agentActivity.done.navigateRedirected': '已跳转到 "{target}"（从 "{requested}" 重定向）',
   'agentActivity.failed.navigate': '跳转到 "{target}" 失败',
   'agentActivity.now.findText': '正在查找文字 "{target}"',
   'agentActivity.done.findText': '已查找文字 "{target}"',
@@ -248,6 +253,8 @@ export const zh = {
   'agentActivity.failed.setStorage': '写入存储 "{target}" 失败',
   'agentActivity.now.fillForm': '正在填写 {target} 个字段',
   'agentActivity.done.fillForm': '已填写 {target} 个字段',
+  // 每个字段的写入都做过回读校验，只有 ok 算真的写进去了；部分失败必须报实际落地数。
+  'agentActivity.done.fillFormPartial': '{total} 个字段中填写成功 {ok} 个',
   'agentActivity.failed.fillForm': '填写 {target} 个字段失败',
   'confirm.title': '🔒 请确认表单提交',
   'confirm.approve': '确认提交',

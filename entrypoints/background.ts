@@ -955,9 +955,11 @@ async function probeSubmitIntent(payload: ProbeClickTargetPayload, tabId: number
   const table = needsTable ? await getFormFieldsForTab(tabId) : undefined;
 
   // 卡片要展示的 label 从句柄表来，不从页面重新取——句柄表就是读表单那一刻的真相。
+  // sensitive 一并带上：那些字段 planFormFill 会在发往页面前丢掉，卡片必须照实少算一个。
   const fieldLabels = payload?.fieldIds?.map((fieldId) => ({
     fieldId,
     label: table?.fields[fieldId]?.expect.label,
+    sensitive: table?.fields[fieldId]?.sensitive,
   }));
 
   // 提交探测必须跟着句柄的 frameId 走：子帧字段若还是只打主框架，探测会找不到目标，
@@ -996,9 +998,11 @@ async function probeEnterSubmitIntent(
   const needsTable = Boolean(payload?.fieldId || payload?.fieldIds?.length);
   const table = needsTable ? await getFormFieldsForTab(tabId) : undefined;
 
+  // 同 probeSubmitIntent：sensitive 与 label 同源，卡片靠它剔掉不会被代填的字段。
   const fieldLabels = payload?.fieldIds?.map((fieldId) => ({
     fieldId,
     label: table?.fields[fieldId]?.expect.label,
+    sensitive: table?.fields[fieldId]?.sensitive,
   }));
 
   // 同 probeSubmitIntent：探测必须跟着句柄的 frameId 走，否则子帧字段的 Enter 隐式

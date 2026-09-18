@@ -239,6 +239,34 @@ describe('submit intent escalation', () => {
     expect((args.fields[0] as any).label).toBeUndefined();
   });
 
+  // 卡片要能剔掉注定不会被写入的密码/支付字段，所以句柄表里的 sensitive 也得跟着 label
+  // 一起送到确认副本里（ref: Spec-0005，planFormFill 在发往页面前就丢弃这些字段）。
+  it('carries the sensitive flag into the confirmation copy as well', async () => {
+    const args = { fields: [{ fieldId: 'f1', value: 'x' }, { fieldId: 'f2', value: 'hunter2' }] };
+    const onConfirm = vi.fn().mockResolvedValue(true);
+
+    await beforeToolCallPermissionGate(
+      { toolCall: { id: 'call-1', name: 'browser_fill_form' }, args } as any,
+      {
+        gateState: createConfirmGateState(),
+        onConfirm,
+        targetTabId: 1,
+        resolveSubmitIntent: async () => ({
+          isSubmit: true,
+          fieldLabels: [
+            { fieldId: 'f1', label: '邮箱' },
+            { fieldId: 'f2', label: '密码', sensitive: true },
+          ],
+        }),
+      },
+    );
+
+    const confirmFields = (onConfirm.mock.calls[0][2] as any).fields;
+    expect(confirmFields[0].sensitive).toBeUndefined();
+    expect(confirmFields[1].sensitive).toBe(true);
+    expect((args.fields[1] as any).sensitive).toBeUndefined();
+  });
+
   it('enriches a browser_click(fieldId) confirmation with the field label, without touching the model args', async () => {
     const args = { fieldId: 'f7' };
     const onConfirm = vi.fn().mockResolvedValue(true);

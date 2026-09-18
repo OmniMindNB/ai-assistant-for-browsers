@@ -649,7 +649,12 @@ export interface ProbeClickTargetResult {
   isSubmit: boolean;
   formAction?: string;
   fieldCount?: number;
-  fieldLabels?: { fieldId: string; label?: string }[];
+  /**
+   * `sensitive` 与 label 同源（都来自句柄表）：确认卡片要靠它剔掉密码/支付字段——
+   * 那些字段在请求离开 background 之前就会被 planFormFill 丢掉，卡片再把它们算进
+   * "要填 N 个字段"就是在承诺一件不会发生的事（ref: Spec-0005）。
+   */
+  fieldLabels?: { fieldId: string; label?: string; sensitive?: boolean }[];
   /** 该表单所在帧的 origin；供确认卡片标注嵌入框架用（ref: 设计文档 §5.3）。 */
   frameOrigin?: string;
 }

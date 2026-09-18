@@ -190,6 +190,41 @@ describe('browser_fill_form', () => {
     expect(text).toContain('f3');
   });
 
+  // 一个字段都没写进去却按"成功"收尾，面板的步骤时间线会显示「已填写 N 个字段」——
+  // 与 clickBatch（整批没点成时抛错）不一致，用户看到的是一句与页面实际状态相反的汇报。
+  it('fails the call when no field landed at all', async () => {
+    sendMessage.mockResolvedValueOnce({
+      id: '1',
+      ok: true,
+      data: {
+        outcomes: [
+          { fieldId: 'f1', status: 'mismatch', detail: '写入后回读不符。' },
+          { fieldId: 'f2', status: 'not_found' },
+        ],
+      },
+    });
+    await expect(
+      fillFormTool().execute('call-1', { fields: [{ fieldId: 'f1', value: 'x' }, { fieldId: 'f2', value: 'y' }] }),
+    ).rejects.toThrow('0 个成功');
+  });
+
+  // 但"字段全失败 + 提交按钮点成了"确实改变了页面，不能报成整体失败。
+  it('still reports success when every field failed but the submit click landed', async () => {
+    sendMessage.mockResolvedValueOnce({
+      id: '1',
+      ok: true,
+      data: {
+        outcomes: [{ fieldId: 'f1', status: 'mismatch' }],
+        submitted: { fieldId: 'f9', status: 'ok' },
+      },
+    });
+    const output = await fillFormTool().execute('call-1', {
+      fields: [{ fieldId: 'f1', value: 'x' }],
+      submit: { fieldId: 'f9' },
+    });
+    expect((output.content[0] as { text: string }).text).toContain('提交按钮');
+  });
+
   it('tells the model to re-read the form when the handle table is stale', async () => {
     sendMessage.mockResolvedValueOnce({ id: '1', ok: true, data: { outcomes: [], fieldsTableStale: true } });
     await expect(fillFormTool().execute('call-1', { fields: [] })).rejects.toThrow('browser_get_form');

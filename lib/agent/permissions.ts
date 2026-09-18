@@ -102,9 +102,12 @@ export function decideToolPermission(toolName: string, args: unknown): Permissio
   return { level: 'deny', reason: `未知工具 ${toolName}，已按 Deny-First 策略阻止。` };
 }
 
-/** 探测返回的写意图：是否提交，外加确认卡片要用的字段 label（args 里只有 fieldId）。 */
+/**
+ * 探测返回的写意图：是否提交，外加确认卡片要用的字段 label 与 sensitive
+ * （args 里只有 fieldId；形状与 ProbeClickTargetResult.fieldLabels 保持一致）。
+ */
 export interface ToolWriteIntent extends SubmitIntent {
-  fieldLabels?: { fieldId: string; label?: string }[];
+  fieldLabels?: { fieldId: string; label?: string; sensitive?: boolean }[];
 }
 
 export interface PermissionGateOptions {
@@ -156,10 +159,12 @@ export async function beforeToolCallPermissionGate(
     if (labels?.length && Array.isArray(record.fields)) {
       confirmArgs = {
         ...record,
-        fields: (record.fields as Record<string, unknown>[]).map((field) => ({
-          ...field,
-          label: labels.find((entry) => entry.fieldId === field.fieldId)?.label,
-        })),
+        fields: (record.fields as Record<string, unknown>[]).map((field) => {
+          const entry = labels.find((candidate) => candidate.fieldId === field.fieldId);
+          // sensitive 只进确认副本，不进模型 args：卡片靠它剔掉注定不会被写入的
+          // 密码/支付字段（ref: Spec-0005，planFormFill 在发往页面前就丢弃这些字段）。
+          return { ...field, label: entry?.label, sensitive: entry?.sensitive };
+        }),
         submit: intent?.isSubmit ? { ...(record.submit as object), formAction: intent?.formAction } : record.submit,
         frameOrigin: intent?.frameOrigin,
       };

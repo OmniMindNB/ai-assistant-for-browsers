@@ -358,6 +358,31 @@ describe('run-registry confirm/question/stop/port', () => {
     expect(getRunState(21)?.pendingQuestion).toBeNull();
   });
 
+  // 步骤收尾时必须把工具结果一起交给 describeToolActivity：只凭调用参数的话，一次重定向
+  // 之后面板会指着模型请求的地址说"已跳转到"，而标签页其实在登录页上。
+  it('describes a finished step from the tool result, not just the call arguments', async () => {
+    mocks.createBrowserAgent.mockReturnValue(
+      makeFakeAgent([
+        { type: 'tool_execution_start', toolCallId: 'call-1', toolName: 'browser_navigate', args: { url: 'https://example.com/order' } },
+        {
+          type: 'tool_execution_end',
+          toolCallId: 'call-1',
+          toolName: 'browser_navigate',
+          isError: false,
+          result: { details: { url: 'https://example.com/login?next=/order' } },
+        },
+      ]),
+    );
+    const posted: any[] = [];
+    attachPort(23, { postMessage: (message) => posted.push(message) });
+
+    await startRun(makeRequest({ tabId: 23 }));
+
+    const steps = posted.map((message) => message?.activitySteps).filter(Boolean).flat();
+    const finished = steps.filter((step: any) => step.id === 'call-1' && step.status === 'done').at(-1);
+    expect(finished?.description).toContain('https://example.com/login?next=/order');
+  });
+
   it('stop aborts the agent and clears pending confirmation/question', async () => {
     const agent = makeFakeAgent([]);
     mocks.createBrowserAgent.mockReturnValue(agent);

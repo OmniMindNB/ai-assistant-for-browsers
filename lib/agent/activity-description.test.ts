@@ -38,6 +38,39 @@ describe('describeToolActivity', () => {
     expect(describeToolActivity('browser_set_storage', { key: 'token' }, 'running')).toBe('Writing storage key "token"');
   });
 
+  // 步骤文案只看调用参数时，一次重定向（典型如被踢回登录页）后界面仍会指着模型请求的
+  // 那个地址说"已跳转到"，而标签页其实在别处。落地地址只有执行结果里有。
+  it('reports the URL the tab actually landed on when a navigation was redirected', () => {
+    expect(
+      describeToolActivity('browser_navigate', { url: 'https://example.com/order' }, 'done', {
+        details: { url: 'https://example.com/login?next=/order', requestedUrl: 'https://example.com/order' },
+      }),
+    ).toBe('Navigated to "https://example.com/login?next=/order" (redirected from "https://example.com/order")');
+  });
+
+  it('reports the landing URL for an opened tab too', () => {
+    expect(
+      describeToolActivity('browser_open_tab', { url: 'https://example.com/a' }, 'done', {
+        details: { url: 'https://example.com/b' },
+      }),
+    ).toBe('Opened new tab "https://example.com/b" (redirected from "https://example.com/a")');
+  });
+
+  // 只差一个末尾斜杠不是重定向，多这一行括号纯属噪音。
+  it('does not call a normalization-only difference a redirect', () => {
+    expect(
+      describeToolActivity('browser_navigate', { url: 'https://example.com' }, 'done', {
+        details: { url: 'https://example.com/' },
+      }),
+    ).toBe('Navigated to "https://example.com"');
+  });
+
+  it('falls back to the requested URL when the result carries no landing URL', () => {
+    expect(describeToolActivity('browser_navigate', { url: 'https://example.com' }, 'done', { details: {} })).toBe(
+      'Navigated to "https://example.com"',
+    );
+  });
+
   it('describes fill_form by field count', () => {
     expect(
       describeToolActivity(
@@ -48,6 +81,44 @@ describe('describeToolActivity', () => {
     ).toBe('Filling 3 fields');
     expect(describeToolActivity('browser_fill_form', { fields: [{ fieldId: 'f1' }] }, 'done')).toBe('Filled 1 fields');
     expect(describeToolActivity('browser_fill_form', {}, 'failed')).toBe('Failed to fill 0 fields');
+  });
+
+  // 部分字段没落地时，按参数里的字段数报"已填写 3 个字段"等于把失败的那些也算成了成功。
+  it('reports how many fields actually landed when some of them failed', () => {
+    expect(
+      describeToolActivity(
+        'browser_fill_form',
+        { fields: [{ fieldId: 'f1' }, { fieldId: 'f2' }, { fieldId: 'f3' }] },
+        'done',
+        { details: { outcomes: [{ status: 'ok' }, { status: 'mismatch' }, { status: 'ok' }] } },
+      ),
+    ).toBe('Filled 2 of 3 fields');
+  });
+
+  // 批量点击部分失败时同理：clickBatch 只在整批没点成时抛错，所以"部分成功"是 done，
+  // 光把 fieldIds 列出来等于说这几个都点到了。
+  it('reports how many batch click targets actually landed when some failed', () => {
+    expect(
+      describeToolActivity('browser_click', { fieldIds: ['f1', 'f2', 'f3'] }, 'done', {
+        details: { outcomes: [{ status: 'ok' }, { status: 'not_found' }, { status: 'ok' }] },
+      }),
+    ).toBe('Clicked 2 of 3 targets');
+  });
+
+  it('keeps listing the targets when every batch click landed', () => {
+    expect(
+      describeToolActivity('browser_click', { fieldIds: ['f1', 'f2'] }, 'done', {
+        details: { outcomes: [{ status: 'ok' }, { status: 'ok' }] },
+      }),
+    ).toBe('Clicked "f1、f2"');
+  });
+
+  it('keeps the plain wording when every field landed', () => {
+    expect(
+      describeToolActivity('browser_fill_form', { fields: [{ fieldId: 'f1' }, { fieldId: 'f2' }] }, 'done', {
+        details: { outcomes: [{ status: 'ok' }, { status: 'ok' }] },
+      }),
+    ).toBe('Filled 2 fields');
   });
 
   it('describes browser_wait_for running/done/failed by selector or text', () => {
