@@ -264,3 +264,41 @@ export const SYSTEM_PROMPT = buildSystemPrompt();
 function section(tag: string, body: string): string {
   return `<${tag}>\n${body}\n</${tag}>`;
 }
+
+/**
+ * 每轮都可能变的尾部分区。顺序与 buildSystemPrompt 里 push 的顺序一致——
+ * 取"最先出现的那一个"作为切点，后面的分区自然都落在 volatile 一侧。
+ */
+const VOLATILE_SECTIONS = ['runtime_context', 'session_constraints'] as const;
+
+export interface CacheableSystemPrompt {
+  /** 跨轮逐字节稳定的规则正文。前缀缓存的断点打在它末尾。 */
+  stable: string;
+  /** 每轮都可能变的尾巴：页面地址与标题、当前时间、会话约束。没有时为空串。 */
+  volatile: string;
+}
+
+/**
+ * 把系统提示词切成"稳定正文 + 运行时尾巴"，供 Anthropic 前缀缓存打断点用
+ * （ref: shared/prompt-caching.md 的 shared prefix / varying suffix 模式）。
+ *
+ * 渲染顺序是 tools → system → messages，所以断点打在 stable 末尾能把整张工具表和规则正文
+ * 一起缓存——那是请求里最大且最稳定的一块。反过来，如果整段 system 打一个断点，
+ * <runtime_context> 里的页面地址和时间戳会让每轮的前缀都不一样，结果是每轮写一条新缓存、
+ * 一次都读不到，只付了 1.25× 的写入溢价。
+ *
+ * ⚠️ 必须用 indexOf 而不是 lastIndexOf：分区正文里的页面标题由网页控制，可以伪造出一段
+ * 看起来像分区标签的文本。取最后一处会被伪造标签牵着走，把真正的页面地址留在 stable 一侧，
+ * 缓存从此每轮失效且不报错。取第一处则伪造内容一定落在真分区之后，影响不到切点。
+ *
+ * 切点之外不做任何加工：stable + volatile 必须逐字节等于原文。
+ */
+export function splitSystemPromptForCache(prompt: string): CacheableSystemPrompt {
+  let cut = -1;
+  for (const tag of VOLATILE_SECTIONS) {
+    const index = prompt.indexOf(`\n\n<${tag}>\n`);
+    if (index >= 0 && (cut < 0 || index < cut)) cut = index;
+  }
+  if (cut < 0) return { stable: prompt, volatile: '' };
+  return { stable: prompt.slice(0, cut), volatile: prompt.slice(cut) };
+}

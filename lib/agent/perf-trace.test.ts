@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readOpenAiUsage, summarizePerfMarks, type PerfContextSample, type PerfMark } from './perf-trace';
+import { readAnthropicUsage, readOpenAiUsage, summarizePerfMarks, type PerfContextSample, type PerfMark } from './perf-trace';
 
 function mark(kind: PerfMark['kind'], at: number, toolName?: string): PerfMark {
   return toolName ? { kind, at, toolName } : { kind, at };
@@ -122,5 +122,44 @@ describe('readOpenAiUsage', () => {
   it('没有 usage 字段的普通增量块返回 undefined', () => {
     expect(readOpenAiUsage({ choices: [{ delta: { content: 'hi' } }] })).toBeUndefined();
     expect(readOpenAiUsage({})).toBeUndefined();
+  });
+});
+
+// Anthropic 的 usage 字段名和口径都跟 OpenAI 那套不同，必须单独换算：
+// input_tokens 只是「没命中缓存的剩余部分」，不是整个 prompt。
+// 总 prompt = input_tokens + cache_creation_input_tokens + cache_read_input_tokens。
+// 直接把 input_tokens 当 promptTokens 会让一次命中良好的请求显示成「prompt 只有 4K」，
+// 正好把缓存起作用的证据读反。
+describe('readAnthropicUsage', () => {
+  it('把三段输入合成总 prompt，命中数取 cache_read', () => {
+    expect(
+      readAnthropicUsage(
+        { input_tokens: 240, cache_creation_input_tokens: 1200, cache_read_input_tokens: 8600 },
+        88,
+      ),
+    ).toEqual({ promptTokens: 10040, completionTokens: 88, cacheHitTokens: 8600, cacheMissTokens: 1440 });
+  });
+
+  // 首轮：全部写入缓存，一个 token 都读不到。这是正常的，不是故障——
+  // 写入溢价要到第二轮才开始回本。
+  it('首轮只有写入、没有读取时命中数为 0', () => {
+    expect(
+      readAnthropicUsage({ input_tokens: 100, cache_creation_input_tokens: 5000, cache_read_input_tokens: 0 }, 10),
+    ).toEqual({ promptTokens: 5100, completionTokens: 10, cacheHitTokens: 0, cacheMissTokens: 5100 });
+  });
+
+  // 第三方 Anthropic 兼容端点可能根本不回报缓存字段，缺省按 0 处理，不能算成 NaN。
+  it('缺少缓存字段时按 0 计，prompt 退化为 input_tokens', () => {
+    expect(readAnthropicUsage({ input_tokens: 900 }, 12)).toEqual({
+      promptTokens: 900,
+      completionTokens: 12,
+      cacheHitTokens: 0,
+      cacheMissTokens: 900,
+    });
+  });
+
+  it('没有 usage 时返回 undefined', () => {
+    expect(readAnthropicUsage(undefined, 0)).toBeUndefined();
+    expect(readAnthropicUsage(null, 0)).toBeUndefined();
   });
 });

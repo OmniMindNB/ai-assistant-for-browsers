@@ -1,7 +1,8 @@
 // lib/agent/anthropic-stream.test.ts
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AssistantMessageEvent, AssistantMessageEventStream, Api, Context, Model } from '@earendil-works/pi-ai';
-import { anthropicMessagesUrl, browserAnthropicStream, convertMessagesForAnthropic } from './anthropic-stream';
+import { PERF_TRACE_FLAG, currentPerfUsage, resetPerfTrace } from './perf-trace';
+import { anthropicMessagesUrl, browserAnthropicStream, buildAnthropicSystem, convertMessagesForAnthropic } from './anthropic-stream';
 
 function makeModel(): Model<Api> {
   return {
@@ -491,5 +492,148 @@ describe('convertMessagesForAnthropic 的图片工具结果', () => {
     const [message] = convertMessagesForAnthropic({ messages: [empty] } as never);
     const block = (message.content as Array<Record<string, unknown>>)[0];
     expect(block.content).toEqual([{ type: 'text', text: '(empty)' }]);
+  });
+});
+
+// Anthropic 的前缀缓存要显式打断点（cache_control），不打就是每轮全价重发整段 prompt。
+// 此前这条路径一个断点都没有：DeepSeek 那条 OpenAI 兼容路径靠服务端自动前缀缓存兜着
+// （实测命中率 71%），Anthropic 这条则完全没有缓存收益。
+// ref: claude-api skill / shared/prompt-caching.md。
+describe('前缀缓存断点', () => {
+  const MINIMAL_SSE = ['event: message_stop', 'data: {"type":"message_stop"}', ''].join('\n');
+
+  async function captureRequestBody(context: Partial<Context>): Promise<Record<string, unknown>> {
+    const fetchMock = vi.fn().mockResolvedValue(sseResponse(MINIMAL_SSE));
+    vi.stubGlobal('fetch', fetchMock);
+    const stream = browserAnthropicStream(makeModel(), context as Context, {
+      apiKey: 'test-key',
+    }) as AssistantMessageEventStream;
+    await collectEvents(stream);
+    return JSON.parse(fetchMock.mock.calls[0][1].body as string) as Record<string, unknown>;
+  }
+
+  /** 递归数整个请求体里有多少个 cache_control——上限是硬性的 4 个。 */
+  function countBreakpoints(value: unknown): number {
+    if (Array.isArray(value)) return value.reduce((total: number, item) => total + countBreakpoints(item), 0);
+    if (!value || typeof value !== 'object') return 0;
+    const record = value as Record<string, unknown>;
+    let total = record.cache_control ? 1 : 0;
+    for (const [key, nested] of Object.entries(record)) {
+      if (key !== 'cache_control') total += countBreakpoints(nested);
+    }
+    return total;
+  }
+
+  const systemPrompt = ['<identity>\n稳定正文\n</identity>', '<runtime_context>\nURL：https://a.example\n</runtime_context>'].join(
+    '\n\n',
+  );
+
+  it('system 拆成稳定段与运行时尾巴，断点只打在稳定段', async () => {
+    const body = await captureRequestBody({
+      systemPrompt,
+      messages: [{ role: 'user', content: '问题' }],
+    } as unknown as Partial<Context>);
+
+    const blocks = body.system as Array<Record<string, unknown>>;
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toMatchObject({ type: 'text', cache_control: { type: 'ephemeral' } });
+    expect(blocks[0].text).toContain('稳定正文');
+    expect(blocks[1].cache_control).toBeUndefined();
+    expect(blocks[1].text).toContain('runtime_context');
+  });
+
+  // 会让这个用例失败的 production 改动：无条件发两个 block。Anthropic 拒绝空字符串 text 块，
+  // 没有运行时分区时第二块就是空串，整个请求 400。
+  it('没有运行时尾巴时只发一个 block', async () => {
+    const body = await captureRequestBody({
+      systemPrompt: '<identity>\n只有稳定正文\n</identity>',
+      messages: [{ role: 'user', content: '问题' }],
+    } as unknown as Partial<Context>);
+
+    const blocks = body.system as Array<Record<string, unknown>>;
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({ cache_control: { type: 'ephemeral' } });
+  });
+
+  // 多轮对话的标准打法：断点打在最新一轮的最后一个内容块上，下一轮整段历史就成了可读前缀，
+  // 命中随对话增长而累积（ref: shared/prompt-caching.md 的 multi-turn 模式）。
+  it('断点打在最后一条消息的最后一个内容块上', async () => {
+    const body = await captureRequestBody({
+      systemPrompt,
+      messages: [
+        { role: 'user', content: '第一轮' },
+        { role: 'assistant', content: [{ type: 'text', text: '回答' }] },
+        { role: 'user', content: '第二轮' },
+      ],
+    } as unknown as Partial<Context>);
+
+    const messages = body.messages as Array<{ content: Array<Record<string, unknown>> }>;
+    const last = messages[messages.length - 1];
+    expect(last.content[last.content.length - 1].cache_control).toEqual({ type: 'ephemeral' });
+    // 更早的轮次不重复打点：断点名额只有 4 个，而且更早的位置下一轮就会被新断点覆盖。
+    expect(messages[0].content[0].cache_control).toBeUndefined();
+  });
+
+  it('断点总数不超过 4 个', async () => {
+    const body = await captureRequestBody({
+      systemPrompt,
+      messages: [
+        { role: 'user', content: '一' },
+        { role: 'assistant', content: [{ type: 'text', text: '二' }] },
+        { role: 'user', content: '三' },
+        { role: 'assistant', content: [{ type: 'text', text: '四' }] },
+        { role: 'user', content: '五' },
+      ],
+    } as unknown as Partial<Context>);
+
+    expect(countBreakpoints(body)).toBeLessThanOrEqual(4);
+  });
+
+  it('消息为空时不炸', async () => {
+    const body = await captureRequestBody({ systemPrompt, messages: [] } as unknown as Partial<Context>);
+
+    expect(body.messages).toEqual([]);
+  });
+});
+
+describe('前缀缓存断点：system 缺失时的退化', () => {
+  // Context.systemPrompt 是可选的。会让这个用例失败的 production 改动：无条件把它交给
+  // splitSystemPromptForCache——undefined.indexOf 直接抛错，整条流在发请求前就炸了。
+  it('没有系统提示词时整个省掉 system 字段', () => {
+    expect(buildAnthropicSystem(undefined)).toBeUndefined();
+    expect(buildAnthropicSystem('')).toBeUndefined();
+  });
+});
+
+// 缓存最贵的失败方式是无声的：请求照样成功，只是每轮全价重发，账单更高但没有任何报错。
+// usage 是唯一的证据，所以这条链路必须真的接上，而不是只有一个没人调用的换算函数。
+describe('前缀缓存的可观测性', () => {
+  it('把 message_start / message_delta 里的 usage 记进耗时画像', async () => {
+    (globalThis as Record<string, unknown>)[PERF_TRACE_FLAG] = true;
+    resetPerfTrace();
+    try {
+      const sse = [
+        'event: message_start',
+        'data: {"type":"message_start","message":{"usage":{"input_tokens":240,"cache_creation_input_tokens":1200,"cache_read_input_tokens":8600}}}',
+        '',
+        'event: message_delta',
+        'data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":88}}',
+        '',
+        'event: message_stop',
+        'data: {"type":"message_stop"}',
+        '',
+      ].join('\n');
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse(sse)));
+
+      const context = { systemPrompt: '提示词', messages: [{ role: 'user', content: '问题' }] } as unknown as Context;
+      await collectEvents(browserAnthropicStream(makeModel(), context, { apiKey: 'k' }) as AssistantMessageEventStream);
+
+      expect(currentPerfUsage()).toEqual([
+        { turn: 1, promptTokens: 10040, completionTokens: 88, cacheHitTokens: 8600, cacheMissTokens: 1440 },
+      ]);
+    } finally {
+      delete (globalThis as Record<string, unknown>)[PERF_TRACE_FLAG];
+      resetPerfTrace();
+    }
   });
 });

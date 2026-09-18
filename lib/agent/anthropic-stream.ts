@@ -1,6 +1,8 @@
 // lib/agent/anthropic-stream.ts
 import { createAssistantMessageEventStream, type Api, type AssistantMessageEvent, type Context, type Model } from '@earendil-works/pi-ai';
 import type { StreamFn } from '@earendil-works/pi-agent-core';
+import { splitSystemPromptForCache } from './system-prompt';
+import { readAnthropicUsage, recordPerfUsage } from './perf-trace';
 import { buildPartial, createAssistantMessage, describeHttpFailure, describeStreamError, extractImageParts, finishStream, stringifyContent, type ToolCallAccumulator } from './stream-shared';
 
 export const ANTHROPIC_VERSION = '2023-06-01';
@@ -23,6 +25,10 @@ interface AnthropicSseEvent {
   content_block?: { type?: string; id?: string; name?: string; input?: unknown };
   delta?: { type?: string; text?: string; partial_json?: string; stop_reason?: string };
   error?: { message?: string };
+  // usage 分两处到达：message_start 带输入侧（含缓存命中与写入的 token 数），
+  // message_delta 带累计的输出 token 数。缓存到底有没有生效，只有这里看得到。
+  message?: { usage?: unknown };
+  usage?: { output_tokens?: number };
 }
 
 // Anthropic's own "stop_reason" on the final `message_delta` event, mapped to pi-ai's StopReason.
@@ -57,6 +63,9 @@ async function runAnthropicStream(
   const toolBlockIndexes = new Set<number>();
   const toolDeltaSeen = new Set<number>();
   let anthropicStopReason: string | undefined;
+  // usage 的输入侧与输出侧分两个事件到达，先各自暂存，收尾时合成一条样本。
+  let inputUsage: unknown;
+  let outputTokens = 0;
   // 弱模型兜底：模型没走 tool_use 而把调用写进正文时，finishStream 据此把它捞回来。
   const toolNames = context.tools?.map((tool) => tool.name) ?? [];
   // catch 块要用它拼网络层失败的提示，声明在 try 外面才能跨块读到。
@@ -80,8 +89,8 @@ async function runAnthropicStream(
       },
       body: JSON.stringify({
         model: model.id,
-        system: context.systemPrompt,
-        messages: convertMessagesForAnthropic(context),
+        system: buildAnthropicSystem(context.systemPrompt),
+        messages: withConversationBreakpoint(convertMessagesForAnthropic(context)),
         tools: context.tools?.map((tool) => ({
           name: tool.name,
           description: tool.description,
@@ -177,8 +186,16 @@ async function runAnthropicStream(
           continue;
         }
 
-        if (event.type === 'message_delta' && event.delta?.stop_reason) {
-          anthropicStopReason = event.delta.stop_reason;
+        // 纯观测：把供应商回报的 usage 记进耗时画像。前缀缓存是否真的命中，
+        // 只有 cache_read_input_tokens 是证据——加了 cache_control 却每轮全 miss
+        // 是最贵的那种失败：请求照样成功，只是账单更高，没有任何报错。
+        if (event.type === 'message_start') {
+          inputUsage = event.message?.usage;
+          continue;
+        }
+        if (event.type === 'message_delta') {
+          if (typeof event.usage?.output_tokens === 'number') outputTokens = event.usage.output_tokens;
+          if (event.delta?.stop_reason) anthropicStopReason = event.delta.stop_reason;
           continue;
         }
 
@@ -187,6 +204,8 @@ async function runAnthropicStream(
         }
 
         if (event.type === 'message_stop') {
+          const usage = readAnthropicUsage(inputUsage, outputTokens);
+          if (usage) recordPerfUsage(usage);
           if (textStarted) {
             push({ type: 'text_end', contentIndex: 0, content: text, partial: buildPartial(model, startedAt, text, toolCalls, 'stop') });
           }
@@ -273,4 +292,54 @@ export function convertMessagesForAnthropic(context: Context): Array<Record<stri
     result.push({ role: 'assistant', content });
   }
   return result;
+}
+
+/** 前缀缓存断点。ephemeral 是 5 分钟 TTL，正好覆盖 agent 循环里一轮接一轮的节奏。 */
+const CACHE_BREAKPOINT = { type: 'ephemeral' } as const;
+
+/**
+ * system 字段：切成「稳定正文 + 运行时尾巴」两块，断点只打在稳定那块。
+ *
+ * 渲染顺序是 tools → system → messages，所以这个断点把整张工具表和规则正文一起缓存住——
+ * 那是请求里最大也最稳定的一块。整段 system 打一个断点是不行的：尾巴上的 <runtime_context>
+ * 带着页面地址和时间戳，每轮都变，那样每轮都只是写一条再也读不到的新缓存。
+ *
+ * 尾巴为空时只发一块：Anthropic 拒绝空字符串的 text 块，无条件发两块会直接 400。
+ * 同理，整段提示词缺失时返回 undefined 让调用方整个省掉 system 字段，而不是发一个空块——
+ * Context.systemPrompt 是可选的，快捷方式那类调用确实可能不带。
+ */
+export function buildAnthropicSystem(systemPrompt: string | undefined): Array<Record<string, unknown>> | undefined {
+  if (!systemPrompt) return undefined;
+  const { stable, volatile } = splitSystemPromptForCache(systemPrompt);
+  if (!stable) return volatile ? [{ type: 'text', text: volatile }] : undefined;
+  const blocks: Array<Record<string, unknown>> = [
+    { type: 'text', text: stable, cache_control: CACHE_BREAKPOINT },
+  ];
+  if (volatile) blocks.push({ type: 'text', text: volatile });
+  return blocks;
+}
+
+/**
+ * 在最新一轮的最后一个内容块上打第二个断点——多轮对话的标准打法：下一轮整段历史就成了
+ * 可读前缀，命中随对话增长而累积，而写入只计最后一轮新增的那点增量。
+ *
+ * 只打最后一处，不是每轮都留一个：断点名额总共只有 4 个，而更早的位置在下一轮本来就会
+ * 被新的断点覆盖，多打没有额外收益。
+ *
+ * ⚠️ 这一半的命中率注定不如 system 那一半：compactAgentMessages 会在新的只读结果到达时
+ * 把上一份就地改写成摘要，请求前缀在那个位置断一次（见 agent.ts 里那段注释）。写操作居多的
+ * 轮次之间它是连续的，读操作一多就会断。system 那个断点不受影响，那才是这次改动的主要收益。
+ */
+function withConversationBreakpoint(messages: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+  const last = messages[messages.length - 1];
+  if (!last) return messages;
+  const content = last.content;
+  if (!Array.isArray(content) || content.length === 0) return messages;
+  const blocks = content as Array<Record<string, unknown>>;
+  const tail = blocks[blocks.length - 1];
+  if (!tail || typeof tail !== 'object') return messages;
+  return [
+    ...messages.slice(0, -1),
+    { ...last, content: [...blocks.slice(0, -1), { ...tail, cache_control: CACHE_BREAKPOINT }] },
+  ];
 }

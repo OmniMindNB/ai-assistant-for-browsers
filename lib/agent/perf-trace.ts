@@ -264,3 +264,37 @@ export function recordPerfUsage(sample: Omit<PerfUsageSample, 'turn'>): void {
 export function currentPerfUsage(): PerfUsageSample[] {
   return usageSamples;
 }
+
+interface RawAnthropicUsage {
+  input_tokens?: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+}
+
+/**
+ * Anthropic 的 usage 换算。口径与 OpenAI 那套不同，不能照搬：
+ * `input_tokens` 只是「没命中缓存的剩余部分」，总 prompt 要三段相加
+ * （input + cache_creation + cache_read）。把 input_tokens 直接当 prompt 会让一次命中良好的
+ * 请求显示成「prompt 只有几百」，正好把缓存起作用的证据读反。
+ *
+ * 输出 token 数在 Anthropic 的 SSE 里晚于输入侧到达（message_start 给输入、message_delta 给
+ * 输出），所以单独作参数传进来。
+ */
+export function readAnthropicUsage(
+  usage: unknown,
+  outputTokens: number,
+): Omit<PerfUsageSample, 'turn'> | undefined {
+  if (!usage || typeof usage !== 'object') return undefined;
+  const raw = usage as RawAnthropicUsage;
+  const uncached = raw.input_tokens ?? 0;
+  const written = raw.cache_creation_input_tokens ?? 0;
+  const read = raw.cache_read_input_tokens ?? 0;
+  const promptTokens = uncached + written + read;
+  return {
+    promptTokens,
+    completionTokens: outputTokens,
+    cacheHitTokens: read,
+    // 写入的那部分这一轮是全价处理的，和未缓存部分一样算 miss——它要到下一轮才开始回本。
+    cacheMissTokens: promptTokens - read,
+  };
+}
