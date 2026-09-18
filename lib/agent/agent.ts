@@ -32,6 +32,7 @@ import { isChildFrameHandle } from './fill-form-request';
 import { createAgentToolPolicy } from './tool-policy';
 import { describeToolActivity } from './activity-description';
 import { recordPerfContext } from './perf-trace';
+import { MAX_TOOL_RESULT_CHARS } from './context-budget';
 import {
   DEFAULT_READ_TOOL_CALL_BUDGET,
   DEFAULT_WRITE_TOOL_CALL_BUDGET,
@@ -53,7 +54,7 @@ import {
  */
 export const MAX_CONTEXT_MESSAGES = 48;
 export const CONTEXT_RECUT_TARGET = 32;
-const MAX_TOOL_RESULT_CHARS = 30000;
+
 /**
  * browser_navigate/browser_open_tab 自己的结果文案已经告诉模型跳到哪了；这里只补这三个
  * 工具可能*隐式*触发的导航（链接点击、表单提交、回车提交），此前对模型完全不可见

@@ -3,10 +3,14 @@
 // 都没有对应的 vitest project（前者无 entrypoints/**/*.test.ts，后者是按键级 UI），
 // 逻辑留在那两处就等于没有测试覆盖。写法仿 lib/agent/fill-form-request.ts。
 
-/** 跨全部引用页的正文总预算。5 个引用各拿满 12000 会直接挤爆 MAX_CONTEXT_MESSAGES 的窗口。 */
+import { DEFAULT_READ_MAX_CHARS } from '@/lib/agent/context-budget';
+
+/** 跨全部引用页的正文总预算。引用页正文进的是 user 消息、永远不会被摘要压缩，5 个引用各拿满
+ * 单页上限就能自己把上下文顶到 CONTEXT_RECUT_TARGET_CHARS 以上，所以必须有一道总量封顶。 */
 export const TAB_REF_TOTAL_MAX_CHARS = 24000;
-/** 单个引用页的正文上限，与 store.ts 的 PAGE_PREFETCH_MAX_CHARS 对齐：只引 1 个页时行为与现状一致。 */
-export const TAB_REF_SINGLE_MAX_CHARS = 12000;
+/** 单个引用页的正文上限，与 browser_read_page 的默认 maxChars 同源（lib/agent/context-budget.ts）：
+ * 只引 1 个页时行为与 store.ts 的 page-scope 预取一致。 */
+export const TAB_REF_SINGLE_MAX_CHARS = DEFAULT_READ_MAX_CHARS;
 
 export interface ReferencableTab {
   id: number;

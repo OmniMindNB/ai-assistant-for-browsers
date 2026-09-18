@@ -43,6 +43,7 @@ import { type ActivityStep } from '@/lib/agent/activity-steps';
 import { getConversationIdForTab, setConversationIdForTab } from '@/lib/agent/tab-conversation';
 import { clearTabSession, loadTabSession, saveTabSession } from '@/lib/agent/tab-session-storage';
 import { createTabSession, MAX_REFERENCED_TABS } from '@/lib/agent/tab-session';
+import { DEFAULT_READ_MAX_CHARS } from '@/lib/agent/context-budget';
 import { supportsVision } from '@/lib/agent/vision';
 import { clearPendingAskForTab, getPendingAskForTab, pendingAskStorageKey } from '@/lib/agent/tab-pending-ask';
 import { buildSelectionAskTemplate, truncateSelectionText } from '@/lib/selection-ask';
@@ -197,9 +198,9 @@ const HELLO_REPLY_TIMEOUT_MS = 300;
 /** 断线后重连的延迟：给 Chrome 一点时间把 service worker 拉起来，也避免背景真的不可达时
  * 变成一个紧凑的重连热循环。 */
 const RECONNECT_DELAY_MS = 250;
-/** page-scope 快捷方式预取正文的长度上限，与 browser_read_page 工具的默认 maxChars 保持一致
- * （lib/agent/tools.ts makeReadPageTool）。 */
-const PAGE_PREFETCH_MAX_CHARS = 12000;
+/** page-scope 快捷方式预取正文的长度上限，与 browser_read_page 的默认 maxChars 同源
+ * （lib/agent/context-budget.ts）。 */
+const PAGE_PREFETCH_MAX_CHARS = DEFAULT_READ_MAX_CHARS;
 
 function flushPendingPortMessages(): void {
   if (!runPort) return;

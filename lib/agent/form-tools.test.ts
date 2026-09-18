@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GetFormResult } from '@/lib/messaging';
 import { defaultRedactionSettings } from '@/lib/redaction';
 import { createTabSession } from './tab-session';
+import { DEFAULT_READ_MAX_CHARS, MAX_TOOL_RESULT_CHARS } from './context-budget';
 
 const sendMessage = vi.fn();
 vi.mock('@/lib/messaging', async () => {
@@ -553,5 +554,58 @@ describe('browser_click 批量入口', () => {
   it('超过 10 个目标拒绝：再多说明模型在乱点', async () => {
     const fieldIds = Array.from({ length: 11 }, (_, index) => `f${index}`);
     await expect(clickTool().execute('call-1', { fieldIds })).rejects.toThrow('10');
+  });
+});
+
+// 用户实测现象：长文页面问答时模型会说"页面文本较长，每次读取被截断在 20000 字符"。
+// 那句话是模型在转述 browser_read_page 结果里的截断提示——它自己把 maxChars 填成了
+// 20000。旧实现对模型填的值只有 Math.max(1000, ...) 下限、没有上限，于是模型可以一路
+// 往上加，而真正的天花板 MAX_TOOL_RESULT_CHARS 在 agent.ts 的压缩层，工具侧完全不知道。
+describe('browser_read_page：读取上限与压缩层的硬上限同源', () => {
+  function readPageTool() {
+    const tool = createBrowserTools(createTabSession(1)).find((c) => c.name === 'browser_read_page');
+    if (!tool) throw new Error('browser_read_page 未注册');
+    return tool;
+  }
+
+  function mockPage(text: string): void {
+    sendMessage.mockResolvedValueOnce({
+      id: '1',
+      ok: true,
+      data: { title: 'T', url: 'https://example.com', lang: 'zh', length: text.length, text },
+    });
+  }
+
+  function resultText(result: unknown): string {
+    const content = (result as { content?: { type: string; text?: string }[] }).content ?? [];
+    return content.map((part) => part.text ?? '').join('\n');
+  }
+
+  it('不指定 maxChars 时按默认读取量截断', async () => {
+    mockPage('字'.repeat(DEFAULT_READ_MAX_CHARS + 500));
+
+    const text = resultText(await readPageTool().execute('call-1', {}));
+
+    expect(text).toContain(`正文已截断到 ${DEFAULT_READ_MAX_CHARS} 字符`);
+  });
+
+  // 会让这个用例失败的 production 改动：工具侧只做下限不做上限。那样模型填 60000 会
+  // 先从工具拿到一份 60000 字符的"未截断"正文，再被 compactAgentMessages 切到 30000
+  // 并追加一条"工具结果已截断"，模型同时收到两条互相矛盾的提示，只会继续加大 maxChars。
+  it('模型填的 maxChars 超过硬上限时夹到硬上限，而不是放它进压缩层再挨一刀', async () => {
+    mockPage('字'.repeat(MAX_TOOL_RESULT_CHARS * 2));
+
+    const text = resultText(await readPageTool().execute('call-1', { maxChars: MAX_TOOL_RESULT_CHARS * 2 }));
+
+    expect(text).toContain(`正文已截断到 ${MAX_TOOL_RESULT_CHARS} 字符`);
+    expect(text).not.toContain(`${MAX_TOOL_RESULT_CHARS * 2} 字符`);
+  });
+
+  it('硬上限以内的值原样采纳', async () => {
+    mockPage('字'.repeat(25000));
+
+    const text = resultText(await readPageTool().execute('call-1', { maxChars: 20000 }));
+
+    expect(text).toContain('正文已截断到 20000 字符');
   });
 });

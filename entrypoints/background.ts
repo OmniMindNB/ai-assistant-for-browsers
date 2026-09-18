@@ -75,6 +75,7 @@ import { performGoBack, waitForTabLoadComplete, NAVIGATE_HISTORY_SETTLE_TIMEOUT_
 import { sendToContentScript } from '@/lib/agent/content-script-messaging';
 import { clearOverlayForTab, getOverlayForTab, setOverlayForTab } from '@/lib/agent/tab-overlay-state';
 import { clearConversationIdForTab } from '@/lib/agent/tab-conversation';
+import { resolveHtmlRequest, resolveResourceRequest, type ResolvedHtmlRequest } from '@/lib/agent/read-request';
 import { clearPendingAskForTab, setPendingAskForTab } from '@/lib/agent/tab-pending-ask';
 import { setTakeoverForTab } from '@/lib/agent/tab-takeover';
 import { clearTabSession } from '@/lib/agent/tab-session-storage';
@@ -152,7 +153,6 @@ import {
   planScreenshotResize,
 } from '@/lib/agent/screenshot-image';
 
-const DEFAULT_TOOL_MAX_CHARS = 12000;
 // 以下为模型可见/可调用的消息类型；内部专用消息（如 SET_AGENT_OVERLAY）有意不在此列，以免暴露给模型。
 const SUPPORTED_MESSAGE_TYPES = [
   'PING',
@@ -1041,13 +1041,15 @@ async function probeEnterSubmitIntent(
 }
 
 // 自包含 + 自选参数，理由同 queryDomInPage 上方的注释。
+// 参数已由调用方 resolveHtmlRequest 归一（注入函数不能 import 上限常量，见 read-request.ts），
+// 所以这里直接用 input.selector/input.maxChars，不再各写一份缺省值与夹取。
 const getHtmlInPage = (
-  mainInput: GetHtmlPayload,
-  childInput: GetHtmlPayload,
+  mainInput: ResolvedHtmlRequest,
+  childInput: ResolvedHtmlRequest,
 ): GetHtmlResult & { origin: string } => {
   const input = window.top === window ? mainInput : childInput;
-  const selector = input?.selector || 'html';
-  const maxChars = Math.max(1000, input?.maxChars ?? 12000);
+  const selector = input.selector;
+  const maxChars = input.maxChars;
   const nodes = Array.from(document.querySelectorAll(selector));
   const html = nodes.map((node) => (node as Element).outerHTML).join('\n\n');
   return {
@@ -1062,15 +1064,13 @@ const getHtmlInPage = (
 
 // 只读裸选择器广播到全部帧，理由同 queryDom 上方的注释。
 async function getHtml(payload: GetHtmlPayload, tabId: number): Promise<GetHtmlResult> {
-  const frames = await executeInAllFrames(tabId, () => payload, getHtmlInPage);
+  const input = resolveHtmlRequest(payload);
+  const frames = await executeInAllFrames(tabId, () => input, getHtmlInPage);
   return mergeReadResultsByFrame(frames, (output) => output.count > 0 && output.html.trim().length > 0);
 }
 
 async function getScripts(payload: GetScriptsPayload, tabId: number): Promise<GetScriptsResult> {
-  const input = payload ?? {};
-  const maxChars = Math.max(1000, input.maxChars ?? DEFAULT_TOOL_MAX_CHARS);
-  const includeInline = input.includeInline ?? true;
-  const includeExternal = input.includeExternal ?? true;
+  const { maxChars, includeInline, includeExternal } = resolveResourceRequest(payload);
 
   const scripts = await executeInTab(tabId, null, (): PageScriptInfo[] =>
     Array.from(document.scripts).map((script, index) => ({
@@ -1117,10 +1117,7 @@ async function getScripts(payload: GetScriptsPayload, tabId: number): Promise<Ge
 }
 
 async function getStylesheets(payload: GetStylesheetsPayload, tabId: number): Promise<GetStylesheetsResult> {
-  const input = payload ?? {};
-  const maxChars = Math.max(1000, input.maxChars ?? DEFAULT_TOOL_MAX_CHARS);
-  const includeInline = input.includeInline ?? true;
-  const includeExternal = input.includeExternal ?? true;
+  const { maxChars, includeInline, includeExternal } = resolveResourceRequest(payload);
 
   const stylesheets = await executeInTab(tabId, null, (): PageStylesheetInfo[] => {
     const fromStyleTags = Array.from(document.querySelectorAll('style')).map((style, index) => ({

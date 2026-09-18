@@ -9,6 +9,7 @@ import { resolveKeyDescriptor } from './key-dispatch';
 import { DEFAULT_STORAGE_MAX_CHARS, buildStorageView, renderStorageView } from './storage-read';
 import { describeWaitResult, parseWaitCondition } from './wait-condition';
 import { DEFAULT_FIND_TEXT_LIMIT, MAX_FIND_TEXT_LIMIT, parseFindTextParams } from './find-text';
+import { DEFAULT_READ_MAX_CHARS, MAX_TOOL_RESULT_CHARS, resolveReadMaxChars } from './context-budget';
 import {
   sendMessage,
   type CaptureScreenshotPayload,
@@ -234,7 +235,9 @@ function makeReadPageTool(session: TabSessionController): BrowserAgentTool {
       'Read the current page title, URL, language, and readable text content. This is read-only and should be used for summaries and page-grounded Q&A.',
     parameters: Type.Object({
       maxChars: Type.Optional(
-        Type.Number({ description: 'Maximum number of page text characters to return. Defaults to 12000.' }),
+        Type.Number({
+          description: `Maximum number of page text characters to return. Defaults to ${DEFAULT_READ_MAX_CHARS}, capped at ${MAX_TOOL_RESULT_CHARS}.`,
+        }),
       ),
     }),
     execute: async (_toolCallId, params) => {
@@ -245,7 +248,9 @@ function makeReadPageTool(session: TabSessionController): BrowserAgentTool {
         params && typeof params === 'object' && 'maxChars' in params
           ? (params as { maxChars?: unknown }).maxChars
           : undefined;
-      const maxChars = typeof rawMaxChars === 'number' ? Math.max(1000, rawMaxChars) : 12000;
+      // 夹到压缩层的硬上限：超过它的部分在 compactAgentMessages 里必然被再切一刀，
+      // 放行只会让模型同时收到两条互相矛盾的截断提示（见 context-budget.ts）。
+      const maxChars = resolveReadMaxChars(rawMaxChars);
       const page = response.data;
       const text = page.text.slice(0, maxChars);
       const truncated = page.text.length > text.length;
@@ -497,7 +502,9 @@ function makeGetHtmlTool(session: TabSessionController): BrowserAgentTool {
       'Read outerHTML for the whole document or a CSS selector. Use this when DOM structure matters more than visible text.',
     parameters: Type.Object({
       selector: Type.Optional(Type.String({ description: 'CSS selector. Defaults to html.' })),
-      maxChars: Type.Optional(Type.Number({ description: 'Maximum HTML characters. Defaults to 12000.' })),
+      maxChars: Type.Optional(
+        Type.Number({ description: `Maximum HTML characters. Defaults to ${DEFAULT_READ_MAX_CHARS}, capped at ${MAX_TOOL_RESULT_CHARS}.` }),
+      ),
     }),
     execute: async (_toolCallId, params) => {
       const payload = params as GetHtmlPayload;
@@ -522,7 +529,9 @@ function makeGetScriptsTool(session: TabSessionController): BrowserAgentTool {
     parameters: Type.Object({
       includeInline: Type.Optional(Type.Boolean({ description: 'Include inline script contents. Defaults to true.' })),
       includeExternal: Type.Optional(Type.Boolean({ description: 'Fetch external script contents when possible. Defaults to true.' })),
-      maxChars: Type.Optional(Type.Number({ description: 'Total script text budget. Defaults to 12000.' })),
+      maxChars: Type.Optional(
+        Type.Number({ description: `Total script text budget. Defaults to ${DEFAULT_READ_MAX_CHARS}, capped at ${MAX_TOOL_RESULT_CHARS}.` }),
+      ),
     }),
     execute: async (_toolCallId, params) => {
       const payload = params as GetScriptsPayload;
@@ -550,7 +559,9 @@ function makeGetStylesheetsTool(session: TabSessionController): BrowserAgentTool
     parameters: Type.Object({
       includeInline: Type.Optional(Type.Boolean({ description: 'Include inline style tag contents. Defaults to true.' })),
       includeExternal: Type.Optional(Type.Boolean({ description: 'Fetch external stylesheet contents when possible. Defaults to true.' })),
-      maxChars: Type.Optional(Type.Number({ description: 'Total stylesheet text budget. Defaults to 12000.' })),
+      maxChars: Type.Optional(
+        Type.Number({ description: `Total stylesheet text budget. Defaults to ${DEFAULT_READ_MAX_CHARS}, capped at ${MAX_TOOL_RESULT_CHARS}.` }),
+      ),
     }),
     execute: async (_toolCallId, params) => {
       const payload = params as GetStylesheetsPayload;
