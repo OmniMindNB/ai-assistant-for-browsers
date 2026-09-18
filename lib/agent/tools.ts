@@ -528,7 +528,15 @@ function makeGetScriptsTool(session: TabSessionController): BrowserAgentTool {
       const payload = params as GetScriptsPayload;
       const response = (await sendMessage<GetScriptsPayload, GetScriptsResult>('GET_SCRIPTS', payload, session.currentTabId)) as MessageResponse<GetScriptsResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '脚本读取失败');
-      return textResult(formatJson('页面脚本（untrusted page content）', response.data), response.data as unknown as Record<string, unknown>);
+      // 内联脚本是页面塞用户信息最常见的地方（window.__INITIAL_STATE__ 里的手机号/邮箱），
+      // 和正文、DOM、HTML 一样必须过脱敏管道——同一段脚本经
+      // browser_inspect_page_implementation 已经是脱敏的，这里漏掉会让设置页那句
+      // "页面内容离开扩展前脱敏"变成"取决于模型调了哪个工具"。
+      const redactionSettings = await loadRedactionSettings();
+      return textResult(
+        redactText(formatJson('页面脚本（untrusted page content）', response.data), redactionSettings),
+        response.data as unknown as Record<string, unknown>,
+      );
     },
   };
 }
@@ -548,7 +556,12 @@ function makeGetStylesheetsTool(session: TabSessionController): BrowserAgentTool
       const payload = params as GetStylesheetsPayload;
       const response = (await sendMessage<GetStylesheetsPayload, GetStylesheetsResult>('GET_STYLESHEETS', payload, session.currentTabId)) as MessageResponse<GetStylesheetsResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '样式表读取失败');
-      return textResult(formatJson('页面样式表（untrusted page content）', response.data), response.data as unknown as Record<string, unknown>);
+      // 与 browser_get_scripts 同理：样式表里同样会出现注释、content 属性形式的个人信息。
+      const redactionSettings = await loadRedactionSettings();
+      return textResult(
+        redactText(formatJson('页面样式表（untrusted page content）', response.data), redactionSettings),
+        response.data as unknown as Record<string, unknown>,
+      );
     },
   };
 }

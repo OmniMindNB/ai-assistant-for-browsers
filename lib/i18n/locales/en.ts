@@ -376,7 +376,7 @@ export const en: Record<keyof typeof zh, string> = {
   'privacy.noBackendBody': 'Runi has no developer-operated backend or analytics.',
   'privacy.redaction.heading': 'Page content redaction',
   'privacy.redaction.description':
-    'Automatically replaces sensitive info like phone numbers and emails with placeholders before page text and form structure leave the extension.',
+    'Automatically replaces sensitive info like phone numbers and emails with placeholders before page text (body, forms, DOM/HTML, scripts and stylesheets, local storage) leaves the extension. Screenshots are pixels, not text, so they cannot be redacted and are not covered.',
   'privacy.redaction.enableLabel': 'Enable page content redaction',
   'privacy.redaction.rulesListLabel': 'Redaction rules',
   'privacy.redaction.loading': 'Loading redaction settings…',

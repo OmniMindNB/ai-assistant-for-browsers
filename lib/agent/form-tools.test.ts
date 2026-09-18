@@ -159,6 +159,46 @@ describe('browser_get_form', () => {
   });
 });
 
+// 设置页承诺"页面内容在离开扩展前脱敏"，而内联脚本正是页面塞用户信息最常见的地方
+// （window.__INITIAL_STATE__ 里的手机号/邮箱）。同一段脚本经
+// browser_inspect_page_implementation 会被脱敏、经 browser_get_scripts 却不会，
+// 这条不一致让那句承诺变成"看你调了哪个工具"。
+describe('页面源码类读取同样走脱敏管道', () => {
+  function tool(name: string) {
+    const found = createBrowserTools(createTabSession(1)).find((candidate) => candidate.name === name);
+    if (!found) throw new Error(`${name} 未注册`);
+    return found;
+  }
+
+  it('browser_get_scripts redacts inline script contents', async () => {
+    loadRedactionSettings.mockResolvedValueOnce(defaultRedactionSettings());
+    sendMessage.mockResolvedValueOnce({
+      id: '1',
+      ok: true,
+      data: { scripts: [{ kind: 'inline', text: 'window.__USER__={phone:"13812345678"}' }] },
+    });
+
+    const text = ((await tool('browser_get_scripts').execute('call-1', {})).content[0] as { text: string }).text;
+
+    expect(text).toContain('[手机号已脱敏]');
+    expect(text).not.toContain('13812345678');
+  });
+
+  it('browser_get_stylesheets redacts stylesheet contents', async () => {
+    loadRedactionSettings.mockResolvedValueOnce(defaultRedactionSettings());
+    sendMessage.mockResolvedValueOnce({
+      id: '1',
+      ok: true,
+      data: { stylesheets: [{ kind: 'inline', text: '/* owner: a@b.com */ .x{color:red}' }] },
+    });
+
+    const text = ((await tool('browser_get_stylesheets').execute('call-1', {})).content[0] as { text: string }).text;
+
+    expect(text).toContain('[邮箱已脱敏]');
+    expect(text).not.toContain('a@b.com');
+  });
+});
+
 function fillFormTool() {
   const tool = createBrowserTools(createTabSession(1)).find((candidate) => candidate.name === 'browser_fill_form');
   if (!tool) throw new Error('browser_fill_form 未注册');
