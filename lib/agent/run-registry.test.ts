@@ -696,6 +696,34 @@ describe('run-registry surfaces a thrown agent.prompt error', () => {
     expect(assistant?.content).toBeTruthy();
     expect(assistant?.content).not.toContain('The operation was aborted.');
   });
+
+  // 真实的"思考中点暂停"走的不是上面那条抛错路径：被 abort 的 fetch 让流式层以一条
+  // stopReason:'error' 的 assistant 消息收尾，pi-agent-core 的 agent-loop 见到 'error'
+  // 就正常结束循环，prompt() resolve 而不是 reject。于是 isUserAbortError 永远不成立，
+  // describeEmptyAgentRun 按"模型报错"处理，用户看到的是
+  // 「模型调用失败：signal is aborted without reason / 请检查 Base URL、API Key…」。
+  it('treats a stop that ends the run without throwing as a user stop, not a model failure', async () => {
+    const agent = makeFakeAgent([]);
+    let resolvePrompt!: () => void;
+    agent.prompt = vi.fn(() => new Promise<void>((resolve) => { resolvePrompt = resolve; }));
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    mocks.replaceConversationMessages.mockClear();
+
+    await startRun(makeRequest({ tabId: 65, conversationId: 'conv-stopped-ok' }));
+    stopRun(65);
+    // 流式层被打断后写进 agent.state.messages 的那条收尾消息。
+    agent.state.messages = [
+      { role: 'assistant', content: [], stopReason: 'error', errorMessage: 'signal is aborted without reason' },
+    ] as never;
+    resolvePrompt();
+    await vi.waitFor(() => expect(getRunState(65)).toBeUndefined());
+
+    const persisted = mocks.replaceConversationMessages.mock.calls.at(-1)?.[1] as ChatMessageRecord[];
+    const assistant = persisted.filter((message) => message.role === 'assistant').at(-1);
+    expect(assistant?.content).not.toContain('signal is aborted without reason');
+    expect(assistant?.content).not.toContain('Base URL');
+    expect(assistant?.stopped).toBe(true);
+  });
 });
 
 describe('run-registry confirmation summary target tab', () => {

@@ -54,6 +54,15 @@ interface RunState {
    * null 表示这一轮没有被用户停止过，此时以 finally 里当场读到的 state.activitySteps 为准。
    */
   stoppedActivitySteps: ActivityStep[] | null;
+  /**
+   * 用户点过"停止"（stopRun 调用了 agent.abort()）。
+   *
+   * 不能只靠 prompt() 抛 AbortError 来判断：被 abort 的 fetch 让流式层以一条收尾 assistant
+   * 消息结束，pi-agent-core 见到它就正常退出循环，prompt() 是 resolve 而不是 reject。
+   * 少了这个标记，那条路径会被当成"模型没给出文本"，进而按模型故障来解释
+   * （ref: 用户反馈——思考中点暂停弹出「请检查 Base URL、API Key 和模型名称」）。
+   */
+  stopRequested: boolean;
 }
 
 const runs = new Map<number, RunState>();
@@ -336,6 +345,7 @@ export async function startRun(request: StartRunRequest): Promise<void> {
     taskOutcome: null,
     contextTruncated: false,
     stoppedActivitySteps: null,
+    stopRequested: false,
   };
   runs.set(request.tabId, state);
   startKeepalive(request.tabId);
@@ -491,17 +501,24 @@ export async function startRun(request: StartRunRequest): Promise<void> {
   void (async () => {
     try {
       await agent.prompt(request.agentUserContent, request.images);
-      if (!acc.trim()) {
-        const last = findLastAssistant(agent.state.messages);
-        acc = extractLastAssistantText(agent.state.messages) || describeEmptyAgentRun(last);
+      if (state.stopRequested) {
+        // 用户停止是这一轮正常结束的原因，不是"模型没说话"：不能交给 describeEmptyAgentRun
+        // 去猜，它只看得到流式层留下的 stopReason，会把中止解释成模型调用失败。
+        wasUserStopped = true;
+        replaceLastAssistant(state, acc.trim() ? acc : t('store.generationAborted'));
+      } else {
+        if (!acc.trim()) {
+          const last = findLastAssistant(agent.state.messages);
+          acc = extractLastAssistantText(agent.state.messages) || describeEmptyAgentRun(last);
+        }
+        replaceLastAssistant(state, acc);
       }
-      replaceLastAssistant(state, acc);
     } catch (e) {
       // 只 console.error 的话（迁移后一度就是这样），占位 assistant 消息会永远停在空内容上：
       // 用户看到轮次结束、busy 熄灭，却没有任何回复也没有任何错误提示。把结果写进消息本身，
       // 复用下面 finally 里已有的 persistMessages/pushAndPersist 通路，不需要给 RunSnapshot
       // 另开一个 error 字段。
-      if (isUserAbortError(e)) {
+      if (isUserAbortError(e) || state.stopRequested) {
         // 用户主动停止不是故障：保留已经流出来的部分文本（与迁移前 store.ts 的 AbortError
         // 分支行为一致）；一个字都还没出来时给一句明确的"已中止"，而不是留一条空气泡。
         // 但即便有部分文本，也要标 stopped：不然一段中途截断的回答会跟正常说完的回答
@@ -667,6 +684,7 @@ export function stopRun(tabId: number): void {
   state.resolveConfirmation = null;
   state.resolveQuestion?.('');
   state.resolveQuestion = null;
+  state.stopRequested = true;
   state.agent.abort();
   // 还在 running 的步骤没等到 tool_execution_end 就被掐断，存档前把它们标成 failed——
   // 一个永远停在"进行中"的步骤比明确标"未完成"更容易让人误以为它其实跑完了。

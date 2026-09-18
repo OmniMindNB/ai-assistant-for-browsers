@@ -142,6 +142,27 @@ describe('browserOpenAIStream', () => {
     }
   });
 
+  // 用户点"停止"时 agent.abort() 会让这条 fetch 以 AbortError 失败。它不是故障：收尾消息必须
+  // 标成 stopReason:'aborted'，否则 run-registry 的 describeEmptyAgentRun 只看得到 'error'，
+  // 把用户自己的停止说成"模型调用失败：signal is aborted without reason，请检查 Base URL、
+  // API Key 和模型名称"（ref: 用户反馈——思考中点暂停弹出配置错误提示）。
+  it('finishes with stopReason "aborted" (not "error") when the request is aborted by the user', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new DOMException('signal is aborted without reason', 'AbortError')));
+    const controller = new AbortController();
+    controller.abort();
+
+    const context = { messages: [{ role: 'user', content: 'hi' }] } as unknown as Context;
+    const stream = browserOpenAIStream(makeModel(), context, { apiKey: 'k', signal: controller.signal }) as AssistantMessageEventStream;
+    const events = await collectEvents(stream);
+
+    const errorEvent = events.at(-1);
+    expect(errorEvent?.type).toBe('error');
+    if (errorEvent?.type === 'error') {
+      expect(errorEvent.reason).toBe('aborted');
+      expect(errorEvent.error.stopReason).toBe('aborted');
+    }
+  });
+
   // 弱模型兼容（ref: lib/agent/tool-call-repair.ts）。修复前这两种畸形分别退化成
   // 「工具收到空参数」和「工具压根不执行、用户看到一坨裸 JSON」。
   it('repairs double-stringified tool arguments instead of dropping them', async () => {

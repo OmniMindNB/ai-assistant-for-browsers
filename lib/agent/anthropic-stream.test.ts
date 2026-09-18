@@ -430,6 +430,25 @@ describe('browserAnthropicStream', () => {
       expect(errorEvent.error.errorMessage).toContain('Failed to fetch');
     }
   });
+
+  // 与 openai-stream.test.ts 里同名用例同因：用户停止导致的 AbortError 不是模型故障，
+  // 收尾消息必须标 'aborted'，否则上层只会看到 stopReason:'error' 并给出配置排查提示。
+  it('finishes with stopReason "aborted" (not "error") when the request is aborted by the user', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new DOMException('signal is aborted without reason', 'AbortError')));
+    const controller = new AbortController();
+    controller.abort();
+
+    const context = { messages: [{ role: 'user', content: 'hi' }] } as unknown as Context;
+    const stream = browserAnthropicStream(makeModel(), context, { apiKey: 'k', signal: controller.signal }) as AssistantMessageEventStream;
+    const events = await collectEvents(stream);
+
+    const errorEvent = events.at(-1);
+    expect(errorEvent?.type).toBe('error');
+    if (errorEvent?.type === 'error') {
+      expect(errorEvent.reason).toBe('aborted');
+      expect(errorEvent.error.stopReason).toBe('aborted');
+    }
+  });
 });
 
 describe('convertMessagesForAnthropic 的图片工具结果', () => {

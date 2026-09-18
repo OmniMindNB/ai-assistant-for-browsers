@@ -153,8 +153,18 @@ async function runOpenAIStream(
     }
     finishStream(model, push, startedAt, text, toolCalls, mapOpenAiFinishReason(finishReason, toolCalls.size > 0), toolNames);
   } catch (error) {
-    const message = createAssistantMessage(model, startedAt, 'error', describeStreamError(error, url, model.id));
-    push({ type: 'error', reason: options?.signal?.aborted ? 'aborted' : 'error', error: message });
+    // 收尾消息的 stopReason 必须跟事件上的 reason 一致：pi-agent-core 的 agent-loop 只读
+    // response.result()（那条消息本身），事件上的 reason 会被丢掉。用户点停止时如果这里仍写
+    // 'error'，上层就只能看到一条"模型报错"，把用户自己的中止说成配置问题（ref: 用户反馈——
+    // 思考中点暂停弹出「模型调用失败：signal is aborted without reason，请检查 Base URL…」）。
+    const aborted = Boolean(options?.signal?.aborted);
+    const message = createAssistantMessage(
+      model,
+      startedAt,
+      aborted ? 'aborted' : 'error',
+      describeStreamError(error, url, model.id),
+    );
+    push({ type: 'error', reason: aborted ? 'aborted' : 'error', error: message });
   }
 }
 

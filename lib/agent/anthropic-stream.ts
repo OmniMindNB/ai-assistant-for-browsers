@@ -201,8 +201,16 @@ async function runAnthropicStream(
     }
     finishStream(model, push, startedAt, text, toolCalls, mapAnthropicStopReason(anthropicStopReason, toolCalls.size > 0), toolNames);
   } catch (error) {
-    const message = createAssistantMessage(model, startedAt, 'error', describeStreamError(error, url, model.id));
-    push({ type: 'error', reason: options?.signal?.aborted ? 'aborted' : 'error', error: message });
+    // 与 openai-stream.ts 同因：stopReason 要跟事件 reason 一致，否则用户主动停止会被上层
+    // 当成模型调用失败（详见那边的注释）。
+    const aborted = Boolean(options?.signal?.aborted);
+    const message = createAssistantMessage(
+      model,
+      startedAt,
+      aborted ? 'aborted' : 'error',
+      describeStreamError(error, url, model.id),
+    );
+    push({ type: 'error', reason: aborted ? 'aborted' : 'error', error: message });
   }
 }
 
