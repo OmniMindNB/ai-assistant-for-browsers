@@ -365,7 +365,7 @@ export const en: Record<keyof typeof zh, string> = {
   'store.interruptedByRestart': 'The task was interrupted by a browser or extension restart. Please try again.',
   'store.onlyToolCalls':
     'The model only made tool calls and ended the turn without a text reply. Please ask again, or try a more specific question.',
-  'store.noTextResult': 'This agent run produced no text result. See the side panel console log for details (right-click → Inspect).',
+  'store.noTextResult': 'This agent run produced no text result. See the extension\'s service worker log for details (chrome://extensions → Runi → Inspect views: service worker).',
   'privacy.pageDataTitle': 'Page data is sent to your AI provider',
   'privacy.pageDataBody':
     'When you make an AI request, your API key, current prompt, recent conversation context, and relevant page-derived results are sent directly to your configured AI provider endpoint.',

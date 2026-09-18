@@ -360,7 +360,9 @@ export const zh = {
   'store.generationAborted': '本次生成已被中止。',
   'store.interruptedByRestart': '任务因浏览器或扩展重启被中断，请重新发起。',
   'store.onlyToolCalls': '模型只发起了工具调用就结束了本轮，没有给出文字回答。请再问一次，或换一个更具体的问题。',
-  'store.noTextResult': '本次 Agent 运行没有生成文本结果。详情见侧边栏控制台日志（右键「检查」）。',
+  // agent 主循环已经搬进 background（见 lib/agent/run-registry.ts），日志不在侧边栏控制台里，
+  // 而在扩展的 Service Worker 控制台；指错地方的排查提示等于没有提示。
+  'store.noTextResult': '本次 Agent 运行没有生成文本结果。详情见扩展的 Service Worker 日志（chrome://extensions → Runi → 检查视图 Service Worker）。',
   'privacy.pageDataTitle': '网页数据会发送给 AI Provider',
   'privacy.pageDataBody':
     '当你发起 AI 请求时，API Key、当前提示词、近期对话上下文和相关页面结果会直接发送到你配置的 AI Provider 端点。',

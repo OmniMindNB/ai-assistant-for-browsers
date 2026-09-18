@@ -115,7 +115,7 @@ export function describeHttpFailure(
   const body = detail.trim() ? `：${detail.trim()}` : '：服务端未返回错误详情';
   const hint =
     status === 404
-      ? '\n404 通常意味着请求路径或模型名不存在（API Key 本身是有效的），请核对设置页的「协议」下拉框是否与 Base URL 匹配，以及该模型在此端点下是否可用。'
+      ? '\n404 通常意味着请求路径或模型名不存在，请核对设置页的「协议」下拉框是否与 Base URL 匹配，以及该模型在此端点下是否可用；少数网关也会用 404 表示 API Key 无效或无权访问该模型，所以排除前两项后再回头检查 Key。'
       : '';
   return `${head}${body}\n请求地址：${url}\n模型：${modelId}${hint}`;
 }
