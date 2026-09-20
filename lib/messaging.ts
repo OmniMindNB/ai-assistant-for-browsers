@@ -2,6 +2,7 @@
 // 用于 Side Panel ↔ Service Worker ↔ Content Script 之间的通信。
 
 import type { ReferencableTab } from '@/lib/chat/tab-reference';
+import type { PageOutlineItem } from './page-outline';
 
 export type MessageType =
   | 'PING'
@@ -90,6 +91,8 @@ export interface PageContent {
   text: string;
   /** 提取到的字符数 */
   length: number;
+  /** 正文的 h1-h3 标题骨架；正文过长只能截头尾时，它补上中段的结构信息。没有标题的页面为 undefined。 */
+  outline?: PageOutlineItem[];
 }
 
 /** GET_SELECTION 返回的页面选区数据 */

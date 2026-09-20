@@ -592,7 +592,15 @@ async function extractActivePage(tabId: number): Promise<PageContent> {
     throw new Error(response?.error ?? '页面提取失败');
   }
   const redactionSettings = await loadRedactionSettings();
-  return { ...response.data, text: redactText(response.data.text, redactionSettings) };
+  return {
+    ...response.data,
+    text: redactText(response.data.text, redactionSettings),
+    // 大纲标题同样是页面来源的文本，不能因为「只是标题」就绕过脱敏。
+    outline: response.data.outline?.map((item) => ({
+      ...item,
+      title: redactText(item.title, redactionSettings),
+    })),
+  };
 }
 
 async function getActiveSelection(tabId: number): Promise<PageSelection> {

@@ -376,3 +376,27 @@ describe('shortcut settings wiring', () => {
     expect(en['shortcut.promptRequired']).toBe('Enter a prompt');
   });
 });
+
+describe('page extraction outline', () => {
+  const contentSource = fs.readFileSync(
+    path.resolve(process.cwd(), 'entrypoints/content.ts'),
+    'utf8',
+  );
+  const backgroundSource = fs.readFileSync(
+    path.resolve(process.cwd(), 'entrypoints/background.ts'),
+    'utf8',
+  );
+
+  // 大纲标题同样是页面来源的不可信文本，不能因为「只是标题」就绕过脱敏管线
+  // （ref: 2026-08-31-page-redaction-pipeline-design.md）。
+  it('redacts outline titles alongside the page text', () => {
+    expect(backgroundSource).toContain('title: redactText(item.title, redactionSettings)');
+  });
+
+  // 大纲要从 Readability 解析出的正文容器里取：直接扫 document 会把导航、侧栏、
+  // 页脚的标题也算成小节，骨架就不再是「正文的骨架」了。
+  it('collects the outline from the readable article, not the whole document', () => {
+    expect(contentSource).toContain("new DOMParser().parseFromString(article.content, 'text/html')");
+    expect(contentSource).toContain('collectOutline(document)');
+  });
+});

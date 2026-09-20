@@ -1,4 +1,5 @@
 import { Readability } from '@mozilla/readability';
+import { collectOutline, type PageOutlineItem } from '@/lib/page-outline';
 import {
   sendMessage,
   type AgentTakeoverPayload,
@@ -92,15 +93,23 @@ function respond<T>(
 // 使用 Readability 提取正文，失败时回退到 innerText（ref: technical-plan.md §4.1）
 function extractPage(): PageContent {
   let text = '';
+  let outline: PageOutlineItem[] = [];
   try {
     const docClone = document.cloneNode(true) as Document;
     const article = new Readability(docClone).parse();
     text = (article?.textContent ?? '').replace(/\n{3,}/g, '\n\n').trim();
+    if (text && article?.content) {
+      // 只扫 Readability 认定的正文容器：直接扫 document 会把导航、侧栏、页脚的标题
+      // 也算成小节，骨架就不再是「正文的骨架」。
+      outline = collectOutline(new DOMParser().parseFromString(article.content, 'text/html'));
+    }
   } catch {
     // 忽略，走回退方案
   }
   if (!text) {
     text = (document.body?.innerText ?? '').replace(/\s+\n/g, '\n').trim();
+    // Readability 整体失败时没有正文容器可扫，只能退回整篇文档。
+    outline = collectOutline(document);
   }
   return {
     title: document.title,
@@ -108,6 +117,7 @@ function extractPage(): PageContent {
     lang: document.documentElement.lang || 'unknown',
     text,
     length: text.length,
+    outline: outline.length > 0 ? outline : undefined,
   };
 }
 
