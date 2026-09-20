@@ -29,13 +29,14 @@ export interface Settings {
 
 /**
  * Provider 预设；`nameEn` 仅用于 `name` 含中文的条目（英文 UI 下的展示/填充替身）。
+ * 当前 PROVIDER_PRESETS 里已无中文名条目，该字段暂无使用者，但机制保留供后续收录中文名厂商。
  * `name` 始终是下拉选项的匹配键（resolvePresetSelection 依赖其稳定性），不随 locale 变化。
  */
 export type ProviderPreset = Omit<ProviderConfig, 'id' | 'apiKey'> & { nameEn?: string };
 
 /**
  * 常用 OpenAI 兼容 Provider 预设（用于「设置」页快速填充）。
- * model/models 按各厂商官方文档核对（2026-09），qwen-plus/deepseek-chat 等旧模型已停用或被取代。
+ * model/models 按各厂商官方文档核对（2026-09），deepseek-chat/deepseek-reasoner 等旧模型已停用或被取代。
  * 默认模型统一取各厂商当前最新旗舰（能力最强档位），其余档位放入 models 供「其他可用模型」参考。
  *
  * ⚠️ 预设只收上下文窗口 ≥1M 的在售模型（ref:
@@ -55,13 +56,6 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     baseURL: 'https://api.openai.com/v1',
     model: 'gpt-5.6-sol',
     models: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'],
-  },
-  {
-    name: '通义千问',
-    nameEn: 'Qwen (Tongyi)',
-    baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-    model: 'qwen3.7-max',
-    models: ['qwen3.7-max', 'qwen3.7-plus', 'qwen3.6-flash'],
   },
 ];
 
@@ -227,7 +221,7 @@ export function trimProviderDraft(draft: ProviderConfig): ProviderConfig {
  * 编辑已有 Provider 时（isEditing）仅在字段为空时填充，避免误触预设下拉静默丢失已保存的自定义值。
  * 添加新 Provider 时（!isEditing）草稿本就未保存，直接用预设值整体覆盖，
  * 使「快速预设」可在多个预设间自由切换比对，而不会被上一次选择的预设「锁死」。
- * name 字段按 locale 走 presetDisplayName：英文 UI 下不应把中文品牌名（如「通义千问」）填进表单。
+ * name 字段按 locale 走 presetDisplayName：英文 UI 下不应把中文品牌名填进表单。
  */
 export function applyPresetToDraft(
   draft: ProviderConfig,
