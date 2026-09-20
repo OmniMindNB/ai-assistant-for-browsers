@@ -393,6 +393,14 @@ describe('page extraction outline', () => {
     expect(backgroundSource).toContain('title: redactText(item.title, redactionSettings)');
   });
 
+  // 先截断、后脱敏会把跨界的敏感号码切成两半，脱敏规则的锚定匹配就认不出来了，
+  // 残段原样进模型上下文。长度截断必须钉在 redactText 调用之后。
+  it('truncates outline titles after redaction, not before', () => {
+    expect(backgroundSource).toContain(
+      'title: redactText(item.title, redactionSettings).slice(0, MAX_OUTLINE_TITLE_CHARS)',
+    );
+  });
+
   // 大纲要从 Readability 解析出的正文容器里取：直接扫 document 会把导航、侧栏、
   // 页脚的标题也算成小节，骨架就不再是「正文的骨架」了。
   it('collects the outline from the readable article, not the whole document', () => {
@@ -413,5 +421,7 @@ describe('side-panel page prefetch', () => {
     expect(storeSource).toContain('planPagePrefetch(response.data)');
     expect(storeSource).not.toContain('PAGE_PREFETCH_MAX_CHARS');
     expect(storeSource).toContain("if (plan.kind !== 'skip') pagePrefetch = plan;");
+    // 真正要守的是这个：store 自己不再截断预取正文——所有长度判断都交给 planPagePrefetch。
+    expect(storeSource).not.toContain('DEFAULT_READ_MAX_CHARS');
   });
 });
