@@ -1387,7 +1387,8 @@ async function runAgent(
   if (options.clearAttachments) cancelPendingAttachments(get().pendingAttachments);
 
   // 引用页正文：只对还没注入过的引用抓一次。授权持续到用户移除，但快照不持续——
-  // 每轮重注入 24000 字符会把 MAX_CONTEXT_MESSAGES 的窗口吃光
+  // 每轮重注入的正文量由 TAB_REF_SINGLE_MAX_CHARS（lib/chat/tab-reference.ts）封顶，
+  // 反复重注入会把 MAX_CONTEXT_MESSAGES 的窗口吃光
   // （ref: 2026-09-05-cross-tab-context-design.md §5.6）。
   const references = get().referencedTabs;
   const pendingReferences = references.filter((item) => !item.snapshotSent);
