@@ -49,9 +49,9 @@ describe('describeHttpFailure', () => {
     expect(message).toContain('404 通常意味着请求路径或模型名不存在');
   });
 
-  // 评审 F5：撞供应商 400 时，若 detail 命中 context/length/token 关键字，多半是上下文超长
-  // 被拒绝，而不是参数格式错误——此前完全没有诊断，原样透传服务端文本。
-  it('adds a context-overflow hint for 400 when detail mentions context/length/token', () => {
+  // 评审 F5：撞供应商 400 时，若 detail 同时带"上下文语义词"和"超限语义词"，多半是
+  // 上下文超长被拒绝，而不是参数格式错误——此前完全没有诊断，原样透传服务端文本。
+  it('adds a context-overflow hint for 400 when detail names context and a limit together', () => {
     const message = describeHttpFailure(
       400,
       'Bad Request',
@@ -62,7 +62,8 @@ describe('describeHttpFailure', () => {
     expect(message).toContain('大概率是这次请求的上下文超出了该模型的窗口');
   });
 
-  it('is case-insensitive when matching the context-overflow keywords', () => {
+  // OpenAI 系标准错误码，下划线分隔、全大写，本身已是明确信号，单独识别。
+  it('is case-insensitive when matching the CONTEXT_LENGTH_EXCEEDED error code', () => {
     const message = describeHttpFailure(400, 'Bad Request', 'CONTEXT_LENGTH_EXCEEDED', 'https://example.com/v1', 'm');
     expect(message).toContain('大概率是这次请求的上下文超出了该模型的窗口');
   });
@@ -71,6 +72,31 @@ describe('describeHttpFailure', () => {
     const message = describeHttpFailure(400, 'Bad Request', 'invalid api key', 'https://example.com/v1', 'm');
     expect(message).not.toContain('大概率是这次请求的上下文超出了该模型的窗口');
     expect(message).not.toContain('404 通常意味着');
+  });
+
+  // 复审 F5 追加：上一版正则是任一命中 context|length|token 就触发，`token` 在鉴权错误里
+  // 是常用词，`length` 也会出现在与上下文无关的参数校验错误里——命中就给"换模型/减少引用"
+  // 的建议，会把该去查 API Key 或请求参数的用户引向错误方向。这三条是收紧后必须不再误报的
+  // 反例。
+  it('does not fire on an auth error mentioning "token" in isolation', () => {
+    const message = describeHttpFailure(400, 'Bad Request', 'invalid token', 'https://example.com/v1', 'm');
+    expect(message).not.toContain('大概率是这次请求的上下文超出了该模型的窗口');
+  });
+
+  it('does not fire on an expired-credential error mentioning "token" in isolation', () => {
+    const message = describeHttpFailure(400, 'Bad Request', 'access token expired', 'https://example.com/v1', 'm');
+    expect(message).not.toContain('大概率是这次请求的上下文超出了该模型的窗口');
+  });
+
+  it('does not fire on a param-validation error mentioning "length" in isolation', () => {
+    const message = describeHttpFailure(
+      400,
+      'Bad Request',
+      'string length must be <= 100',
+      'https://example.com/v1',
+      'm',
+    );
+    expect(message).not.toContain('大概率是这次请求的上下文超出了该模型的窗口');
   });
 
   it('adds no hint for other status codes', () => {

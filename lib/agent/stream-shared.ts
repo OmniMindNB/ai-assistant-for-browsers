@@ -104,8 +104,27 @@ export function parseToolArguments(value: string): Record<string, unknown> {
  * 404 "The model or endpoint xxx does not exist"），而网关直接拒绝时 body 往往是空的，此时
  * 旧文案会退化成没有任何信息的 "LLM 请求失败 (404 )"。所以 URL 和模型名必须写进报错本身。
  */
-/** 400 detail 里出现这些关键字，大概率是上下文超长被端点拒绝，而不是参数格式错误。 */
-const CONTEXT_OVERFLOW_HINT_PATTERN = /context|length|token/i;
+/**
+ * 判断 400 的 detail 是不是在说"上下文超长"，而不是鉴权失败或参数校验错误。
+ *
+ * 最初版本是任一命中 `context|length|token` 就触发，评审指出这太宽：`token` 在 LLM
+ * 场景同时是"访问令牌"的常用词（`invalid token` / `access token expired`），`length`
+ * 也会出现在与上下文无关的参数校验错误里（`string length must be <= 100`）——命中就
+ * 给"换模型/减少引用"的建议，会把本该去查 API Key 的用户引向错误方向，一条误导性的
+ * 诊断比没有诊断更糟。
+ *
+ * 改成要求"上下文语义词"与"超限语义词"同时出现，只有孤立的 token/length 不触发；
+ * 另外单独识别 `context_length_exceeded`（下划线或空格分隔，大小写不敏感）这个
+ * OpenAI 系标准错误码，因为它本身已经是明确信号，不需要再叠加超限词。
+ */
+const CONTEXT_OVERFLOW_ERROR_CODE_PATTERN = /context[_\s]?length[_\s]?exceeded/i;
+const CONTEXT_WORD_PATTERN = /context|上下文|prompt/i;
+const OVERFLOW_WORD_PATTERN = /exceed|maximum|too long|limit|overflow/i;
+
+function looksLikeContextOverflow(detail: string): boolean {
+  if (CONTEXT_OVERFLOW_ERROR_CODE_PATTERN.test(detail)) return true;
+  return CONTEXT_WORD_PATTERN.test(detail) && OVERFLOW_WORD_PATTERN.test(detail);
+}
 
 export function describeHttpFailure(
   status: number,
@@ -119,8 +138,8 @@ export function describeHttpFailure(
   const hint =
     status === 404
       ? '\n404 通常意味着请求路径或模型名不存在，请核对设置页的「协议」下拉框是否与 Base URL 匹配，以及该模型在此端点下是否可用；少数网关也会用 404 表示 API Key 无效或无权访问该模型，所以排除前两项后再回头检查 Key。'
-      : status === 400 && CONTEXT_OVERFLOW_HINT_PATTERN.test(detail)
-        ? '\n400 且报错里提到 context/length/token，大概率是这次请求的上下文超出了该模型的窗口；可以换一个窗口更大的模型，或减少这一轮引用的标签页/附件内容。'
+      : status === 400 && looksLikeContextOverflow(detail)
+        ? '\n400 且报错像是在说上下文超长，大概率是这次请求的上下文超出了该模型的窗口；可以换一个窗口更大的模型，或减少这一轮引用的标签页/附件内容。'
         : '';
   return `${head}${body}\n请求地址：${url}\n模型：${modelId}${hint}`;
 }
