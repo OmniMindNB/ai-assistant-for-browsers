@@ -1768,4 +1768,24 @@ describe('上下文字符预算常量之间的不变量', () => {
   it('低水位仍然容得下一条满额工具结果', () => {
     expect(CONTEXT_RECUT_TARGET_CHARS).toBeGreaterThan(MAX_TOOL_RESULT_CHARS);
   });
+
+  // 新锚点是内容而不是窗口（spec §5），但仍要校验最坏情况落在声明窗口内，
+  // 且给系统提示词和输出留出余量——否则抬高水位的代价是供应商 400，
+  // 而那正是这道字符闸门当初存在的理由。
+  it('最坏情况的上下文预算仍在声明窗口内，并留有系统提示词与输出的余量', () => {
+    const model = createModel({
+      id: 'p-test',
+      name: 'test',
+      baseURL: 'https://example.test/v1',
+      apiKey: 'k',
+      model: 'test-model',
+    });
+    // 系统提示词 + 工具表的估算值，沿用 spec §5 的口径（未实测）
+    const SYSTEM_PROMPT_ALLOWANCE = 25_000;
+    // 中文最保守口径：1 字符 ≈ 1 token
+    const worstCaseTokens = MAX_CONTEXT_CHARS + SYSTEM_PROMPT_ALLOWANCE + model.maxTokens;
+    expect(worstCaseTokens).toBeLessThan(model.contextWindow);
+    // 不是"刚好塞下"：留至少一倍余量，给 tokenizer 差异和估算误差
+    expect(worstCaseTokens * 2).toBeLessThan(model.contextWindow);
+  });
 });

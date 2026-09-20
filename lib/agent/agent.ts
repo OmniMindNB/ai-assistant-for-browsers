@@ -538,7 +538,11 @@ export function createModel(provider: ProviderConfig): Model<Api> {
     reasoning: false,
     input: ['text', 'image'],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: 128000,
+    // 实测（2026-09）：支持范围内模型的窗口下限已是 1,048,576，写死的 128000 对所有
+    // 模型都偏低八倍，而 pi-agent-core 拿这个数做自己的窗口管理。声明它只是不再谎报——
+    // 真正生效的闸门始终是 context-budget.ts 的字符预算，它先于这里触发。
+    // ref: docs/superpowers/specs/2026-09-20-context-budget-for-long-window-models-design.md §3
+    contextWindow: 1_000_000,
     // Reasoning models (e.g. Anthropic-compatible providers that emit a `thinking` block before
     // any text/tool_use) spend part of this budget on hidden reasoning tokens before answering —
     // too low a ceiling here means the whole response can be consumed by thinking with nothing

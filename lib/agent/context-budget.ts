@@ -9,15 +9,31 @@
  *
  * 这里的分工与 `system-prompt.ts` 收拢工具预算常量是同一个理由：模型自以为的上限和真正
  * 执行的上限必须来自同一个常量，否则一定会漂移。
+ *
+ * ⚠️ 数值的锚点是**内容**，不是窗口（2026-09-20 重新推导，ref:
+ * docs/superpowers/specs/2026-09-20-context-budget-for-long-window-models-design.md §5）。
+ * 早先这套数字是从 `createModel` 声明的 128k 窗口倒推的，而支持范围内模型的窗口下限现在
+ * 已是 1M——窗口不再是约束。取而代之的判据是"单条只读结果要能装下最长的一个真实网页
+ * 正文"：网页可读正文超过 20 万字符的实际上不存在（典型长文档页 3 万到 8 万）。
+ * 没有按窗口比例放大，是因为 1M 下的实际约束变成了首 token 延迟和长上下文的中间遗忘，
+ * 而产品取舍是"够用就好：只消灭截断类失效，不主动占满窗口"。
  */
 
 /**
  * 单条只读工具结果在上下文里保留的硬上限（compactAgentMessages 执行）。
  * 这是所有读取路径真正的天花板，`resolveReadMaxChars` 据此夹取。
+ * 取值依据见文件头：装得下最长的一个真实网页正文。
  */
-export const MAX_TOOL_RESULT_CHARS = 48000;
+export const MAX_TOOL_RESULT_CHARS = 200_000;
 
-/** 只读工具未指定 maxChars 时的默认读取量。 */
+/**
+ * 只读工具未指定 maxChars 时的默认读取量。
+ *
+ * `browser_read_page` 改走"整页放得下就整页"之后（page-read-window.ts），这个值只在两种
+ * 情况下生效：正文超过 MAX_TOOL_RESULT_CHARS 时的分段起步量，以及 browser_get_html /
+ * get_scripts / get_stylesheets（经 read-request.ts）。后三者是低密度内容——HTML 里大部分
+ * 是标签和类名——没有证据表明需要跟着上限一起放大。
+ */
 export const DEFAULT_READ_MAX_CHARS = 24000;
 
 /**
@@ -49,20 +65,22 @@ export const IMAGE_CHAR_EQUIVALENT = 5000;
  * 完全对应：超过高水位才重切一次到低水位，两次重切之间窗口起点不动，请求前缀只增不改。
  *
  * 为什么条数之外还要一道字符预算：条数裁剪的隐含前提是「每条消息都不大」，而这个前提有
- * 两个现成的破法——带附件的 user 消息（5 份各 30000 字符的文本，或 60000 字符的 PDF 正文，
- * 且 user 消息永远不进摘要压缩），以及上调后的只读结果上限。两者都不会让条数越线，于是
- * 窗口一条都不切，请求直接撞供应商的 400 context length exceeded：失败发生在服务端，
- * 用户等完一整轮却拿不到任何回答。
+ * 两个现成的破法——带附件的 user 消息（永远不进摘要压缩），以及只读结果的上限。两者都不会
+ * 让条数越线，于是窗口一条都不切，请求直接撞供应商的 400 context length exceeded：失败
+ * 发生在服务端，用户等完一整轮却拿不到任何回答。
  *
- * 取值按最保守的中文口径（1 字符 ≈ 1 token）折算：90000 字符 + 系统提示词 + maxTokens 的
- * 输出预算仍在 createModel 声明的 128k 窗口内。英文场景下实际 token 数只有三分之一左右，
- * 偏保守的方向是安全的那一侧。
+ * 低水位取 MAX_TOOL_RESULT_CHARS 之上一档，保证一次满额读取加上少量历史仍装得下；
+ * 高水位再留一层缓冲。注意两者不再维持旧版 2/3 的比例——锚点换成绝对量之后，比例是
+ * 推导的副产物而不是约束。这样做安全，是因为 compactAgentMessages 会把**非最新**的只读
+ * 结果压成一行摘要，历史里不可能同时存在两份满额读取。
  *
- * ⚠️ 这是兜底，不是日常路径：当前默认读取量下典型上下文只有几千字符，正常运行根本碰不到
- * 高水位。它存在的意义是让「上调读取上限」这件事不再能把请求撑爆。
+ * 最坏情况校验（中文最保守口径 1 字符 ≈ 1 token）：350000 + 约 25000 的系统提示词与工具表
+ * + 16000 的 maxTokens ≈ 391000 token，仍只占 1M 窗口的四成，agent.test.ts 有对应的不变量用例。
+ *
+ * ⚠️ 这是兜底，不是日常路径：典型会话只有几千到几万字符，正常运行碰不到高水位。
  */
-export const MAX_CONTEXT_CHARS = 90_000;
-export const CONTEXT_RECUT_TARGET_CHARS = 60_000;
+export const MAX_CONTEXT_CHARS = 350_000;
+export const CONTEXT_RECUT_TARGET_CHARS = 250_000;
 
 /**
  * 上下文规模的 token 代理量：文本按字符数，图片按固定当量，工具调用参数按序列化长度。
