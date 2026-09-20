@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_READ_MAX_CHARS, MAX_TOOL_RESULT_CHARS } from './context-budget';
+import { DEFAULT_READ_MAX_CHARS, MAX_TOOL_RESULT_CHARS, MIN_READ_MAX_CHARS } from './context-budget';
 import { describePageReadWindow, planPageReadWindow } from './page-read-window';
 
 describe('planPageReadWindow', () => {
@@ -87,9 +87,13 @@ describe('planPageReadWindow', () => {
     });
   });
 
+  // 用一个明显不等于 MAX_TOOL_RESULT_CHARS 的 total，避免"恰好相等"让断言在
+  // resolveReadMaxChars 的上限夹取被整个删掉时也照样为真（评审 F6）。
   it('maxChars 仍然被夹在 context-budget 的区间内', () => {
-    expect(planPageReadWindow(200000, { maxChars: 999999 })).toMatchObject({ end: MAX_TOOL_RESULT_CHARS });
-    expect(planPageReadWindow(200000, { maxChars: 1 })).toMatchObject({ end: 1000 });
+    expect(planPageReadWindow(MAX_TOOL_RESULT_CHARS * 2, { maxChars: MAX_TOOL_RESULT_CHARS * 5 })).toMatchObject({
+      end: MAX_TOOL_RESULT_CHARS,
+    });
+    expect(planPageReadWindow(MAX_TOOL_RESULT_CHARS * 2, { maxChars: 1 })).toMatchObject({ end: MIN_READ_MAX_CHARS });
   });
 });
 
@@ -113,9 +117,12 @@ describe('describePageReadWindow', () => {
     expect(describePageReadWindow(planPageReadWindow(38291, undefined))).toBe('');
   });
 
-  it('整页超过单次上限时，给出下一段的 offset 并提示可改用定位工具', () => {
+  it('整页超过单次上限时，给出下一段的 offset，并提示可调大 maxChars 或改用定位工具', () => {
     const note = describePageReadWindow(planPageReadWindow(MAX_TOOL_RESULT_CHARS + 50000, undefined));
     expect(note).toContain(`offset=${DEFAULT_READ_MAX_CHARS}`);
+    // 评审 F9：只提 offset 会把一个两次调用就能读完的长页引导成十轮分段，必须同时给出
+    // "调大 maxChars"这条出路。
+    expect(note).toContain('maxChars');
     expect(note).toContain('browser_find_text');
     // 分段读会触发上下文压缩把上一段压成一行摘要，不提醒模型就会读了后面丢前面
     expect(note).toContain('摘要');

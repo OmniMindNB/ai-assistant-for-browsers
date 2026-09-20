@@ -33,7 +33,8 @@ describe('resolveReadMaxChars', () => {
   // 切到 30000，模型同时收到"正文已截断到 60000"和"工具结果已截断"两条互相矛盾的提示。
   it('超过单条工具结果硬上限的值夹到硬上限', () => {
     expect(resolveReadMaxChars(MAX_TOOL_RESULT_CHARS + 1)).toBe(MAX_TOOL_RESULT_CHARS);
-    expect(resolveReadMaxChars(500000)).toBe(MAX_TOOL_RESULT_CHARS);
+    // 用相对硬上限推导的值而不是字面量，避免硬上限再涨一档时这条断言失去意义（评审 F11）。
+    expect(resolveReadMaxChars(MAX_TOOL_RESULT_CHARS * 3)).toBe(MAX_TOOL_RESULT_CHARS);
   });
 
   it('小数向下取整，不把非整数字符数传给 slice', () => {

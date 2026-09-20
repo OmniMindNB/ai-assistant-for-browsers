@@ -631,12 +631,14 @@ describe('browser_read_page：读取上限与压缩层的硬上限同源', () =>
 
   // 整页放得下就一次读完之后，这条提示只可能由调用方自己传小 maxChars 触发，
   // 文案口径也随之从"系统截断了你"改成"你缩小了窗口"（ref: Task 1）。
+  // 评审 F11：这里的 maxChars 特意选一个不等于 DEFAULT_READ_MAX_CHARS（24000）的值，
+  // 避免读者误以为它绑定着那个默认值常量——它表达的是"调用方自选的一个小值"。
   it('调用方自己缩小 maxChars 导致截断时，提示信息说明是自己缩小了窗口', async () => {
     mockPage('字'.repeat(38641));
 
-    const text = resultText(await readPageTool().execute('call-1', { maxChars: 24000 }));
+    const text = resultText(await readPageTool().execute('call-1', { maxChars: 10000 }));
 
-    expect(text).toContain('还有 14641 字符未返回');
+    expect(text).toContain('还有 28641 字符未返回');
     expect(text).toContain('是你传入的 maxChars 把窗口调小了');
     expect(text).toContain('不要就此认为页面没有内容');
   });
