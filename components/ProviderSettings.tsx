@@ -12,7 +12,6 @@ import {
   draftPlaceholders,
   hasDuplicateProviderName,
   modelCandidates,
-  presetDisplayName,
   resolvePresetSelection,
   trimProviderDraft,
   CUSTOM_PRESET_VALUE,
@@ -178,7 +177,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
     setSelectedPreset(name);
     const preset = resolvePresetSelection(name);
     if (!preset) return;
-    const result = applyPresetToDraft(draft, extrasText, preset, isEditing, resolved);
+    const result = applyPresetToDraft(draft, extrasText, preset, isEditing);
     setDraft(result.draft);
     setExtrasText(result.extrasText);
   }
@@ -417,7 +416,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
             <option value="">{t('provider.presetPlaceholderOption')}</option>
             {PROVIDER_PRESETS.map((p) => (
               <option key={p.name} value={p.name}>
-                {presetDisplayName(p, resolved)}
+                {p.name}
               </option>
             ))}
             {/* 用 disabled option 而非 <hr>：<hr> in <select> 仅较新 Chromium 支持，项目同时构建 Firefox */}

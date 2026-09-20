@@ -6,7 +6,6 @@ import {
   draftPlaceholders,
   hasDuplicateProviderName,
   modelCandidates,
-  presetDisplayName,
   resolvePresetSelection,
   resolveProviderApi,
   trimProviderDraft,
@@ -289,40 +288,5 @@ describe('draftPlaceholders', () => {
   it('prefixes the preset name in both locales when the preset name is already Latin', () => {
     expect(draftPlaceholders('DeepSeek').name).toBe('例如 DeepSeek');
     expect(draftPlaceholders('DeepSeek', 'en').name).toBe('e.g. DeepSeek');
-  });
-});
-
-// 说明：目前 PROVIDER_PRESETS 里已没有 name 含中文的条目（DeepSeek / OpenAI 都是拉丁名），
-// 所以 nameEn 分支只能用内联 fixture 覆盖，而不能从目录里取一个真实预设。这不是为了
-// 方便测试而造的假数据——`ProviderPreset.nameEn` 仍是公开字段，机制仍然有效，只是当前
-// 没有预设用到它。哪天再收一个中文名厂商，这些用例不需要改。
-const CHINESE_NAMED_PRESET = { name: '示例中文厂商', nameEn: 'Example Vendor (CN)' };
-
-describe('presetDisplayName', () => {
-  it('returns the Chinese name by default (zh)', () => {
-    expect(presetDisplayName(CHINESE_NAMED_PRESET)).toBe('示例中文厂商');
-  });
-
-  it('returns nameEn under the en locale when present', () => {
-    expect(presetDisplayName(CHINESE_NAMED_PRESET, 'en')).toBe('Example Vendor (CN)');
-  });
-
-  it('falls back to name under en when nameEn is absent (e.g. OpenAI, already Latin)', () => {
-    const preset = resolvePresetSelection('OpenAI')!;
-    expect(presetDisplayName(preset, 'en')).toBe('OpenAI');
-  });
-});
-
-describe('applyPresetToDraft with locale', () => {
-  const preset = { ...CHINESE_NAMED_PRESET, baseURL: 'https://example.test/v1', model: 'example-model' };
-
-  it('fills the localized display name into a new draft when locale is en', () => {
-    const { draft } = applyPresetToDraft(baseDraft, '', preset, false, 'en');
-    expect(draft.name).toBe('Example Vendor (CN)');
-  });
-
-  it('defaults to the Chinese name when locale is omitted', () => {
-    const { draft } = applyPresetToDraft(baseDraft, '', preset, false);
-    expect(draft.name).toBe('示例中文厂商');
   });
 });

@@ -28,11 +28,15 @@ export interface Settings {
 }
 
 /**
- * Provider 预设；`nameEn` 仅用于 `name` 含中文的条目（英文 UI 下的展示/填充替身）。
- * 当前 PROVIDER_PRESETS 里已无中文名条目，该字段暂无使用者，但机制保留供后续收录中文名厂商。
- * `name` 始终是下拉选项的匹配键（resolvePresetSelection 依赖其稳定性），不随 locale 变化。
+ * Provider 预设。`name` 既是下拉选项的展示文案，也是匹配键（resolvePresetSelection 依赖其
+ * 稳定性），不随 locale 变化——预设名是品牌名，本来就不翻译。
+ *
+ * 曾有一个 `nameEn` 字段和配套的 `presetDisplayName()`，用于把中文品牌名（「通义千问」
+ * 「智谱 GLM」）在英文 UI 下换成拉丁写法。随着这些厂商的预设被移除，剩下的预设名全是
+ * 拉丁文，该机制失去了全部使用者，已删除。若将来再收录中文名厂商，需要的是重新引入
+ * 一个展示名字段，而不是找回这段代码——彼时的 UI 形态未必相同。
  */
-export type ProviderPreset = Omit<ProviderConfig, 'id' | 'apiKey'> & { nameEn?: string };
+export type ProviderPreset = Omit<ProviderConfig, 'id' | 'apiKey'>;
 
 /**
  * 常用 OpenAI 兼容 Provider 预设（用于「设置」页快速填充）。
@@ -94,14 +98,6 @@ export interface DraftPlaceholders {
 /** draftPlaceholders 的语言参数；与 lib/i18n 的 ResolvedLocale 同构，但本文件不依赖 lib/i18n。 */
 export type ProviderPlaceholderLocale = 'zh' | 'en';
 
-/** 预设展示名：英文 UI 下有 nameEn 则用 nameEn（避免中文品牌名混入英文界面），否则回退到 name。 */
-export function presetDisplayName(
-  preset: Pick<ProviderPreset, 'name' | 'nameEn'>,
-  locale: ProviderPlaceholderLocale = 'zh',
-): string {
-  return locale === 'en' && preset.nameEn ? preset.nameEn : preset.name;
-}
-
 /** 自定义态：示例必须与具体厂商无关，否则会误导用户以为该字段有固定取值。 */
 const CUSTOM_PLACEHOLDERS_BY_LOCALE: Record<ProviderPlaceholderLocale, DraftPlaceholders> = {
   zh: {
@@ -147,7 +143,7 @@ export function draftPlaceholders(
   if (!preset) return defaultPlaceholders(locale);
   const extras = (preset.models ?? []).filter((m) => m !== preset.model);
   return {
-    name: examplePrefix(locale, presetDisplayName(preset, locale)),
+    name: examplePrefix(locale, preset.name),
     baseURL: preset.baseURL,
     model: preset.model,
     // 无其他模型可举例时不给提示：给错厂商的示例比不给示例更糟。
@@ -221,16 +217,14 @@ export function trimProviderDraft(draft: ProviderConfig): ProviderConfig {
  * 编辑已有 Provider 时（isEditing）仅在字段为空时填充，避免误触预设下拉静默丢失已保存的自定义值。
  * 添加新 Provider 时（!isEditing）草稿本就未保存，直接用预设值整体覆盖，
  * 使「快速预设」可在多个预设间自由切换比对，而不会被上一次选择的预设「锁死」。
- * name 字段按 locale 走 presetDisplayName：英文 UI 下不应把中文品牌名填进表单。
  */
 export function applyPresetToDraft(
   draft: ProviderConfig,
   extrasText: string,
   preset: ProviderPreset,
   isEditing: boolean,
-  locale: ProviderPlaceholderLocale = 'zh',
 ): { draft: ProviderConfig; extrasText: string } {
-  const presetName = presetDisplayName(preset, locale);
+  const presetName = preset.name;
   if (!isEditing) {
     return {
       draft: { ...draft, name: presetName, baseURL: preset.baseURL, model: preset.model },
