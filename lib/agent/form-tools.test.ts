@@ -586,8 +586,9 @@ describe('browser_read_page：读取上限与压缩层的硬上限同源', () =>
     return text.slice(text.indexOf('\n正文：\n') + '\n正文：\n'.length);
   }
 
-  it('不指定 maxChars 时按默认读取量截断', async () => {
-    mockPage('字'.repeat(DEFAULT_READ_MAX_CHARS + 500));
+  // 整页放得下就一次读完（ref: Task 1），默认分段量只在整页超过硬上限时才会用到。
+  it('不指定 maxChars 且整页超过硬上限时按默认读取量截断', async () => {
+    mockPage('字'.repeat(MAX_TOOL_RESULT_CHARS + 500));
 
     const text = resultText(await readPageTool().execute('call-1', {}));
 
@@ -628,13 +629,15 @@ describe('browser_read_page：读取上限与压缩层的硬上限同源', () =>
     expect(text).toContain(`本次返回：第 24000–${page.length} 字符`);
   });
 
-  it('截断提示会告诉模型下一步怎么读，而不是只说一句"已截断"', async () => {
+  // 整页放得下就一次读完之后，这条提示只可能由调用方自己传小 maxChars 触发，
+  // 文案口径也随之从"系统截断了你"改成"你缩小了窗口"（ref: Task 1）。
+  it('调用方自己缩小 maxChars 导致截断时，提示信息说明是自己缩小了窗口', async () => {
     mockPage('字'.repeat(38641));
 
-    const text = resultText(await readPageTool().execute('call-1', {}));
+    const text = resultText(await readPageTool().execute('call-1', { maxChars: 24000 }));
 
     expect(text).toContain('还有 14641 字符未返回');
-    expect(text).toContain('把 maxChars 设为 38641');
+    expect(text).toContain('是你传入的 maxChars 把窗口调小了');
     expect(text).toContain('不要就此认为页面没有内容');
   });
 });

@@ -11,7 +11,7 @@
  *    也没说下一步该做什么，弱模型的实际反应是放弃而不是续读。
  */
 
-import { MAX_TOOL_RESULT_CHARS, resolveReadMaxChars } from './context-budget';
+import { DEFAULT_READ_MAX_CHARS, MAX_TOOL_RESULT_CHARS, resolveReadMaxChars } from './context-budget';
 
 export interface PageReadParams {
   offset?: unknown;
@@ -39,9 +39,25 @@ function resolveOffset(raw: unknown, total: number): number {
   return Math.min(total, Math.max(0, Math.floor(raw)));
 }
 
+/**
+ * 本次窗口该取多大。
+ *
+ * 模型显式给了 maxChars 就照办（仍夹在 context-budget 的区间内）——它可能正在有意节省
+ * 上下文，强行灌回整页是把一种失效换成另一种。没给的时候才由我们决定：整页塞得进单条
+ * 结果上限就一次给完，塞不进才回落到默认分段量。
+ *
+ * 之所以要这个区分，是因为 resolveReadMaxChars 刻意抹掉了"没传"和"传了"的差别
+ * （undefined 直接返回默认值），而这里恰恰需要那个差别。
+ */
+function resolveWindowSize(total: number, params: PageReadParams | undefined | null): number {
+  const raw = params?.maxChars;
+  if (typeof raw === 'number' && Number.isFinite(raw)) return resolveReadMaxChars(raw);
+  return total <= MAX_TOOL_RESULT_CHARS ? MAX_TOOL_RESULT_CHARS : DEFAULT_READ_MAX_CHARS;
+}
+
 export function planPageReadWindow(total: number, params: PageReadParams | undefined | null): PageReadWindow {
   const offset = resolveOffset(params?.offset, total);
-  const maxChars = resolveReadMaxChars(params?.maxChars);
+  const maxChars = resolveWindowSize(total, params);
   const end = Math.min(total, offset + maxChars);
   const remaining = total - end;
   return {
@@ -71,7 +87,12 @@ export function describePageReadWindow(window: PageReadWindow): string {
   const head = `注意：本次只返回了第 ${window.offset}–${window.end} 字符，还有 ${window.remaining} 字符未返回（正文总长 ${window.total} 字符）。`;
 
   if (window.total <= MAX_TOOL_RESULT_CHARS) {
-    return `${head}整页未超过单次读取上限，把 maxChars 设为 ${window.total} 再调用一次 browser_read_page 即可一次读完，不要就此认为页面没有内容。`;
+    // 走到这里只可能是调用方自己传了更小的 maxChars：不传的话整页早就一次给完了。
+    // 所以文案的口径是"你缩小了窗口"，而不是从前那种"系统截断了你"。
+    return (
+      `${head}整页只有 ${window.total} 字符、并未超过单次读取上限，是你传入的 maxChars 把窗口调小了。` +
+      '需要完整正文时不要传 maxChars，再调用一次 browser_read_page 即可一次读完，不要就此认为页面没有内容。'
+    );
   }
 
   return (

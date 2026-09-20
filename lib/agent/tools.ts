@@ -233,11 +233,11 @@ function makeReadPageTool(session: TabSessionController): BrowserAgentTool {
     name: 'browser_read_page',
     label: 'Read Page',
     description:
-      `Read the current page title, URL, language, and readable text content. This is read-only and should be used for summaries and page-grounded Q&A. Long pages are returned one window at a time: the result always states the full text length and how much was left out, so a page longer than ${DEFAULT_READ_MAX_CHARS} characters is read by calling this again with a larger maxChars or with offset moved forward — never assume the page is empty because the part you needed was not in the first window.`,
+      `Read the current page title, URL, language, and readable text content. This is read-only and should be used for summaries and page-grounded Q&A. Omit maxChars and a page whose text fits under ${MAX_TOOL_RESULT_CHARS} characters is returned whole in one call — only pass maxChars when you deliberately want a smaller window. A page longer than that is returned one window at a time: the result always states the full text length and how much was left out, so continue by moving offset forward — never assume the page is empty because the part you needed was not in the first window.`,
     parameters: Type.Object({
       maxChars: Type.Optional(
         Type.Number({
-          description: `Maximum number of page text characters to return. Defaults to ${DEFAULT_READ_MAX_CHARS}, capped at ${MAX_TOOL_RESULT_CHARS}.`,
+          description: `Maximum number of page text characters to return. Omit it to get the whole page when it fits under ${MAX_TOOL_RESULT_CHARS}, or ${DEFAULT_READ_MAX_CHARS} per window when it does not. Values are capped at ${MAX_TOOL_RESULT_CHARS}.`,
         }),
       ),
       offset: Type.Optional(

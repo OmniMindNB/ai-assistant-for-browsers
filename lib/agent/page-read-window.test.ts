@@ -3,14 +3,45 @@ import { DEFAULT_READ_MAX_CHARS, MAX_TOOL_RESULT_CHARS } from './context-budget'
 import { describePageReadWindow, planPageReadWindow } from './page-read-window';
 
 describe('planPageReadWindow', () => {
-  it('不传参数时从头读，按默认上限切', () => {
-    expect(planPageReadWindow(38641, undefined)).toEqual({
+  // 本任务的核心：整页塞得进单条结果上限时，不传 maxChars 就该一次读完。
+  // 修复前这里切在 DEFAULT_READ_MAX_CHARS，用户问的小节落在窗口之外
+  // （ref: hello-agents 第四章，正文 38291，4.4.3 在 29000 之后）。
+  it('不传 maxChars 且整页塞得下时，一次读完整页', () => {
+    expect(planPageReadWindow(38291, undefined)).toEqual({
+      offset: 0,
+      end: 38291,
+      total: 38291,
+      remaining: 0,
+      truncated: false,
+      exhausted: false,
+    });
+  });
+
+  it('不传 maxChars 但整页超过上限时，仍回落到默认分段量', () => {
+    const total = MAX_TOOL_RESULT_CHARS + 50000;
+    expect(planPageReadWindow(total, undefined)).toMatchObject({
       offset: 0,
       end: DEFAULT_READ_MAX_CHARS,
-      total: 38641,
-      remaining: 38641 - DEFAULT_READ_MAX_CHARS,
       truncated: true,
-      exhausted: false,
+    });
+  });
+
+  // 模型显式调小窗口是它的权利（可能在有意节省上下文），不能被整页规则覆盖。
+  it('显式传入的小 maxChars 不会被放大成整页', () => {
+    expect(planPageReadWindow(38291, { maxChars: 3000 })).toMatchObject({
+      offset: 0,
+      end: 3000,
+      remaining: 38291 - 3000,
+      truncated: true,
+    });
+  });
+
+  it('整页规则同样从 offset 起算，不把窗口拉回 0', () => {
+    expect(planPageReadWindow(38291, { offset: 10000 })).toMatchObject({
+      offset: 10000,
+      end: 38291,
+      remaining: 0,
+      truncated: false,
     });
   });
 
@@ -69,16 +100,21 @@ describe('describePageReadWindow', () => {
 
   // 之前只有一句被动的"正文已截断到 24000 字符"，模型无从判断该怎么办，
   // 实测直接放弃并谎称"页面没有可用内容"。提示必须是可执行的。
-  it('整页能塞进单次上限时，直接告诉模型把 maxChars 调到多少能一次读完', () => {
-    const note = describePageReadWindow(planPageReadWindow(38641, undefined));
-    expect(note).toContain('还有 14641 字符未返回');
+  // 改规则之后这条分支只可能由"模型自己把窗口调小"触发，文案必须相应改口径。
+  // 这个变化本身就是验收信号：该提示从常规路径上的补救，退回成例外提醒。
+  it('整页塞得下却仍被截断时，指出是调用方自己缩小了窗口', () => {
+    const note = describePageReadWindow(planPageReadWindow(38291, { maxChars: 3000 }));
+    expect(note).toContain('还有 35291 字符未返回');
     expect(note).toContain('maxChars');
-    expect(note).toContain('38641');
     expect(note).not.toContain('browser_find_text');
   });
 
+  it('不传 maxChars 且整页塞得下时不产生任何提示', () => {
+    expect(describePageReadWindow(planPageReadWindow(38291, undefined))).toBe('');
+  });
+
   it('整页超过单次上限时，给出下一段的 offset 并提示可改用定位工具', () => {
-    const note = describePageReadWindow(planPageReadWindow(120000, undefined));
+    const note = describePageReadWindow(planPageReadWindow(MAX_TOOL_RESULT_CHARS + 50000, undefined));
     expect(note).toContain(`offset=${DEFAULT_READ_MAX_CHARS}`);
     expect(note).toContain('browser_find_text');
     // 分段读会触发上下文压缩把上一段压成一行摘要，不提醒模型就会读了后面丢前面
