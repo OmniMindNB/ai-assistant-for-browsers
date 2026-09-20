@@ -347,6 +347,8 @@ export const en: Record<keyof typeof zh, string> = {
     '{instruction}\n\nThe following JSON string is the selected page text:\n{selection}',
   'store.shortcutPagePrompt':
     '{instruction}\n\nThe following JSON string is the current page text (title: {title}, url: {url}). Use it directly; only call browser_read_page again if you need content beyond what is included here:\n{page}',
+  'store.shortcutPageWindowedPrompt':
+    '{instruction}\n\nThe current page (title: {title}, url: {url}) has a body of {total} characters, which exceeds what fits in one turn. What follows is the beginning and the end of the same page, not two different pages.\n\nBeginning (characters 0–{headEnd}, JSON string):\n{head}\n\nEnd (characters {tailStart}–{total}, JSON string):\n{tail}\n\n{omitted} characters in the middle were omitted. The JSON array below is the heading outline of the whole page, including the omitted middle:\n{outline}\n\nWhen you need detail from the middle, search a heading from that outline with browser_find_text to jump straight to it. Do not page through with browser_read_page from the start: calling a read tool again compacts the body above into a one-line summary and pushes it out of context, so you would lose the beginning to gain the end.',
   'store.shortcutNoBrowserSystemPrompt':
     ' This shortcut must not use browser context; do not read, inspect, or modify the current page.',
   'store.selectionAskTemplate': 'Regarding the selected text:\n```\n{selection}\n```\n\nMy question: ',

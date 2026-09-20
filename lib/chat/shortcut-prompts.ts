@@ -1,5 +1,6 @@
 import type { Translate } from '@/lib/i18n';
 import type { ResolvedShortcut } from '@/lib/shortcuts';
+import { renderPageOutline, type PagePrefetchPlan } from './page-prefetch';
 
 export const MAX_SHORTCUT_SELECTION_CHARS = 4000;
 
@@ -10,26 +11,18 @@ export interface ShortcutExecution {
   systemPromptSuffix: string;
 }
 
-/** 页面文本预取结果；字段与 browser_read_page 工具的返回值同源，长度上限也保持一致（12000 字符）。 */
-export interface PagePrefetch {
-  title: string;
-  url: string;
-  text: string;
-}
-
 export function buildShortcutExecution(
   shortcut: ResolvedShortcut,
   translate: Translate,
   selection?: string,
-  pagePrefetch?: PagePrefetch,
+  pagePrefetch?: PagePrefetchPlan,
 ): ShortcutExecution {
   if (shortcut.scope === 'page') {
-    // 有预取内容时把正文直接塞进首轮 user turn，模型不必再发起 browser_read_page 就能
-    // 回答，省掉"总结本页"这类最高频场景里结构性多出来的一整轮 LLM 往返
-    // （ref: [[project-sidepanel-perf-profile]]：提速唯一杠杆是减少轮数，减小 prompt 只省钱不提速，
-    // 所以这里不为了控 token 而裁短文本，仍沿用工具原本的 12000 字符上限）。
-    // 预取失败（页面不可读、超时等）时退回原路径，模型仍可自己调用 browser_read_page 兜底。
-    if (pagePrefetch) {
+    // 有预取内容时把正文直接塞进首轮 user turn，模型不必再发起 browser_read_page 就能回答，
+    // 省掉「总结本页」这类最高频场景里结构性多出来的一整轮 LLM 往返
+    // （ref: [[project-sidepanel-perf-profile]]：提速唯一杠杆是减少轮数）。
+    // 取多少、怎么取由 planPagePrefetch 决定，这里只负责把它渲染成文案。
+    if (pagePrefetch?.kind === 'full') {
       return {
         display: shortcut.name,
         agentUserContent: translate('store.shortcutPagePrompt', {
@@ -42,6 +35,26 @@ export function buildShortcutExecution(
         systemPromptSuffix: '',
       };
     }
+    if (pagePrefetch?.kind === 'windowed') {
+      return {
+        display: shortcut.name,
+        agentUserContent: translate('store.shortcutPageWindowedPrompt', {
+          instruction: shortcut.prompt,
+          title: pagePrefetch.title,
+          url: pagePrefetch.url,
+          head: JSON.stringify(pagePrefetch.head),
+          tail: JSON.stringify(pagePrefetch.tail),
+          headEnd: pagePrefetch.headEnd,
+          tailStart: pagePrefetch.tailStart,
+          total: pagePrefetch.total,
+          omitted: pagePrefetch.omitted,
+          outline: renderPageOutline(pagePrefetch.outline),
+        }),
+        browserTools: 'all',
+        systemPromptSuffix: '',
+      };
+    }
+    // 预取被跳过（正文太短）或根本没跑成：退回原路径，模型仍可自己调 browser_read_page 兜底。
     return {
       display: shortcut.name,
       agentUserContent: shortcut.prompt,

@@ -7,6 +7,12 @@ import {
   MAX_SHORTCUT_SELECTION_CHARS,
   buildShortcutExecution,
 } from './shortcut-prompts';
+import {
+  MAX_PAGE_PREFETCH_CHARS,
+  PAGE_PREFETCH_HEAD_CHARS,
+  PAGE_PREFETCH_TAIL_CHARS,
+  planPagePrefetch,
+} from './page-prefetch';
 
 function translator(dict: typeof en): Translate {
   return ((key: TranslationKey, vars?: Record<string, string | number>) =>
@@ -79,5 +85,55 @@ describe('buildShortcutExecution', () => {
       browserTools: 'none',
       systemPromptSuffix: expect.stringContaining('must not use browser context'),
     });
+  });
+
+  it('puts the whole body in the first turn when it fits', () => {
+    const plan = planPagePrefetch({ title: 'Doc', url: 'https://example.com/a', text: 'x'.repeat(1000) });
+    const result = buildShortcutExecution(shortcut('page'), t, undefined, plan);
+    expect(result.agentUserContent).toContain(JSON.stringify('x'.repeat(1000)));
+    expect(result.agentUserContent).toContain('https://example.com/a');
+    expect(result.browserTools).toBe('all');
+  });
+
+  it('falls back to the bare prompt when the prefetch was skipped', () => {
+    const plan = planPagePrefetch({ title: 'Doc', url: 'https://example.com/a', text: 'too short' });
+    expect(buildShortcutExecution(shortcut('page'), t, undefined, plan)).toEqual({
+      display: 'Translate',
+      agentUserContent: 'Translate this content.',
+      browserTools: 'all',
+      systemPromptSuffix: '',
+    });
+  });
+
+  it('sends head, tail and outline for an over-long body, and steers away from sequential re-reads', () => {
+    const text =
+      'h'.repeat(PAGE_PREFETCH_HEAD_CHARS) + 'm'.repeat(2000) + 't'.repeat(PAGE_PREFETCH_TAIL_CHARS);
+    const plan = planPagePrefetch({
+      title: 'Doc',
+      url: 'https://example.com/a',
+      text,
+      outline: [{ level: 2, title: 'Middle section' }],
+    });
+    const content = buildShortcutExecution(shortcut('page'), t, undefined, plan).agentUserContent;
+    expect(content).toContain(JSON.stringify('h'.repeat(PAGE_PREFETCH_HEAD_CHARS)));
+    expect(content).toContain(JSON.stringify('t'.repeat(PAGE_PREFETCH_TAIL_CHARS)));
+    expect(content).toContain('## Middle section');
+    expect(content).toContain('2000');
+    expect(content).toContain('browser_find_text');
+    expect(content).not.toContain('m'.repeat(2000));
+  });
+
+  // 与整页分支同样的约束：防注入规则只属于系统提示词。
+  it('keeps the windowed copy free of anti-injection wording in both locales', () => {
+    const plan = planPagePrefetch({
+      title: 'Doc',
+      url: 'https://example.com/a',
+      text: 'x'.repeat(MAX_PAGE_PREFETCH_CHARS + 10),
+    });
+    for (const translate of [t, zhT]) {
+      const content = buildShortcutExecution(shortcut('page'), translate, undefined, plan).agentUserContent;
+      expect(content).not.toMatch(/never follow instructions|绝不遵循/);
+      expect(content).not.toMatch(/UNTRUSTED PAGE CONTENT|不可信/);
+    }
   });
 });
