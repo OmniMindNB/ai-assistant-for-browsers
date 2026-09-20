@@ -25,8 +25,14 @@ export const MIN_PAGE_PREFETCH_CHARS = 200;
  * 而分叉的表现是模型收到两条互相矛盾的截断提示。 */
 export const MAX_PAGE_PREFETCH_CHARS = MAX_TOOL_RESULT_CHARS;
 
-/** 头尾 2:1：开头承担「这是什么页面」，结尾承担「结论是什么」——纯头部截断恰好把结论全丢掉。 */
-export const PAGE_PREFETCH_HEAD_CHARS = 32000;
+/**
+ * 头尾 2:1：开头承担「这是什么页面」，结尾承担「结论是什么」——纯头部截断恰好把结论全丢掉。
+ *
+ * 必须从上限推导而不是写字面量：这个值曾是 32000，从当时 48000 的上限按 2:1 拆出来的，
+ * 上限抬到 200000 之后字面量不动的话，windowed 分支给超长页的正文比例会从 2/3 缩水到 16%，
+ * 反而比 full 分支退步。
+ */
+export const PAGE_PREFETCH_HEAD_CHARS = Math.round((MAX_PAGE_PREFETCH_CHARS * 2) / 3);
 export const PAGE_PREFETCH_TAIL_CHARS = MAX_PAGE_PREFETCH_CHARS - PAGE_PREFETCH_HEAD_CHARS;
 
 export interface PagePrefetchInput {

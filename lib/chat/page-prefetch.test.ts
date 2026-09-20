@@ -19,6 +19,15 @@ describe('planPagePrefetch', () => {
     expect(PAGE_PREFETCH_HEAD_CHARS + PAGE_PREFETCH_TAIL_CHARS).toBe(MAX_PAGE_PREFETCH_CHARS);
   });
 
+  // 头尾切分必须随上限缩放，不能是从某一版上限拆出来的字面量：
+  // 上限抬高而切分不动时，windowed 分支给出的正文比例会不断缩水。
+  it('derives the head/tail split from the ceiling at a 2:1 ratio', () => {
+    expect(PAGE_PREFETCH_HEAD_CHARS).toBe(Math.round((MAX_PAGE_PREFETCH_CHARS * 2) / 3));
+    expect(PAGE_PREFETCH_HEAD_CHARS).toBeGreaterThan(PAGE_PREFETCH_TAIL_CHARS);
+    // 头段至少占上限的六成——纯头部截断会丢结论，纯比例失衡会丢开头
+    expect(PAGE_PREFETCH_HEAD_CHARS / MAX_PAGE_PREFETCH_CHARS).toBeGreaterThan(0.6);
+  });
+
   it('skips a body too short to support any page-scope task', () => {
     expect(planPagePrefetch(page(''))).toEqual({ kind: 'skip' });
     expect(planPagePrefetch(page('x'.repeat(MIN_PAGE_PREFETCH_CHARS - 1)))).toEqual({ kind: 'skip' });
