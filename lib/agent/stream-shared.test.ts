@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeStreamError, extractImageParts } from './stream-shared';
+import { describeHttpFailure, describeStreamError, extractImageParts } from './stream-shared';
 
 describe('extractImageParts', () => {
   it('returns an empty array for a plain string', () => {
@@ -40,5 +40,41 @@ describe('describeStreamError', () => {
 
   it('stringifies a non-Error thrown value', () => {
     expect(describeStreamError('boom', 'https://example.com', 'm')).toBe('boom');
+  });
+});
+
+describe('describeHttpFailure', () => {
+  it('adds the path/model-name hint for 404', () => {
+    const message = describeHttpFailure(404, 'Not Found', 'model not found', 'https://example.com/v1', 'kimi-k2');
+    expect(message).toContain('404 通常意味着请求路径或模型名不存在');
+  });
+
+  // 评审 F5：撞供应商 400 时，若 detail 命中 context/length/token 关键字，多半是上下文超长
+  // 被拒绝，而不是参数格式错误——此前完全没有诊断，原样透传服务端文本。
+  it('adds a context-overflow hint for 400 when detail mentions context/length/token', () => {
+    const message = describeHttpFailure(
+      400,
+      'Bad Request',
+      "This model's maximum context length is 128000 tokens.",
+      'https://example.com/v1',
+      'kimi-k2',
+    );
+    expect(message).toContain('大概率是这次请求的上下文超出了该模型的窗口');
+  });
+
+  it('is case-insensitive when matching the context-overflow keywords', () => {
+    const message = describeHttpFailure(400, 'Bad Request', 'CONTEXT_LENGTH_EXCEEDED', 'https://example.com/v1', 'm');
+    expect(message).toContain('大概率是这次请求的上下文超出了该模型的窗口');
+  });
+
+  it('adds no hint for a 400 unrelated to context length', () => {
+    const message = describeHttpFailure(400, 'Bad Request', 'invalid api key', 'https://example.com/v1', 'm');
+    expect(message).not.toContain('大概率是这次请求的上下文超出了该模型的窗口');
+    expect(message).not.toContain('404 通常意味着');
+  });
+
+  it('adds no hint for other status codes', () => {
+    const message = describeHttpFailure(500, 'Internal Server Error', 'context length exceeded', 'https://example.com/v1', 'm');
+    expect(message).not.toContain('大概率是这次请求的上下文超出了该模型的窗口');
   });
 });

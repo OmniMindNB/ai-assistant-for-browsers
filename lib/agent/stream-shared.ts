@@ -104,6 +104,9 @@ export function parseToolArguments(value: string): Record<string, unknown> {
  * 404 "The model or endpoint xxx does not exist"），而网关直接拒绝时 body 往往是空的，此时
  * 旧文案会退化成没有任何信息的 "LLM 请求失败 (404 )"。所以 URL 和模型名必须写进报错本身。
  */
+/** 400 detail 里出现这些关键字，大概率是上下文超长被端点拒绝，而不是参数格式错误。 */
+const CONTEXT_OVERFLOW_HINT_PATTERN = /context|length|token/i;
+
 export function describeHttpFailure(
   status: number,
   statusText: string,
@@ -116,7 +119,9 @@ export function describeHttpFailure(
   const hint =
     status === 404
       ? '\n404 通常意味着请求路径或模型名不存在，请核对设置页的「协议」下拉框是否与 Base URL 匹配，以及该模型在此端点下是否可用；少数网关也会用 404 表示 API Key 无效或无权访问该模型，所以排除前两项后再回头检查 Key。'
-      : '';
+      : status === 400 && CONTEXT_OVERFLOW_HINT_PATTERN.test(detail)
+        ? '\n400 且报错里提到 context/length/token，大概率是这次请求的上下文超出了该模型的窗口；可以换一个窗口更大的模型，或减少这一轮引用的标签页/附件内容。'
+        : '';
   return `${head}${body}\n请求地址：${url}\n模型：${modelId}${hint}`;
 }
 
