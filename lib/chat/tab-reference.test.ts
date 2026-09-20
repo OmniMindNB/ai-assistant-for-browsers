@@ -8,6 +8,7 @@ import {
   TAB_REF_TOTAL_MAX_CHARS,
 } from './tab-reference';
 import { CONTEXT_RECUT_TARGET_CHARS } from '@/lib/agent/context-budget';
+import { MAX_PAGE_PREFETCH_CHARS } from './page-prefetch';
 
 describe('selectReferencableTabs', () => {
   it('keeps only http(s) tabs and drops the panel tab', () => {
@@ -30,13 +31,16 @@ describe('selectReferencableTabs', () => {
 });
 
 describe('planTabRefBudget', () => {
-  it('gives a lone reference the same budget as the existing page prefetch', () => {
-    expect(planTabRefBudget(1)).toBe(TAB_REF_SINGLE_MAX_CHARS);
+  // 这条断言把注释声称的性质变成测试保障的性质：注释曾声称"只引 1 个页时与
+  // page-scope 预取一致"，而实际两个数字在 c2ec362 之后就分叉了（24000 对 48000）。
+  it('gives a lone reference exactly the page-scope prefetch budget', () => {
+    expect(TAB_REF_SINGLE_MAX_CHARS).toBe(MAX_PAGE_PREFETCH_CHARS);
+    expect(planTabRefBudget(1)).toBe(MAX_PAGE_PREFETCH_CHARS);
   });
 
   it('splits the total budget across references', () => {
-    expect(planTabRefBudget(5)).toBe(9600);
-    expect(planTabRefBudget(2)).toBe(TAB_REF_SINGLE_MAX_CHARS);
+    expect(planTabRefBudget(5)).toBe(Math.floor(TAB_REF_TOTAL_MAX_CHARS / 5));
+    expect(planTabRefBudget(2)).toBe(Math.floor(TAB_REF_TOTAL_MAX_CHARS / 2));
   });
 
   it('returns 0 for no references', () => {

@@ -3,14 +3,21 @@
 // 都没有对应的 vitest project（前者无 entrypoints/**/*.test.ts，后者是按键级 UI），
 // 逻辑留在那两处就等于没有测试覆盖。写法仿 lib/agent/fill-form-request.ts。
 
-import { DEFAULT_READ_MAX_CHARS } from '@/lib/agent/context-budget';
+import { MAX_TOOL_RESULT_CHARS } from '@/lib/agent/context-budget';
+import { MAX_PAGE_PREFETCH_CHARS } from './page-prefetch';
 
 /** 跨全部引用页的正文总预算。引用页正文进的是 user 消息、永远不会被摘要压缩，5 个引用各拿满
- * 单页上限就能自己把上下文顶到 CONTEXT_RECUT_TARGET_CHARS 以上，所以必须有一道总量封顶。 */
-export const TAB_REF_TOTAL_MAX_CHARS = 48000;
-/** 单个引用页的正文上限，与 browser_read_page 的默认 maxChars 同源（lib/agent/context-budget.ts）：
- * 只引 1 个页时行为与 store.ts 的 page-scope 预取一致。 */
-export const TAB_REF_SINGLE_MAX_CHARS = DEFAULT_READ_MAX_CHARS;
+ * 单页上限就能自己把上下文顶到 CONTEXT_RECUT_TARGET_CHARS 以上，所以必须有一道总量封顶。
+ * 与单条只读结果同源：两者最终进的是同一个上下文，各写各的迟早分叉。 */
+export const TAB_REF_TOTAL_MAX_CHARS = MAX_TOOL_RESULT_CHARS;
+/**
+ * 单个引用页的正文上限，与 page-scope 预取同源：只引 1 个页时行为与 store.ts 的预取一致。
+ *
+ * 这个"一致"曾经只是注释里的说法——该常量原本等于 DEFAULT_READ_MAX_CHARS（24000），
+ * 而预取上限是 MAX_PAGE_PREFETCH_CHARS（48000），c2ec362 之后两者就分叉了。
+ * 现在它由同一个常量推导，且 tab-reference.test.ts 有对应断言把这个性质锁住。
+ */
+export const TAB_REF_SINGLE_MAX_CHARS = MAX_PAGE_PREFETCH_CHARS;
 
 export interface ReferencableTab {
   id: number;
