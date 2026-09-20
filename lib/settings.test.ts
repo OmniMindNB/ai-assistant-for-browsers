@@ -299,8 +299,8 @@ describe('presetDisplayName', () => {
   });
 
   it('returns nameEn under the en locale when present', () => {
-    const preset = resolvePresetSelection('智谱 GLM')!;
-    expect(presetDisplayName(preset, 'en')).toBe('Zhipu GLM');
+    const preset = resolvePresetSelection('通义千问')!;
+    expect(presetDisplayName(preset, 'en')).toBe('Qwen (Tongyi)');
   });
 
   it('falls back to name under en when nameEn is absent (e.g. OpenAI, already Latin)', () => {

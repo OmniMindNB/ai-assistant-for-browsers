@@ -57,4 +57,4 @@ Provider 设置和 API Key 保存在浏览器本地的 `chrome.storage.local` �
 
 ## 其他 Provider
 
-OpenAI、通义千问、智谱 GLM 和 Moonshot 也有内置预设。配置流程相同：选择预设、核对官方端点和模型、填写 API Key 并保存。使用自定义或中转端点时，请从服务方获取与所选协议匹配的 Base URL、模型名称和密钥。
+OpenAI 和通义千问也有内置预设。配置流程相同：选择预设、核对官方端点和模型、填写 API Key 并保存。使用自定义或中转端点时，请从服务方获取与所选协议匹配的 Base URL、模型名称和密钥。

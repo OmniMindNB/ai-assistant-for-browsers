@@ -35,9 +35,13 @@ export type ProviderPreset = Omit<ProviderConfig, 'id' | 'apiKey'> & { nameEn?: 
 
 /**
  * 常用 OpenAI 兼容 Provider 预设（用于「设置」页快速填充）。
- * model/models 按各厂商官方文档核对（2026-07），moonshot-v1/qwen-plus/glm-4-flash 等旧模型
- * 已停用或被取代，deepseek-chat/deepseek-reasoner 亦即将下线。
+ * model/models 按各厂商官方文档核对（2026-09），qwen-plus/deepseek-chat 等旧模型已停用或被取代。
  * 默认模型统一取各厂商当前最新旗舰（能力最强档位），其余档位放入 models 供「其他可用模型」参考。
+ *
+ * ⚠️ 预设只收上下文窗口 ≥1M 的在售模型（ref:
+ * docs/superpowers/specs/2026-09-20-context-budget-for-long-window-models-design.md §3）。
+ * context-budget.ts 整层预算就是按这个下限推导的，往这里加一个窗口更小的模型，会让那套推导
+ * 失去依据，而表现是用户在长会话里撞供应商的 400，不是这里报错。
  */
 export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
@@ -58,19 +62,6 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     model: 'qwen3.7-max',
     models: ['qwen3.7-max', 'qwen3.7-plus', 'qwen3.6-flash'],
-  },
-  {
-    name: '智谱 GLM',
-    nameEn: 'Zhipu GLM',
-    baseURL: 'https://open.bigmodel.cn/api/paas/v4',
-    model: 'glm-5.2',
-    models: ['glm-5.2', 'glm-4.7', 'glm-4.7-flash'],
-  },
-  {
-    name: 'Moonshot',
-    baseURL: 'https://api.moonshot.cn/v1',
-    model: 'kimi-k3',
-    models: ['kimi-k3', 'kimi-k2.7-code', 'kimi-k2.6'],
   },
 ];
 
