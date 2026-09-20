@@ -2,7 +2,7 @@
 // 用于 Side Panel ↔ Service Worker ↔ Content Script 之间的通信。
 
 import type { ReferencableTab } from '@/lib/chat/tab-reference';
-import type { PageOutlineItem } from './page-outline';
+import type { PageOutlineItem } from '@/lib/page-outline';
 
 export type MessageType =
   | 'PING'

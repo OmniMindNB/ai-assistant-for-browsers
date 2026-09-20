@@ -90,7 +90,10 @@ function respond<T>(
   }
 }
 
-// 使用 Readability 提取正文，失败时回退到 innerText（ref: technical-plan.md §4.1）
+// 使用 Readability 提取正文，失败时回退到 innerText（ref: technical-plan.md §4.1）；
+// 同时采集 h1-h3 标题骨架（collectOutline，ref: lib/page-outline.ts），两条路径扫的根不同——
+// Readability 成功时只扫它解析出的正文容器，回退到 innerText 时没有正文容器可扫，
+// 只能扫整个 document，见下方两处调用旁的注释。
 function extractPage(): PageContent {
   let text = '';
   let outline: PageOutlineItem[] = [];

@@ -27,9 +27,12 @@ describe('collectOutline', () => {
     expect(collectOutline(doc)).toEqual([{ level: 2, title: '第 1 节 概述' }]);
   });
 
-  it('truncates a long title', () => {
+  // 长度截断挪到了 entrypoints/background.ts 的 extractActivePage 里、redactText 之后执行
+  // （先截断会把跨界的敏感号码切成两半，脱敏规则就再也匹配不上），collectOutline 只管条数上限，
+  // 标题原样透传。
+  it('does not truncate a long title (that happens after redaction in background.ts)', () => {
     const doc = docWith(`<h2>${'长'.repeat(MAX_OUTLINE_TITLE_CHARS + 20)}</h2>`);
-    expect(collectOutline(doc)[0].title).toBe('长'.repeat(MAX_OUTLINE_TITLE_CHARS));
+    expect(collectOutline(doc)[0].title).toBe('长'.repeat(MAX_OUTLINE_TITLE_CHARS + 20));
   });
 
   it('caps the list so a long table of contents cannot blow up the prompt', () => {

@@ -69,6 +69,7 @@ import {
 } from '@/lib/messaging';
 import { selectReferencableTabs } from '@/lib/chat/tab-reference';
 import { loadRedactionSettings, redactText } from '@/lib/redaction';
+import { MAX_OUTLINE_TITLE_CHARS } from '@/lib/page-outline';
 import { fetchPageResourceText } from '@/lib/page-resource-fetch';
 import { resolveTargetTab } from '@/lib/agent/tab-target';
 import { performGoBack, waitForTabLoadComplete, NAVIGATE_HISTORY_SETTLE_TIMEOUT_MS } from '@/lib/agent/history-nav';
@@ -595,10 +596,13 @@ async function extractActivePage(tabId: number): Promise<PageContent> {
   return {
     ...response.data,
     text: redactText(response.data.text, redactionSettings),
-    // 大纲标题同样是页面来源的文本，不能因为「只是标题」就绕过脱敏。
+    // 大纲标题同样是页面来源的文本，不能因为「只是标题」就绕过脱敏；长度截断必须放在
+    // redactText 之后——脱敏规则是整段锚定匹配，先截断可能把跨界的敏感号码切成两半，
+    // 残段就不再命中规则，剩下的数字会原样进模型上下文（ref: 2026-08-31 脱敏设计）。
+    // 脱敏占位符可能比原文更长，所以截断永远是最后一步。
     outline: response.data.outline?.map((item) => ({
       ...item,
-      title: redactText(item.title, redactionSettings),
+      title: redactText(item.title, redactionSettings).slice(0, MAX_OUTLINE_TITLE_CHARS),
     })),
   };
 }

@@ -36,20 +36,27 @@ export function buildShortcutExecution(
       };
     }
     if (pagePrefetch?.kind === 'windowed') {
+      // 空大纲不是边缘情况：任何超过上限但没有 h1-h3（长论坛帖、<pre> 日志、法条、连载小说）
+      // 都会命中。空大纲版本绝口不提「大纲」，改成让模型用任务本身的关键词去 browser_find_text，
+      // 否则模型会拿着假前提（「下面的大纲覆盖全文」）和一条它执行不了的指令（「搜大纲里的小节标题」）。
+      const hasOutline = pagePrefetch.outline.length > 0;
       return {
         display: shortcut.name,
-        agentUserContent: translate('store.shortcutPageWindowedPrompt', {
-          instruction: shortcut.prompt,
-          title: pagePrefetch.title,
-          url: pagePrefetch.url,
-          head: JSON.stringify(pagePrefetch.head),
-          tail: JSON.stringify(pagePrefetch.tail),
-          headEnd: pagePrefetch.headEnd,
-          tailStart: pagePrefetch.tailStart,
-          total: pagePrefetch.total,
-          omitted: pagePrefetch.omitted,
-          outline: renderPageOutline(pagePrefetch.outline),
-        }),
+        agentUserContent: translate(
+          hasOutline ? 'store.shortcutPageWindowedPrompt' : 'store.shortcutPageWindowedNoOutlinePrompt',
+          {
+            instruction: shortcut.prompt,
+            title: pagePrefetch.title,
+            url: pagePrefetch.url,
+            head: JSON.stringify(pagePrefetch.head),
+            tail: JSON.stringify(pagePrefetch.tail),
+            headEnd: pagePrefetch.headEnd,
+            tailStart: pagePrefetch.tailStart,
+            total: pagePrefetch.total,
+            omitted: pagePrefetch.omitted,
+            outline: hasOutline ? renderPageOutline(pagePrefetch.outline) : '',
+          },
+        ),
         browserTools: 'all',
         systemPromptSuffix: '',
       };

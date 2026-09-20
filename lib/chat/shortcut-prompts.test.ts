@@ -123,6 +123,31 @@ describe('buildShortcutExecution', () => {
     expect(content).not.toContain('m'.repeat(2000));
   });
 
+  it('drops the outline wording and points at browser_find_text with task keywords when there is no outline', () => {
+    const text =
+      'h'.repeat(PAGE_PREFETCH_HEAD_CHARS) + 'm'.repeat(2000) + 't'.repeat(PAGE_PREFETCH_TAIL_CHARS);
+    const plan = planPagePrefetch({ title: 'Doc', url: 'https://example.com/a', text });
+    const content = buildShortcutExecution(shortcut('page'), t, undefined, plan).agentUserContent;
+    expect(content).not.toMatch(/outline/i);
+    expect(content).toContain('browser_find_text');
+    expect(content).toContain('2000');
+  });
+
+  it('keeps rendering the outline as before when the page has one', () => {
+    const text =
+      'h'.repeat(PAGE_PREFETCH_HEAD_CHARS) + 'm'.repeat(2000) + 't'.repeat(PAGE_PREFETCH_TAIL_CHARS);
+    const plan = planPagePrefetch({
+      title: 'Doc',
+      url: 'https://example.com/a',
+      text,
+      outline: [{ level: 2, title: 'Middle section' }],
+    });
+    const content = buildShortcutExecution(shortcut('page'), t, undefined, plan).agentUserContent;
+    expect(content).toMatch(/outline/i);
+    expect(content).toContain('## Middle section');
+    expect(content).toContain('browser_find_text');
+  });
+
   // 与整页分支同样的约束：防注入规则只属于系统提示词。
   it('keeps the windowed copy free of anti-injection wording in both locales', () => {
     const plan = planPagePrefetch({
