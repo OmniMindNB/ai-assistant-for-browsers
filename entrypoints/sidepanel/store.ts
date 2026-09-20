@@ -38,12 +38,12 @@ import {
   loadToolBudgetProfileId,
   resolveToolBudgetProfile,
 } from '@/lib/agent/budget-profile';
-import { buildShortcutExecution, MAX_SHORTCUT_SELECTION_CHARS, type PagePrefetch } from '@/lib/chat/shortcut-prompts';
+import { buildShortcutExecution, MAX_SHORTCUT_SELECTION_CHARS } from '@/lib/chat/shortcut-prompts';
+import { planPagePrefetch, type PagePrefetchPlan } from '@/lib/chat/page-prefetch';
 import { type ActivityStep } from '@/lib/agent/activity-steps';
 import { getConversationIdForTab, setConversationIdForTab } from '@/lib/agent/tab-conversation';
 import { clearTabSession, loadTabSession, saveTabSession } from '@/lib/agent/tab-session-storage';
 import { createTabSession, MAX_REFERENCED_TABS } from '@/lib/agent/tab-session';
-import { DEFAULT_READ_MAX_CHARS } from '@/lib/agent/context-budget';
 import { supportsVision } from '@/lib/agent/vision';
 import { clearPendingAskForTab, getPendingAskForTab, pendingAskStorageKey } from '@/lib/agent/tab-pending-ask';
 import { buildSelectionAskTemplate, truncateSelectionText } from '@/lib/selection-ask';
@@ -198,9 +198,6 @@ const HELLO_REPLY_TIMEOUT_MS = 300;
 /** 断线后重连的延迟：给 Chrome 一点时间把 service worker 拉起来，也避免背景真的不可达时
  * 变成一个紧凑的重连热循环。 */
 const RECONNECT_DELAY_MS = 250;
-/** page-scope 快捷方式预取正文的长度上限，与 browser_read_page 的默认 maxChars 同源
- * （lib/agent/context-budget.ts）。 */
-const PAGE_PREFETCH_MAX_CHARS = DEFAULT_READ_MAX_CHARS;
 
 function flushPendingPortMessages(): void {
   if (!runPort) return;
@@ -1183,7 +1180,7 @@ async function runResolvedShortcut(
   const origin = captureConversationOrigin(get);
   let tab: ActiveTabInfo | undefined;
   let selectionText: string | undefined = options.presetSelection;
-  let pagePrefetch: PagePrefetch | undefined;
+  let pagePrefetch: PagePrefetchPlan | undefined;
 
   if (resolved.scope === 'selection' && selectionText === undefined) {
     set({ busy: true, error: null });
@@ -1230,12 +1227,12 @@ async function runResolvedShortcut(
       )) as MessageResponse<PageContent>;
       if (!isCurrentOrigin(origin, get)) return false;
       if (response.ok && response.data) {
-        pagePrefetch = {
-          title: response.data.title,
-          url: response.data.url,
-          // 与 browser_read_page 工具的默认上限保持一致，模型认得这种量级的正文。
-          text: response.data.text.slice(0, PAGE_PREFETCH_MAX_CHARS),
-        };
+        // 预取跑在脱敏之后的正文上（background.ts 的 extractActivePage 已经过了 redactText），
+        // 所以长度判断和头尾切分用的就是模型最终会看到的那份文本。
+        // 正文太短时 planPagePrefetch 给出 skip：不设 pagePrefetch，退回工具路径，
+        // 模型自己调 browser_read_page，读不到就如实说读不到——比拿着空串断言「页面内容太少」诚实。
+        const plan = planPagePrefetch(response.data);
+        if (plan.kind !== 'skip') pagePrefetch = plan;
       }
     } catch {
       // 静默降级，见上方注释。

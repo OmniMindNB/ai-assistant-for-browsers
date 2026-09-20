@@ -1404,7 +1404,7 @@ describe('chat store page context', () => {
     await connectPort();
     mocks.sendMessage.mockImplementation(async (type: string) => {
       if (type === 'GET_ACTIVE_TAB') return { ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } };
-      if (type === 'EXTRACT_PAGE') return { ok: true, data: { title: 'Example', url: 'https://example.com/', text: 'page body' } };
+      if (type === 'EXTRACT_PAGE') return { ok: true, data: { title: 'Example', url: 'https://example.com/', text: '正文内容。'.repeat(50) } };
       return { ok: true, data: {} };
     });
     useChat.setState({
@@ -1428,6 +1428,7 @@ describe('chat store page context', () => {
     // 发给模型的是按配方重新拼出来的 prompt（含重新预取的正文），不是标签文本。
     const sent = lastStartRunCall().agentUserContent;
     expect(sent).toContain('总结这个页面');
+    expect(sent).toContain(JSON.stringify('正文内容。'.repeat(50)));
     expect(sent).not.toBe('📄 总结当前网页');
   });
 

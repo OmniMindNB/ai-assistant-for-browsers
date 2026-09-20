@@ -400,3 +400,18 @@ describe('page extraction outline', () => {
     expect(contentSource).toContain('collectOutline(document)');
   });
 });
+
+describe('side-panel page prefetch', () => {
+  const storeSource = fs.readFileSync(
+    path.resolve(process.cwd(), 'entrypoints/sidepanel/store.ts'),
+    'utf8',
+  );
+
+  // 面板只做 I/O：取多少正文、超限怎么切，全部由 lib/chat/page-prefetch.ts 的纯函数决定，
+  // 否则这段逻辑落在 entrypoints/ 里就没有任何 vitest project 能测到它。
+  it('delegates the prefetch decision to the pure planner', () => {
+    expect(storeSource).toContain('planPagePrefetch(response.data)');
+    expect(storeSource).not.toContain('PAGE_PREFETCH_MAX_CHARS');
+    expect(storeSource).toContain("if (plan.kind !== 'skip') pagePrefetch = plan;");
+  });
+});
