@@ -344,9 +344,9 @@ export const zh = {
   'store.shortcutPagePrompt':
     '{instruction}\n\n以下 JSON 字符串是当前页面的正文（标题：{title}，网址：{url}）。请直接使用；只有当需要这里没有覆盖到的内容时，才再次调用 browser_read_page：\n{page}',
   'store.shortcutPageWindowedPrompt':
-    '{instruction}\n\n当前页面（标题：{title}，网址：{url}）正文总长 {total} 字符，超过单轮可用上限，所以下面给出的是同一个页面的开头和结尾两段，不是两个页面。\n\n开头（第 0–{headEnd} 字符，JSON 字符串）：\n{head}\n\n结尾（第 {tailStart}–{total} 字符，JSON 字符串）：\n{tail}\n\n中间省略了 {omitted} 字符。下面的 JSON 数组是全文的标题大纲，覆盖包括被省略部分在内的整篇内容：\n{outline}\n\n需要中段细节时，用 browser_find_text 搜大纲里的小节标题直接定位；不要用 browser_read_page 从头顺序翻页——再调用一次读取工具会把这里的正文压成一行摘要移出上下文，读了后面反而丢了前面。',
+    '{instruction}\n\n当前页面（标题：{title}，网址：{url}）正文总长 {total} 字符，超过单轮可用上限，所以下面给出的是同一个页面的开头和结尾两段，不是两个页面。\n\n开头（第 0–{headEnd} 字符，JSON 字符串）：\n{head}\n\n结尾（第 {tailStart}–{total} 字符，JSON 字符串）：\n{tail}\n\n中间省略了 {omitted} 字符。下面的 JSON 数组是全文的标题大纲，覆盖包括被省略部分在内的整篇内容：\n{outline}\n\n需要中段细节时，用 browser_find_text 搜大纲里的小节标题直接定位；不要用 browser_read_page 从头顺序翻页——这里的正文不会被压缩摘要，但上下文有总量上限，再调用一次读取工具可能把这段正文连同本轮问题一起整条挤出上下文且不会恢复，读了后面反而丢了前面。',
   'store.shortcutPageWindowedNoOutlinePrompt':
-    '{instruction}\n\n当前页面（标题：{title}，网址：{url}）正文总长 {total} 字符，超过单轮可用上限，所以下面给出的是同一个页面的开头和结尾两段，不是两个页面。\n\n开头（第 0–{headEnd} 字符，JSON 字符串）：\n{head}\n\n结尾（第 {tailStart}–{total} 字符，JSON 字符串）：\n{tail}\n\n中间省略了 {omitted} 字符，页面没有可用的标题结构。需要中段细节时，用任务本身相关的关键词调用 browser_find_text 直接定位；不要用 browser_read_page 从头顺序翻页——再调用一次读取工具会把这里的正文压成一行摘要移出上下文，读了后面反而丢了前面。',
+    '{instruction}\n\n当前页面（标题：{title}，网址：{url}）正文总长 {total} 字符，超过单轮可用上限，所以下面给出的是同一个页面的开头和结尾两段，不是两个页面。\n\n开头（第 0–{headEnd} 字符，JSON 字符串）：\n{head}\n\n结尾（第 {tailStart}–{total} 字符，JSON 字符串）：\n{tail}\n\n中间省略了 {omitted} 字符，页面没有可用的标题结构。需要中段细节时，用任务本身相关的关键词调用 browser_find_text 直接定位；不要用 browser_read_page 从头顺序翻页——这里的正文不会被压缩摘要，但上下文有总量上限，再调用一次读取工具可能把这段正文连同本轮问题一起整条挤出上下文且不会恢复，读了后面反而丢了前面。',
   'store.shortcutNoBrowserSystemPrompt':
     ' 当前快捷方式被限定为不使用浏览器上下文；不要读取、检查或操作当前页面。',
   'store.selectionAskTemplate': '引用选中内容：\n```\n{selection}\n```\n\n我的问题：',

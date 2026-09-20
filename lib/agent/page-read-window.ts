@@ -97,6 +97,7 @@ export function describePageReadWindow(window: PageReadWindow): string {
 
   return (
     `${head}整页超过单次读取上限 ${MAX_TOOL_RESULT_CHARS} 字符，必须分段读：用 offset=${window.end} 再调用一次 browser_read_page 读下一段，` +
+    `也可以把 maxChars 调大（上限 ${MAX_TOOL_RESULT_CHARS} 字符）一次多读一些、减少分段轮数，` +
     '或者用 browser_find_text 直接定位你要找的小节标题或关键词。' +
     '分段读时注意：再调用一次读取工具后，本段正文会被压成一行摘要移出上下文，' +
     '本段里与任务有关的内容请先在回答中记下来再继续往后读。不要因为没读到就认为页面没有内容。'

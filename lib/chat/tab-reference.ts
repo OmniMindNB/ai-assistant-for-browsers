@@ -16,6 +16,12 @@ export const TAB_REF_TOTAL_MAX_CHARS = MAX_TOOL_RESULT_CHARS;
  * 这个"一致"曾经只是注释里的说法——该常量原本等于 DEFAULT_READ_MAX_CHARS（24000），
  * 而预取上限是 MAX_PAGE_PREFETCH_CHARS（48000），c2ec362 之后两者就分叉了。
  * 现在它由同一个常量推导，且 tab-reference.test.ts 有对应断言把这个性质锁住。
+ *
+ * ⚠️ 评审 F7：`MAX_PAGE_PREFETCH_CHARS` 现在恰好等于 `MAX_TOOL_RESULT_CHARS`
+ * （即 `TAB_REF_TOTAL_MAX_CHARS`），所以 `planTabRefBudget` 里 `Math.min(SINGLE, TOTAL/count)`
+ * 对任何 `count >= 1` 都恒取右侧——`SINGLE` 这一路目前不生效，不是这道总量封顶失效，
+ * 只是两个上限暂时撞在了一起。保留这个 `min` 是为将来两者分开（例如总量封顶先涨、
+ * 单页封顶暂不跟涨）留的路，不要把它当成一道当前就在生效的独立限制来读。
  */
 export const TAB_REF_SINGLE_MAX_CHARS = MAX_PAGE_PREFETCH_CHARS;
 

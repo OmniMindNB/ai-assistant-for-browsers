@@ -233,7 +233,7 @@ function makeReadPageTool(session: TabSessionController): BrowserAgentTool {
     name: 'browser_read_page',
     label: 'Read Page',
     description:
-      `Read the current page title, URL, language, and readable text content. This is read-only and should be used for summaries and page-grounded Q&A. Omit maxChars and a page whose text fits under ${MAX_TOOL_RESULT_CHARS} characters is returned whole in one call — only pass maxChars when you deliberately want a smaller window. A page longer than that is returned one window at a time: the result always states the full text length and how much was left out, so continue by moving offset forward — never assume the page is empty because the part you needed was not in the first window.`,
+      `Read the current page title, URL, language, and readable text content. This is read-only and should be used for summaries and page-grounded Q&A. Omit maxChars and a page whose text fits under ${MAX_TOOL_RESULT_CHARS} characters is returned whole in one call — only pass maxChars when you deliberately want a smaller window. A page longer than that is returned one window at a time: the result always states the full text length and how much was left out, so continue by moving offset forward, or by raising maxChars (capped at ${MAX_TOOL_RESULT_CHARS}) to read a larger chunk per call and finish in fewer round trips — never assume the page is empty because the part you needed was not in the first window.`,
     parameters: Type.Object({
       maxChars: Type.Optional(
         Type.Number({
@@ -1304,8 +1304,10 @@ export function parseImplementationInspectionParams(params: unknown): Implementa
     // evidenceSummary/guidance 留余量。report 的字段顺序是 …scripts → stylesheets →
     // computedStyles → dom → html → readableText → guidance，所以一旦整条结果被压缩层
     // 截断，掉的是排在 scripts 之后的全部内容——包括那句叫模型优先看 evidenceSummary 的
-    // guidance 和页面正文本身。旧值（12000/30000/30000）合计 74000，脚本多一点的页面
-    // 每次都会触发这种尾部整段丢失。
+    // guidance 和页面正文本身。这条约束原本是被旧上限 MAX_TOOL_RESULT_CHARS=48000 强制的
+    // （旧值 12000/30000/30000 合计 74000，脚本多一点的页面每次都会触发尾部整段丢失）；
+    // 天花板抬到 200000 之后，36000 的合计早已自动满足这条约束。保持 36000 不变，
+    // 是因为"要不要多采集"是另一个需要证据的问题，而不是因为还有旧上限压着它。
     textMaxChars: readNumber(record.textMaxChars, 2000, 500, 4000),
     htmlMaxChars: readNumber(record.htmlMaxChars, 10000, 1000, 20000),
     scriptMaxChars: readNumber(record.scriptMaxChars, 14000, 2000, 24000),
