@@ -72,13 +72,6 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     model: 'kimi-k3',
     models: ['kimi-k3', 'kimi-k2.7-code', 'kimi-k2.6'],
   },
-  {
-    name: '本地 (Ollama)',
-    nameEn: 'Ollama (Local)',
-    baseURL: 'http://localhost:11434/v1',
-    model: 'llama3.1',
-    models: ['llama3.1', 'qwen3', 'deepseek-r1'],
-  },
 ];
 
 /**

@@ -57,4 +57,4 @@ When you initiate a request, the extension sends the API key, current prompt, re
 
 ## Other providers
 
-Runi also includes presets for OpenAI, Qwen, Zhipu GLM, Moonshot, and local Ollama. The setup flow is the same: select a preset, verify its endpoint and model against the provider's official documentation, enter an API key, and save. For a custom or relay endpoint, obtain a Base URL, model name, and key that match the selected API type from that service.
+Runi also includes presets for OpenAI, Qwen, Zhipu GLM, and Moonshot. The setup flow is the same: select a preset, verify its endpoint and model against the provider's official documentation, enter an API key, and save. For a custom or relay endpoint, obtain a Base URL, model name, and key that match the selected API type from that service.

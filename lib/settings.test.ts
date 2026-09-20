@@ -311,14 +311,14 @@ describe('presetDisplayName', () => {
 
 describe('applyPresetToDraft with locale', () => {
   it('fills the localized display name into a new draft when locale is en', () => {
-    const preset = resolvePresetSelection('本地 (Ollama)')!;
+    const preset = resolvePresetSelection('通义千问')!;
     const { draft } = applyPresetToDraft(baseDraft, '', preset, false, 'en');
-    expect(draft.name).toBe('Ollama (Local)');
+    expect(draft.name).toBe('Qwen (Tongyi)');
   });
 
   it('defaults to the Chinese name when locale is omitted', () => {
-    const preset = resolvePresetSelection('本地 (Ollama)')!;
+    const preset = resolvePresetSelection('通义千问')!;
     const { draft } = applyPresetToDraft(baseDraft, '', preset, false);
-    expect(draft.name).toBe('本地 (Ollama)');
+    expect(draft.name).toBe('通义千问');
   });
 });
