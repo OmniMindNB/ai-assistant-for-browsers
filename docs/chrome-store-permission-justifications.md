@@ -1,6 +1,6 @@
 # Chrome Web Store Permission and Data-Use Answers
 
-Paste-ready answers for the Chrome Web Store Developer Dashboard. The `1.3.0` Store build uses this permission set:
+Paste-ready answers for the Chrome Web Store Developer Dashboard. The `1.4.0` Store build uses this permission set:
 
 ```text
 permissions: sidePanel, storage, scripting, activeTab, tabs, alarms
@@ -173,7 +173,7 @@ When the user explicitly attaches a text file, image, or PDF, Runi processes its
 - **Health information / financial and payment information:** Mark these categories collected/processed because arbitrary user-selected attachments may contain them and their content is sent to the configured AI provider when the user sends the request. Runi does not solicit or use this content for profiling, creditworthiness, lending, or advertising.
 - **Location / user activity:** Leave unchecked. Runi does not collect precise location or behavioral analytics; user-approved page actions are executed as core functionality rather than recorded as activity data.
 
-For `1.3.0`, the conservative Dashboard selection is: Personally identifiable information, Health information, Financial and payment information, Authentication information, Personal communications, Web history, and Website content. Leave Location and User activity unchecked. Re-check the live category wording before saving.
+For `1.4.0`, the conservative Dashboard selection is: Personally identifiable information, Health information, Financial and payment information, Authentication information, Personal communications, Web history, and Website content. Leave Location and User activity unchecked. Re-check the live category wording before saving.
 
 ### Required use certifications
 

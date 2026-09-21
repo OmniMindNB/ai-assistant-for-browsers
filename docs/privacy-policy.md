@@ -70,7 +70,7 @@ AI Provider 端点由你选择和配置。Runi 支持 OpenAI 兼容和 Anthropic
 
 ## 7. 浏览器权限
 
-Runi `1.3.0` 使用以下权限：
+Runi `1.4.0` 使用以下权限：
 
 | 权限 | 用途 |
 |---|---|

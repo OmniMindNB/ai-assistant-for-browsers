@@ -70,7 +70,7 @@ Use an HTTPS Base URL for every remote provider. Runi sends requests to the conf
 
 ## 7. Browser permissions
 
-Runi `1.3.0` uses this permission set:
+Runi `1.4.0` uses this permission set:
 
 | Permission | Purpose |
 |---|---|
