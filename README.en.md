@@ -24,14 +24,15 @@ See the [Provider setup guide](docs/provider-setup.en.md) for more detail and tr
 ## Core features
 
 - 🔒 **Confirm submissions only**: a Deny-First permission model automatically executes all known page actions. Only detected form submissions ask for confirmation each time; unknown tools are always denied. `browser_navigate` is restricted to http(s) independently in both the permission layer and the background worker, and page-resource fetches reject loopback, private, link-local, and IPv4-mapped IPv6 targets
-- 🔍 **Evidence-driven analysis**: reads page text / DOM / HTML / scripts / stylesheets / computed styles / screenshots. `browser_inspect_page_implementation` gathers all of that in a single call plus a keyword-matched `evidenceSummary`, so "how is this implemented" gets an answer citing specific code instead of a generic description
-- 🖐️ **Page actions**: Runi can set styles, modify the DOM, click, type, pick from selects, scroll, navigate, and write storage — plus open new tabs, switch between them, close them, and track the current operating target across a multi-tab task. While a write action executes, a non-blocking overlay appears on the page so the operation stays visible. These known actions run automatically; only detected form submissions pause for approval. Tool calls are budgeted (20 read/analysis calls by default, plus another 40 granted on top of what has already been spent once writing starts; pure waits and the first few failed calls are not counted), switchable between a standard and a generous tier under "Task budget" in settings; when the budget runs out the model gets exactly one more turn to produce a final answer
+- 🔍 **Evidence-driven analysis**: reads page text / DOM / HTML / scripts / stylesheets / computed styles / localStorage / screenshots. It can also locate elements by their visible text and wait on a real page condition (an element appearing or disappearing, text showing up, the DOM going quiet) instead of guessing a fixed number of seconds. `browser_inspect_page_implementation` gathers all of that in a single call plus a keyword-matched `evidenceSummary`, so "how is this implemented" gets an answer citing specific code instead of a generic description. The screenshot tool only appears in the tool table once you have marked the model as accepting image input
+- 🖐️ **Page actions**: Runi can set styles, modify the DOM, click, type, press functional keys (Enter / Tab / Esc / arrows and other named keys), pick from selects, scroll, navigate, go back, and write storage — plus open new tabs, switch between them, close them, and track the current operating target across a multi-tab task. Form fields and clickable elements are addressed through stable `fieldId` handles that pierce open shadow roots and iframes; every write is fingerprinted and read back before and after, so a write that does not land reports a failure instead of a success, and password and payment fields are neither read nor written. While a write action executes, a non-blocking overlay appears on the page so the operation stays visible. These known actions run automatically; only detected form submissions pause for approval. Tool calls are budgeted (20 read/analysis calls by default, plus another 40 granted on top of what has already been spent once writing starts; pure waits and the first few failed calls are not counted), switchable between a standard and a generous tier under "Task budget" in settings; when the budget runs out the model gets exactly one more turn to produce a final answer
 - 🔑 **Bring your own model**: supports both OpenAI-compatible Chat Completions and the Anthropic Messages protocol, with presets for DeepSeek / OpenAI and a fully custom endpoint option. Configure multiple providers and models, and switch between them straight from the composer
 - 🗂️ **Local-first**: conversation history lives in local IndexedDB, provider configs and UI preferences in `chrome.storage.local` — never synced to any cloud. There is no developer backend and no analytics or ad SDK
+- 🛡️ **Redaction before sending**: page content passes through redaction rules before it can enter the model context — four built-in rules (phone, email, national ID, bank card) plus any custom rules you add in settings. A match is replaced by a whole placeholder rather than partially masked, so not one original character leaks through. Screenshots are pixels with no text to match, so they deliberately bypass this layer — a known and documented gap
 - 📎 **Local file context**: attach up to 5 files per message — text (up to 30,000 characters), images (≤ 5 MB), and PDFs (≤ 20 MB, up to 60,000 characters extracted locally, no OCR). PDFs are parsed locally in a Worker with progress feedback and drag-and-drop support; extracted PDF text is used for one turn only, and history keeps just the file metadata
-- ⚡ **Shortcuts**: built-in "Summarize page / Explain selection / Translate selection", each editable, deletable, and restorable to defaults, plus your own custom entries. Every shortcut declares its context scope (current page / selected text / no page context). Type `/` in the composer to bring them up
+- ⚡ **Shortcuts**: five built-ins — "Summarize page / Translate selection / Fill this form / Polish selection / Focus mode" — each editable, deletable, and restorable to defaults, plus your own custom entries. Every shortcut declares its context scope (current page / selected text / no page context), and that scope also decides whether it may touch the page at all. Type `/` in the composer to bring them up. Page-scope shortcuts carry the article text along with the first turn, skipping an extra read round trip
 - 🖱️ **Ask about a selection**: select text on a page and an in-place button appears — one click opens the side panel with the selection quoted
-- 🪟 **Per-tab conversations**: the side panel is enabled and bound per tab, so switching back to a tab restores that tab's own conversation
+- 🪟 **Per-tab conversations**: the side panel is enabled and bound per tab, so switching back to a tab restores that tab's own conversation. The agent runs in the service worker rather than the panel document, so closing or reopening the side panel neither interrupts nor restarts a running task
 - 🔗 **Cross-tab context**: Type `@` in the composer to pick other tabs in the current window and bring their content into the conversation. Referenced tabs are **read-only** — the model can read them and investigate further, but any write operations (clicking, filling forms, navigating, closing) are refused. The agent still cannot enumerate your tabs on its own; only the tabs you pick enter the conversation
 - 🌓 **Interface preferences**: three-state language switch (Follow browser / 中文 / English) and theme (light / dark / follow system); messages can be edited and resent, past conversations browsed, opened, and deleted from a history drawer, and tool calls surface as a live step timeline
 
@@ -46,10 +47,10 @@ See the [Provider setup guide](docs/provider-setup.en.md) for more detail and tr
 | Storage | Dexie (IndexedDB) + `chrome.storage.local` |
 | Page parsing | `@mozilla/readability` (article extraction), `pdfjs-dist` (local PDF text extraction) |
 | Rendering | react-markdown + remark-gfm + highlight.js |
-| Testing | Vitest (a node-environment `unit` project over `lib/**/*.test.ts`, and a jsdom `ui` project for component tests) |
+| Testing | Three Vitest projects: `unit` (node environment, `lib/**/*.test.ts`), `ui` (jsdom, component tests), and `dom` (jsdom, `lib/**/*.dom.test.ts`, covering the DOM functions injected into pages) |
 | Package manager | pnpm |
 
-Requested permissions: `sidePanel`, `storage`, `scripting`, `activeTab`, `tabs`, plus the `<all_urls>` host permission.
+Requested permissions: `sidePanel`, `storage`, `scripting`, `activeTab`, `tabs`, `alarms` (used only to keep the service worker alive while a task you started is running, and cleared when it ends — never to schedule background work), plus the `<all_urls>` host permission. `userScripts` is not requested, and there is no path for executing model-generated scripts.
 
 ## Quick start
 
@@ -92,16 +93,19 @@ entrypoints/        # Extension entry points
     store.ts        # Zustand: conversation state, attachments, agent driving
     App.tsx         # Message stream, confirmation card, activity steps
     components/     # Composer, shortcuts, history drawer, attachment chips, …
-  options/          # Settings page (provider / appearance / language / shortcuts)
+  options/          # Settings page (provider / appearance / language / shortcuts / redaction / task budget)
 components/         # Shared settings components (reused by the compact in-panel settings)
 lib/                # Shared libraries
   messaging.ts      # Unified messaging protocol across the three contexts
   agent/            # Agent loop and tool calls
     agent.ts        # Agent wiring (model / tools / lifecycle hooks / context compaction)
-    tools.ts        # browser_* tool definitions (13 read-only + 11 write/interactive) + ask_user / wait / report_task_outcome
+    tools.ts        # browser_* tool definitions (16 read-only + 13 write/interactive) + ask_user / wait / report_task_outcome
     permissions.ts  # Deny-First tiers (always_allow / auto_allow / confirm_always / deny)
     confirm-gate.ts # Detected form submissions prompt every time
     tool-policy.ts  # Tool-call budgets, repeated-failure circuit breaker, forced convergence
+    run-registry.ts         # The agent runs in the service worker: one run state per tab, snapshots pushed to the panel
+    context-budget.ts       # Text budget for what may enter the context (per-read cap and overall watermarks)
+    form-schema.ts          # Field collection and sensitive-field detection (pure logic, separate from the injected form-dom.ts)
     system-prompt.ts        # System prompt (the write-tool list is derived from the permission tables)
     stream-shared.ts        # Protocol-agnostic streaming helpers
     openai-stream.ts        # OpenAI-compatible Chat Completions streamFn
@@ -110,9 +114,13 @@ lib/                # Shared libraries
     tab-conversation.ts     # Tab <-> conversation binding
     tab-session.ts          # Multi-tab orchestration: tracks agent-opened tabs and the current operating target
     agent-overlay.ts        # On-page overlay shown while a write action executes (visual signal, never blocks input)
-  chat/             # Attachments (text/image/PDF), local PDF extraction and parse queue
+  chat/             # Attachments (text/image/PDF), local PDF extraction and parse queue, page-text prefetch
+  workbench/        # Side-panel pure logic: history grouped by day, status-line dwell throttling
   i18n/             # zh / en dictionaries and useTranslation()
   shortcuts.ts      # Shortcut storage and validation (built-in + custom)
+  redaction.ts      # Page-content redaction rules (phone / email / national ID / bank card + custom)
+  page-outline.ts   # h1-h3 heading outline (lets the model navigate a windowed prefetch of a long page)
+  tab-panel-scope.ts        # Record of which tabs the side panel is enabled on
   theme.ts          # Light / dark / follow system
   db.ts             # IndexedDB (Dexie) conversation persistence
   settings.ts       # Provider configuration and presets
