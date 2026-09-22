@@ -34,10 +34,15 @@ const mocks = vi.hoisted(() => {
     clearOverlayForTab: vi.fn(async () => undefined),
     setOverlayForTab: vi.fn(async () => undefined),
     clearTakeoverForTab: vi.fn(async () => undefined),
+    getFormFieldsForTab: vi.fn(async () => ({
+      url: 'https://example.com/form',
+      fields: { f1: { path: [], expect: { tag: 'input', label: '邮箱' }, sensitive: false, kind: 'text' } },
+    })),
   };
 });
 
 vi.mock('./agent', () => ({ createBrowserAgent: mocks.createBrowserAgent }));
+vi.mock('./tab-form-fields', () => ({ getFormFieldsForTab: mocks.getFormFieldsForTab }));
 vi.mock('@/lib/db', () => ({ replaceConversationMessages: mocks.replaceConversationMessages }));
 vi.mock('./tab-session-storage', () => ({
   loadTabSession: mocks.loadTabSession,
@@ -79,6 +84,14 @@ function installAlarmsStub(): void {
       clear: vi.fn(async () => true),
       onAlarm: { addListener: vi.fn() },
     },
+  };
+}
+
+/** startRun 现在要查目标 tab 的真实地址来判断句柄表是否过期；全局替身里没有 tabs。 */
+function installTabsStub(url = 'https://example.com/form'): void {
+  (globalThis as any).browser = {
+    ...(globalThis as any).browser,
+    tabs: { get: vi.fn(async () => ({ id: 7, url })) },
   };
 }
 
@@ -130,6 +143,12 @@ beforeEach(() => {
   mocks.replaceConversationMessages.mockClear();
   mocks.clearOverlayForTab.mockClear();
   mocks.setOverlayForTab.mockClear();
+  // startRun 现在无条件调用一次 browser.tabs.get（collectTurnHandoff 里的 fetchTargetUrl），
+  // 不再只在 onConfirm/onTakeover 真正触发时才调用。几个既有用例把 browser.tabs.get 换成
+  // "调用后挂起、靠用例自己手动 resolve" 的替身（如 currentMainOrigin 的竞态用例），resolve
+  // 只发生一次；不清掉的话，后面完全不关心 tabs 的用例会复用同一个替身，拿到一个再也没人
+  // resolve 的新 promise，整个用例挂死到超时。
+  (globalThis as any).browser = { ...(globalThis as any).browser, tabs: undefined };
 });
 
 describe('run-registry startRun', () => {
@@ -860,10 +879,20 @@ describe('run-registry confirmation summary target tab', () => {
     mocks.createBrowserAgent.mockReturnValue(agent);
 
     // browser.tabs.get 挂起不返回，制造 onConfirm 悬在 currentMainOrigin() 里的那个窗口。
+    // startRun 自己现在也会先调一次 browser.tabs.get（collectTurnHandoff 里的
+    // fetchTargetUrl）：第一次调用立即返回，只有 onConfirm 触发的那一次（第二次）才挂起，
+    // 否则 startRun 自己就卡死在这个窗口打开之前。
     let resolveTabsGet!: (tab: unknown) => void;
+    let tabsGetCalls = 0;
     (globalThis as any).browser = {
       ...(globalThis as any).browser,
-      tabs: { get: vi.fn(() => new Promise((resolve) => { resolveTabsGet = resolve; })) },
+      tabs: {
+        get: vi.fn(() => {
+          tabsGetCalls += 1;
+          if (tabsGetCalls === 1) return Promise.resolve({ url: 'https://shop.example.com/checkout' });
+          return new Promise((resolve) => { resolveTabsGet = resolve; });
+        }),
+      },
     };
 
     const posted: any[] = [];
@@ -1061,5 +1090,89 @@ describe('run-registry referenced tabs', () => {
     await startRun(makeRequest({ tabId: 1, referencedTabs: [] }));
     const session = await mocks.loadTabSession(1);
     expect(session.trackedTabs.map((tab: any) => tab.id)).toEqual([1]);
+  });
+});
+
+describe('run-registry 轮次交接块', () => {
+  beforeEach(() => {
+    mocks.getFormFieldsForTab.mockClear();
+  });
+
+  function historyWithSteps() {
+    return [
+      { id: 'u0', role: 'user' as const, content: '填一下表单', createdAt: 1 },
+      {
+        id: 'a0',
+        role: 'assistant' as const,
+        content: '已经读取了表单。',
+        createdAt: 2,
+        activitySteps: [{ id: 's0', description: '读取了表单结构', status: 'done' as const }],
+      },
+    ];
+  }
+
+  it('把足迹与句柄作为一条 [系统观察] 消息追加在历史末尾', async () => {
+    installAlarmsStub();
+    installTabsStub();
+    mocks.createBrowserAgent.mockReturnValue(makeFakeAgent([]));
+
+    await startRun(makeRequest({ tabId: 7, historyMessages: historyWithSteps() }));
+    await vi.waitFor(() => expect(getRunState(7)?.busy).toBe(false));
+
+    const options = mocks.createBrowserAgent.mock.calls.at(-1)?.[0] as {
+      messages: Array<{ role: string; content: unknown }>;
+    };
+    const last = options.messages[options.messages.length - 1];
+    expect(last.role).toBe('user');
+    expect(String(last.content)).toContain('[系统观察]');
+    expect(String(last.content)).toContain('读取了表单结构');
+    expect(String(last.content)).toContain('f1：邮箱');
+  });
+
+  it('withoutBrowserTools 的轮次不追加交接块', async () => {
+    installAlarmsStub();
+    installTabsStub();
+    mocks.createBrowserAgent.mockReturnValue(makeFakeAgent([]));
+
+    await startRun(makeRequest({ tabId: 8, historyMessages: historyWithSteps(), withoutBrowserTools: true }));
+    await vi.waitFor(() => expect(getRunState(8)?.busy).toBe(false));
+
+    const options = mocks.createBrowserAgent.mock.calls.at(-1)?.[0] as { messages: Array<{ content: unknown }> };
+    expect(options.messages.some((message) => String(message.content).includes('[系统观察]'))).toBe(false);
+  });
+
+  it('没有足迹也没有句柄时不追加空消息', async () => {
+    installAlarmsStub();
+    installTabsStub();
+    mocks.getFormFieldsForTab.mockResolvedValueOnce(undefined as never);
+    mocks.createBrowserAgent.mockReturnValue(makeFakeAgent([]));
+
+    await startRun(makeRequest({ tabId: 11, historyMessages: [] }));
+    await vi.waitFor(() => expect(getRunState(11)?.busy).toBe(false));
+
+    const options = mocks.createBrowserAgent.mock.calls.at(-1)?.[0] as { messages: unknown[] };
+    expect(options.messages).toHaveLength(0);
+  });
+
+  // 查不到 URL 属于降级而不是失败：整轮照常开跑，只是这一轮没有句柄段。
+  it('tabs.get 抛错时照常开跑，只少句柄段', async () => {
+    installAlarmsStub();
+    (globalThis as any).browser = {
+      ...(globalThis as any).browser,
+      tabs: {
+        get: vi.fn(async () => {
+          throw new Error('no such tab');
+        }),
+      },
+    };
+    mocks.createBrowserAgent.mockReturnValue(makeFakeAgent([]));
+
+    await startRun(makeRequest({ tabId: 12, historyMessages: historyWithSteps() }));
+    await vi.waitFor(() => expect(getRunState(12)?.busy).toBe(false));
+
+    const options = mocks.createBrowserAgent.mock.calls.at(-1)?.[0] as { messages: Array<{ content: unknown }> };
+    const joined = options.messages.map((message) => String(message.content)).join('\n');
+    expect(joined).toContain('读取了表单结构');
+    expect(joined).not.toContain('f1：邮箱');
   });
 });

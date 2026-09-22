@@ -3,7 +3,9 @@
 // （ref: docs/superpowers/specs/2026-09-01-agent-run-in-background-design.md）。
 import type { Agent, AgentEvent } from '@earendil-works/pi-agent-core';
 import { createBrowserAgent } from './agent';
-import { toAgentMessages } from './turn-context';
+import { buildTurnHandoff, toAgentMessages } from './turn-context';
+import { getFormFieldsForTab } from './tab-form-fields';
+import { defaultRedactionSettings, loadRedactionSettings } from '@/lib/redaction';
 import { createTabSession, type TabSessionController, type TrackedTab } from './tab-session';
 import { loadTabSession, saveTabSession } from './tab-session-storage';
 import { summarizeToolCallForConfirmation } from './confirm-summary';
@@ -293,6 +295,37 @@ function currentTabLabel(state: RunState): string | undefined {
   return targetTab ? targetTab.title || '未命名页面' : undefined;
 }
 
+/** browser.tabs 在某些环境里整个不存在，属性访问就会同步抛；catch 必须裹住整段。 */
+async function fetchTargetUrl(tabId: number): Promise<string | undefined> {
+  try {
+    const tab = await browser.tabs.get(tabId);
+    return tab?.url;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 交接块的 I/O 采集。三份数据任意一份拿不到都只是少一段内容，绝不阻塞开跑——
+ * 与 beforeToolCall 里 resolveSubmitIntent 的“失败即降级”一致。
+ */
+async function collectTurnHandoff(
+  request: StartRunRequest,
+  session: TabSessionController,
+): Promise<string | undefined> {
+  if (request.withoutBrowserTools) return undefined;
+
+  const targetTabId = session.currentTabId;
+  const [targetUrl, table, redaction] = await Promise.all([
+    fetchTargetUrl(targetTabId),
+    getFormFieldsForTab(targetTabId).catch(() => undefined),
+    loadRedactionSettings().catch(() => defaultRedactionSettings()),
+  ]);
+
+  const lastAssistant = [...request.historyMessages].reverse().find((message) => message.role === 'assistant');
+  return buildTurnHandoff({ lastAssistant, table, targetUrl, redaction });
+}
+
 export async function startRun(request: StartRunRequest): Promise<void> {
   const existing = runs.get(request.tabId);
   if (existing) {
@@ -380,13 +413,19 @@ export async function startRun(request: StartRunRequest): Promise<void> {
     return new Promise<string>((resolve) => { state.resolveQuestion = resolve; });
   };
 
+  // 轮次交接：历史在翻译时被压平成纯文本，上一轮的工具产物一条都不剩。这里把"做过什么"
+  // 和"还有哪些句柄能用"补回去，每轮现算一条，不落库、不累积（ref: 设计稿 §3.3）。
+  const priorMessages = toAgentMessages(request.historyMessages);
+  const handoff = await collectTurnHandoff(request, session);
+  if (handoff) priorMessages.push({ role: 'user', content: handoff, timestamp: Date.now() });
+
   const agent = createBrowserAgent({
     provider: request.provider,
     tabId: request.tabId,
     session,
     systemPrompt: request.systemPrompt,
     tools: request.withoutBrowserTools ? [] : undefined,
-    messages: toAgentMessages(request.historyMessages),
+    messages: priorMessages,
     readToolCallBudget: request.readToolCallBudget,
     writeToolCallBudget: request.writeToolCallBudget,
     onConfirm,
