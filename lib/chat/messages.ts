@@ -18,7 +18,11 @@ export interface ChatMessage {
   kind?: 'input' | 'action';
   /** 划词提问时被引用的选区原文（裁剪后）；存在时渲染成独立的引用卡片而不是拼进 content。 */
   quotedText?: string;
-  /** 已就绪附件的历史安全投影（文本/图片/PDF 元数据）；不重新进入后续轮次的 prompt。 */
+  /**
+   * 已就绪附件的历史安全投影（文本/图片/PDF 元数据）。图片会按
+   * lib/agent/turn-context.ts 的规则在后续轮次里回放（仅限最近一条带图片的用户消息）；
+   * PDF 提取文本仅用于当轮，不持久化、不回放。
+   */
   attachments?: MessageAttachment[];
   /** 本轮用户显式引用的标签页（只有 title/url 元数据，不含正文）。重开会话不恢复授权。 */
   tabReferences?: TabReferenceMeta[];

@@ -416,7 +416,12 @@ export async function startRun(request: StartRunRequest): Promise<void> {
   // 轮次交接：历史在翻译时被压平成纯文本，上一轮的工具产物一条都不剩。这里把"做过什么"
   // 和"还有哪些句柄能用"补回去，每轮现算一条，不落库、不累积（ref: 设计稿 §3.3）。
   const priorMessages = toAgentMessages(request.historyMessages);
-  const handoff = await collectTurnHandoff(request, session);
+  // collectTurnHandoff 内部三份 I/O 各自兜底，但最后一步 buildTurnHandoff 是纯函数、
+  // 没有 catch：storage.session 里可能存着旧版/畸形的 FormFieldTable（getFormFieldsForTab
+  // 只做类型断言、不校验形状），Object.entries(table.fields) 会直接抛出。这里发生在
+  // agent 真正创建、run 的 try/finally 接管之前，一旦抛出就会让这个 tab 卡死在
+  // busy: true、keepalive 闹钟永远不清——所以必须整体降级成"没有交接块"而不是抛出。
+  const handoff = await collectTurnHandoff(request, session).catch(() => undefined);
   if (handoff) priorMessages.push({ role: 'user', content: handoff, timestamp: Date.now() });
 
   const agent = createBrowserAgent({
@@ -708,7 +713,12 @@ export function stopRun(tabId: number): void {
   state.resolveQuestion?.('');
   state.resolveQuestion = null;
   state.stopRequested = true;
-  state.agent.abort();
+  // startRun 里 state.agent 先占位成 null 再在 createBrowserAgent 之后赋值；如果
+  // collectTurnHandoff/createBrowserAgent 之前的某一步还没跑到那一行用户就点了停止
+  // （或者上面刚发生的 catch 把这轮引导向了提前退出），这里仍是占位符，调用真正的
+  // abort() 会抛 TypeError。用 ?. 只是跳过"还没有 agent 可 abort"这一种情况，
+  // 不会吞掉真实 Agent 实例上 abort() 本身抛出的错误。
+  state.agent?.abort();
   // 还在 running 的步骤没等到 tool_execution_end 就被掐断，存档前把它们标成 failed——
   // 一个永远停在"进行中"的步骤比明确标"未完成"更容易让人误以为它其实跑完了。
   state.stoppedActivitySteps = state.activitySteps.map((step) =>

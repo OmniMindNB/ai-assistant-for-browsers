@@ -1175,4 +1175,27 @@ describe('run-registry 轮次交接块', () => {
     expect(joined).toContain('读取了表单结构');
     expect(joined).not.toContain('f1：邮箱');
   });
+
+  // buildTurnHandoff 是纯函数、没有自己的 try/catch；storage.session 里的句柄表一旦是
+  // 旧版/畸形形状（比如缺了 fields），Object.entries(table.fields) 会直接抛出。这一步
+  // 发生在 agent 真正创建之前，一旦不兜底就会让这个 tab 永远卡在 busy: true——
+  // 这里验证 collectTurnHandoff 外层的 .catch() 能把它降级为"没有交接块"而不是让整个
+  // run 挂死。
+  it('句柄表形状畸形导致 buildTurnHandoff 抛错时，run 仍照常开跑而不是卡死', async () => {
+    installAlarmsStub();
+    installTabsStub();
+    mocks.getFormFieldsForTab.mockResolvedValueOnce({
+      url: 'https://example.com/form',
+      fields: undefined,
+    } as never);
+    mocks.createBrowserAgent.mockReturnValue(makeFakeAgent([]));
+
+    await startRun(makeRequest({ tabId: 13, historyMessages: historyWithSteps() }));
+    await vi.waitFor(() => expect(getRunState(13)?.busy).toBe(false));
+
+    const options = mocks.createBrowserAgent.mock.calls.at(-1)?.[0] as { messages: Array<{ content: unknown }> };
+    // buildTurnHandoff 是单次调用、单个返回值：句柄段拼接时抛出会连带丢掉同一次调用里
+    // 已经算好的足迹段——两者一起被 .catch(() => undefined) 降级掉，不是各自独立兜底。
+    expect(options.messages.some((message) => String(message.content).includes('[系统观察]'))).toBe(false);
+  });
 });
