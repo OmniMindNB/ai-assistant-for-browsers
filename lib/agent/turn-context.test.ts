@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatMessage } from '@/lib/chat/messages';
 import type { ImageAttachment } from '@/lib/chat/attachments';
-import { MAX_REPLAYED_IMAGE_BYTES, toAgentMessages } from './turn-context';
+import { defaultRedactionSettings } from '@/lib/redaction';
+import type { FormFieldTable } from './tab-form-fields';
+import { MAX_REPLAYED_IMAGE_BYTES, toAgentMessages, MAX_HANDOFF_STEPS, MAX_HANDOFF_HANDLES, buildTurnHandoff } from './turn-context';
 
 function imageAttachment(over: Partial<ImageAttachment> = {}): ImageAttachment {
   return {
@@ -27,6 +29,29 @@ function userMsg(over: Partial<ChatMessage> = {}): ChatMessage {
 
 function assistantMsg(over: Partial<ChatMessage> = {}): ChatMessage {
   return { id: 'a1', role: 'assistant', content: '好的', createdAt: 2000, ...over };
+}
+
+const redaction = defaultRedactionSettings();
+
+function fieldTable(over: Partial<FormFieldTable> = {}): FormFieldTable {
+  return {
+    url: 'https://example.com/form',
+    fields: {
+      f1: { path: [], expect: { tag: 'input', label: '邮箱' }, sensitive: false, kind: 'text' },
+      f2: { path: [], expect: { tag: 'button', text: '提交' }, sensitive: false, kind: 'button' },
+    },
+    ...over,
+  };
+}
+
+function assistantWithSteps(descriptions: string[]): ChatMessage {
+  return assistantMsg({
+    activitySteps: descriptions.map((description, index) => ({
+      id: `s${index}`,
+      description,
+      status: 'done' as const,
+    })),
+  });
 }
 
 describe('toAgentMessages', () => {
@@ -111,5 +136,114 @@ describe('toAgentMessages：图片跨轮回放', () => {
     ]);
 
     expect(result[0].content).toBe('你好');
+  });
+});
+
+describe('buildTurnHandoff', () => {
+  it('足迹与句柄都没有时返回 undefined（绝不发空消息）', () => {
+    expect(buildTurnHandoff({ redaction })).toBeUndefined();
+  });
+
+  it('同时给出足迹段与句柄段', () => {
+    const result = buildTurnHandoff({
+      lastAssistant: assistantWithSteps(['读取了页面内容', '点击了「下一步」']),
+      table: fieldTable(),
+      targetUrl: 'https://example.com/form',
+      redaction,
+    });
+
+    expect(result).toContain('[系统观察]');
+    expect(result).toContain('点击了「下一步」');
+    expect(result).toContain('f1：邮箱');
+    expect(result).toContain('f2：提交');
+  });
+
+  // 句柄的新鲜度判断复用 FormFieldTable.url 那道现成的锁，不另造一套。
+  it('句柄表的 url 与当前目标不符时不输出句柄段，足迹段照常', () => {
+    const result = buildTurnHandoff({
+      lastAssistant: assistantWithSteps(['读取了页面内容']),
+      table: fieldTable(),
+      targetUrl: 'https://example.com/another',
+      redaction,
+    });
+
+    expect(result).toContain('读取了页面内容');
+    expect(result).not.toContain('f1');
+  });
+
+  it('targetUrl 查不到时不输出句柄段', () => {
+    const result = buildTurnHandoff({
+      lastAssistant: assistantWithSteps(['读取了页面内容']),
+      table: fieldTable(),
+      redaction,
+    });
+
+    expect(result).not.toContain('f1');
+  });
+
+  // ⚠️ 这条用例是 spec §2.3 那条约束的执行者，不得删改：句柄表存的是未脱敏的原始 label，
+  // 而 browser_get_form 交给模型的渲染结果是过了 redactText 的。少这一道，交接块就是
+  // 一条绕过脱敏的新路。
+  it('句柄 label 里的敏感串被脱敏', () => {
+    const result = buildTurnHandoff({
+      table: fieldTable({
+        fields: {
+          f1: { path: [], expect: { tag: 'input', label: '联系电话 13812345678' }, sensitive: false, kind: 'text' },
+        },
+      }),
+      targetUrl: 'https://example.com/form',
+      redaction,
+    });
+
+    expect(result).not.toContain('13812345678');
+  });
+
+  it('sensitive 句柄不出现在输出里', () => {
+    const result = buildTurnHandoff({
+      table: fieldTable({
+        fields: {
+          f1: { path: [], expect: { tag: 'input', label: '邮箱' }, sensitive: false, kind: 'text' },
+          f2: { path: [], expect: { tag: 'input', label: '支付密码' }, sensitive: true, kind: 'text' },
+        },
+      }),
+      targetUrl: 'https://example.com/form',
+      redaction,
+    });
+
+    expect(result).toContain('f1：邮箱');
+    expect(result).not.toContain('支付密码');
+  });
+
+  it('步数超上限时截断并报出剩余数量', () => {
+    const descriptions = Array.from({ length: MAX_HANDOFF_STEPS + 3 }, (_, index) => `第 ${index} 步`);
+    const result = buildTurnHandoff({ lastAssistant: assistantWithSteps(descriptions), redaction });
+
+    expect(result).toContain(`第 ${MAX_HANDOFF_STEPS - 1} 步`);
+    expect(result).not.toContain(`第 ${MAX_HANDOFF_STEPS} 步`);
+    expect(result).toContain('另有 3 步未列出');
+  });
+
+  it('句柄数超上限时截断并报出剩余数量', () => {
+    const fields: FormFieldTable['fields'] = {};
+    for (let index = 0; index < MAX_HANDOFF_HANDLES + 5; index += 1) {
+      fields[`f${index}`] = { path: [], expect: { tag: 'input', label: `字段 ${index}` }, sensitive: false, kind: 'text' };
+    }
+
+    const result = buildTurnHandoff({
+      table: fieldTable({ fields }),
+      targetUrl: 'https://example.com/form',
+      redaction,
+    });
+
+    expect(result).toContain('另有 5 个未列出');
+  });
+
+  it('只有 running / notice 状态的步骤时不输出足迹段', () => {
+    const result = buildTurnHandoff({
+      lastAssistant: assistantMsg({ activitySteps: [{ id: 's0', description: '正在读取', status: 'running' }] }),
+      redaction,
+    });
+
+    expect(result).toBeUndefined();
   });
 });
