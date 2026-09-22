@@ -2,8 +2,8 @@
 // pending confirmation/question 全部在这里，不再依赖侧边栏面板文档的生命周期
 // （ref: docs/superpowers/specs/2026-09-01-agent-run-in-background-design.md）。
 import type { Agent, AgentEvent } from '@earendil-works/pi-agent-core';
-import type { AssistantMessage, Message as AgentLlmMessage } from '@earendil-works/pi-ai';
 import { createBrowserAgent } from './agent';
+import { toAgentMessages } from './turn-context';
 import { createTabSession, type TabSessionController, type TrackedTab } from './tab-session';
 import { loadTabSession, saveTabSession } from './tab-session-storage';
 import { summarizeToolCallForConfirmation } from './confirm-summary';
@@ -163,24 +163,6 @@ async function persistMessages(state: RunState): Promise<void> {
     toMessageRecords(state.conversationId, state.messages),
     conversationTitle(state.messages),
   ).catch((e: unknown) => console.error('[Runi] 持久化会话失败', e));
-}
-
-function toAgentMessages(messages: ChatMessage[]): AgentLlmMessage[] {
-  return messages.map((message) => {
-    if (message.role === 'user') {
-      return { role: 'user', content: message.content, timestamp: message.createdAt };
-    }
-    return {
-      role: 'assistant',
-      content: message.content ? [{ type: 'text', text: message.content }] : [],
-      api: 'openai-completions',
-      provider: 'history',
-      model: 'history',
-      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-      stopReason: 'stop',
-      timestamp: message.createdAt,
-    } satisfies AssistantMessage;
-  });
 }
 
 function extractLastAssistantText(messages: unknown[]): string {
