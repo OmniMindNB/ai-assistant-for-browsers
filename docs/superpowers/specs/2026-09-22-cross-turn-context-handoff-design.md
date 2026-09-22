@@ -96,6 +96,8 @@ export function buildTurnHandoff(input: {
 
 **句柄段** — **仅当 `table.url === targetUrl` 时输出**，复用 §2.2 那道现成的锁，而不是自己发明一套新鲜度判断。输出 fieldId + label，上限 `MAX_HANDOFF_HANDLES = 20`，超出报"另有 N 个，调用 `browser_get_form` 查看完整列表"。
 
+标了 `sensitive` 的句柄（密码、支付字段）一律不列入。它们本来就永远不被读回、不被写入（`planFormFill` 在到达页面之前就丢弃，Spec-0005），把它们的 label 单独铺一条新路送进上下文，与那条约束背道而驰。
+
 `targetUrl` 取 `session.currentTabId`（`startRun` 里已经 `loadTabSession` 过）对应 tab 的当前地址，经 `browser.tabs.get` 查询；查不到就跳过句柄段——失败即降级、不阻塞，与 `beforeToolCall` 里 `resolveSubmitIntent` 的既有处理一致。
 
 整块过 `redactText`，见 §2.3。
@@ -138,6 +140,7 @@ export function buildTurnHandoff(input: {
 - 足迹与句柄都为空时返回 `undefined`
 - 句柄 label 里的敏感串确实被 `redactText` 替换（**这条用例就是 §2.3 那条约束的执行者，不得删改**）
 - 步数/句柄数超上限时截断并报出剩余数量
+- `sensitive` 句柄不出现在输出里
 
 *调用方*（`run-registry.test.ts`，`buildTurnHandoff` 本身不知道有没有浏览器工具——那是 `startRun` 的决定，用例也就该落在调用方）
 - `withoutBrowserTools` 时不追加交接消息
