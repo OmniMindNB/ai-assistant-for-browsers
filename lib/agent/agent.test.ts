@@ -1420,6 +1420,27 @@ describe('上下文压缩：窗口边界不得切出无主的 toolResult', () =>
       }
     }
   });
+
+  // 交接块（turn-context.ts 的 buildTurnHandoff）在序列里的形状与上面的 steer 一样是单条
+  // user 消息，但位置不同：它固定落在历史末尾、本轮工具调用之前。这里补的是那个下标。
+  it('历史末尾的单条 user 消息（轮次交接块）不会让窗口以无主 toolResult 开头', async () => {
+    const hooks = runtimeOptions();
+    const messages: AgentMessage[] = [userMessage('开始')];
+    for (let index = 0; index < MAX_CONTEXT_MESSAGES; index += 1) {
+      messages.push(assistantToolCallMessage(`call-c${index}`, 'browser_type', { text: `c${index}` }));
+      messages.push(toolResultMessage(`call-c${index}`, 'browser_type', `已输入 c${index}。`));
+    }
+    messages.push(userMessage('[系统观察] 本会话上一轮的执行足迹（可能已过时）：\n- 读取了表单结构'));
+
+    const compacted = await hooks.transformContext!(messages);
+
+    expect(messages.length).toBeGreaterThan(MAX_CONTEXT_MESSAGES);
+    expect((compacted[0] as unknown as { role: string }).role).not.toBe('toolResult');
+    // 交接块本身必须留在窗口里——它是给本轮用的，被切掉等于白算。
+    const last = compacted[compacted.length - 1] as unknown as { content: { type: string; text?: string }[] };
+    const contentText = last.content?.map((c: any) => c.text ?? '').join('') ?? '';
+    expect(contentText).toContain('[系统观察]');
+  });
 });
 
 // 实测（2026-09-01 perf 采样，DeepSeek 前缀缓存）：消息数一撞到窗口上限，命中 token 数
