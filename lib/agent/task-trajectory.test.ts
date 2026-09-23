@@ -45,6 +45,52 @@ describe('parseTrajectory', () => {
     expect(parseTrajectory([{ tool: 'browser_click', url: URL_A, values: [{ target: '「a」', value: 'v'.repeat(MAX_TRAJECTORY_VALUE_CHARS + 1) }] }])).toBeNull();
     expect(parseTrajectory([{ tool: 'browser_click', url: URL_A, values: [{ target: '「a」', checked: 'yes' }] }])).toBeNull();
   });
+
+  it('normalizes sensitive values by dropping value and checked, regardless of what storage had', () => {
+    const sensitiveWithValue = parseTrajectory([
+      {
+        tool: 'browser_fill_form',
+        url: URL_A,
+        values: [{ target: '「支付密码」', value: '1234', checked: true, sensitive: true }],
+        sensitive: true,
+      },
+    ]);
+    expect(sensitiveWithValue).not.toBeNull();
+    expect(sensitiveWithValue?.[0].values?.[0]).toEqual({ target: '「支付密码」', sensitive: true });
+    expect(JSON.stringify(sensitiveWithValue?.[0].values?.[0])).not.toContain('1234');
+  });
+
+  it('clips target and detail that exceed MAX_TRAJECTORY_VALUE_CHARS', () => {
+    const longTarget = 'x'.repeat(MAX_TRAJECTORY_VALUE_CHARS * 2);
+    const longDetail = 'y'.repeat(MAX_TRAJECTORY_VALUE_CHARS * 2);
+    const parsed = parseTrajectory([
+      {
+        tool: 'browser_click',
+        url: URL_A,
+        target: longTarget,
+        detail: longDetail,
+      },
+    ]);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.[0].target?.length).toBe(MAX_TRAJECTORY_VALUE_CHARS);
+    expect(parsed?.[0].target?.endsWith('…')).toBe(true);
+    expect(parsed?.[0].detail?.length).toBe(MAX_TRAJECTORY_VALUE_CHARS);
+    expect(parsed?.[0].detail?.endsWith('…')).toBe(true);
+  });
+
+  it('clips value target that exceeds MAX_TRAJECTORY_VALUE_CHARS', () => {
+    const longTarget = 'z'.repeat(MAX_TRAJECTORY_VALUE_CHARS * 2);
+    const parsed = parseTrajectory([
+      {
+        tool: 'browser_fill_form',
+        url: URL_A,
+        values: [{ target: longTarget, value: '123' }],
+      },
+    ]);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.[0].values?.[0].target?.length).toBe(MAX_TRAJECTORY_VALUE_CHARS);
+    expect(parsed?.[0].values?.[0].target?.endsWith('…')).toBe(true);
+  });
 });
 
 describe('describeTrajectoryStep', () => {

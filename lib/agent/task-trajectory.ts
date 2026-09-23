@@ -41,6 +41,11 @@ function isOptionalString(value: unknown): value is string | undefined {
   return value === undefined || typeof value === 'string';
 }
 
+function clipString(s: string | undefined, max: number): string | undefined {
+  if (!s) return s;
+  return s.length > max ? s.slice(0, max - 1) + '…' : s;
+}
+
 function parseValue(raw: unknown): TrajectoryValue | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const item = raw as Record<string, unknown>;
@@ -48,11 +53,22 @@ function parseValue(raw: unknown): TrajectoryValue | null {
   if (!isOptionalString(item.value) || (item.value?.length ?? 0) > MAX_TRAJECTORY_VALUE_CHARS) return null;
   if (item.checked !== undefined && typeof item.checked !== 'boolean') return null;
   if (item.sensitive !== undefined && typeof item.sensitive !== 'boolean') return null;
+
+  // 存储不可信：手改过的条目可能在 sensitive 字段上还装着值。
+  // 不是拒绝它，而是规范化：sensitive=true 时只保留 target，丢掉 value 和 checked。
+  // 这样不管存储里是什么，业务不变量（敏感字段的值从不进轨迹）依然在这个边界上成立。
+  if (item.sensitive) {
+    return {
+      target: clipString(item.target, MAX_TRAJECTORY_VALUE_CHARS) || item.target,
+      sensitive: true,
+    };
+  }
+
+  const clippedTarget = clipString(item.target, MAX_TRAJECTORY_VALUE_CHARS) || item.target;
   return {
-    target: item.target,
+    target: clippedTarget,
     ...(item.value !== undefined ? { value: item.value } : {}),
     ...(item.checked !== undefined ? { checked: item.checked as boolean } : {}),
-    ...(item.sensitive ? { sensitive: true } : {}),
   };
 }
 
@@ -80,12 +96,14 @@ export function parseTrajectory(value: unknown): TrajectoryStep[] | null {
         values.push(parsed);
       }
     }
+    const clippedTarget = clipString(item.target as string | undefined, MAX_TRAJECTORY_VALUE_CHARS);
+    const clippedDetail = clipString(item.detail as string | undefined, MAX_TRAJECTORY_VALUE_CHARS);
     steps.push({
       tool: item.tool,
       url: item.url,
-      ...(item.target !== undefined ? { target: item.target } : {}),
+      ...(clippedTarget !== undefined ? { target: clippedTarget } : {}),
       ...(values ? { values } : {}),
-      ...(item.detail !== undefined ? { detail: item.detail } : {}),
+      ...(clippedDetail !== undefined ? { detail: clippedDetail } : {}),
       ...(item.sensitive ? { sensitive: true } : {}),
     });
   }
