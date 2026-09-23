@@ -128,6 +128,8 @@ export function WorkbenchComposer({
 
   // @ 提及必须按光标定位，不能照抄 / 的整串前缀判断——@ 会出现在句子中间。
   const syncMention = (value: string, caret: number) => {
+    // 同上：胶囊挂起时这段文字是备注，不是正文，@ 不该弹出标签页选择器抢走 Enter。
+    if (pendingTask) return;
     const next = findMentionQuery(value, caret);
     setMention(next);
     // 查询串一变，候选集就换了一批，高亮必须回到第一项——否则上一次停在第 3 项的高亮会
@@ -200,13 +202,16 @@ export function WorkbenchComposer({
   }, [draftSeed?.token]);
 
   useEffect(() => {
+    // 胶囊挂起时输入框装的是"这次的不同之处"这句备注，不是新指令——哪怕它凑巧以 "/"
+    // 开头也不该弹出命令菜单，否则 Enter 会被菜单吞掉，而不是把整段备注交给待执行任务。
+    if (pendingTask) return;
     if (startsSlashCommand(input)) {
       setOpenPopover('commands');
       setHighlightedCommand(0);
     } else if (openPopover === 'commands') {
       setOpenPopover(null);
     }
-  }, [input]);
+  }, [input, pendingTask]);
 
   useEffect(() => {
     if (highlightedCommand >= commands.length) setHighlightedCommand(0);
@@ -280,6 +285,8 @@ export function WorkbenchComposer({
 
   function chooseSlashCommands() {
     if (requestBlocked) return;
+    // 胶囊挂起时同样不开命令菜单：理由同上面输入框的两处判断，这里只是另一个入口。
+    if (pendingTask) return;
     setHighlightedCommand(0);
     setOpenPopover('commands');
     requestAnimationFrame(() => textareaRef.current?.focus());
@@ -555,7 +562,11 @@ export function WorkbenchComposer({
                 key={config.id}
                 type="button"
                 disabled={requestBlocked}
-                onClick={() => onRunShortcut(config)}
+                onClick={() => {
+                  // 工具条上的普通指令随时可点；点了就不再需要那个挂起的录制任务胶囊了。
+                  setPendingTask(null);
+                  onRunShortcut(config);
+                }}
                 aria-label={resolved.name}
                 title={resolved.name}
                 className="inline-flex max-w-40 shrink-0 items-center rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"

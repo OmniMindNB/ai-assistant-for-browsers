@@ -978,6 +978,61 @@ describe('workbench composer', () => {
     expect(within(chips).getByRole('button', { name: '阅读页面' })).toBeInTheDocument();
     expect(within(chips).queryByRole('button', { name: 'Expense report' })).toBeNull();
   });
+
+  it('treats a staged task note starting with "/" as plain text, not a slash command', async () => {
+    const user = userEvent.setup();
+    const onRunShortcut = vi.fn();
+    render(<ComposerHarness shortcuts={[recordedCommand]} onRunShortcut={onRunShortcut} />);
+
+    await user.type(screen.getByRole('textbox'), '/Expense');
+    await user.keyboard('{Enter}');
+    expect(screen.getByTestId('composer-pending-task')).toBeInTheDocument();
+
+    await user.type(screen.getByRole('textbox'), '/Read the thing');
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    await user.keyboard('{Enter}');
+
+    expect(onRunShortcut).toHaveBeenCalledOnce();
+    expect(onRunShortcut).toHaveBeenCalledWith(recordedCommand.config, { supplement: '/Read the thing' });
+  });
+
+  it('treats a staged task note containing "@" as plain text, not a tab mention', async () => {
+    const user = userEvent.setup();
+    const onRunShortcut = vi.fn();
+    const onLoadReferencableTabs = vi.fn().mockResolvedValue([]);
+    render(
+      <ComposerHarness
+        shortcuts={[recordedCommand]}
+        onRunShortcut={onRunShortcut}
+        onLoadReferencableTabs={onLoadReferencableTabs}
+      />,
+    );
+
+    await user.type(screen.getByRole('textbox'), '/Expense');
+    await user.keyboard('{Enter}');
+    expect(screen.getByTestId('composer-pending-task')).toBeInTheDocument();
+
+    await user.type(screen.getByRole('textbox'), 'ping @doc');
+    await user.keyboard('{Enter}');
+
+    expect(onLoadReferencableTabs).not.toHaveBeenCalled();
+    expect(onRunShortcut).toHaveBeenCalledWith(recordedCommand.config, { supplement: 'ping @doc' });
+  });
+
+  it('clears a staged task when a toolbar quick-shortcut chip is clicked', async () => {
+    const user = userEvent.setup();
+    const onRunShortcut = vi.fn();
+    render(<ComposerHarness shortcuts={[readingShortcut, recordedCommand]} onRunShortcut={onRunShortcut} />);
+
+    await user.type(screen.getByRole('textbox'), '/Expense');
+    await user.keyboard('{Enter}');
+    expect(screen.getByTestId('composer-pending-task')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '阅读页面' }));
+
+    expect(onRunShortcut).toHaveBeenCalledWith(readingShortcut.config);
+    expect(screen.queryByTestId('composer-pending-task')).toBeNull();
+  });
 });
 
 describe('activity step list', () => {
