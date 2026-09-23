@@ -4,6 +4,7 @@ import type { TaskOutcome } from '@/lib/agent/task-outcome';
 import type { ActivityStep } from '@/lib/agent/activity-steps';
 import type { ShortcutRerun } from './shortcut-rerun';
 import type { TabReferenceMeta } from './tab-reference';
+import type { TrajectoryStep } from '@/lib/agent/task-trajectory';
 
 // 侧边栏消息的形状与派生规则（ref: docs/superpowers/specs/2026-07-26-edit-history-message-design.md §3）。
 // 本功能的全部可测逻辑集中在这里：vitest 只覆盖 lib/**，entrypoints/ 没有测试基建。
@@ -39,6 +40,11 @@ export interface ChatMessage {
   contextTruncated?: boolean;
   /** 快捷操作消息的重放配方，供「重新生成」按当时的定义重跑一遍（见 shortcut-rerun.ts）。 */
   rerun?: ShortcutRerun;
+  /**
+   * 本轮成功执行过的写操作参考轨迹（已脱敏）；仅 assistant 消息、且这一轮真的动过页面时才有值。
+   * 供「保存为指令」取用（ref: docs/superpowers/specs/2026-09-23-task-replay-design.md §3.5）。
+   */
+  trajectory?: TrajectoryStep[];
 }
 
 const TITLE_MAX_CHARS = 40;
@@ -115,6 +121,7 @@ export function toMessageRecords(
     activitySteps: message.activitySteps,
     contextTruncated: message.contextTruncated,
     rerun: message.rerun,
+    trajectory: message.trajectory,
   }));
 }
 

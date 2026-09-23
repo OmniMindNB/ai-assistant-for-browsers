@@ -955,6 +955,7 @@ export const useChat = create<ChatState>((set, get) => ({
         activitySteps: r.activitySteps,
         contextTruncated: r.contextTruncated,
         rerun: r.rerun,
+        trajectory: r.trajectory,
       }));
     set({
       messages,
