@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useId, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useChat } from './store';
 import { useTheme } from '@/lib/theme';
 import { useTranslation } from '@/lib/i18n';
@@ -84,6 +84,12 @@ export default function App() {
     respondToQuestion,
     restoreTabConversation,
   } = useChat();
+
+  // 整理通用做法用输入框里当前选中的模型，而不是 provider 的默认模型。
+  const summaryProvider = useMemo(() => {
+    const selected = providers.find((item) => item.id === selectedProviderId);
+    return selected ? { ...selected, model: selectedModel || selected.model } : null;
+  }, [providers, selectedProviderId, selectedModel]);
 
   // 只为在侧边栏里加载并应用主题偏好；外观在设置页里改。
   useTheme();
@@ -293,6 +299,7 @@ export default function App() {
         open={saveTaskFor !== null}
         messages={messages}
         messageId={saveTaskFor}
+        provider={summaryProvider}
         onClose={() => setSaveTaskFor(null)}
         onSaved={(name) => {
           setSaveTaskFor(null);

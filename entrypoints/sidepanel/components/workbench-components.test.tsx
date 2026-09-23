@@ -2158,6 +2158,22 @@ describe('save as task', () => {
     );
   }
 
+  const provider = { id: 'p1', name: 'P', baseURL: 'https://llm.test/v1', apiKey: 'k', model: 'm1', models: ['m1', 'm2'] };
+  const playbookReply = { name: 'Expense report', applicability: 'Any expense form', steps: ['Fill in the amount', 'Click next'] };
+
+  function withModel() {
+    Object.assign(chatStore, { providers: [provider], selectedProviderId: 'p1', selectedModel: 'm2' });
+  }
+
+  function replyWith(content: string) {
+    return new Response(JSON.stringify({ choices: [{ message: { content } }] }), { status: 200 });
+  }
+
+  afterEach(() => {
+    Object.assign(chatStore, { providers: [], selectedProviderId: null, selectedModel: '' });
+    vi.unstubAllGlobals();
+  });
+
   it('offers saving only on replies that changed the page', () => {
     (chatStore as any).messages = [
       ...recordedConversation,
@@ -2239,5 +2255,139 @@ describe('save as task', () => {
     renderApp();
     await user.click(screen.getByRole('button', { name: 'Save as task' }));
     expect(screen.getByText('This run reported the task as not completed. Save it anyway?')).toBeInTheDocument();
+  });
+
+  it('summarizes a reusable method with the selected model and saves it with the task', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn().mockResolvedValue(replyWith(JSON.stringify(playbookReply)));
+    vi.stubGlobal('fetch', fetchMock);
+    const set = vi.spyOn((globalThis as any).browser.storage.local, 'set');
+    withModel();
+    (chatStore as any).messages = recordedConversation;
+    renderApp();
+
+    await user.click(screen.getByRole('button', { name: 'Save as task' }));
+    const dialog = screen.getByRole('dialog', { name: 'Save as task' });
+    expect(await within(dialog).findByLabelText('Works on')).toHaveValue('Any expense form');
+    expect(within(dialog).getByLabelText('Name')).toHaveValue('Expense report');
+    expect(within(dialog).getByLabelText('Method step 1')).toHaveValue('Fill in the amount');
+    expect(JSON.parse((fetchMock.mock.calls[0] as [string, RequestInit])[1].body as string).model).toBe('m2');
+
+    await user.type(within(dialog).getByLabelText('Method step 2'), ' button');
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(chatStore.refreshShortcuts).toHaveBeenCalled());
+    const saved = (set.mock.calls.at(-1)?.[0] as any)?.['runi:shortcuts'] as any[];
+    expect(saved.at(-1)).toMatchObject({
+      origin: 'recorded',
+      name: 'Expense report',
+      playbook: { applicability: 'Any expense form', steps: ['Fill in the amount', 'Click next button'] },
+    });
+    expect(saved.at(-1).trajectory).toHaveLength(2);
+  });
+
+  it('falls back to the recorded steps when summarizing fails, and still saves', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('boom', { status: 500 })));
+    const set = vi.spyOn((globalThis as any).browser.storage.local, 'set');
+    withModel();
+    (chatStore as any).messages = recordedConversation;
+    renderApp();
+
+    await user.click(screen.getByRole('button', { name: 'Save as task' }));
+    const dialog = screen.getByRole('dialog', { name: 'Save as task' });
+    expect(await within(dialog).findByText(/Could not summarize a reusable method/)).toBeInTheDocument();
+    expect(within(dialog).getByText('Set 「Amount」 to "280"')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(chatStore.refreshShortcuts).toHaveBeenCalled());
+    const saved = (set.mock.calls.at(-1)?.[0] as any)?.['runi:shortcuts'] as any[];
+    expect(saved.at(-1).playbook).toBeUndefined();
+  });
+
+  it('says so when no model is configured, without sending a request', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    (chatStore as any).messages = recordedConversation;
+    renderApp();
+
+    await user.click(screen.getByRole('button', { name: 'Save as task' }));
+    expect(screen.getByText(/no model is configured/)).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('reports an unreadable reply and can summarize again', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(replyWith('sorry, I cannot'))
+      .mockResolvedValueOnce(replyWith(JSON.stringify(playbookReply)));
+    vi.stubGlobal('fetch', fetchMock);
+    withModel();
+    (chatStore as any).messages = recordedConversation;
+    renderApp();
+
+    await user.click(screen.getByRole('button', { name: 'Save as task' }));
+    const dialog = screen.getByRole('dialog', { name: 'Save as task' });
+    expect(await within(dialog).findByText(/the model reply could not be read/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Summarize again' }));
+    expect(await within(dialog).findByLabelText('Works on')).toHaveValue('Any expense form');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a name the user typed while the summary was loading', async () => {
+    const user = userEvent.setup();
+    let resolve!: (response: Response) => void;
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((r) => { resolve = r; })));
+    withModel();
+    (chatStore as any).messages = recordedConversation;
+    renderApp();
+
+    await user.click(screen.getByRole('button', { name: 'Save as task' }));
+    const dialog = screen.getByRole('dialog', { name: 'Save as task' });
+    expect(within(dialog).getByText('Summarizing a reusable method…')).toBeInTheDocument();
+    await user.clear(within(dialog).getByLabelText('Name'));
+    await user.type(within(dialog).getByLabelText('Name'), 'My name');
+    await act(async () => resolve(replyWith(JSON.stringify(playbookReply))));
+
+    expect(await within(dialog).findByLabelText('Works on')).toHaveValue('Any expense form');
+    expect(within(dialog).getByLabelText('Name')).toHaveValue('My name');
+  });
+
+  it('aborts the request when the drawer closes', async () => {
+    const user = userEvent.setup();
+    let signal: AbortSignal | undefined;
+    vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => {
+      signal = init.signal ?? undefined;
+      return new Promise<Response>(() => {});
+    }));
+    withModel();
+    (chatStore as any).messages = recordedConversation;
+    renderApp();
+
+    await user.click(screen.getByRole('button', { name: 'Save as task' }));
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it('saves without a playbook when every method step was deleted', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(replyWith(JSON.stringify(playbookReply))));
+    const set = vi.spyOn((globalThis as any).browser.storage.local, 'set');
+    withModel();
+    (chatStore as any).messages = recordedConversation;
+    renderApp();
+
+    await user.click(screen.getByRole('button', { name: 'Save as task' }));
+    const dialog = screen.getByRole('dialog', { name: 'Save as task' });
+    await within(dialog).findByLabelText('Works on');
+    await user.click(within(dialog).getByRole('button', { name: 'Delete method step 1' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Delete method step 1' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(chatStore.refreshShortcuts).toHaveBeenCalled());
+    const saved = (set.mock.calls.at(-1)?.[0] as any)?.['runi:shortcuts'] as any[];
+    expect(saved.at(-1).playbook).toBeUndefined();
   });
 });
