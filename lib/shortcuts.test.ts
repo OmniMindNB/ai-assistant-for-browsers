@@ -440,3 +440,49 @@ describe('shortcut list operations', () => {
     });
   });
 });
+
+describe('recorded shortcuts', () => {
+  const recorded = {
+    id: 'shortcut-rec-1',
+    origin: 'recorded',
+    scope: 'page',
+    customized: true,
+    name: '差旅报销单',
+    prompt: '帮我填一张差旅报销单',
+    trajectory: [{ tool: 'browser_click', url: 'https://example.com/a', target: '「下一步」' }],
+  };
+
+  it('accepts a well-formed recorded shortcut and keeps its trajectory', () => {
+    const result = validateShortcutConfigs([recorded]);
+    expect(result.errors).toEqual([]);
+    expect(result.shortcuts).toEqual([recorded]);
+  });
+
+  it('resolves a recorded shortcut with its own name, prompt and trajectory', () => {
+    const resolved = resolveShortcut(recorded as ShortcutConfig, translator(en));
+    expect(resolved.name).toBe('差旅报销单');
+    expect(resolved.trajectory).toEqual(recorded.trajectory);
+  });
+
+  it('rejects recorded shortcuts that are not page-scoped, not customized, or lack a valid trajectory', () => {
+    expect(validateShortcutConfigs([{ ...recorded, scope: 'none' }]).errors).toHaveLength(1);
+    expect(validateShortcutConfigs([{ ...recorded, customized: false }]).errors).toHaveLength(1);
+    expect(validateShortcutConfigs([{ ...recorded, trajectory: [] }]).errors).toHaveLength(1);
+    expect(validateShortcutConfigs([{ ...recorded, trajectory: undefined }]).errors).toHaveLength(1);
+    expect(validateShortcutConfigs([{ ...recorded, id: BUILTIN_SUMMARIZE_ID }]).errors).toHaveLength(1);
+  });
+
+  it('rejects a trajectory on a shortcut that is not recorded', () => {
+    const custom = { id: 'c1', origin: 'custom', scope: 'page', customized: true, name: 'n', prompt: 'p', trajectory: recorded.trajectory };
+    expect(validateShortcutConfigs([custom]).errors).toHaveLength(1);
+  });
+
+  it('flags only the corrupted recorded entry and keeps the rest', () => {
+    const result = validateShortcutConfigs([
+      recorded,
+      { ...recorded, id: 'shortcut-rec-2', trajectory: [{ tool: 'browser_click' }] },
+    ]);
+    expect(result.shortcuts.map((item) => item.id)).toEqual(['shortcut-rec-1']);
+    expect(result.errors).toEqual(['Shortcut at index 1 has an invalid trajectory.']);
+  });
+});

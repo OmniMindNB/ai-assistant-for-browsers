@@ -1,7 +1,12 @@
 import type { Translate } from './i18n';
+import { parseTrajectory, type TrajectoryStep } from './agent/task-trajectory';
 
 export type ShortcutScope = 'page' | 'selection' | 'none';
-export type ShortcutOrigin = 'builtin' | 'custom';
+/**
+ * recorded：从一次成功的对话保存下来的任务指令（ref: docs/superpowers/specs/2026-09-23-task-replay-design.md）。
+ * 固定 page 作用域、customized: true，带一份参考轨迹；不参与 BUILTINS_REVISION 的演进。
+ */
+export type ShortcutOrigin = 'builtin' | 'custom' | 'recorded';
 export type MoveDirection = 'up' | 'down';
 
 export interface ShortcutConfig {
@@ -11,6 +16,7 @@ export interface ShortcutConfig {
   customized: boolean;
   name?: string;
   prompt?: string;
+  trajectory?: TrajectoryStep[];
 }
 
 export interface ResolvedShortcut {
@@ -20,6 +26,7 @@ export interface ResolvedShortcut {
   customized: boolean;
   name: string;
   prompt: string;
+  trajectory?: TrajectoryStep[];
 }
 
 export interface ShortcutLoadResult {
@@ -185,7 +192,7 @@ export function validateShortcutConfigs(value: unknown): ShortcutLoadResult {
       return;
     }
     ids.add(id);
-    if (item.origin !== 'builtin' && item.origin !== 'custom') {
+    if (item.origin !== 'builtin' && item.origin !== 'custom' && item.origin !== 'recorded') {
       errors.push(`${label} has an invalid origin.`);
       return;
     }
@@ -209,6 +216,29 @@ export function validateShortcutConfigs(value: unknown): ShortcutLoadResult {
       errors.push(`${label} must mark a custom shortcut as customized.`);
       return;
     }
+    if (item.origin === 'recorded') {
+      if (BUILTIN_IDS.has(id)) {
+        errors.push(`${label} cannot use a reserved built-in id: ${id}.`);
+        return;
+      }
+      if (item.scope !== 'page') {
+        errors.push(`${label} must use page scope for a recorded shortcut.`);
+        return;
+      }
+      if (item.customized !== true) {
+        errors.push(`${label} must mark a recorded shortcut as customized.`);
+        return;
+      }
+    }
+    const trajectory = item.origin === 'recorded' ? parseTrajectory(item.trajectory) : undefined;
+    if (item.origin === 'recorded' && !trajectory) {
+      errors.push(`${label} has an invalid trajectory.`);
+      return;
+    }
+    if (item.origin !== 'recorded' && item.trajectory !== undefined) {
+      errors.push(`${label} cannot carry a trajectory.`);
+      return;
+    }
     if (item.origin === 'builtin' && !item.customized) {
       const builtin = BUILTINS.find((candidate) => candidate.id === id)!;
       if (item.scope !== builtin.scope) {
@@ -221,7 +251,7 @@ export function validateShortcutConfigs(value: unknown): ShortcutLoadResult {
       }
     }
 
-    const requiresText = item.origin === 'custom' || item.customized;
+    const requiresText = item.origin !== 'builtin' || item.customized;
     const name = typeof item.name === 'string' ? item.name.trim() : undefined;
     const prompt = typeof item.prompt === 'string' ? item.prompt.trim() : undefined;
     if (requiresText && (!name || !prompt)) {
@@ -241,6 +271,7 @@ export function validateShortcutConfigs(value: unknown): ShortcutLoadResult {
       customized: item.customized,
       ...(name !== undefined ? { name } : {}),
       ...(prompt !== undefined ? { prompt } : {}),
+      ...(trajectory ? { trajectory } : {}),
     });
   });
 
