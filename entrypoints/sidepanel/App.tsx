@@ -229,10 +229,10 @@ export default function App() {
     setDraftSeed({ text, token: Date.now() });
   }
 
-  function executeShortcut(shortcut: ShortcutConfig) {
+  function executeShortcut(shortcut: ShortcutConfig, options?: { supplement?: string }) {
     if (requestBlocked) return;
     resetToFollowing();
-    runShortcut(shortcut);
+    runShortcut(shortcut, options);
   }
 
   function toggleHistory() {

@@ -252,7 +252,7 @@ describe('side-panel custom shortcut wiring', () => {
 
   it('routes shortcut controls through the generic shortcut action', () => {
     expect(appSource).toContain('refreshShortcuts();');
-    expect(appSource).toContain('runShortcut(shortcut);');
+    expect(appSource).toContain('runShortcut(shortcut, options);');
     expect(appSource).not.toContain('summarizePage,');
     expect(appSource).not.toContain('explainSelection,');
   });

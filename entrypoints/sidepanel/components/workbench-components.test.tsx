@@ -902,6 +902,82 @@ describe('workbench composer', () => {
 
     expect(screen.getByRole('button', { name: 'Stop generating' })).toBeVisible();
   });
+
+  const recordedCommand: ResolvedShortcutCommand = {
+    config: {
+      id: 'shortcut-rec',
+      origin: 'recorded',
+      scope: 'page',
+      customized: true,
+      name: 'Expense report',
+      prompt: 'File an expense report',
+      trajectory: [{ tool: 'browser_click', url: 'https://example.com/x', target: '「Next」' }],
+    },
+    resolved: {
+      id: 'shortcut-rec',
+      origin: 'recorded',
+      scope: 'page',
+      customized: true,
+      name: 'Expense report',
+      prompt: 'File an expense report',
+      trajectory: [{ tool: 'browser_click', url: 'https://example.com/x', target: '「Next」' }],
+    },
+  };
+
+  it('stages a recorded task instead of running it, then runs it with the typed note', async () => {
+    const user = userEvent.setup();
+    const onRunShortcut = vi.fn();
+    render(<ComposerHarness shortcuts={[readingShortcut, recordedCommand]} onRunShortcut={onRunShortcut} />);
+
+    await user.type(screen.getByRole('textbox'), '/Expense');
+    await user.keyboard('{Enter}');
+    expect(onRunShortcut).not.toHaveBeenCalled();
+    expect(screen.getByTestId('composer-pending-task')).toHaveTextContent('Expense report');
+    expect(screen.getByRole('textbox')).toHaveValue('');
+    expect(screen.getByRole('textbox')).toHaveAttribute('placeholder', 'Anything different this time? (optional) Press Enter to run');
+
+    await user.type(screen.getByRole('textbox'), 'amount 300{Enter}');
+    expect(onRunShortcut).toHaveBeenCalledWith(recordedCommand.config, { supplement: 'amount 300' });
+    expect(screen.queryByTestId('composer-pending-task')).toBeNull();
+  });
+
+  it('runs a staged recorded task with no note when Enter is pressed on an empty input', async () => {
+    const user = userEvent.setup();
+    const onRunShortcut = vi.fn();
+    render(<ComposerHarness shortcuts={[recordedCommand]} onRunShortcut={onRunShortcut} />);
+
+    await user.type(screen.getByRole('textbox'), '/Expense');
+    await user.keyboard('{Enter}');
+    await user.keyboard('{Enter}');
+    expect(onRunShortcut).toHaveBeenCalledWith(recordedCommand.config, undefined);
+  });
+
+  it('cancels a staged recorded task with Escape or its close button', async () => {
+    const user = userEvent.setup();
+    const onRunShortcut = vi.fn();
+    const onSend = vi.fn();
+    render(<ComposerHarness shortcuts={[recordedCommand]} onRunShortcut={onRunShortcut} onSend={onSend} />);
+
+    await user.type(screen.getByRole('textbox'), '/Expense');
+    await user.keyboard('{Enter}');
+    await user.keyboard('{Escape}');
+    expect(screen.queryByTestId('composer-pending-task')).toBeNull();
+    await user.keyboard('{Enter}');
+    expect(onRunShortcut).not.toHaveBeenCalled();
+    expect(onSend).not.toHaveBeenCalled();
+
+    await user.type(screen.getByRole('textbox'), '/Expense');
+    await user.keyboard('{Enter}');
+    await user.click(screen.getByRole('button', { name: 'Cancel running "Expense report"' }));
+    expect(screen.queryByTestId('composer-pending-task')).toBeNull();
+  });
+
+  it('keeps recorded tasks out of the quick shortcut chips', () => {
+    render(<ComposerHarness shortcuts={[readingShortcut, recordedCommand]} />);
+    const chips = screen.getByTestId('composer-shortcuts');
+    expect(within(chips).getByRole('button', { name: '阅读页面' })).toBeInTheDocument();
+    expect(within(chips).queryByRole('button', { name: 'Expense report' })).toBeNull();
+  });
 });
 
 describe('activity step list', () => {

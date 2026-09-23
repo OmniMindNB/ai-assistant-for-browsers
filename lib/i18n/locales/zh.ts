@@ -104,6 +104,8 @@ export const zh = {
   'sidebar.confirmClearAllHistoryAriaLabel': '确认清空全部历史会话？再次点击将删除全部记录。',
   'workbench.history': '对话历史',
   'workbench.composerPlaceholder': '提问，或让我直接动手…',
+  'workbench.pendingTaskPlaceholder': '补充这次的不同之处（可留空），回车执行',
+  'workbench.cancelPendingTask': '取消执行「{name}」',
   'workbench.exampleFillForm': '帮我把这个页面上的表单填好',
   'workbench.exampleReadable': '把正文调成适合阅读的样式，去掉干扰元素',
   'workbench.exampleExtract': '把这一页的关键信息整理成一张表',

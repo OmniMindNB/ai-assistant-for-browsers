@@ -19,7 +19,7 @@ import {
 import { findMentionQuery, type MentionQuery, type ReferencableTab } from '@/lib/chat/tab-reference';
 import { AttachmentChip } from './AttachmentChip';
 import { TabRefChip } from './TabRefChip';
-import { IconCheck, IconChevronDown, IconClose, IconPaperclip, IconPlus, IconSend, IconStop } from '../icons';
+import { IconCheck, IconChevronDown, IconClose, IconPaperclip, IconPlay, IconPlus, IconSend, IconStop } from '../icons';
 
 export interface WorkbenchComposerProps {
   busy: boolean;
@@ -40,7 +40,7 @@ export interface WorkbenchComposerProps {
   onSend(text: string): void | Promise<boolean>;
   onStop(): void;
   onRetryPageContext(): void;
-  onRunShortcut(shortcut: ShortcutConfig): void;
+  onRunShortcut(shortcut: ShortcutConfig, options?: { supplement?: string }): void;
   onSelectProviderModel(providerId: string, model: string): void;
   onClearQuotedSelection(): void;
   onAddAttachmentFiles(files: FileList | File[]): void;
@@ -95,6 +95,9 @@ export function WorkbenchComposer({
   const modelItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const dragDepthRef = useRef(0);
   const [openPopover, setOpenPopover] = useState<Popover>(null);
+  // 录制型指令选中后不立即执行：先挂成一个待执行胶囊，让用户补一句"这次的不同之处"
+  // （ref: docs/superpowers/specs/2026-09-23-task-replay-design.md §6.2）。
+  const [pendingTask, setPendingTask] = useState<{ config: ShortcutConfig; resolved: ResolvedShortcut } | null>(null);
   const [highlightedCommand, setHighlightedCommand] = useState(0);
   const [highlightedTab, setHighlightedTab] = useState(0);
   const [composing, setComposing] = useState(false);
@@ -109,7 +112,7 @@ export function WorkbenchComposer({
   const requestBlocked = busy || attachmentBusy;
   const hasReadyAttachment = attachments.some(isAttachmentReady);
   const canSend = !requestBlocked
-    && (input.trim().length > 0 || hasReadyAttachment);
+    && (pendingTask !== null || input.trim().length > 0 || hasReadyAttachment);
   const selectedProvider = providers.find((provider) => provider.id === selectedProviderId);
   const currentModel = selectedModel || selectedProvider?.model || '';
   const modelLabel = currentModel || t('chat.noModelSelected');
@@ -120,7 +123,8 @@ export function WorkbenchComposer({
   );
   // 不截断：工具条会折行，多出来的胶囊掉到下一行，而不是被藏起来。曾经只渲染前 4 条，
   // 于是设置页里排第 5 的快捷指令在侧边栏凭空消失，只能靠 / 面板找回来。
-  const quickShortcuts = shortcuts.filter(isUsableShortcutCommand);
+  // 录制型指令只进 / 面板：存上十几条，胶囊栏就被挤满了。
+  const quickShortcuts = shortcuts.filter((command) => isUsableShortcutCommand(command) && command.config.origin !== 'recorded');
 
   // @ 提及必须按光标定位，不能照抄 / 的整串前缀判断——@ 会出现在句子中间。
   const syncMention = (value: string, caret: number) => {
@@ -230,6 +234,13 @@ export function WorkbenchComposer({
 
   async function handleSend() {
     if (!canSend) return;
+    if (pendingTask) {
+      const supplement = input.trim();
+      onRunShortcut(pendingTask.config, supplement ? { supplement } : undefined);
+      setPendingTask(null);
+      setInput('');
+      return;
+    }
     const text = input;
     const started = await onSend(text);
     if (!started) return;
@@ -245,6 +256,13 @@ export function WorkbenchComposer({
   function runCommand(index: number) {
     const command = commands[index];
     if (!command || requestBlocked) return;
+    if (command.config.origin === 'recorded') {
+      setPendingTask(command);
+      setOpenPopover(null);
+      setInput('');
+      textareaRef.current?.focus();
+      return;
+    }
     onRunShortcut(command.config);
     setOpenPopover(null);
     if (startsSlashCommand(input)) setInput('');
@@ -391,6 +409,12 @@ export function WorkbenchComposer({
       return;
     }
 
+    if (event.key === 'Escape' && pendingTask) {
+      event.preventDefault();
+      setPendingTask(null);
+      return;
+    }
+
     if (event.key === 'Enter' && !event.shiftKey && canSend) {
       event.preventDefault();
       void handleSend();
@@ -445,6 +469,25 @@ export function WorkbenchComposer({
                 {t('workbench.retryPageContext')}
               </button>
             )}
+          </div>
+        )}
+        {pendingTask && (
+          <div data-testid="composer-pending-task" className="mb-2 flex items-center gap-1">
+            <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">
+              <IconPlay className="h-3 w-3 shrink-0" />
+              <span className="truncate">{pendingTask.resolved.name}</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setPendingTask(null);
+                textareaRef.current?.focus();
+              }}
+              aria-label={t('workbench.cancelPendingTask', { name: pendingTask.resolved.name })}
+              className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
+            >
+              <IconClose className="h-3.5 w-3.5" />
+            </button>
           </div>
         )}
         {/* 工具条允许折行：横向滚动虽然能保持输入框位置固定，但把后面的快捷指令胶囊
@@ -650,7 +693,13 @@ export function WorkbenchComposer({
             aria-expanded={openPopover === 'commands'}
             aria-controls={openPopover === 'commands' ? 'workbench-slash-commands' : undefined}
             aria-activedescendant={openPopover === 'commands' && commands.length ? `workbench-command-${commands[highlightedCommand]?.config.id}` : undefined}
-            placeholder={fileDragActive ? t('workbench.dropPdfPrompt') : t('workbench.composerPlaceholder')}
+            placeholder={
+              fileDragActive
+                ? t('workbench.dropPdfPrompt')
+                : pendingTask
+                  ? t('workbench.pendingTaskPlaceholder')
+                  : t('workbench.composerPlaceholder')
+            }
             className="max-h-40 min-h-[40px] flex-1 resize-none bg-transparent px-2 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none dark:text-neutral-100 dark:placeholder:text-neutral-600"
           />
           {busy ? (
@@ -679,6 +728,7 @@ export function WorkbenchComposer({
                   onClick={() => runCommand(index)}
                   className={`block w-full truncate rounded-lg px-3 py-2 text-left text-sm disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${index === highlightedCommand ? 'bg-neutral-100 dark:bg-neutral-800' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}
                 >
+                  {config.origin === 'recorded' && <IconPlay className="mr-1.5 inline h-3 w-3 align-[-1px] text-indigo-500" />}
                   {resolved.name}
                 </button>
               ))}
