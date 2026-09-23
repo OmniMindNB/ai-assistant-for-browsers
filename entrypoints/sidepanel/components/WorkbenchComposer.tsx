@@ -265,6 +265,10 @@ export function WorkbenchComposer({
       setPendingTask(command);
       setOpenPopover(null);
       setInput('');
+      // 同 handleSend：输入框清空后 mention 记的旧下标就失效了。胶囊挂起期间 syncMention
+      // 会提前返回、不再同步它，不在这里清掉，它就会一直挂着上一段输入里的 @ 查询。
+      setMention(null);
+      setHighlightedTab(0);
       textareaRef.current?.focus();
       return;
     }
