@@ -4,6 +4,8 @@
 // 这个文件只放类型、上限和纯渲染——面板、设置页、lib/shortcuts.ts 都要 import 它，
 // 所以它不能依赖 permissions.ts / 脱敏这类 background 侧的东西；那一半在 trajectory-recorder.ts。
 
+import type { Translate } from '@/lib/i18n';
+
 export interface TrajectoryValue {
   /** 人读的字段名，已带书名号：「报销金额」。 */
   target: string;
@@ -34,3 +36,123 @@ export interface TrajectoryStep {
 export const MAX_TRAJECTORY_STEPS = 50;
 export const MAX_TRAJECTORY_VALUE_CHARS = 500;
 export const MAX_TRAJECTORY_LABEL_CHARS = 120;
+
+function isOptionalString(value: unknown): value is string | undefined {
+  return value === undefined || typeof value === 'string';
+}
+
+function parseValue(raw: unknown): TrajectoryValue | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const item = raw as Record<string, unknown>;
+  if (typeof item.target !== 'string' || !item.target) return null;
+  if (!isOptionalString(item.value) || (item.value?.length ?? 0) > MAX_TRAJECTORY_VALUE_CHARS) return null;
+  if (item.checked !== undefined && typeof item.checked !== 'boolean') return null;
+  if (item.sensitive !== undefined && typeof item.sensitive !== 'boolean') return null;
+  return {
+    target: item.target,
+    ...(item.value !== undefined ? { value: item.value } : {}),
+    ...(item.checked !== undefined ? { checked: item.checked as boolean } : {}),
+    ...(item.sensitive ? { sensitive: true } : {}),
+  };
+}
+
+/**
+ * 存储里读回来的轨迹一律当不可信数据：用户可能手改过 storage，也可能是别的版本写的。
+ * 返回只含已知字段的干净副本；任何一处不合法就整体返回 null，由调用方决定怎么报错。
+ */
+export function parseTrajectory(value: unknown): TrajectoryStep[] | null {
+  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_TRAJECTORY_STEPS) return null;
+  const steps: TrajectoryStep[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const item = raw as Record<string, unknown>;
+    if (typeof item.tool !== 'string' || !item.tool) return null;
+    if (typeof item.url !== 'string') return null;
+    if (!isOptionalString(item.target) || !isOptionalString(item.detail)) return null;
+    if (item.sensitive !== undefined && typeof item.sensitive !== 'boolean') return null;
+    let values: TrajectoryValue[] | undefined;
+    if (item.values !== undefined) {
+      if (!Array.isArray(item.values)) return null;
+      values = [];
+      for (const rawValue of item.values) {
+        const parsed = parseValue(rawValue);
+        if (!parsed) return null;
+        values.push(parsed);
+      }
+    }
+    steps.push({
+      tool: item.tool,
+      url: item.url,
+      ...(item.target !== undefined ? { target: item.target } : {}),
+      ...(values ? { values } : {}),
+      ...(item.detail !== undefined ? { detail: item.detail } : {}),
+      ...(item.sensitive ? { sensitive: true } : {}),
+    });
+  }
+  return steps;
+}
+
+function describeValue(value: TrajectoryValue, translate: Translate): string {
+  if (value.sensitive) return translate('trajectory.fillSensitive', { target: value.target });
+  if (value.checked === true) return translate('trajectory.fillChecked', { target: value.target });
+  if (value.checked === false) return translate('trajectory.fillUnchecked', { target: value.target });
+  return translate('trajectory.fillValue', { target: value.target, value: JSON.stringify(value.value ?? '') });
+}
+
+/**
+ * 一步的人读描述。保存抽屉和回放 prompt 共用这一个函数：用户在抽屉里看到的，
+ * 就是模型将收到的，两边不能各写一份。写入值用 JSON.stringify 包起来，边界一眼可见。
+ */
+export function describeTrajectoryStep(step: TrajectoryStep, translate: Translate): string {
+  const target = step.target ?? translate('trajectory.someField');
+  const detail = step.detail ?? '';
+  switch (step.tool) {
+    case 'browser_fill_form': {
+      const values = step.values ?? [];
+      if (values.length === 1) return describeValue(values[0], translate);
+      return translate('trajectory.fillList', {
+        items: values.map((value) => describeValue(value, translate)).join(translate('trajectory.listSeparator')),
+      });
+    }
+    case 'browser_click':
+      return step.target ? translate('trajectory.click', { target: step.target }) : translate('trajectory.clickUnknown');
+    case 'browser_type':
+      return translate('trajectory.type', { target, value: JSON.stringify(step.values?.[0]?.value ?? '') });
+    case 'browser_select':
+      return translate('trajectory.select', { target, value: JSON.stringify(step.values?.[0]?.value ?? '') });
+    case 'browser_press_key':
+      return translate('trajectory.pressKey', { detail });
+    case 'browser_scroll':
+      return step.target ? translate('trajectory.scrollTo', { target: step.target }) : translate('trajectory.scroll');
+    case 'browser_navigate':
+      return translate('trajectory.navigate', { detail });
+    case 'browser_open_tab':
+      return translate('trajectory.openTab', { detail });
+    case 'browser_switch_tab':
+      return translate('trajectory.switchTab', { detail });
+    case 'browser_close_tab':
+      return translate('trajectory.closeTab');
+    case 'browser_go_back':
+      return translate('trajectory.goBack');
+    case 'browser_set_storage':
+      return translate('trajectory.setStorage', { detail });
+    case 'browser_modify_dom':
+      return translate('trajectory.modifyDom', { detail });
+    case 'browser_set_style':
+      return translate('trajectory.setStyle', { detail });
+    default:
+      return translate('trajectory.generic', { tool: step.tool, detail });
+  }
+}
+
+/** 回放 prompt 里的步骤清单：编号 + 所在页面；连续同页写成「同上」，省 token 也更好读。 */
+export function renderTrajectoryForPrompt(steps: readonly TrajectoryStep[], translate: Translate): string {
+  let previousUrl: string | undefined;
+  return steps
+    .map((step, index) => {
+      const where = !step.url ? '' : step.url === previousUrl ? `[${translate('trajectory.sameUrl')}] ` : `[${step.url}] `;
+      if (step.url) previousUrl = step.url;
+      return `${index + 1}. ${where}${describeTrajectoryStep(step, translate)}`;
+    })
+    .join('\n');
+}
