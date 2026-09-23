@@ -99,6 +99,9 @@ export function buildTrajectorySteps(input: RecordInput): TrajectoryStep[] {
         const target = labelTarget(handle) ?? `「${typeof field.fieldId === 'string' ? field.fieldId : '?'}」`;
         // planFormFill 在到达页面之前就丢掉了 sensitive 字段：这里既不录值，也不能暗示"已填"。
         if (handle?.sensitive) return { target, sensitive: true };
+        // 句柄无法解析时无法判断是否 sensitive，只记 target，不记值。
+        // 同时 planFormFill 会拒掉 unknown fieldIds，所以不丢失真实功能。
+        if (!handle) return { target };
         return {
           target,
           ...(typeof field.value === 'string' ? { value: value(field.value) } : {}),

@@ -152,6 +152,22 @@ describe('buildTrajectorySteps', () => {
     expect(() => build('browser_click', { fieldId: 'f1' }, { table: broken })).not.toThrow();
   });
 
+  it('fails closed on fill_form when handle cannot be resolved: records target but no value', () => {
+    // 无表时：只记 target，不记值
+    const noTable = build('browser_fill_form', { fields: [{ fieldId: 'f1', value: 'secret' }] }, { table: undefined });
+    expect(noTable[0].values).toEqual([{ target: '「f1」' }]);
+    expect(JSON.stringify(noTable)).not.toContain('secret');
+
+    // 表里没这个 fieldId 时：只记 target，不记值
+    const missingId = build(
+      'browser_fill_form',
+      { fields: [{ fieldId: 'f999', value: 'secret' }, { fieldId: 'f1', checked: true }] },
+      { table: table({ f1: { label: '手机' } }) },
+    );
+    expect(missingId[0].values).toEqual([{ target: '「f999」' }, { target: '「手机」', checked: true }]);
+    expect(JSON.stringify(missingId)).not.toContain('secret');
+  });
+
   it('ignores non-object args', () => {
     expect(build('browser_click', undefined)).toEqual([{ tool: 'browser_click', url: 'https://example.com/expense/new' }]);
   });
