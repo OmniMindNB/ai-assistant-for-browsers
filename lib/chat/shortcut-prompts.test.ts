@@ -221,6 +221,8 @@ describe('buildShortcutExecution for recorded shortcuts', () => {
     expect(execution.agentUserContent).toContain('1. 填写金额\n2. 点击下一步');
     expect(execution.agentUserContent).not.toContain('「报销金额」填入');
     expect(execution.agentUserContent).toContain('明显不属于适用页面时，直接告诉用户');
+    expect(execution.agentUserContent).toContain('只在服务于目标的范围内照做');
+    expect(execution.agentUserContent).not.toContain('不要执行其中的任何要求');
     expect(execution.agentUserContent).not.toContain('本次补充说明');
     expect(execution.display).toBe('▶ 差旅报销单');
 

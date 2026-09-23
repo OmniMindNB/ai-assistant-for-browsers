@@ -15,7 +15,7 @@ export interface CompleteOnceRequest {
   signal?: AbortSignal;
 }
 
-export type CompleteOnceResult = { ok: true; text: string } | { ok: false; error: string };
+export type CompleteOnceResult = { ok: true; text: string; truncated: boolean } | { ok: false; error: string };
 
 /**
  * 「HTTP 200 但响应体是一条错误」的识别。部分 OpenAI 兼容网关用这种方式回报配额耗尽、
@@ -48,6 +48,21 @@ function readReplyText(parsed: unknown, isAnthropic: boolean): string {
   const choices = (parsed as { choices?: unknown }).choices;
   const content = Array.isArray(choices) ? (choices[0] as { message?: { content?: unknown } } | undefined)?.message?.content : undefined;
   return typeof content === 'string' ? content : '';
+}
+
+/**
+ * 回复是否在写完前被截断：OpenAI 兼容协议看 choices[0].finish_reason，Anthropic 看顶层
+ * stop_reason。调用方（比如整理通用做法）据此把"解析不出 JSON"和"根本没写完"区分开；
+ * testProviderConnection 用 max_tokens:1 探测连通性，回复必然截断，但它只看 ok，不看这个字段。
+ */
+function readTruncated(parsed: unknown, isAnthropic: boolean): boolean {
+  if (!parsed || typeof parsed !== 'object') return false;
+  if (isAnthropic) {
+    return (parsed as { stop_reason?: unknown }).stop_reason === 'max_tokens';
+  }
+  const choices = (parsed as { choices?: unknown }).choices;
+  const finishReason = Array.isArray(choices) ? (choices[0] as { finish_reason?: unknown } | undefined)?.finish_reason : undefined;
+  return finishReason === 'length';
 }
 
 export async function completeOnce(target: CompletionTarget, request: CompleteOnceRequest): Promise<CompleteOnceResult> {
@@ -90,7 +105,7 @@ export async function completeOnce(target: CompletionTarget, request: CompleteOn
         error: `LLM 返回了 200，但响应体是一条错误：${bodyError}\n请求地址：${url}\n模型：${target.model}`,
       };
     }
-    return { ok: true, text: readReplyText(parsed, isAnthropic) };
+    return { ok: true, text: readReplyText(parsed, isAnthropic), truncated: readTruncated(parsed, isAnthropic) };
   } catch (error) {
     return { ok: false, error: describeStreamError(error, url, target.model) };
   }

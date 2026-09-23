@@ -9,6 +9,7 @@ import {
   MAX_PLAYBOOK_APPLICABILITY_CHARS,
   MAX_PLAYBOOK_STEP_CHARS,
   MAX_PLAYBOOK_STEPS,
+  parsePlaybook,
   parsePlaybookResponse,
   PLAYBOOK_MAX_TOKENS,
   type TaskPlaybook,
@@ -75,7 +76,10 @@ export function SaveTaskDrawer({ open, messages, messageId, onClose, onSaved, pr
     }
     const parsed = parsePlaybookResponse(result.text);
     if (!parsed) {
-      setSummary({ status: 'failed', reason: t('recordedTask.summaryUnparsable') });
+      setSummary({
+        status: 'failed',
+        reason: result.truncated ? t('recordedTask.summaryTruncated') : t('recordedTask.summaryUnparsable'),
+      });
       return;
     }
     setPlaybook(parsed.playbook);
@@ -112,9 +116,18 @@ export function SaveTaskDrawer({ open, messages, messageId, onClose, onSaved, pr
 
   if (!open || !draft) return null;
 
-  const usablePlaybook = summary.status === 'ready' && playbook !== null && playbook.steps.some((step) => step.trim());
+  // 通用做法不能替代录制步骤：trajectory 是录制指令的必填项（spec §3），做法只是可选的补充。
+  // cleaned 为 null 且用户已把做法步骤清空是 spec §5.2 允许的"不带做法保存"；cleaned 为 null
+  // 但还留着未清空的步骤（多半是适用页面被清空了）则是配置不完整，要拦住而不是悄悄丢弃编辑。
+  const cleaned = playbook ? parsePlaybook(playbook) : null;
+  const hasSteps = playbook?.steps.some((step) => step.trim()) ?? false;
+  const playbookIncomplete = summary.status === 'ready' && playbook !== null && hasSteps && cleaned === null;
   const canSave =
-    !saving && draft.name.trim().length > 0 && draft.goal.trim().length > 0 && (usablePlaybook || draft.steps.length > 0);
+    !saving &&
+    draft.name.trim().length > 0 &&
+    draft.goal.trim().length > 0 &&
+    draft.steps.length > 0 &&
+    !playbookIncomplete;
 
   function updateValue(stepIndex: number, valueIndex: number, value: string) {
     setDraft((current) => {
@@ -143,7 +156,7 @@ export function SaveTaskDrawer({ open, messages, messageId, onClose, onSaved, pr
     try {
       await updateShortcutConfigs((current) => [
         ...current,
-        toRecordedShortcut({ ...draft, ...(summary.status === 'ready' && playbook ? { playbook } : {}) }),
+        toRecordedShortcut({ ...draft, ...(summary.status === 'ready' && cleaned ? { playbook: cleaned } : {}) }),
       ]);
       onSaved(draft.name.trim());
     } catch (err) {
@@ -319,6 +332,9 @@ export function SaveTaskDrawer({ open, messages, messageId, onClose, onSaved, pr
                   >
                     {t('recordedTask.addStep')}
                   </button>
+                )}
+                {playbookIncomplete && (
+                  <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">{t('recordedTask.playbookIncomplete')}</p>
                 )}
               </div>
               <details className="text-xs text-neutral-500 dark:text-neutral-400">

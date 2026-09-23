@@ -18,7 +18,9 @@ export const MAX_PLAYBOOK_APPLICABILITY_CHARS = 200;
 export const MAX_PLAYBOOK_NAME_CHARS = 60;
 /** 发给模型的助手回复摘录总长。回复里常写着"最后是怎么做成的"，录制步骤里没有。 */
 export const MAX_PLAYBOOK_CONTEXT_CHARS = 4000;
-export const PLAYBOOK_MAX_TOKENS = 1024;
+// 推理模型会先花掉一部分预算做隐藏的思维链，太小的上限会让 JSON 还没写完就被截断
+// （agent.ts 的 maxTokens 同理设成了 16000）；这里给到 8192，兼顾成本与推理模型的余量。
+export const PLAYBOOK_MAX_TOKENS = 8192;
 
 export interface PlaybookSource {
   goal: string;

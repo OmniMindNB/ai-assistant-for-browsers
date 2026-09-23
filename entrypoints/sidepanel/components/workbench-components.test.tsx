@@ -2336,6 +2336,25 @@ describe('save as task', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it('reports a truncated reply distinctly from an unparsable one', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ choices: [{ message: { content: '{"name": "Exp' }, finish_reason: 'length' }] }), {
+          status: 200,
+        }),
+      ),
+    );
+    withModel();
+    (chatStore as any).messages = recordedConversation;
+    renderApp();
+
+    await user.click(screen.getByRole('button', { name: 'Save as task' }));
+    const dialog = screen.getByRole('dialog', { name: 'Save as task' });
+    expect(await within(dialog).findByText(/was cut off before it finished/)).toBeInTheDocument();
+  });
+
   it('keeps a name the user typed while the summary was loading', async () => {
     const user = userEvent.setup();
     let resolve!: (response: Response) => void;
@@ -2389,5 +2408,39 @@ describe('save as task', () => {
     await waitFor(() => expect(chatStore.refreshShortcuts).toHaveBeenCalled());
     const saved = (set.mock.calls.at(-1)?.[0] as any)?.['runi:shortcuts'] as any[];
     expect(saved.at(-1).playbook).toBeUndefined();
+  });
+
+  it('keeps saving disabled when every recorded step was deleted, even once a playbook is ready', async () => {
+    const user = userEvent.setup();
+    let resolve!: (response: Response) => void;
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((r) => { resolve = r; })));
+    withModel();
+    (chatStore as any).messages = recordedConversation;
+    renderApp();
+
+    await user.click(screen.getByRole('button', { name: 'Save as task' }));
+    const dialog = screen.getByRole('dialog', { name: 'Save as task' });
+    await user.click(within(dialog).getByRole('button', { name: 'Delete step 1' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Delete step 1' }));
+    await act(async () => resolve(replyWith(JSON.stringify(playbookReply))));
+    expect(await within(dialog).findByLabelText('Works on')).toHaveValue('Any expense form');
+
+    expect(within(dialog).getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+
+  it('disables saving and shows a hint when the method has steps but a blank applicability', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(replyWith(JSON.stringify(playbookReply))));
+    withModel();
+    (chatStore as any).messages = recordedConversation;
+    renderApp();
+
+    await user.click(screen.getByRole('button', { name: 'Save as task' }));
+    const dialog = screen.getByRole('dialog', { name: 'Save as task' });
+    const applicability = await within(dialog).findByLabelText('Works on');
+    await user.clear(applicability);
+
+    expect(within(dialog).getByRole('button', { name: 'Save' })).toBeDisabled();
+    expect(within(dialog).getByText('Works on and at least one method step must be filled in.')).toBeInTheDocument();
   });
 });

@@ -17,7 +17,7 @@ describe('completeOnce', () => {
 
     const result = await completeOnce(openai, { system: 'sys', user: 'hi', maxTokens: 50 });
 
-    expect(result).toEqual({ ok: true, text: 'hello' });
+    expect(result).toEqual({ ok: true, text: 'hello', truncated: false });
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('https://llm.test/v1/chat/completions');
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer sk-test');
@@ -51,7 +51,7 @@ describe('completeOnce', () => {
 
     const result = await completeOnce(anthropic, { system: 'sys', user: 'hi', maxTokens: 50 });
 
-    expect(result).toEqual({ ok: true, text: 'ab' });
+    expect(result).toEqual({ ok: true, text: 'ab', truncated: false });
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('https://api.anthropic.com/v1/messages');
     expect((init.headers as Record<string, string>)['x-api-key']).toBe('sk-ant');
@@ -65,7 +65,35 @@ describe('completeOnce', () => {
 
   it('returns an empty text for a 200 response without a recognisable reply', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 200 })));
-    expect(await completeOnce(openai, { user: 'ping', maxTokens: 1 })).toEqual({ ok: true, text: '' });
+    expect(await completeOnce(openai, { user: 'ping', maxTokens: 1 })).toEqual({ ok: true, text: '', truncated: false });
+  });
+
+  it('reports truncated: true for an OpenAI-compatible reply with finish_reason "length"', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({ choices: [{ message: { content: '{"name": "Exp' }, finish_reason: 'length' }] }),
+          { status: 200 },
+        ),
+      ),
+    );
+    const result = await completeOnce(openai, { user: 'hi', maxTokens: 50 });
+    expect(result).toEqual({ ok: true, text: '{"name": "Exp', truncated: true });
+  });
+
+  it('reports truncated: true for an Anthropic reply with stop_reason "max_tokens"', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({ content: [{ type: 'text', text: '{"name": "Exp' }], stop_reason: 'max_tokens' }),
+          { status: 200 },
+        ),
+      ),
+    );
+    const result = await completeOnce(anthropic, { user: 'hi', maxTokens: 50 });
+    expect(result).toEqual({ ok: true, text: '{"name": "Exp', truncated: true });
   });
 
   it('formats a non-2xx response with the status, URL and model', async () => {
