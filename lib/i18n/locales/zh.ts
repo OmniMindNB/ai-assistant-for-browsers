@@ -311,6 +311,8 @@ export const zh = {
     '会清空你自建的快捷方式和保存的任务指令，并把改过的内建文案还原为默认。此操作无法撤销。',
   'shortcut.recordedBadge': '录制的任务',
   'shortcut.recordedStepsToggle': '参考步骤（{count}）',
+  'shortcut.playbookApplicability': '适用：{applicability}',
+  'shortcut.rawStepsToggle': '原始录制（{count}）',
   'shortcut.moveUp': '上移',
   'shortcut.moveDown': '下移',
   'shortcut.moveUpAria': '上移 {name}',

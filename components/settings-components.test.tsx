@@ -694,9 +694,24 @@ describe('grouped options settings', () => {
     expect(screen.getByText('Click 「Next」')).toBeVisible();
   });
 
+  it('shows the method of a recorded task and tucks the original recording away', async () => {
+    const user = userEvent.setup();
+    (storageData['runi:shortcuts'] as unknown[]).push({
+      ...recordedEntry,
+      playbook: { applicability: 'Any expense form', steps: ['Fill in the amount', 'Click next'] },
+    });
+    renderWithLocale(<ShortcutSettings />);
+
+    expect(await screen.findByText('Works on: Any expense form')).toBeVisible();
+    expect(screen.getByText('Fill in the amount')).toBeVisible();
+    expect(screen.queryByText('Reference steps (1)')).toBeNull();
+    await user.click(screen.getByText('Original recording (1)'));
+    expect(screen.getByText('Click 「Next」')).toBeVisible();
+  });
+
   it('keeps the trajectory and page scope when a recorded task is renamed', async () => {
     const user = userEvent.setup();
-    (storageData['runi:shortcuts'] as unknown[]).push(recordedEntry);
+    (storageData['runi:shortcuts'] as unknown[]).push({ ...recordedEntry, playbook: { applicability: 'x', steps: ['a'] } });
     const set = (globalThis as any).browser.storage.local.set as ReturnType<typeof vi.fn>;
     renderWithLocale(<ShortcutSettings />);
 
@@ -710,7 +725,7 @@ describe('grouped options settings', () => {
 
     await waitFor(() => expect(set).toHaveBeenCalled());
     const saved = (set.mock.calls.at(-1)?.[0]?.['runi:shortcuts'] as any[]).find((item) => item.id === 'shortcut-rec-1');
-    expect(saved).toMatchObject({ origin: 'recorded', scope: 'page', name: 'Travel expenses', trajectory: recordedEntry.trajectory });
+    expect(saved).toMatchObject({ origin: 'recorded', scope: 'page', name: 'Travel expenses', trajectory: recordedEntry.trajectory, playbook: { applicability: 'x', steps: ['a'] } });
   });
 
   it('loads default redaction settings enabled with all four built-in rules', async () => {

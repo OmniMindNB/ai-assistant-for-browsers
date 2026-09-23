@@ -316,6 +316,8 @@ export const en: Record<keyof typeof zh, string> = {
     'This removes your custom shortcuts and saved tasks, and reverts edited built-in text to the defaults. It cannot be undone.',
   'shortcut.recordedBadge': 'Recorded task',
   'shortcut.recordedStepsToggle': 'Reference steps ({count})',
+  'shortcut.playbookApplicability': 'Works on: {applicability}',
+  'shortcut.rawStepsToggle': 'Original recording ({count})',
   'shortcut.moveUp': 'Move up',
   'shortcut.moveDown': 'Move down',
   'shortcut.moveUpAria': 'Move {name} up',

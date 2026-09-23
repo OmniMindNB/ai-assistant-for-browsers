@@ -479,10 +479,22 @@ export default function ShortcutSettings() {
                       <span className="font-medium text-neutral-700 dark:text-neutral-300">{command}</span>
                       <span>{item.origin === 'recorded' ? t('shortcut.recordedBadge') : scopeLabel(resolved.scope)}</span>
                     </p>
+                    {item.origin === 'recorded' && item.playbook && (
+                      <div className="mt-1.5 text-xs text-neutral-500 dark:text-neutral-400">
+                        <p>{t('shortcut.playbookApplicability', { applicability: item.playbook.applicability })}</p>
+                        <ol className="mt-1 list-decimal space-y-0.5 pl-5">
+                          {item.playbook.steps.map((step, stepIndex) => (
+                            <li key={stepIndex} className="break-words">{step}</li>
+                          ))}
+                        </ol>
+                      </div>
+                    )}
                     {item.origin === 'recorded' && item.trajectory && (
                       <details className="mt-1.5 text-xs text-neutral-500 dark:text-neutral-400">
                         <summary className="cursor-pointer select-none">
-                          {t('shortcut.recordedStepsToggle', { count: item.trajectory.length })}
+                          {item.playbook
+                            ? t('shortcut.rawStepsToggle', { count: item.trajectory.length })
+                            : t('shortcut.recordedStepsToggle', { count: item.trajectory.length })}
                         </summary>
                         <ol className="mt-1 list-decimal space-y-0.5 pl-5">
                           {item.trajectory.map((step, stepIndex) => (
