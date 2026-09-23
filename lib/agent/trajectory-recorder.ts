@@ -197,7 +197,17 @@ export function buildTrajectorySteps(input: RecordInput): TrajectoryStep[] {
     case 'browser_modify_dom': {
       const selector = selectorTarget(args.selector);
       const action = str(args.action);
-      const detail = [action, selector].filter(Boolean).join(' ');
+      // setAttribute / class 操作的属性名和值就是做法本身，不录回放时无从照做；
+      // setText / setHtml 的正文仍然不录：那是整段页面内容，不是可复用的做法。
+      const attribute = action === 'setAttribute' ? str(args.attribute) : undefined;
+      const rawValue = typeof args.value === 'string' ? args.value : undefined;
+      let operand: string | undefined;
+      if (action === 'setAttribute' && attribute) {
+        operand = `${clip(redact(attribute), MAX_TRAJECTORY_LABEL_CHARS)}=${JSON.stringify(value(rawValue ?? ''))}`;
+      } else if ((action === 'addClass' || action === 'removeClass') && rawValue) {
+        operand = JSON.stringify(value(rawValue));
+      }
+      const detail = [action, selector, operand].filter(Boolean).join(' ');
       return [{ ...base, ...(detail ? { detail } : {}) }];
     }
     case 'browser_set_style': {

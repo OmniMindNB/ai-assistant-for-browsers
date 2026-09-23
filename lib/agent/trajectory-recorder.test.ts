@@ -187,6 +187,14 @@ describe('buildTrajectorySteps', () => {
     expect(dom[0].detail).toBe('setHtml `.ad`');
     expect(JSON.stringify(dom)).not.toContain('secret');
 
+    // setAttribute / class 操作的属性名和值就是这一步的全部做法，丢了它回放时无从照做。
+    const attr = build('browser_modify_dom', { selector: 'video', action: 'setAttribute', attribute: 'data-rate', value: '10' });
+    expect(attr[0].detail).toBe('setAttribute `video` data-rate="10"');
+    const cls = build('browser_modify_dom', { selector: 'body', action: 'addClass', value: 'dark' });
+    expect(cls[0].detail).toBe('addClass `body` "dark"');
+    const attrPhone = build('browser_modify_dom', { selector: 'a', action: 'setAttribute', attribute: 'title', value: '13812345678' });
+    expect(attrPhone[0].detail).not.toContain('13812345678');
+
     const style = build('browser_set_style', { selector: 'body', styles: { color: 'red', background: 'url(x)' } });
     expect(style[0].detail).toBe('`body` { color, background }');
   });
