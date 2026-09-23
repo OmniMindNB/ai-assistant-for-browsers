@@ -213,4 +213,19 @@ describe('buildShortcutExecution for recorded shortcuts', () => {
     const execution = buildShortcutExecution(recorded, t, undefined, plan);
     expect(execution.agentUserContent).not.toContain('x'.repeat(100));
   });
+
+  it('sends the playbook instead of the recorded steps when the task has one', () => {
+    const withPlaybook = { ...recorded, playbook: { applicability: '任何报销单页面', steps: ['填写金额', '点击下一步'] } };
+    const execution = buildShortcutExecution(withPlaybook, zhT);
+    expect(execution.agentUserContent).toContain('适用页面：任何报销单页面');
+    expect(execution.agentUserContent).toContain('1. 填写金额\n2. 点击下一步');
+    expect(execution.agentUserContent).not.toContain('「报销金额」填入');
+    expect(execution.agentUserContent).toContain('明显不属于适用页面时，直接告诉用户');
+    expect(execution.agentUserContent).not.toContain('本次补充说明');
+    expect(execution.display).toBe('▶ 差旅报销单');
+
+    const withNote = buildShortcutExecution(withPlaybook, zhT, undefined, undefined, '金额改成 300');
+    expect(withNote.agentUserContent).toContain('本次补充说明：金额改成 300');
+    expect(withNote.display).toBe('▶ 差旅报销单 · 金额改成 300');
+  });
 });

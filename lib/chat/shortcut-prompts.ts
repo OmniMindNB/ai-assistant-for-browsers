@@ -1,6 +1,7 @@
 import type { Translate } from '@/lib/i18n';
 import type { ResolvedShortcut } from '@/lib/shortcuts';
 import { renderTrajectoryForPrompt } from '@/lib/agent/task-trajectory';
+import { renderPlaybookForPrompt } from './task-playbook';
 import { renderPageOutline, type PagePrefetchPlan } from './page-prefetch';
 
 export const MAX_SHORTCUT_SELECTION_CHARS = 4000;
@@ -23,18 +24,25 @@ export function buildShortcutExecution(
   // （ref: docs/superpowers/specs/2026-09-23-task-replay-design.md §6.3）。
   if (shortcut.origin === 'recorded') {
     const note = supplement?.trim() ?? '';
-    const vars = {
+    const display = translate(note ? 'store.recordedTaskDisplayWithNote' : 'store.recordedTaskDisplay', {
       name: shortcut.name,
-      goal: shortcut.prompt,
-      steps: renderTrajectoryForPrompt(shortcut.trajectory ?? [], translate),
       note,
-    };
-    return {
-      display: translate(note ? 'store.recordedTaskDisplayWithNote' : 'store.recordedTaskDisplay', vars),
-      agentUserContent: translate(note ? 'store.recordedTaskPromptWithNote' : 'store.recordedTaskPrompt', vars),
-      browserTools: 'all',
-      systemPromptSuffix: '',
-    };
+    });
+    // 有通用做法时只发做法：录制步骤是站点特有的，换到同类的别的网站只会把模型带偏
+    // （ref: docs/superpowers/specs/2026-09-23-generalized-task-playbook-design.md §6）。
+    const agentUserContent = shortcut.playbook
+      ? translate(note ? 'store.recordedPlaybookPromptWithNote' : 'store.recordedPlaybookPrompt', {
+          goal: shortcut.prompt,
+          applicability: shortcut.playbook.applicability,
+          steps: renderPlaybookForPrompt(shortcut.playbook),
+          note,
+        })
+      : translate(note ? 'store.recordedTaskPromptWithNote' : 'store.recordedTaskPrompt', {
+          goal: shortcut.prompt,
+          steps: renderTrajectoryForPrompt(shortcut.trajectory ?? [], translate),
+          note,
+        });
+    return { display, agentUserContent, browserTools: 'all', systemPromptSuffix: '' };
   }
 
   if (shortcut.scope === 'page') {
