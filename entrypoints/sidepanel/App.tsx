@@ -3,6 +3,7 @@ import { useChat } from './store';
 import { useTheme } from '@/lib/theme';
 import { useTranslation } from '@/lib/i18n';
 import { canRegenerateMessage, discardedCount, isEditableMessage } from '@/lib/chat/messages';
+import { canSaveAsTask } from '@/lib/chat/recorded-task';
 import { hasBusyAttachments } from '@/lib/chat/attachments';
 import { isNearBottom } from '@/lib/scroll';
 import {
@@ -13,6 +14,7 @@ import {
 import { STORAGE_KEY } from '@/lib/settings';
 import MessageEditor from './MessageEditor';
 import { HistoryDrawer } from './components/HistoryDrawer';
+import { SaveTaskDrawer } from './components/SaveTaskDrawer';
 import { WorkbenchEmptyState } from './components/WorkbenchEmptyState';
 import { WorkbenchHeader } from './components/WorkbenchHeader';
 import { ActivityStepList } from './components/ActivityStepList';
@@ -24,6 +26,7 @@ import type { ActivityStep } from '@/lib/agent/activity-steps';
 import { resolvePageAttached, type ResolvedShortcutCommand } from '@/lib/workbench/presentation';
 import {
   IconAlertTriangle,
+  IconBookmark,
   IconCheck,
   IconChevronDown,
   IconChevronRight,
@@ -86,6 +89,8 @@ export default function App() {
   useTheme();
   const { t } = useTranslation();
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [saveTaskFor, setSaveTaskFor] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -117,6 +122,13 @@ export default function App() {
   ]);
 
   useEffect(() => () => disposeAttachments(), [disposeAttachments]);
+
+  // 保存成功提示 4 秒后自动消失，跟其余一次性反馈（如复制成功）的时长一致。
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
 
   useEffect(() => {
     const listener = (
@@ -184,6 +196,13 @@ export default function App() {
       void regenerate(id);
     },
     [requestBlocked, resetToFollowing, regenerate],
+  );
+  const handleSaveTask = useCallback(
+    (id: string) => {
+      if (requestBlocked) return;
+      setSaveTaskFor(id);
+    },
+    [requestBlocked],
   );
 
   useEffect(() => {
@@ -270,6 +289,18 @@ export default function App() {
         returnFocusRef={historyTriggerRef}
       />
 
+      <SaveTaskDrawer
+        open={saveTaskFor !== null}
+        messages={messages}
+        messageId={saveTaskFor}
+        onClose={() => setSaveTaskFor(null)}
+        onSaved={(name) => {
+          setSaveTaskFor(null);
+          void refreshShortcuts();
+          setNotice(t('recordedTask.savedNotice', { name }));
+        }}
+      />
+
       <div className="relative flex min-w-0 flex-1 flex-col">
           <WorkbenchHeader
             historyOpen={historyOpen}
@@ -287,6 +318,15 @@ export default function App() {
               className="border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300"
             >
               {settingsError}
+            </div>
+          )}
+
+          {notice && (
+            <div
+              role="status"
+              className="border-b border-emerald-200 bg-emerald-50 px-4 py-2 text-xs text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300"
+            >
+              {notice}
             </div>
           )}
 
@@ -315,10 +355,12 @@ export default function App() {
                       discardCount={editingId === m.id ? discardedCount(messages, m.id) : 0}
                       isLastMessage={i === messages.length - 1}
                       canRegenerate={m.role === 'assistant' && canRegenerateMessage(messages, m.id)}
+                      canSaveTask={m.role === 'assistant' && canSaveAsTask(messages, m.id)}
                       onBeginEdit={handleBeginEdit}
                       onCancelEdit={handleCancelEdit}
                       onSubmitEdit={submitEdit}
                       onRegenerate={handleRegenerate}
+                      onSaveTask={handleSaveTask}
                     />
                   ))
                 )}
@@ -435,10 +477,12 @@ const Message = memo(function Message({
   discardCount,
   isLastMessage,
   canRegenerate,
+  canSaveTask,
   onBeginEdit,
   onCancelEdit,
   onSubmitEdit,
   onRegenerate,
+  onSaveTask,
 }: {
   message: UIMessage;
   busy: boolean;
@@ -448,10 +492,12 @@ const Message = memo(function Message({
   discardCount: number;
   isLastMessage: boolean;
   canRegenerate: boolean;
+  canSaveTask: boolean;
   onBeginEdit: (id: string) => void;
   onCancelEdit: () => void;
   onSubmitEdit: (id: string, content: string) => void;
   onRegenerate: (id: string) => void;
+  onSaveTask: (id: string) => void;
 }) {
   const { t } = useTranslation();
   const { role, content } = message;
@@ -594,6 +640,17 @@ const Message = memo(function Message({
                 className="inline-flex items-center gap-1 rounded-md p-1.5 text-neutral-400 transition-colors hover:text-neutral-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:hover:text-neutral-200"
               >
                 <IconRefresh className="h-3.5 w-3.5" />
+              </button>
+            )}
+            {!requestBlocked && canSaveTask && (
+              <button
+                type="button"
+                onClick={() => onSaveTask(message.id)}
+                aria-label={t('chat.saveAsTaskAriaLabel')}
+                title={t('chat.saveAsTaskAriaLabel')}
+                className="inline-flex items-center gap-1 rounded-md p-1.5 text-neutral-400 transition-colors hover:text-neutral-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:hover:text-neutral-200"
+              >
+                <IconBookmark className="h-3.5 w-3.5" />
               </button>
             )}
           </div>

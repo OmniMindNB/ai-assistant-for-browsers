@@ -241,3 +241,19 @@ export function IconRefresh({ className }: IconProps) {
     </Svg>
   );
 }
+
+export function IconBookmark({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" />
+    </Svg>
+  );
+}
+
+export function IconPlay({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <polygon points="6 3 20 12 6 21 6 3" />
+    </Svg>
+  );
+}

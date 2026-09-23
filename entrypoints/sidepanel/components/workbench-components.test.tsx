@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConversationRecord } from '@/lib/db';
@@ -2001,5 +2001,112 @@ describe('composer tab picker', () => {
     const removeLabel = interpolate(en['workbench.removeTabReference'], { title: 'Docs' });
     await user.click(screen.getByRole('button', { name: removeLabel }));
     expect(onRemoveTabReference).toHaveBeenCalledWith(7);
+  });
+});
+
+describe('save as task', () => {
+  const recordedConversation = [
+    { id: 'u1', role: 'user', content: 'File an expense report', createdAt: 1 },
+    {
+      id: 'a1',
+      role: 'assistant',
+      content: 'Submitted.',
+      createdAt: 2,
+      trajectory: [
+        { tool: 'browser_fill_form', url: 'https://example.com/expense', values: [{ target: '「Amount」', value: '280' }] },
+        { tool: 'browser_click', url: 'https://example.com/expense', target: '「Next」' },
+      ],
+    },
+  ];
+
+  function renderApp() {
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+  }
+
+  it('offers saving only on replies that changed the page', () => {
+    (chatStore as any).messages = [
+      ...recordedConversation,
+      { id: 'u2', role: 'user', content: 'thanks', createdAt: 3 },
+    ];
+    renderApp();
+    expect(screen.getByRole('button', { name: 'Save as task' })).toBeInTheDocument();
+
+    cleanup();
+    (chatStore as any).messages = [
+      { id: 'u1', role: 'user', content: 'hi', createdAt: 1 },
+      { id: 'a1', role: 'assistant', content: 'hello', createdAt: 2 },
+    ];
+    renderApp();
+    expect(screen.queryByRole('button', { name: 'Save as task' })).toBeNull();
+  });
+
+  it('hides the button while a run is in flight', () => {
+    (chatStore as any).messages = recordedConversation;
+    (chatStore as any).busy = true;
+    renderApp();
+    expect(screen.queryByRole('button', { name: 'Save as task' })).toBeNull();
+  });
+
+  it('prefills the drawer, lets the user edit and delete steps, and saves a recorded shortcut', async () => {
+    const user = userEvent.setup();
+    const set = vi.spyOn((globalThis as any).browser.storage.local, 'set');
+    (chatStore as any).messages = recordedConversation;
+    renderApp();
+
+    await user.click(screen.getByRole('button', { name: 'Save as task' }));
+    const dialog = screen.getByRole('dialog', { name: 'Save as task' });
+    expect(within(dialog).getByLabelText('Name')).toHaveValue('File an expense report');
+    expect(within(dialog).getByLabelText('Goal')).toHaveValue('File an expense report');
+    expect(within(dialog).getByText('Set 「Amount」 to "280"')).toBeInTheDocument();
+
+    const amount = within(dialog).getByLabelText('Value for 「Amount」');
+    await user.clear(amount);
+    await user.type(amount, '300');
+    await user.click(within(dialog).getByRole('button', { name: 'Delete step 2' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(chatStore.refreshShortcuts).toHaveBeenCalled());
+    // vi.spyOn 拿到的是 storage.local.set<T> 的泛型签名，TS 推不出参数的具体形状（退化成 {}），
+    // 这里转 any 只是绕开类型推断，断言的内容和 brief 里给的一致。
+    const saved = (set.mock.calls.at(-1)?.[0] as any)?.['runi:shortcuts'] as any[];
+    expect(saved.at(-1)).toMatchObject({
+      origin: 'recorded',
+      scope: 'page',
+      name: 'File an expense report',
+      trajectory: [{ tool: 'browser_fill_form', values: [{ target: '「Amount」', value: '300' }] }],
+    });
+    expect(screen.queryByRole('dialog', { name: 'Save as task' })).toBeNull();
+    // 不用 getByRole('status')：header 的运行状态行也是 status，按文字找才不会有歧义。
+    expect(screen.getByText('Saved "File an expense report". Type / to run it.')).toBeInTheDocument();
+  });
+
+  it('disables saving when the name is empty or every step was deleted', async () => {
+    const user = userEvent.setup();
+    (chatStore as any).messages = recordedConversation;
+    renderApp();
+
+    await user.click(screen.getByRole('button', { name: 'Save as task' }));
+    const dialog = screen.getByRole('dialog', { name: 'Save as task' });
+    await user.clear(within(dialog).getByLabelText('Name'));
+    expect(within(dialog).getByRole('button', { name: 'Save' })).toBeDisabled();
+
+    await user.type(within(dialog).getByLabelText('Name'), 'x');
+    await user.click(within(dialog).getByRole('button', { name: 'Delete step 1' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Delete step 1' }));
+    expect(within(dialog).getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+
+  it('warns when the saved range reported the task as not completed', async () => {
+    const user = userEvent.setup();
+    (chatStore as any).messages = recordedConversation.map((message) =>
+      message.id === 'a1' ? { ...message, taskOutcome: { outcome: 'failure', reason: 'x' } } : message,
+    );
+    renderApp();
+    await user.click(screen.getByRole('button', { name: 'Save as task' }));
+    expect(screen.getByText('This run reported the task as not completed. Save it anyway?')).toBeInTheDocument();
   });
 });
