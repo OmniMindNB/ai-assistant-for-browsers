@@ -1199,3 +1199,116 @@ describe('run-registry 轮次交接块', () => {
     expect(options.messages.some((message) => String(message.content).includes('[系统观察]'))).toBe(false);
   });
 });
+
+describe('run-registry trajectory recording', () => {
+  beforeEach(() => {
+    installAlarmsStub();
+  });
+
+  // busy:false 只是收尾过程中一闪而过的瞬时态：本文件其余用例（startRun/confirm/question/stop
+  // 等描述块）里 finally 块紧接着就会把这次运行整个从 runs 里摘掉（runs.delete(state.tabId)），
+  // 所以等的是终态本身——run 从 runs 里彻底消失，之后不会再变；这也是文件里其它场景（"archives
+  // activity steps..."等用例）一贯采用的等待方式。落盘内容与 state.messages 在删除前完全一致
+  // （finally 删除前必定先 persistMessages(state)），从持久化记录读没有任何信息损失。
+  async function settledReply(tabId: number): Promise<any> {
+    await vi.waitFor(() => expect(getRunState(tabId)).toBeUndefined());
+    return lastPersistedMessage();
+  }
+
+  function lastPersistedMessage(): any {
+    return mocks.replaceConversationMessages.mock.calls.at(-1)?.[1]?.at(-1);
+  }
+
+  // toMessageRecords 会丢掉末尾内容为空的 assistant 占位，所以要落库的用例得先流一段文字进去。
+  const replyText = [
+    { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'done' } },
+    { type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'done' }] } },
+  ];
+
+  it('records a successful write with its label and archives it on the reply', async () => {
+    installTabsStub('https://example.com/form?token=abc');
+    mocks.createBrowserAgent.mockReturnValue(
+      makeFakeAgent([
+        { type: 'tool_execution_start', toolCallId: 'c1', toolName: 'browser_fill_form', args: { fields: [{ fieldId: 'f1', value: 'hello' }] } },
+        { type: 'tool_execution_end', toolCallId: 'c1', toolName: 'browser_fill_form', isError: false, result: {} },
+        ...replyText,
+      ]),
+    );
+
+    await startRun(makeRequest({ tabId: 61 }));
+    const expected = [
+      { tool: 'browser_fill_form', url: 'https://example.com/form', values: [{ target: '「邮箱」', value: 'hello' }] },
+    ];
+    expect((await settledReply(61)).trajectory).toEqual(expected);
+    await vi.waitFor(() => expect(lastPersistedMessage()?.trajectory).toEqual(expected));
+  });
+
+  it('does not record failed calls or read-only tools', async () => {
+    installTabsStub();
+    mocks.createBrowserAgent.mockReturnValue(
+      makeFakeAgent([
+        { type: 'tool_execution_start', toolCallId: 'c1', toolName: 'browser_click', args: { fieldId: 'f1' } },
+        { type: 'tool_execution_end', toolCallId: 'c1', toolName: 'browser_click', isError: true, result: {} },
+        { type: 'tool_execution_start', toolCallId: 'c2', toolName: 'browser_read_page', args: {} },
+        { type: 'tool_execution_end', toolCallId: 'c2', toolName: 'browser_read_page', isError: false, result: {} },
+      ]),
+    );
+
+    await startRun(makeRequest({ tabId: 62 }));
+
+    // 落盘记录（ChatMessageRecord）总是显式带着 trajectory 这个键（值可能是 undefined）——
+    // 不同于内存里的 ChatMessage，后者没有录制到东西时干脆不带这个键。两者语义一致（都表示
+    // "这条消息没有轨迹"），这里断言值而不是键是否存在，就不会被这个形状差异误伤。
+    expect((await settledReply(62)).trajectory).toBeUndefined();
+  });
+
+  it('resolves the label from the handle table as it was before the tool ran', async () => {
+    installTabsStub();
+    const original = mocks.getFormFieldsForTab.getMockImplementation()!;
+    let replaced = false;
+    mocks.getFormFieldsForTab.mockImplementation(async () => ({
+      url: 'https://example.com/form',
+      fields: { f1: { path: [], expect: { tag: 'button', text: replaced ? '返回首页' : '下一步' }, sensitive: false, kind: 'button' } },
+    }) as never);
+    try {
+      const agent = makeFakeAgent([]);
+      agent.prompt = vi.fn(async () => {
+        const listener = agent.subscribe.mock.calls[0][0] as (event: unknown) => void;
+        listener({ type: 'tool_execution_start', toolCallId: 'c1', toolName: 'browser_click', args: { fieldId: 'f1' } });
+        // 点击把页面带走了：background 用新页面重建了句柄表，同一个 f1 现在指向别的东西。
+        replaced = true;
+        listener({ type: 'tool_execution_end', toolCallId: 'c1', toolName: 'browser_click', isError: false, result: {} });
+      });
+      mocks.createBrowserAgent.mockReturnValue(agent);
+
+      await startRun(makeRequest({ tabId: 63 }));
+
+      expect((await settledReply(63)).trajectory?.[0]?.target).toBe('「下一步」');
+    } finally {
+      mocks.getFormFieldsForTab.mockImplementation(original);
+    }
+  });
+
+  it('records the destination of a tab switch after it happened', async () => {
+    (globalThis as any).browser = {
+      ...(globalThis as any).browser,
+      tabs: { get: vi.fn(async (id: number) => ({ id, url: id === 99 ? 'https://other.test/p?x=1' : 'https://example.com/form' })) },
+    };
+    const agent = makeFakeAgent([]);
+    agent.prompt = vi.fn(async () => {
+      const listener = agent.subscribe.mock.calls[0][0] as (event: unknown) => void;
+      listener({ type: 'tool_execution_start', toolCallId: 'c1', toolName: 'browser_switch_tab', args: { tabId: 99 } });
+      getRunState(64)!.session.currentTabId = 99;
+      listener({ type: 'tool_execution_end', toolCallId: 'c1', toolName: 'browser_switch_tab', isError: false, result: {} });
+    });
+    mocks.createBrowserAgent.mockReturnValue(agent);
+
+    await startRun(makeRequest({ tabId: 64 }));
+
+    expect((await settledReply(64)).trajectory?.[0]).toEqual({
+      tool: 'browser_switch_tab',
+      url: 'https://example.com/form',
+      detail: 'https://other.test/p',
+    });
+  });
+});

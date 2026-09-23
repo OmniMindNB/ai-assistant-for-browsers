@@ -5,7 +5,10 @@ import type { Agent, AgentEvent } from '@earendil-works/pi-agent-core';
 import { createBrowserAgent } from './agent';
 import { buildTurnHandoff, toAgentMessages } from './turn-context';
 import { getFormFieldsForTab } from './tab-form-fields';
+import type { FormFieldTable } from './tab-form-fields';
 import { defaultRedactionSettings, loadRedactionSettings } from '@/lib/redaction';
+import { appendTrajectorySteps, buildTrajectorySteps, isRecordableTool } from './trajectory-recorder';
+import type { TrajectoryStep } from './task-trajectory';
 import { createTabSession, type TabSessionController, type TrackedTab } from './tab-session';
 import { loadTabSession, saveTabSession } from './tab-session-storage';
 import { summarizeToolCallForConfirmation } from './confirm-summary';
@@ -32,6 +35,19 @@ import { setOverlayForTab, clearOverlayForTab } from './tab-overlay-state';
 import { clearTakeoverForTab } from './tab-takeover';
 import { sendToContentScript } from './content-script-messaging';
 import { newMessageId, type SetAgentOverlayPayload } from '@/lib/messaging';
+
+interface RecordingContext {
+  url: string | undefined;
+  table: FormFieldTable | undefined;
+}
+
+async function captureRecordingContext(tabId: number): Promise<RecordingContext> {
+  const [url, table] = await Promise.all([
+    fetchTargetUrl(tabId),
+    getFormFieldsForTab(tabId).catch(() => undefined),
+  ]);
+  return { url, table };
+}
 
 interface RunState {
   tabId: number;
@@ -65,6 +81,23 @@ interface RunState {
    * （ref: 用户反馈——思考中点暂停弹出「请检查 Base URL、API Key 和模型名称」）。
    */
   stopRequested: boolean;
+  /** 本轮成功执行过的写操作参考轨迹（ref: 设计稿 §3）；finally 里挂到最后一条 assistant 消息上。 */
+  trajectory: TrajectoryStep[];
+  /**
+   * toolCallId → 执行前抓到的目标页 URL 和句柄表。必须在 tool_execution_start 当场发起：
+   * 点完"下一步"页面就跳走了，background 会用新页面重建句柄表，等到 end 再查，查到的是
+   * 另一个页面上的同名 fieldId。
+   */
+  recordingStarts: Map<string, Promise<RecordingContext>>;
+  /** 录制是异步的（要等上面的查询），串成一条链：finally 存档前 await 它，保证不丢最后一步。 */
+  recordingChain: Promise<void>;
+  /**
+   * 本轮是否真的触发过至少一次录制链式追加。finally 里只在这为 true 时才 await recordingChain——
+   * 没有任何录制工作时，那是个从未被改写过的 Promise.resolve()，await 它除了平白多耗一次微任务、
+   * 给完全不涉及写操作的收尾时序添一次可观测抖动之外没有任何意义（这类收尾的时序被其它既有用例
+   * 通过 vi.waitFor 断言过，多余的微任务会把 busy:false 这个瞬时态"挤"到它们够不着的地方）。
+   */
+  recordingChainStarted: boolean;
 }
 
 const runs = new Map<number, RunState>();
@@ -361,6 +394,10 @@ export async function startRun(request: StartRunRequest): Promise<void> {
     contextTruncated: false,
     stoppedActivitySteps: null,
     stopRequested: false,
+    trajectory: [],
+    recordingStarts: new Map(),
+    recordingChain: Promise.resolve(),
+    recordingChainStarted: false,
   };
   runs.set(request.tabId, state);
   startKeepalive(request.tabId);
@@ -461,6 +498,9 @@ export async function startRun(request: StartRunRequest): Promise<void> {
   });
   state.agent = agent;
 
+  // 录制用的脱敏配置一轮只读一次；读不到就用内置规则，绝不因此让录制（更不能让 run）失败。
+  const recordRedaction = loadRedactionSettings().catch(() => defaultRedactionSettings());
+
   let acc = '';
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
   const flush = () => {
@@ -477,6 +517,9 @@ export async function startRun(request: StartRunRequest): Promise<void> {
 
     if (event.type === 'tool_execution_start' && !state.terminatedToolCallIds.has(event.toolCallId)) {
       state.pendingToolArgs.set(event.toolCallId, { toolName: event.toolName, args: event.args });
+      if (isRecordableTool(event.toolName) && !state.recordingStarts.has(event.toolCallId)) {
+        state.recordingStarts.set(event.toolCallId, captureRecordingContext(state.session.currentTabId));
+      }
       state.activitySteps = upsertActivityStep(state.activitySteps, {
         id: event.toolCallId,
         description: describeToolActivity(event.toolName, event.args, 'running'),
@@ -503,6 +546,27 @@ export async function startRun(request: StartRunRequest): Promise<void> {
     if (event.type === 'tool_execution_end') {
       const info = state.pendingToolArgs.get(event.toolCallId);
       state.pendingToolArgs.delete(event.toolCallId);
+      const recordingStart = state.recordingStarts.get(event.toolCallId);
+      state.recordingStarts.delete(event.toolCallId);
+      // 只录成功的调用：失败和重试不进轨迹，这正是"照着成功的那条路走"的意思。
+      if (recordingStart && !event.isError && !state.terminatedToolCallIds.has(event.toolCallId)) {
+        const toolName = event.toolName;
+        const args = info?.args;
+        state.recordingChainStarted = true;
+        state.recordingChain = state.recordingChain
+          .then(async () => {
+            const [context, redaction] = await Promise.all([recordingStart, recordRedaction]);
+            const afterUrl = toolName === 'browser_switch_tab'
+              ? await fetchTargetUrl(state.session.currentTabId)
+              : undefined;
+            state.trajectory = appendTrajectorySteps(
+              state.trajectory,
+              buildTrajectorySteps({ toolName, args, url: context.url, table: context.table, afterUrl, redaction }),
+            );
+          })
+          // 录制是锦上添花：任何失败都只是少录一步，绝不能让 run 的收尾卡住。
+          .catch(() => undefined);
+      }
       if (!state.terminatedToolCallIds.has(event.toolCallId)) {
         const finalStatus = event.isError ? 'failed' : 'done';
         state.activitySteps = finishActivityStep(
@@ -561,6 +625,9 @@ export async function startRun(request: StartRunRequest): Promise<void> {
     } finally {
       unsubscribe();
       if (flushTimer !== null) clearTimeout(flushTimer);
+      // 最后一步的录制可能还在等句柄表查询；先让它落地再存档，否则最后一步（往往就是"提交"）会丢。
+      // 只在真的触发过录制时才 await——见 recordingChainStarted 字段注释。
+      if (state.recordingChainStarted) await state.recordingChain;
       // Only perform cleanup if this run is still the current one for this tab.
       // If a new run was started for the same tab while this one was in flight,
       // this run's finally block should not clobber the new run's state.
@@ -580,6 +647,7 @@ export async function startRun(request: StartRunRequest): Promise<void> {
               ...(wasUserStopped ? { stopped: true } : {}),
               ...(finishedSteps.length > 0 ? { activitySteps: finishedSteps } : {}),
               ...(state.contextTruncated ? { contextTruncated: true } : {}),
+              ...(state.trajectory.length > 0 ? { trajectory: state.trajectory } : {}),
             },
           ];
         }
