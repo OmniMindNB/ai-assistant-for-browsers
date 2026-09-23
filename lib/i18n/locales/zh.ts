@@ -398,6 +398,7 @@ export const zh = {
   'trajectory.setStyle': '修改样式：{detail}',
   'trajectory.generic': '{tool}：{detail}',
   'trajectory.none': '（没有记录到页面操作，按目标自行完成）',
+  'playbook.outputLanguage': '中文',
   'recordedTask.title': '保存为指令',
   'recordedTask.nameLabel': '名称',
   'recordedTask.goalLabel': '目标',

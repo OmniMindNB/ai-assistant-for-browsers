@@ -400,6 +400,7 @@ export const en: Record<keyof typeof zh, string> = {
   'trajectory.setStyle': 'Change styles: {detail}',
   'trajectory.generic': '{tool}: {detail}',
   'trajectory.none': '(no page actions were recorded; work from the goal)',
+  'playbook.outputLanguage': 'English',
   'recordedTask.title': 'Save as task',
   'recordedTask.nameLabel': 'Name',
   'recordedTask.goalLabel': 'Goal',
