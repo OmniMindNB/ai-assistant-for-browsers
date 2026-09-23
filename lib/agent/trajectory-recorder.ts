@@ -23,6 +23,12 @@ export interface RecordInput {
   table: FormFieldTable | undefined;
   /** 只有 browser_switch_tab 用得上：切换之后新目标页的 URL。 */
   afterUrl?: string;
+  /**
+   * tool_execution_end 事件上的 result.details（textResult 的第二个参数）。只用来过滤
+   * "没落地的部分"：browser_fill_form / 批量 browser_click 只要有一项成功就不报错，
+   * 逐项的 outcome 只在这里。标签仍然只从执行前的 table 解析，绝不从这里取。
+   */
+  details?: unknown;
   redaction: RedactionSettings;
 }
 
@@ -61,6 +67,21 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
+/**
+ * 从 details.outcomes 里取出落地（status === 'ok'）的 fieldId 集合；没有 outcomes 时返回
+ * undefined，表示"无从判断，不过滤"。
+ */
+function landedFieldIds(details: unknown): Set<string> | undefined {
+  const outcomes = asRecord(details).outcomes;
+  if (!Array.isArray(outcomes)) return undefined;
+  const landed = new Set<string>();
+  for (const outcome of outcomes) {
+    const record = asRecord(outcome);
+    if (record.status === 'ok' && typeof record.fieldId === 'string') landed.add(record.fieldId);
+  }
+  return landed;
+}
+
 function str(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value : undefined;
 }
@@ -93,12 +114,16 @@ export function buildTrajectorySteps(input: RecordInput): TrajectoryStep[] {
   switch (input.toolName) {
     case 'browser_fill_form': {
       const entries = Array.isArray(args.fields) ? args.fields : [];
-      const values: TrajectoryValue[] = entries.map((entry) => {
+      const landed = landedFieldIds(input.details);
+      const fillValue = (entry: unknown): TrajectoryValue | undefined => {
         const field = asRecord(entry);
         const handle = handleOf(field.fieldId);
         const target = labelTarget(handle) ?? `「${typeof field.fieldId === 'string' ? field.fieldId : '?'}」`;
         // planFormFill 在到达页面之前就丢掉了 sensitive 字段：这里既不录值，也不能暗示"已填"。
+        // 它的 outcome 必然是 blocked_sensitive，但这一条本来就不是"已填"，而是"要用户自己填"的提示，所以不参与落地过滤。
         if (handle?.sensitive) return { target, sensitive: true };
+        // 回读校验没通过（invalid_value/not_writable/mismatch…）的字段没写进页面，录成"填入"就是假话。
+        if (landed && (typeof field.fieldId !== 'string' || !landed.has(field.fieldId))) return undefined;
         // 句柄无法解析时无法判断是否 sensitive，只记 target，不记值。
         // 同时 planFormFill 会拒掉 unknown fieldIds，所以不丢失真实功能。
         if (!handle) return { target };
@@ -107,19 +132,28 @@ export function buildTrajectorySteps(input: RecordInput): TrajectoryStep[] {
           ...(typeof field.value === 'string' ? { value: value(field.value) } : {}),
           ...(typeof field.checked === 'boolean' ? { checked: field.checked } : {}),
         };
-      });
-      const steps: TrajectoryStep[] = [
-        { ...base, values, ...(values.some((item) => item.sensitive) ? { sensitive: true } : {}) },
-      ];
+      };
+      const values = entries.map(fillValue).filter((item): item is TrajectoryValue => item !== undefined);
+      const steps: TrajectoryStep[] = values.length > 0
+        ? [{ ...base, values, ...(values.some((item) => item.sensitive) ? { sensitive: true } : {}) }]
+        : [];
       const submit = asRecord(args.submit);
-      if (submit.fieldId !== undefined) {
+      // 有结果可看时，只有 submitted.status === 'ok' 才算真的点了提交。
+      const submitted = asRecord(asRecord(input.details).submitted);
+      const hasResult = landed !== undefined || submitted.status !== undefined;
+      const submitLanded = !hasResult || submitted.status === 'ok';
+      if (submit.fieldId !== undefined && submitLanded) {
         const target = labelTarget(handleOf(submit.fieldId));
         steps.push({ tool: 'browser_click', url, ...(target ? { target } : {}) });
       }
       return steps;
     }
     case 'browser_click': {
-      const ids = Array.isArray(args.fieldIds) ? args.fieldIds : args.fieldId !== undefined ? [args.fieldId] : [];
+      const batch = Array.isArray(args.fieldIds);
+      const landed = batch ? landedFieldIds(input.details) : undefined;
+      const ids = (batch ? (args.fieldIds as unknown[]) : args.fieldId !== undefined ? [args.fieldId] : [])
+        // 批量点击只要一个目标点成就不报错：逐个目标的 outcome 决定哪些真的点到了。
+        .filter((id) => !landed || (typeof id === 'string' && landed.has(id)));
       const labels = ids.map((id) => labelTarget(handleOf(id))).filter((label): label is string => Boolean(label));
       const target = labels.length > 0 ? labels.join('、') : selectorTarget(args.selector);
       return [{ ...base, ...(target ? { target } : {}) }];

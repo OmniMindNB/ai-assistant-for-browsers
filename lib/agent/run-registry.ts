@@ -552,6 +552,8 @@ export async function startRun(request: StartRunRequest): Promise<void> {
       if (recordingStart && !event.isError && !state.terminatedToolCallIds.has(event.toolCallId)) {
         const toolName = event.toolName;
         const args = info?.args;
+        // 只拿结果做"哪些真的落地了"的过滤；标签仍从 tool_execution_start 时抓的句柄表解析。
+        const details = (event.result as { details?: unknown } | undefined)?.details;
         state.recordingChainStarted = true;
         state.recordingChain = state.recordingChain
           .then(async () => {
@@ -561,7 +563,7 @@ export async function startRun(request: StartRunRequest): Promise<void> {
               : undefined;
             state.trajectory = appendTrajectorySteps(
               state.trajectory,
-              buildTrajectorySteps({ toolName, args, url: context.url, table: context.table, afterUrl, redaction }),
+              buildTrajectorySteps({ toolName, args, url: context.url, table: context.table, afterUrl, details, redaction }),
             );
           })
           // 录制是锦上添花：任何失败都只是少录一步，绝不能让 run 的收尾卡住。

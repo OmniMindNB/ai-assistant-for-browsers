@@ -1262,6 +1262,56 @@ describe('run-registry trajectory recording', () => {
     expect((await settledReply(62)).trajectory).toBeUndefined();
   });
 
+  it('passes the tool result into the recorder so fields that did not land are dropped', async () => {
+    installTabsStub();
+    const original = mocks.getFormFieldsForTab.getMockImplementation()!;
+    mocks.getFormFieldsForTab.mockImplementation(async () => ({
+      url: 'https://example.com/form',
+      fields: {
+        f1: { path: [], expect: { tag: 'input', label: '邮箱' }, sensitive: false, kind: 'text' },
+        f2: { path: [], expect: { tag: 'input', label: '日期' }, sensitive: false, kind: 'text' },
+      },
+    }) as never);
+    try {
+      mocks.createBrowserAgent.mockReturnValue(
+        makeFakeAgent([
+          {
+            type: 'tool_execution_start', toolCallId: 'c1', toolName: 'browser_fill_form',
+            args: { fields: [{ fieldId: 'f1', value: 'a@b.c' }, { fieldId: 'f2', value: 'bad' }] },
+          },
+          {
+            type: 'tool_execution_end', toolCallId: 'c1', toolName: 'browser_fill_form', isError: false,
+            result: { details: { outcomes: [{ fieldId: 'f1', status: 'ok' }, { fieldId: 'f2', status: 'invalid_value' }] } },
+          },
+          ...replyText,
+        ]),
+      );
+
+      await startRun(makeRequest({ tabId: 67 }));
+
+      expect((await settledReply(67)).trajectory?.[0]?.values).toEqual([{ target: '「邮箱」', value: 'a@b.c' }]);
+    } finally {
+      mocks.getFormFieldsForTab.mockImplementation(original);
+    }
+  });
+
+  it('does not record a tool call that was terminated by stop, even if it later ends without error', async () => {
+    installTabsStub();
+    const agent = makeFakeAgent([]);
+    agent.prompt = vi.fn(async () => {
+      const listener = agent.subscribe.mock.calls[0][0] as (event: unknown) => void;
+      listener({ type: 'tool_execution_start', toolCallId: 'c1', toolName: 'browser_click', args: { fieldId: 'f1' } });
+      // 用户在工具执行中途点了停止：这一步被标成 terminated，结果晚到也不能进轨迹。
+      stopRun(68);
+      listener({ type: 'tool_execution_end', toolCallId: 'c1', toolName: 'browser_click', isError: false, result: {} });
+    });
+    mocks.createBrowserAgent.mockReturnValue(agent);
+
+    await startRun(makeRequest({ tabId: 68 }));
+
+    expect((await settledReply(68))?.trajectory).toBeUndefined();
+  });
+
   it('resolves the label from the handle table as it was before the tool ran', async () => {
     installTabsStub();
     const original = mocks.getFormFieldsForTab.getMockImplementation()!;

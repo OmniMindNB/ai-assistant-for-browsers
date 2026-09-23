@@ -97,6 +97,66 @@ describe('buildTrajectorySteps', () => {
     expect(steps[1].target).toBe('「提交」');
   });
 
+  it('drops fill_form fields whose outcome did not land, and a submit that did not click', () => {
+    // browser_fill_form 只要有一个字段落地就返回 isError:false；只看 isError 会把
+    // invalid_value/not_writable 的字段也录成"已填"。
+    const steps = build(
+      'browser_fill_form',
+      {
+        fields: [{ fieldId: 'f1', value: '280' }, { fieldId: 'f2', value: 'abc' }, { fieldId: 'f3', value: 'x' }],
+        submit: { fieldId: 'f9' },
+      },
+      {
+        table: table({ f1: { label: '报销金额' }, f2: { label: '日期' }, f3: { label: '备注' }, f9: { text: '提交' } }),
+        details: {
+          outcomes: [
+            { fieldId: 'f1', status: 'ok' },
+            { fieldId: 'f2', status: 'invalid_value' },
+            { fieldId: 'f3', status: 'not_writable' },
+          ],
+          submitted: { fieldId: 'f9', status: 'not_clickable' },
+        },
+      },
+    );
+    expect(steps).toEqual([
+      { tool: 'browser_fill_form', url: 'https://example.com/expense/new', values: [{ target: '「报销金额」', value: '280' }] },
+    ]);
+  });
+
+  it('keeps the submit step when it clicked, even if no field landed', () => {
+    const steps = build(
+      'browser_fill_form',
+      { fields: [{ fieldId: 'f1', value: '280' }], submit: { fieldId: 'f9' } },
+      {
+        table: table({ f1: { label: '报销金额' }, f9: { text: '提交' } }),
+        details: { outcomes: [{ fieldId: 'f1', status: 'mismatch' }], submitted: { fieldId: 'f9', status: 'ok' } },
+      },
+    );
+    expect(steps).toEqual([{ tool: 'browser_click', url: 'https://example.com/expense/new', target: '「提交」' }]);
+  });
+
+  it('still records the sensitive-field hint even though its outcome is blocked_sensitive', () => {
+    const steps = build(
+      'browser_fill_form',
+      { fields: [{ fieldId: 'f1', value: 'hunter2' }, { fieldId: 'f2', value: '280' }] },
+      {
+        table: table({ f1: { label: '支付密码', sensitive: true }, f2: { label: '金额' } }),
+        details: { outcomes: [{ fieldId: 'f1', status: 'blocked_sensitive' }, { fieldId: 'f2', status: 'ok' }] },
+      },
+    );
+    expect(steps[0].values).toEqual([{ target: '「支付密码」', sensitive: true }, { target: '「金额」', value: '280' }]);
+  });
+
+  it('records only the targets of a batch click that actually landed', () => {
+    const t = table({ f3: { text: 'A 选项' }, f4: { text: 'B 选项' } });
+    const steps = build(
+      'browser_click',
+      { fieldIds: ['f3', 'f4'] },
+      { table: t, details: { outcomes: [{ fieldId: 'f3', status: 'mismatch' }, { fieldId: 'f4', status: 'ok' }] } },
+    );
+    expect(steps[0].target).toBe('「B 选项」');
+  });
+
   it('labels a click by its handle, and falls back to the selector when the handle is unknown', () => {
     const t = table({ f3: { text: '下一步' } });
     expect(build('browser_click', { fieldId: 'f3' }, { table: t })[0].target).toBe('「下一步」');
