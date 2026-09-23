@@ -2,7 +2,7 @@
 
 - 日期：2026-09-23
 - 来源：仓库整体评估里的"任务回放 / 宏"建议；用户确认核心场景是"这次让 agent 摸索着做成了，下次一句话就能让它照着这条路再做一遍，允许它根据页面变化自行调整"
-- 状态：设计已评审，待写实现计划
+- 状态：已实现（95337b1..HEAD）
 - 依赖：无新增权限、无新增工具、无新增 `lib/messaging.ts` 消息类型、不改 `run-port-protocol.ts`。不改 Dexie schema（新增的是非索引字段）
 
 ## 1. 目标与非目标
@@ -39,6 +39,8 @@
 - `terminatedToolCallIds` 里的（用户点了停止被掐断的）不录。
 
 ### 3.2 步骤结构
+
+实现时拆成 `task-trajectory.ts`（类型/校验/渲染）与 `trajectory-recorder.ts`（录制），理由见实现计划开头。
 
 ```ts
 // lib/agent/task-trajectory.ts
@@ -106,7 +108,7 @@ assistant 消息操作行（`App.tsx:592` 附近，复制 / 重新生成旁边�
 
 1. **名称**：默认取会话标题，可改；即 `/` 面板里显示的名字。
 2. **目标**：多行文本框，默认把区间内所有用户消息的 `content` 按顺序以换行拼起来，可改。
-3. **参考步骤**：每步渲染成一句话（"在『报销金额』填入 280""点击『下一步』"），可逐条删除、可直接改写入值；`sensitive` 步骤显示"🔒 填写了一个敏感字段（未记录）"，不可编辑值。
+3. **参考步骤**：每步渲染成一句话（"在『报销金额』填入 280""点击『下一步』"），可逐条删除、可直接改写入值；`sensitive` 步骤显示"🔒 敏感字段「X」需由用户自己填写（未记录）"，不可编辑值。`planFormFill` 在到达页面之前就丢掉了 sensitive 字段，Runi 从未替用户填过它们，所以不能写成"已填写"，也不该让模型去索取一个它无法写入的值。
 4. 顶部固定一行："这些内容只保存在本机；执行时会作为参考发送给你配置的模型"。
 5. 区间内任一 `taskOutcome` 为 `failure` / `partial` 时，额外显示黄色提示"上次这轮报告为未完成，确认要保存吗"——提示，不阻止。
 6. 名称或目标为空、或步骤全删光时，"保存"禁用。重名不拦截（id 不同）。
@@ -155,13 +157,13 @@ assistant 消息操作行（`App.tsx:592` 附近，复制 / 重新生成旁边�
 需要先 browser_get_form / browser_find_text 重新取句柄）：
 1. [example.com/expense/new] 在「报销金额」填入 280
 2. [同上] 点击「下一步」
-3. [同上] 🔒 填写了一个敏感字段（未记录，需要时用 ask_user 向用户索取）
+3. [同上] 🔒 敏感字段「支付密码」需由用户自己填写（未记录）
 本次补充说明：金额改成 300
 执行规则：补充说明优先于参考值；页面与参考不一致时以页面实际为准自行调整；
 当前页不是第 1 步所在页面时，先跳转过去。
 ```
 
-没有补充说明时整行省略，而不是写"本次补充说明：（无）"。连续步骤 URL 相同时渲染成"[同上]"，省 token 也更好读。参考值里的脱敏占位符由 system prompt 现有第 9 条规则处理，不新增规则。
+没有补充说明时整行省略，而不是写"本次补充说明：（无）"。连续步骤 URL 相同时渲染成"[同上]"，省 token 也更好读。参考值里的脱敏占位符由 system prompt 现有第 9 条规则处理，不新增规则。`planFormFill` 在到达页面之前就丢掉了 sensitive 字段，Runi 从未替用户填过它们，所以不能写成"已填写"，也不该让模型去索取一个它无法写入的值。
 
 用户消息气泡显示"▶ 差旅报销单 · 金额改成 300"（无补充说明时只显示名称）。
 
@@ -204,6 +206,6 @@ assistant 消息操作行（`App.tsx:592` 附近，复制 / 重新生成旁边�
 
 ## 10. 影响面清单
 
-- 新增：`lib/agent/task-trajectory.ts`（+ 测试）、保存抽屉组件（`entrypoints/sidepanel/components/`）。
+- 新增：`lib/agent/task-trajectory.ts`（+ 测试）、`lib/agent/trajectory-recorder.ts`、`lib/chat/recorded-task.ts`、保存抽屉组件（`entrypoints/sidepanel/components/`）。
 - 修改：`lib/agent/run-registry.ts`（录制 + 存档）、`lib/chat/messages.ts`、`lib/db.ts`、`entrypoints/sidepanel/store.ts`（记录映射、`runShortcut` 的 supplement、保存动作）、`lib/shortcuts.ts`、`lib/chat/shortcut-prompts.ts`、`lib/chat/shortcut-rerun.ts`、`lib/workbench/presentation.ts`、`entrypoints/sidepanel/App.tsx`、`entrypoints/sidepanel/components/WorkbenchComposer.tsx`、`components/ShortcutSettings.tsx`、`lib/i18n/locales/{zh,en}.ts`。
 - 文档：CLAUDE.md 的快捷指令段落（recorded 类型、胶囊栏例外、恢复预设会删除录制指令）、README 的快捷指令功能描述。

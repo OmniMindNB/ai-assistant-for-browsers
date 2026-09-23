@@ -30,8 +30,8 @@
 | Task 7 保存草稿 | ✅ 完成 | `177b335..19c9db6` | 一次通过 |
 | Task 8 保存抽屉与按钮 | ✅ 完成 | `19c9db6..1df6934` | 一次通过 |
 | Task 9 待执行胶囊 | ✅ 完成 | `1df6934..45d401e` | 修 1 轮后通过 |
-| Task 10 设置页 | ⏳ 待做 | — | — |
-| Task 11 文档与全量验证 | ⏳ 待做 | — | — |
+| Task 10 设置页 | ✅ 完成 | `e0eee9c..fe0a65d` | 一次通过 |
+| Task 11 文档与全量验证 | ✅ 完成 | `fe0a65d..HEAD` | — |
 | 全分支最终审查 | ⏳ 待做 | — | — |
 
 **已完成任务与下文计划原文的偏差（代码以实际提交为准）：**
@@ -2537,7 +2537,7 @@ git commit -m "feat(sidepanel): 录制指令选中后先挂成待执行胶囊，
 - Consumes: Task 2 的 `describeTrajectoryStep`；Task 5 的 recorded 配置。
 - Produces: 无新导出。
 
-- [ ] **Step 1: 改 i18n**
+- [x] **Step 1: 改 i18n**
 
 `zh.ts`：
 - 把 `'shortcut.confirmRestore'` 改为 `'会清空你自建的快捷方式和保存的任务指令，并把改过的内建文案还原为默认。此操作无法撤销。'`
@@ -2557,7 +2557,7 @@ git commit -m "feat(sidepanel): 录制指令选中后先挂成待执行胶囊，
 
 先 `grep -rn "removes your custom shortcuts" components lib entrypoints` 确认没有测试写死旧英文文案；有的话一并改成新文案。
 
-- [ ] **Step 2: 写失败的测试**
+- [x] **Step 2: 写失败的测试**
 
 在 `components/settings-components.test.tsx` 的 `describe('grouped options settings', ...)` 块内追加：
 
@@ -2605,12 +2605,12 @@ git commit -m "feat(sidepanel): 录制指令选中后先挂成待执行胶囊，
 
 注意：编辑表单里名称输入框的可访问名以现有 `shortcut.name` 键的英文值为准；若不是 `'Name'`，改用 `en['shortcut.name']`（文件顶部已可 import `en`）。`Save` 按钮同理对应 `en['shortcut.save']`。`storageData` 是本 describe 的 `beforeEach` 里赋值的那个对象；若它不是在外层 `let` 声明、测试体内不可见，就改为在测试开头 `(globalThis as any).browser.storage.local.get.mockResolvedValueOnce({...})` 覆盖一次读取。
 
-- [ ] **Step 3: 运行测试确认失败**
+- [x] **Step 3: 运行测试确认失败**
 
 Run: `pnpm vitest run components/settings-components.test.tsx -t "recorded"`
 Expected: FAIL（找不到 `Recorded task`）。
 
-- [ ] **Step 4: 实现**
+- [x] **Step 4: 实现**
 
 `components/ShortcutSettings.tsx`：
 
@@ -2655,12 +2655,12 @@ Expected: FAIL（找不到 `Recorded task`）。
    ```
    （`...current[index]` 已经带着 `trajectory`，这里只需防止作用域被改。）
 
-- [ ] **Step 5: 运行测试确认通过**
+- [x] **Step 5: 运行测试确认通过**
 
 Run: `pnpm vitest run components/settings-components.test.tsx`
 Expected: PASS。
 
-- [ ] **Step 6: 类型检查并提交**
+- [x] **Step 6: 类型检查并提交**
 
 Run: `pnpm compile`
 Expected: 无错误。
@@ -2679,7 +2679,7 @@ git commit -m "feat(settings): 设置页展示录制的任务指令，编辑时�
 - Modify: `README.md`、`README.en.md`
 - Modify: `docs/superpowers/specs/2026-09-23-task-replay-design.md`
 
-- [ ] **Step 1: 更新 CLAUDE.md**
+- [x] **Step 1: 更新 CLAUDE.md**
 
 1. 「Agent loop」模块列表里（`task-outcome.ts` 条目之后）加一条：
 
@@ -2695,7 +2695,7 @@ A third origin, `recorded`, holds tasks saved from a conversation via the reply'
 
 3. 同一段里"the panel renders every usable shortcut as a chip"改为"the panel renders every usable shortcut except recorded tasks as a chip"。
 
-- [ ] **Step 2: 更新 README**
+- [x] **Step 2: 更新 README**
 
 `README.md` 的「⚡ 快捷指令」条目末尾追加一句：
 
@@ -2709,7 +2709,7 @@ A third origin, `recorded`, holds tasks saved from a conversation via the reply'
 Any reply that changed the page can be saved as a task: Runi keeps the steps that worked (redacted, sensitive fields never recorded), and later you pick it from the `/` palette, optionally add a note about what's different this time, and the agent follows the same path, adapting where the page has changed
 ```
 
-- [ ] **Step 3: 同步设计稿**
+- [x] **Step 3: 同步设计稿**
 
 `docs/superpowers/specs/2026-09-23-task-replay-design.md`：
 - 头部「状态」改为 `已实现（<Task 1 的提交>..HEAD）`，实现完成后填入实际的起始提交号。
@@ -2717,7 +2717,7 @@ Any reply that changed the page can be saved as a task: Runi keeps the steps tha
 - §4.3 第 3 点与 §6.3 prompt 示例里的敏感字段文案改为"🔒 敏感字段「X」需由用户自己填写（未记录）"，并补一句："`planFormFill` 在到达页面之前就丢掉了 sensitive 字段，Runi 从未替用户填过它们，所以不能写成'已填写'，也不该让模型去索取一个它无法写入的值。"
 - §10 影响面清单的"新增"里补上 `lib/agent/trajectory-recorder.ts` 与 `lib/chat/recorded-task.ts`。
 
-- [ ] **Step 4: 全量验证**
+- [x] **Step 4: 全量验证**
 
 Run: `pnpm compile`
 Expected: 无错误。
@@ -2728,7 +2728,7 @@ Expected: 全部通过，包括六个仓库级守卫测试（`brand-namespace.te
 Run: `pnpm build`
 Expected: 构建成功。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add CLAUDE.md README.md README.en.md docs/superpowers/specs/2026-09-23-task-replay-design.md
