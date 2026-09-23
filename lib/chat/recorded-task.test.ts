@@ -33,6 +33,35 @@ describe('canSaveAsTask', () => {
 });
 
 describe('buildRecordedTaskDraft', () => {
+  // 快捷/回放消息的 content 只是显示标签（"▶ 差旅报销单 · 金额改成 300"），真正发出去的
+  // 目标在 rerun 配方里；拿标签当 goal，再保存一次回放过的会话就把真实目标弄丢了。
+  it('uses the rerun recipe instead of the display label for shortcut and replay messages', () => {
+    const replayed: ChatMessage[] = [
+      {
+        id: 'u1',
+        role: 'user',
+        content: '▶ 差旅报销单 · 金额改成 300',
+        createdAt: 1,
+        rerun: {
+          shortcut: { id: 'shortcut-rec-1', origin: 'recorded', scope: 'page', customized: true, name: '差旅报销单', prompt: '帮我填一张差旅报销单', trajectory: [step(1)] },
+          supplement: '金额改成 300',
+        },
+      },
+      { id: 'a1', role: 'assistant', content: '已提交', createdAt: 2, trajectory: [step(1)] },
+      {
+        id: 'u2',
+        role: 'user',
+        content: '📄 总结当前网页',
+        createdAt: 3,
+        rerun: { shortcut: { id: 'summarize-page', origin: 'builtin', scope: 'page', customized: false, name: '总结当前网页', prompt: '请总结当前网页' } },
+      },
+      { id: 'a2', role: 'assistant', content: '总结如下', createdAt: 4 },
+    ];
+    const draft = buildRecordedTaskDraft(replayed, 'a2')!;
+    expect(draft.goal).toBe('帮我填一张差旅报销单\n金额改成 300\n请总结当前网页');
+    expect(draft.goal).not.toContain('▶');
+  });
+
   it('joins every step and every user message up to the chosen reply', () => {
     const draft = buildRecordedTaskDraft(conversation, 'a2')!;
     expect(draft.name).toBe('帮我填一张差旅报销单');

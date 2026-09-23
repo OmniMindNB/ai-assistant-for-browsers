@@ -32,6 +32,18 @@ function cloneStep(step: TrajectoryStep): TrajectoryStep {
 }
 
 /**
+ * 一条用户消息"真正要做的事"。快捷操作/录制指令消息的 content 只是显示标签
+ * （"▶ 差旅报销单 · 金额改成 300"、"📄 总结当前网页"），真实 prompt 在 rerun 配方里；
+ * 补充说明另起一行接在后面，和多轮对话里"后一句补充前一句"的拼法一致。
+ */
+function userGoalText(message: ChatMessage): string {
+  if (!message.rerun) return message.content.trim();
+  const prompt = message.rerun.shortcut.prompt.trim();
+  const supplement = message.rerun.supplement?.trim();
+  return [prompt, supplement].filter(Boolean).join('\n');
+}
+
+/**
  * 取数范围是"会话开头到被点的那条回复"：一次成功的对话常常跨多轮——第一轮填了一半，
  * 用户补了信息，第二轮才提交。
  */
@@ -43,7 +55,7 @@ export function buildRecordedTaskDraft(messages: readonly ChatMessage[], message
     name: conversationTitle(range),
     goal: range
       .filter((message) => message.role === 'user')
-      .map((message) => message.content.trim())
+      .map(userGoalText)
       .filter(Boolean)
       .join('\n'),
     // 超出上限保留最后 N 步：越靠后越接近最终走通的那条路。
