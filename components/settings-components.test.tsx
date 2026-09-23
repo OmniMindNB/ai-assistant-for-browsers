@@ -673,6 +673,46 @@ describe('grouped options settings', () => {
     expect(toggle).toBeChecked();
   });
 
+  const recordedEntry = {
+    id: 'shortcut-rec-1',
+    origin: 'recorded',
+    scope: 'page',
+    customized: true,
+    name: 'Expense report',
+    prompt: 'File an expense report',
+    trajectory: [{ tool: 'browser_click', url: 'https://example.com/x', target: '「Next」' }],
+  };
+
+  it('labels recorded tasks and shows their steps read-only', async () => {
+    const user = userEvent.setup();
+    (storageData['runi:shortcuts'] as unknown[]).push(recordedEntry);
+    renderWithLocale(<ShortcutSettings />);
+
+    expect(await screen.findByText('Expense report')).toBeVisible();
+    expect(screen.getByText('Recorded task')).toBeVisible();
+    await user.click(screen.getByText('Reference steps (1)'));
+    expect(screen.getByText('Click 「Next」')).toBeVisible();
+  });
+
+  it('keeps the trajectory and page scope when a recorded task is renamed', async () => {
+    const user = userEvent.setup();
+    (storageData['runi:shortcuts'] as unknown[]).push(recordedEntry);
+    const set = (globalThis as any).browser.storage.local.set as ReturnType<typeof vi.fn>;
+    renderWithLocale(<ShortcutSettings />);
+
+    await user.click(await screen.findByRole('button', { name: 'Edit Expense report' }));
+    // 录制指令的作用域固定为 page，编辑表单里不给改。
+    expect(screen.queryByRole('combobox')).toBeNull();
+    const name = screen.getByRole('textbox', { name: 'Name' });
+    await user.clear(name);
+    await user.type(name, 'Travel expenses');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(set).toHaveBeenCalled());
+    const saved = (set.mock.calls.at(-1)?.[0]?.['runi:shortcuts'] as any[]).find((item) => item.id === 'shortcut-rec-1');
+    expect(saved).toMatchObject({ origin: 'recorded', scope: 'page', name: 'Travel expenses', trajectory: recordedEntry.trajectory });
+  });
+
   it('loads default redaction settings enabled with all four built-in rules', async () => {
     renderWithLocale(<RedactionSettings />);
 

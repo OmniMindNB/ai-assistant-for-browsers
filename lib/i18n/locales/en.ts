@@ -313,7 +313,9 @@ export const en: Record<keyof typeof zh, string> = {
   'shortcut.confirmDeleteAria': 'Confirm delete {name}? Click again to delete.',
   'shortcut.confirmRestoreTitle': 'Restore preset shortcuts?',
   'shortcut.confirmRestore':
-    'This removes your custom shortcuts and reverts edited built-in text to the defaults. It cannot be undone.',
+    'This removes your custom shortcuts and saved tasks, and reverts edited built-in text to the defaults. It cannot be undone.',
+  'shortcut.recordedBadge': 'Recorded task',
+  'shortcut.recordedStepsToggle': 'Reference steps ({count})',
   'shortcut.moveUp': 'Move up',
   'shortcut.moveDown': 'Move down',
   'shortcut.moveUpAria': 'Move {name} up',

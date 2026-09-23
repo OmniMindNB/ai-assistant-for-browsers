@@ -6,6 +6,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useTranslation } from '@/lib/i18n';
+import { describeTrajectoryStep } from '@/lib/agent/task-trajectory';
 import { normalizeShortcutCommand } from '@/lib/workbench/presentation';
 import {
   SHORTCUTS_STORAGE_KEY,
@@ -227,6 +228,7 @@ export default function ShortcutSettings() {
           current[index] = {
             ...current[index],
             ...nextDraft,
+            ...(current[index].origin === 'recorded' ? { scope: 'page' as const } : {}),
             customized: true,
           };
           return current;
@@ -354,6 +356,9 @@ export default function ShortcutSettings() {
     event.dataTransfer.setData('text/plain', id);
   }
 
+  // 录制指令的作用域固定为 page（它的参考轨迹全是页面操作），轨迹在这里只读——要改就删掉重录。
+  const editingRecorded = items.find((item) => item.id === editingId)?.origin === 'recorded';
+
   return (
     <section className="mb-6">
       <label className="mb-4 flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
@@ -472,8 +477,20 @@ export default function ShortcutSettings() {
                     </p>
                     <p className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs text-neutral-500 dark:text-neutral-400">
                       <span className="font-medium text-neutral-700 dark:text-neutral-300">{command}</span>
-                      <span>{scopeLabel(resolved.scope)}</span>
+                      <span>{item.origin === 'recorded' ? t('shortcut.recordedBadge') : scopeLabel(resolved.scope)}</span>
                     </p>
+                    {item.origin === 'recorded' && item.trajectory && (
+                      <details className="mt-1.5 text-xs text-neutral-500 dark:text-neutral-400">
+                        <summary className="cursor-pointer select-none">
+                          {t('shortcut.recordedStepsToggle', { count: item.trajectory.length })}
+                        </summary>
+                        <ol className="mt-1 list-decimal space-y-0.5 pl-5">
+                          {item.trajectory.map((step, stepIndex) => (
+                            <li key={stepIndex} className="break-words">{describeTrajectoryStep(step, t)}</li>
+                          ))}
+                        </ol>
+                      </details>
+                    )}
                   </div>
                   <div className="flex flex-wrap justify-end gap-1">
                     <button
@@ -570,25 +587,27 @@ export default function ShortcutSettings() {
                 </span>
               )}
             </label>
-            <label className="block text-xs text-neutral-600 dark:text-neutral-300">
-              <span className="mb-1 block">{t('shortcut.scope')}</span>
-              <select
-                value={draft.scope}
-                disabled={saving}
-                onChange={(event) =>
-                  setDraft((current) =>
-                    current
-                      ? { ...current, scope: event.target.value as ShortcutScope }
-                      : current,
-                  )
-                }
-                className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
-              >
-                <option value="page">{t('shortcut.scopePage')}</option>
-                <option value="selection">{t('shortcut.scopeSelection')}</option>
-                <option value="none">{t('shortcut.scopeNone')}</option>
-              </select>
-            </label>
+            {!editingRecorded && (
+              <label className="block text-xs text-neutral-600 dark:text-neutral-300">
+                <span className="mb-1 block">{t('shortcut.scope')}</span>
+                <select
+                  value={draft.scope}
+                  disabled={saving}
+                  onChange={(event) =>
+                    setDraft((current) =>
+                      current
+                        ? { ...current, scope: event.target.value as ShortcutScope }
+                        : current,
+                    )
+                  }
+                  className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+                >
+                  <option value="page">{t('shortcut.scopePage')}</option>
+                  <option value="selection">{t('shortcut.scopeSelection')}</option>
+                  <option value="none">{t('shortcut.scopeNone')}</option>
+                </select>
+              </label>
+            )}
             <label className="block text-xs text-neutral-600 dark:text-neutral-300">
               <span className="mb-1 block">{t('shortcut.prompt')}</span>
               <textarea
