@@ -100,7 +100,7 @@ export function parseTrajectory(value: unknown): TrajectoryStep[] | null {
     const clippedDetail = clipString(item.detail as string | undefined, MAX_TRAJECTORY_VALUE_CHARS);
     steps.push({
       tool: item.tool,
-      url: item.url,
+      url: clipString(item.url, MAX_TRAJECTORY_VALUE_CHARS) ?? item.url,
       ...(clippedTarget !== undefined ? { target: clippedTarget } : {}),
       ...(values ? { values } : {}),
       ...(clippedDetail !== undefined ? { detail: clippedDetail } : {}),

@@ -78,6 +78,15 @@ describe('parseTrajectory', () => {
     expect(parsed?.[0].detail?.endsWith('…')).toBe(true);
   });
 
+  it('clips a url that exceeds MAX_TRAJECTORY_VALUE_CHARS, like target and detail', () => {
+    const longUrl = `https://example.com/${'p'.repeat(MAX_TRAJECTORY_VALUE_CHARS * 2)}`;
+    const parsed = parseTrajectory([{ tool: 'browser_click', url: longUrl }]);
+    expect(parsed?.[0].url.length).toBe(MAX_TRAJECTORY_VALUE_CHARS);
+    expect(parsed?.[0].url.endsWith('…')).toBe(true);
+    // 空 url 仍是合法值（录制时拿不到地址就是空串），不能被裁剪逻辑弄丢。
+    expect(parseTrajectory([{ tool: 'browser_click', url: '' }])?.[0].url).toBe('');
+  });
+
   it('clips value target that exceeds MAX_TRAJECTORY_VALUE_CHARS', () => {
     const longTarget = 'z'.repeat(MAX_TRAJECTORY_VALUE_CHARS * 2);
     const parsed = parseTrajectory([
