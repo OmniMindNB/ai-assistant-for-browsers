@@ -911,7 +911,7 @@ describe('workbench composer', () => {
       customized: true,
       name: 'Expense report',
       prompt: 'File an expense report',
-      trajectory: [{ tool: 'browser_click', url: 'https://example.com/x', target: '「Next」' }],
+      trajectory: [{ tool: 'browser_click', target: '「Next」' }],
     },
     resolved: {
       id: 'shortcut-rec',
@@ -920,7 +920,7 @@ describe('workbench composer', () => {
       customized: true,
       name: 'Expense report',
       prompt: 'File an expense report',
-      trajectory: [{ tool: 'browser_click', url: 'https://example.com/x', target: '「Next」' }],
+      trajectory: [{ tool: 'browser_click', target: '「Next」' }],
     },
   };
 
@@ -2144,8 +2144,8 @@ describe('save as task', () => {
       content: 'Submitted.',
       createdAt: 2,
       trajectory: [
-        { tool: 'browser_fill_form', url: 'https://example.com/expense', values: [{ target: '「Amount」', value: '280' }] },
-        { tool: 'browser_click', url: 'https://example.com/expense', target: '「Next」' },
+        { tool: 'browser_fill_form', values: [{ target: '「Amount」', value: '280' }] },
+        { tool: 'browser_click', target: '「Next」' },
       ],
     },
   ];

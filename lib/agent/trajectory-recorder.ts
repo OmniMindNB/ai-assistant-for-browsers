@@ -7,6 +7,7 @@ import { redactText, type RedactionSettings } from '@/lib/redaction';
 import { WRITE_TOOL_NAMES } from './permissions';
 import type { FormFieldHandle, FormFieldTable } from './tab-form-fields';
 import {
+  isPageLocationTool,
   MAX_TRAJECTORY_LABEL_CHARS,
   MAX_TRAJECTORY_STEPS,
   MAX_TRAJECTORY_VALUE_CHARS,
@@ -17,12 +18,8 @@ import {
 export interface RecordInput {
   toolName: string;
   args: unknown;
-  /** 执行前目标页的完整 URL；这里负责去掉 query/hash。 */
-  url: string | undefined;
   /** 执行前目标页的句柄表——必须是执行前的那一份，见 run-registry.ts 的录制注释。 */
   table: FormFieldTable | undefined;
-  /** 只有 browser_switch_tab 用得上：切换之后新目标页的 URL。 */
-  afterUrl?: string;
   /**
    * tool_execution_end 事件上的 result.details（textResult 的第二个参数）。只用来过滤
    * "没落地的部分"：browser_fill_form / 批量 browser_click 只要有一项成功就不报错，
@@ -33,22 +30,12 @@ export interface RecordInput {
 }
 
 /**
- * 录哪些调用：所有写工具，外加 browser_switch_tab——它本身只读，但决定了后面的操作落在哪个
- * 页面，丢了它多标签页任务的轨迹就断了。读工具一律不录：回放时模型反正要重读，录进去只会
- * 让它照抄多余的读取轮次。
+ * 录哪些调用：在页面上生效的写工具。读工具不录：回放时模型反正要重读，录进去只会让它照抄
+ * 多余的读取轮次。换页面、开关标签页这类位置步骤也不录：保存的指令不绑定具体页面
+ * （见 task-trajectory.ts 的 PAGE_LOCATION_TOOLS）。
  */
 export function isRecordableTool(toolName: string): boolean {
-  return WRITE_TOOL_NAMES.has(toolName) || toolName === 'browser_switch_tab';
-}
-
-export function stripUrl(raw: string | undefined): string {
-  if (!raw) return '';
-  try {
-    const url = new URL(raw);
-    return `${url.origin}${url.pathname}`;
-  } catch {
-    return '';
-  }
+  return WRITE_TOOL_NAMES.has(toolName) && !isPageLocationTool(toolName);
 }
 
 export function appendTrajectorySteps(
@@ -89,8 +76,8 @@ function str(value: unknown): string | undefined {
 export function buildTrajectorySteps(input: RecordInput): TrajectoryStep[] {
   const redact = (text: string) => redactText(text, input.redaction);
   const args = asRecord(input.args);
-  const url = redact(stripUrl(input.url));
-  const base: TrajectoryStep = { tool: input.toolName, url };
+  if (!isRecordableTool(input.toolName)) return [];
+  const base: TrajectoryStep = { tool: input.toolName };
 
   // getFormFieldsForTab 只做类型断言不校验形状，旧版/畸形的表不能让录制抛出。
   const fields = input.table && input.table.fields && typeof input.table.fields === 'object'
@@ -144,7 +131,7 @@ export function buildTrajectorySteps(input: RecordInput): TrajectoryStep[] {
       const submitLanded = !hasResult || submitted.status === 'ok';
       if (submit.fieldId !== undefined && submitLanded) {
         const target = labelTarget(handleOf(submit.fieldId));
-        steps.push({ tool: 'browser_click', url, ...(target ? { target } : {}) });
+        steps.push({ tool: 'browser_click', ...(target ? { target } : {}) });
       }
       return steps;
     }
@@ -178,15 +165,6 @@ export function buildTrajectorySteps(input: RecordInput): TrajectoryStep[] {
     case 'browser_scroll': {
       const target = labelTarget(handleOf(args.fieldId)) ?? selectorTarget(args.selector);
       return [{ ...base, ...(target ? { target } : {}) }];
-    }
-    case 'browser_navigate':
-    case 'browser_open_tab': {
-      const detail = redact(stripUrl(str(args.url)));
-      return [{ ...base, ...(detail ? { detail } : {}) }];
-    }
-    case 'browser_switch_tab': {
-      const detail = redact(stripUrl(input.afterUrl));
-      return [{ ...base, ...(detail ? { detail } : {}) }];
     }
     case 'browser_set_storage': {
       // 只记键名：storage 的值常常就是 token。

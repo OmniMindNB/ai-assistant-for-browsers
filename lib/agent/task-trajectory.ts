@@ -19,8 +19,6 @@ export interface TrajectoryValue {
 
 export interface TrajectoryStep {
   tool: string;
-  /** 执行时目标页的 origin + pathname；query/hash 里常有订单号和 token，一律不留。 */
-  url: string;
   /**
    * 人读的操作对象：按标签定位时是「下一步」，只能退回选择器时是 `button.submit`。
    * fieldId 不进来——它按元素身份分配，跨页面加载必然失效（见 field-id-allocation.ts）。
@@ -34,6 +32,24 @@ export interface TrajectoryStep {
 }
 
 export const MAX_TRAJECTORY_STEPS = 50;
+
+/**
+ * 保存的指令不和具体页面绑定：录下的只是"在页面上做了什么"，不是"在哪个页面做的"。
+ * 所以换页面、开关/切换标签页这类只决定位置的步骤不录，每一步也不带网址——
+ * 否则在另一个视频上回放"给这个视频加速"，模型会先跳回录制时的那个视频。
+ */
+const PAGE_LOCATION_TOOLS: ReadonlySet<string> = new Set([
+  'browser_navigate',
+  'browser_go_back',
+  'browser_open_tab',
+  'browser_switch_tab',
+  'browser_close_tab',
+]);
+
+export function isPageLocationTool(toolName: string): boolean {
+  return PAGE_LOCATION_TOOLS.has(toolName);
+}
+
 export const MAX_TRAJECTORY_VALUE_CHARS = 500;
 export const MAX_TRAJECTORY_LABEL_CHARS = 120;
 
@@ -75,6 +91,8 @@ function parseValue(raw: unknown): TrajectoryValue | null {
 /**
  * 存储里读回来的轨迹一律当不可信数据：用户可能手改过 storage，也可能是别的版本写的。
  * 返回只含已知字段的干净副本；任何一处不合法就整体返回 null，由调用方决定怎么报错。
+ * 旧版本存下的 url 字段和位置类步骤在这里规范化掉（见 PAGE_LOCATION_TOOLS），
+ * 所以过滤后可能是空数组——那仍是合法的指令，只是没有参考步骤。
  */
 export function parseTrajectory(value: unknown): TrajectoryStep[] | null {
   if (!Array.isArray(value) || value.length === 0 || value.length > MAX_TRAJECTORY_STEPS) return null;
@@ -83,7 +101,7 @@ export function parseTrajectory(value: unknown): TrajectoryStep[] | null {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
     const item = raw as Record<string, unknown>;
     if (typeof item.tool !== 'string' || !item.tool) return null;
-    if (typeof item.url !== 'string') return null;
+    if (item.url !== undefined && typeof item.url !== 'string') return null;
     if (!isOptionalString(item.target) || !isOptionalString(item.detail)) return null;
     if (item.sensitive !== undefined && typeof item.sensitive !== 'boolean') return null;
     let values: TrajectoryValue[] | undefined;
@@ -98,9 +116,9 @@ export function parseTrajectory(value: unknown): TrajectoryStep[] | null {
     }
     const clippedTarget = clipString(item.target as string | undefined, MAX_TRAJECTORY_VALUE_CHARS);
     const clippedDetail = clipString(item.detail as string | undefined, MAX_TRAJECTORY_VALUE_CHARS);
+    if (isPageLocationTool(item.tool)) continue;
     steps.push({
       tool: item.tool,
-      url: clipString(item.url, MAX_TRAJECTORY_VALUE_CHARS) ?? item.url,
       ...(clippedTarget !== undefined ? { target: clippedTarget } : {}),
       ...(values ? { values } : {}),
       ...(clippedDetail !== undefined ? { detail: clippedDetail } : {}),
@@ -142,16 +160,6 @@ export function describeTrajectoryStep(step: TrajectoryStep, translate: Translat
       return translate('trajectory.pressKey', { detail });
     case 'browser_scroll':
       return step.target ? translate('trajectory.scrollTo', { target: step.target }) : translate('trajectory.scroll');
-    case 'browser_navigate':
-      return translate('trajectory.navigate', { detail });
-    case 'browser_open_tab':
-      return translate('trajectory.openTab', { detail });
-    case 'browser_switch_tab':
-      return translate('trajectory.switchTab', { detail });
-    case 'browser_close_tab':
-      return translate('trajectory.closeTab');
-    case 'browser_go_back':
-      return translate('trajectory.goBack');
     case 'browser_set_storage':
       return translate('trajectory.setStorage', { detail });
     case 'browser_modify_dom':
@@ -163,14 +171,8 @@ export function describeTrajectoryStep(step: TrajectoryStep, translate: Translat
   }
 }
 
-/** 回放 prompt 里的步骤清单：编号 + 所在页面；连续同页写成「同上」，省 token 也更好读。 */
+/** 回放 prompt 里的步骤清单：只有编号和做法，不带网址（见 PAGE_LOCATION_TOOLS）。 */
 export function renderTrajectoryForPrompt(steps: readonly TrajectoryStep[], translate: Translate): string {
-  let previousUrl: string | undefined;
-  return steps
-    .map((step, index) => {
-      const where = !step.url ? '' : step.url === previousUrl ? `[${translate('trajectory.sameUrl')}] ` : `[${step.url}] `;
-      if (step.url) previousUrl = step.url;
-      return `${index + 1}. ${where}${describeTrajectoryStep(step, translate)}`;
-    })
-    .join('\n');
+  if (steps.length === 0) return translate('trajectory.none');
+  return steps.map((step, index) => `${index + 1}. ${describeTrajectoryStep(step, translate)}`).join('\n');
 }

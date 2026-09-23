@@ -1237,7 +1237,7 @@ describe('run-registry trajectory recording', () => {
 
     await startRun(makeRequest({ tabId: 61 }));
     const expected = [
-      { tool: 'browser_fill_form', url: 'https://example.com/form', values: [{ target: '「邮箱」', value: 'hello' }] },
+      { tool: 'browser_fill_form', values: [{ target: '「邮箱」', value: 'hello' }] },
     ];
     expect((await settledReply(61)).trajectory).toEqual(expected);
     await vi.waitFor(() => expect(lastPersistedMessage()?.trajectory).toEqual(expected));
@@ -1339,26 +1339,21 @@ describe('run-registry trajectory recording', () => {
     }
   });
 
-  it('records the destination of a tab switch after it happened', async () => {
-    (globalThis as any).browser = {
-      ...(globalThis as any).browser,
-      tabs: { get: vi.fn(async (id: number) => ({ id, url: id === 99 ? 'https://other.test/p?x=1' : 'https://example.com/form' })) },
-    };
+  it('records the action taken on the page, not the tab switch that led there', async () => {
     const agent = makeFakeAgent([]);
     agent.prompt = vi.fn(async () => {
       const listener = agent.subscribe.mock.calls[0][0] as (event: unknown) => void;
       listener({ type: 'tool_execution_start', toolCallId: 'c1', toolName: 'browser_switch_tab', args: { tabId: 99 } });
       getRunState(64)!.session.currentTabId = 99;
       listener({ type: 'tool_execution_end', toolCallId: 'c1', toolName: 'browser_switch_tab', isError: false, result: {} });
+      listener({ type: 'tool_execution_start', toolCallId: 'c2', toolName: 'browser_press_key', args: { key: 'Enter' } });
+      listener({ type: 'tool_execution_end', toolCallId: 'c2', toolName: 'browser_press_key', isError: false, result: {} });
     });
     mocks.createBrowserAgent.mockReturnValue(agent);
 
     await startRun(makeRequest({ tabId: 64 }));
 
-    expect((await settledReply(64)).trajectory?.[0]).toEqual({
-      tool: 'browser_switch_tab',
-      url: 'https://example.com/form',
-      detail: 'https://other.test/p',
-    });
+    // 保存的指令不绑定具体页面：切换标签页不录，每步也不带网址。
+    expect((await settledReply(64)).trajectory).toEqual([{ tool: 'browser_press_key', detail: 'Enter' }]);
   });
 });

@@ -24,8 +24,8 @@ const URL_A = 'https://example.com/expense/new';
 
 describe('parseTrajectory', () => {
   const valid: TrajectoryStep[] = [
-    { tool: 'browser_fill_form', url: URL_A, values: [{ target: '「金额」', value: '280' }, { target: '「密码」', sensitive: true }], sensitive: true },
-    { tool: 'browser_click', url: URL_A, target: '「下一步」' },
+    { tool: 'browser_fill_form', values: [{ target: '「金额」', value: '280' }, { target: '「密码」', sensitive: true }], sensitive: true },
+    { tool: 'browser_click', target: '「下一步」' },
   ];
 
   it('accepts a well-formed trajectory and returns a clean copy', () => {
@@ -41,9 +41,9 @@ describe('parseTrajectory', () => {
     expect(parseTrajectory(Array.from({ length: MAX_TRAJECTORY_STEPS + 1 }, () => valid[1]))).toBeNull();
     expect(parseTrajectory([{ tool: '', url: URL_A }])).toBeNull();
     expect(parseTrajectory([{ tool: 'browser_click', url: 3 }])).toBeNull();
-    expect(parseTrajectory([{ tool: 'browser_click', url: URL_A, values: 'x' }])).toBeNull();
-    expect(parseTrajectory([{ tool: 'browser_click', url: URL_A, values: [{ target: '「a」', value: 'v'.repeat(MAX_TRAJECTORY_VALUE_CHARS + 1) }] }])).toBeNull();
-    expect(parseTrajectory([{ tool: 'browser_click', url: URL_A, values: [{ target: '「a」', checked: 'yes' }] }])).toBeNull();
+    expect(parseTrajectory([{ tool: 'browser_click', values: 'x' }])).toBeNull();
+    expect(parseTrajectory([{ tool: 'browser_click', values: [{ target: '「a」', value: 'v'.repeat(MAX_TRAJECTORY_VALUE_CHARS + 1) }] }])).toBeNull();
+    expect(parseTrajectory([{ tool: 'browser_click', values: [{ target: '「a」', checked: 'yes' }] }])).toBeNull();
   });
 
   it('normalizes sensitive values by dropping value and checked, regardless of what storage had', () => {
@@ -78,13 +78,17 @@ describe('parseTrajectory', () => {
     expect(parsed?.[0].detail?.endsWith('…')).toBe(true);
   });
 
-  it('clips a url that exceeds MAX_TRAJECTORY_VALUE_CHARS, like target and detail', () => {
-    const longUrl = `https://example.com/${'p'.repeat(MAX_TRAJECTORY_VALUE_CHARS * 2)}`;
-    const parsed = parseTrajectory([{ tool: 'browser_click', url: longUrl }]);
-    expect(parsed?.[0].url.length).toBe(MAX_TRAJECTORY_VALUE_CHARS);
-    expect(parsed?.[0].url.endsWith('…')).toBe(true);
-    // 空 url 仍是合法值（录制时拿不到地址就是空串），不能被裁剪逻辑弄丢。
-    expect(parseTrajectory([{ tool: 'browser_click', url: '' }])?.[0].url).toBe('');
+  it('drops legacy urls and page-location steps from stored trajectories', () => {
+    // 旧版本存下的指令带着每步网址和跳转步骤；读回来时规范化掉，回放就不会再跳回旧页面。
+    const parsed = parseTrajectory([
+      { tool: 'browser_navigate', detail: 'https://www.bilibili.com/video/BV1' },
+      { tool: 'browser_modify_dom', detail: 'setAttribute `video`' },
+      { tool: 'browser_switch_tab', url: URL_A },
+    ]);
+    expect(parsed).toEqual([{ tool: 'browser_modify_dom', detail: 'setAttribute `video`' }]);
+    // 全是位置步骤时是空数组而不是 null：指令本身仍然合法，只是没有参考步骤。
+    expect(parseTrajectory([{ tool: 'browser_navigate', url: URL_A }])).toEqual([]);
+    expect(parseTrajectory([{ tool: 'browser_click', url: 3 }])).toBeNull();
   });
 
   it('clips value target that exceeds MAX_TRAJECTORY_VALUE_CHARS', () => {
@@ -104,52 +108,47 @@ describe('parseTrajectory', () => {
 
 describe('describeTrajectoryStep', () => {
   it('describes a single-value fill without a list prefix', () => {
-    expect(describeTrajectoryStep({ tool: 'browser_fill_form', url: URL_A, values: [{ target: '「Amount」', value: '280' }] }, t))
+    expect(describeTrajectoryStep({ tool: 'browser_fill_form', values: [{ target: '「Amount」', value: '280' }] }, t))
       .toBe('Set 「Amount」 to "280"');
   });
 
   it('lists several values of one fill call', () => {
     const step: TrajectoryStep = {
       tool: 'browser_fill_form',
-      url: URL_A,
       values: [{ target: '「Amount」', value: '280' }, { target: '「Travel」', checked: true }, { target: '「Memo」', checked: false }],
     };
     expect(describeTrajectoryStep(step, t)).toBe('Fill in the form: Set 「Amount」 to "280"; Check 「Travel」; Uncheck 「Memo」');
   });
 
   it('tells the user to fill sensitive fields themselves instead of claiming they were filled', () => {
-    const step: TrajectoryStep = { tool: 'browser_fill_form', url: URL_A, values: [{ target: '「支付密码」', sensitive: true }], sensitive: true };
+    const step: TrajectoryStep = { tool: 'browser_fill_form', values: [{ target: '「支付密码」', sensitive: true }], sensitive: true };
     expect(describeTrajectoryStep(step, zhT)).toBe('🔒 敏感字段「支付密码」需由用户自己填写（未记录）');
   });
 
   it('describes clicks, with a fallback when the target is unknown', () => {
-    expect(describeTrajectoryStep({ tool: 'browser_click', url: URL_A, target: '「下一步」' }, zhT)).toBe('点击「下一步」');
-    expect(describeTrajectoryStep({ tool: 'browser_click', url: URL_A }, zhT)).toBe('点击页面上的一个元素');
+    expect(describeTrajectoryStep({ tool: 'browser_click', target: '「下一步」' }, zhT)).toBe('点击「下一步」');
+    expect(describeTrajectoryStep({ tool: 'browser_click' }, zhT)).toBe('点击页面上的一个元素');
   });
 
-  it('describes navigation and key presses from their detail', () => {
-    expect(describeTrajectoryStep({ tool: 'browser_navigate', url: URL_A, detail: 'https://a.test/x' }, t)).toBe('Go to https://a.test/x');
-    expect(describeTrajectoryStep({ tool: 'browser_press_key', url: URL_A, detail: 'Enter' }, t)).toBe('Press Enter');
+  it('describes key presses from their detail', () => {
+    expect(describeTrajectoryStep({ tool: 'browser_press_key', detail: 'Enter' }, t)).toBe('Press Enter');
   });
 
   it('falls back to the raw tool name for tools it has no wording for', () => {
-    expect(describeTrajectoryStep({ tool: 'browser_future_tool', url: URL_A, detail: 'x' }, t)).toBe('browser_future_tool: x');
+    expect(describeTrajectoryStep({ tool: 'browser_future_tool', detail: 'x' }, t)).toBe('browser_future_tool: x');
   });
 });
 
 describe('renderTrajectoryForPrompt', () => {
-  it('numbers steps and collapses repeated pages', () => {
+  it('numbers steps without any page address', () => {
     const steps: TrajectoryStep[] = [
-      { tool: 'browser_fill_form', url: URL_A, values: [{ target: '「报销金额」', value: '280' }] },
-      { tool: 'browser_click', url: URL_A, target: '「下一步」' },
-      { tool: 'browser_click', url: 'https://example.com/expense/confirm', target: '「确认」' },
-      { tool: 'browser_close_tab', url: '' },
+      { tool: 'browser_fill_form', values: [{ target: '「报销金额」', value: '280' }] },
+      { tool: 'browser_click', target: '「下一步」' },
     ];
-    expect(renderTrajectoryForPrompt(steps, zhT)).toBe([
-      `1. [${URL_A}] 「报销金额」填入 "280"`,
-      '2. [同上] 点击「下一步」',
-      '3. [https://example.com/expense/confirm] 点击「确认」',
-      '4. 关闭当前标签页',
-    ].join('\n'));
+    expect(renderTrajectoryForPrompt(steps, zhT)).toBe(['1. 「报销金额」填入 "280"', '2. 点击「下一步」'].join('\n'));
+  });
+
+  it('says so when no page action was recorded', () => {
+    expect(renderTrajectoryForPrompt([], zhT)).toBe(zh['trajectory.none']);
   });
 });

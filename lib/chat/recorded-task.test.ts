@@ -4,7 +4,7 @@ import { validateShortcutConfigs } from '@/lib/shortcuts';
 import type { ChatMessage } from './messages';
 import { buildRecordedTaskDraft, canSaveAsTask, toRecordedShortcut } from './recorded-task';
 
-const step = (n: number): TrajectoryStep => ({ tool: 'browser_click', url: 'https://example.com/a', target: `「按钮${n}」` });
+const step = (n: number): TrajectoryStep => ({ tool: 'browser_click', target: `「按钮${n}」` });
 
 const conversation: ChatMessage[] = [
   { id: 'u1', role: 'user', content: '帮我填一张差旅报销单', createdAt: 1 },
@@ -90,10 +90,30 @@ describe('buildRecordedTaskDraft', () => {
     expect(buildRecordedTaskDraft(partial, 'a2')!.incompleteOutcome).toBe(true);
   });
 
+  it('drops urls and page-location steps that older versions recorded in chat history', () => {
+    const legacy = [
+      { id: 'u1', role: 'user', content: 'go', createdAt: 1 },
+      {
+        id: 'a1', role: 'assistant', content: 'x', createdAt: 2,
+        trajectory: [
+          { tool: 'browser_navigate', url: 'https://a.test/v/1', detail: 'https://a.test/v/1' },
+          { tool: 'browser_click', url: 'https://a.test/v/1', target: '「倍速」' },
+        ],
+      },
+    ] as unknown as ChatMessage[];
+    expect(buildRecordedTaskDraft(legacy, 'a1')!.steps).toEqual([{ tool: 'browser_click', target: '「倍速」' }]);
+
+    const onlyNavigation = [
+      legacy[0],
+      { ...legacy[1], trajectory: [{ tool: 'browser_navigate', url: '', detail: 'https://a.test' }] },
+    ] as unknown as ChatMessage[];
+    expect(canSaveAsTask(onlyNavigation, 'a1')).toBe(false);
+  });
+
   it('returns copies, so editing the draft cannot mutate chat history', () => {
     const withValue: ChatMessage[] = [
       { id: 'u1', role: 'user', content: 'go', createdAt: 1 },
-      { id: 'a1', role: 'assistant', content: 'x', createdAt: 2, trajectory: [{ tool: 'browser_fill_form', url: '', values: [{ target: '「a」', value: '1' }] }] },
+      { id: 'a1', role: 'assistant', content: 'x', createdAt: 2, trajectory: [{ tool: 'browser_fill_form', values: [{ target: '「a」', value: '1' }] }] },
     ];
     const draft = buildRecordedTaskDraft(withValue, 'a1')!;
     draft.steps[0].values![0].value = '2';

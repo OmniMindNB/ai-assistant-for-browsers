@@ -7,7 +7,7 @@ import {
   MAX_TRAJECTORY_VALUE_CHARS,
   type TrajectoryStep,
 } from './task-trajectory';
-import { appendTrajectorySteps, buildTrajectorySteps, isRecordableTool, stripUrl } from './trajectory-recorder';
+import { appendTrajectorySteps, buildTrajectorySteps, isRecordableTool } from './trajectory-recorder';
 
 const redaction = defaultRedactionSettings();
 const PAGE = 'https://example.com/expense/new?order=123#top';
@@ -25,30 +25,25 @@ function table(fields: Record<string, { label?: string; text?: string; sensitive
 }
 
 function build(toolName: string, args: unknown, extra: Partial<Parameters<typeof buildTrajectorySteps>[0]> = {}) {
-  return buildTrajectorySteps({ toolName, args, url: PAGE, table: undefined, redaction, ...extra });
+  return buildTrajectorySteps({ toolName, args, table: undefined, redaction, ...extra });
 }
 
 describe('isRecordableTool', () => {
-  it('records writes and tab switches, never reads or the outcome report', () => {
+  it('records page writes, never reads, page-location changes, or the outcome report', () => {
     expect(isRecordableTool('browser_click')).toBe(true);
-    expect(isRecordableTool('browser_navigate')).toBe(true);
-    expect(isRecordableTool('browser_switch_tab')).toBe(true);
+    expect(isRecordableTool('browser_modify_dom')).toBe(true);
+    // 保存的指令不绑定具体页面：换页、开关/切换标签页都不录。
+    for (const tool of ['browser_navigate', 'browser_go_back', 'browser_open_tab', 'browser_switch_tab', 'browser_close_tab']) {
+      expect(isRecordableTool(tool)).toBe(false);
+    }
     expect(isRecordableTool('browser_read_page')).toBe(false);
     expect(isRecordableTool('browser_get_form')).toBe(false);
     expect(isRecordableTool('report_task_outcome')).toBe(false);
   });
 });
 
-describe('stripUrl', () => {
-  it('keeps only origin and pathname', () => {
-    expect(stripUrl(PAGE)).toBe('https://example.com/expense/new');
-    expect(stripUrl(undefined)).toBe('');
-    expect(stripUrl('not a url')).toBe('');
-  });
-});
-
 describe('buildTrajectorySteps', () => {
-  it('turns a fill_form call into labelled values on a stripped url', () => {
+  it('turns a fill_form call into labelled values', () => {
     const steps = build(
       'browser_fill_form',
       { fields: [{ fieldId: 'f1', value: '280' }, { fieldId: 'f2', checked: true }] },
@@ -57,7 +52,6 @@ describe('buildTrajectorySteps', () => {
     expect(steps).toEqual([
       {
         tool: 'browser_fill_form',
-        url: 'https://example.com/expense/new',
         values: [
           { target: '「报销金额」', value: '280' },
           { target: '「差旅」', checked: true },
@@ -73,7 +67,7 @@ describe('buildTrajectorySteps', () => {
       { table: table({ f1: { label: '支付密码', sensitive: true } }) },
     );
     expect(steps).toEqual([
-      { tool: 'browser_fill_form', url: 'https://example.com/expense/new', values: [{ target: '「支付密码」', sensitive: true }], sensitive: true },
+      { tool: 'browser_fill_form', values: [{ target: '「支付密码」', sensitive: true }], sensitive: true },
     ]);
     expect(JSON.stringify(steps)).not.toContain('hunter2');
   });
@@ -119,7 +113,7 @@ describe('buildTrajectorySteps', () => {
       },
     );
     expect(steps).toEqual([
-      { tool: 'browser_fill_form', url: 'https://example.com/expense/new', values: [{ target: '「报销金额」', value: '280' }] },
+      { tool: 'browser_fill_form', values: [{ target: '「报销金额」', value: '280' }] },
     ]);
   });
 
@@ -132,7 +126,7 @@ describe('buildTrajectorySteps', () => {
         details: { outcomes: [{ fieldId: 'f1', status: 'mismatch' }], submitted: { fieldId: 'f9', status: 'ok' } },
       },
     );
-    expect(steps).toEqual([{ tool: 'browser_click', url: 'https://example.com/expense/new', target: '「提交」' }]);
+    expect(steps).toEqual([{ tool: 'browser_click', target: '「提交」' }]);
   });
 
   it('still records the sensitive-field hint even though its outcome is blocked_sensitive', () => {
@@ -167,15 +161,16 @@ describe('buildTrajectorySteps', () => {
 
   it('records selector-based typing and selection as a single value', () => {
     expect(build('browser_type', { selector: '#q', text: 'runi' })[0]).toEqual({
-      tool: 'browser_type', url: 'https://example.com/expense/new', target: '`#q`', values: [{ target: '`#q`', value: 'runi' }],
+      tool: 'browser_type', target: '`#q`', values: [{ target: '`#q`', value: 'runi' }],
     });
     expect(build('browser_select', { selector: 'select.city', value: 'SH' })[0].values).toEqual([{ target: '`select.city`', value: 'SH' }]);
   });
 
-  it('keeps navigation targets without their query strings', () => {
-    expect(build('browser_navigate', { url: 'https://a.test/x?token=s3cret' })[0].detail).toBe('https://a.test/x');
-    expect(build('browser_open_tab', { url: 'https://b.test/y#frag' })[0].detail).toBe('https://b.test/y');
-    expect(build('browser_switch_tab', { tabId: 5 }, { afterUrl: 'https://c.test/z?q=1' })[0].detail).toBe('https://c.test/z');
+  it('records no page address at all: no navigation steps and no per-step url', () => {
+    expect(build('browser_navigate', { url: 'https://a.test/x' })).toEqual([]);
+    expect(build('browser_open_tab', { url: 'https://b.test/y' })).toEqual([]);
+    expect(build('browser_switch_tab', { tabId: 5 })).toEqual([]);
+    expect(JSON.stringify(build('browser_click', { selector: '#go' }))).not.toContain('example.com');
   });
 
   it('never records storage values or injected markup', () => {
@@ -237,13 +232,13 @@ describe('buildTrajectorySteps', () => {
   });
 
   it('ignores non-object args', () => {
-    expect(build('browser_click', undefined)).toEqual([{ tool: 'browser_click', url: 'https://example.com/expense/new' }]);
+    expect(build('browser_click', undefined)).toEqual([{ tool: 'browser_click' }]);
   });
 });
 
 describe('appendTrajectorySteps', () => {
   it('keeps only the most recent steps once the cap is exceeded', () => {
-    const make = (n: number): TrajectoryStep => ({ tool: 'browser_click', url: '', detail: String(n) });
+    const make = (n: number): TrajectoryStep => ({ tool: 'browser_click', detail: String(n) });
     const existing = Array.from({ length: MAX_TRAJECTORY_STEPS }, (_, i) => make(i));
     const next = appendTrajectorySteps(existing, [make(999)]);
     expect(next).toHaveLength(MAX_TRAJECTORY_STEPS);

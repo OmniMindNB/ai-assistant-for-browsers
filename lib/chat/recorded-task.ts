@@ -2,7 +2,7 @@
 // （ref: docs/superpowers/specs/2026-09-23-task-replay-design.md §4）。
 // 放在 lib/ 而不是组件里，理由同 messages.ts：面板的可测逻辑集中在这里。
 
-import { MAX_TRAJECTORY_STEPS, type TrajectoryStep } from '@/lib/agent/task-trajectory';
+import { isPageLocationTool, MAX_TRAJECTORY_STEPS, type TrajectoryStep } from '@/lib/agent/task-trajectory';
 import { newShortcutId, type ShortcutConfig } from '@/lib/shortcuts';
 import { conversationTitle, type ChatMessage } from './messages';
 
@@ -22,13 +22,23 @@ function rangeUpTo(messages: readonly ChatMessage[], messageId: string): ChatMes
   return messages.slice(0, index + 1);
 }
 
+/**
+ * 会话里某条回复录到的、可以存进指令的步骤。IndexedDB 里旧版本录下的消息还带着网址和
+ * 位置类步骤，这里一并去掉：保存的指令不绑定具体页面（见 task-trajectory.ts）。
+ */
+function savableSteps(message: ChatMessage): TrajectoryStep[] {
+  if (message.role !== 'assistant') return [];
+  return (message.trajectory ?? []).filter((step) => !isPageLocationTool(step.tool));
+}
+
 export function canSaveAsTask(messages: readonly ChatMessage[], messageId: string): boolean {
   const range = rangeUpTo(messages, messageId);
-  return Boolean(range?.some((message) => message.role === 'assistant' && (message.trajectory?.length ?? 0) > 0));
+  return Boolean(range?.some((message) => savableSteps(message).length > 0));
 }
 
 function cloneStep(step: TrajectoryStep): TrajectoryStep {
-  return { ...step, ...(step.values ? { values: step.values.map((value) => ({ ...value })) } : {}) };
+  const { url: _legacyUrl, ...rest } = step as TrajectoryStep & { url?: unknown };
+  return { ...rest, ...(rest.values ? { values: rest.values.map((value) => ({ ...value })) } : {}) };
 }
 
 /**
@@ -50,7 +60,7 @@ function userGoalText(message: ChatMessage): string {
 export function buildRecordedTaskDraft(messages: readonly ChatMessage[], messageId: string): RecordedTaskDraft | null {
   if (!canSaveAsTask(messages, messageId)) return null;
   const range = rangeUpTo(messages, messageId)!;
-  const all = range.flatMap((message) => (message.role === 'assistant' ? message.trajectory ?? [] : []));
+  const all = range.flatMap(savableSteps);
   return {
     name: conversationTitle(range),
     goal: range

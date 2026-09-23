@@ -32,7 +32,9 @@
 
 ### 3.1 录哪些调用
 
-只录**成功的**、改变页面或操作目标的调用：`WRITE_TOOL_NAMES`（`permissions.ts:62`）全部成员，外加 `browser_switch_tab`（它是只读工具，但改变了后续操作落在哪个页面，丢了它轨迹就断了）。
+只录**成功的**、在页面上生效的调用：`WRITE_TOOL_NAMES`（`permissions.ts:62`）里除位置类工具之外的成员。
+
+**保存的指令不绑定具体页面。** 位置类工具（`browser_navigate` / `browser_go_back` / `browser_open_tab` / `browser_switch_tab` / `browser_close_tab`，见 `task-trajectory.ts` 的 `PAGE_LOCATION_TOOLS`）不录，每一步也不带网址；回放总是在用户当前所在的页面上执行。最初的设计每步都带 origin + pathname，并规定"当前页不是第 1 步所在页面就先跳转"——结果在另一个视频上回放"给这个视频加速"时，模型先跳回了录制时的那个视频：录下来的网址是上次那一个具体实例，而保存的任务是"对当前页面做这件事"。旧版本存下的 `url` 字段与位置类步骤由 `parseTrajectory`（设置里的指令）和 `recorded-task.ts`（会话里还没保存的回复）在读取时规范化掉。
 
 - 读工具一律不录。回放时 agent 反正要重读；录进去它会照抄多余的读取轮次，和目标背道而驰。
 - `isError === true` 的不录。失败和重试不进轨迹，这正是"照着成功的那条路走"。
@@ -46,13 +48,11 @@
 // lib/agent/task-trajectory.ts
 export interface TrajectoryStep {
   tool: string;                 // 'browser_fill_form'
-  /** 执行时目标页的 origin + pathname；去掉 query/hash，订单号、token 常在那里。 */
-  url: string;
   /** 人类可读的目标：「报销金额」输入框 / 「下一步」按钮。 */
   target?: string;
   /** fill_form / type / select 的写入值，已过 redactText；sensitive 字段不出现在这里。 */
   values?: { target: string; value: string }[];
-  /** 其余关键参数的摘要：按键名、跳转地址、滚动方向、选择器等。 */
+  /** 其余关键参数的摘要：按键名、滚动方向、选择器、setAttribute 的属性名与值等。 */
   detail?: string;
   /** 这一步写过 sensitive 字段（密码/支付），值未记录。 */
   sensitive?: boolean;
@@ -148,27 +148,22 @@ assistant 消息操作行（`App.tsx:592` 附近，复制 / 重新生成旁边�
 
 ### 6.3 首轮 prompt
 
-`buildShortcutExecution` 新增 recorded 分支，**不做正文预取**——回放要的是表单和按钮，不是正文，而起始页也可能不是当前页。`browserTools: 'all'`。文案走 i18n（zh / en 两套），形如：
+`buildShortcutExecution` 新增 recorded 分支，**不做正文预取**——回放要的是表单和按钮，不是正文，`browserTools: 'all'`。文案走 i18n（zh / en 两套），形如：
 
 ```
 [已保存的任务]
 目标：<goal>
 上次成功完成时的参考步骤（按顺序；定位靠可见标签，旧的 fieldId 已失效，
 需要先 browser_get_form / browser_find_text 重新取句柄）：
-1. [example.com/expense/new] 在「报销金额」填入 280
-2. [同上] 点击「下一步」
-3. [同上] 🔒 敏感字段「支付密码」需由用户自己填写（未记录）
+1. 在「报销金额」填入 280
+2. 点击「下一步」
+3. 🔒 敏感字段「支付密码」需由用户自己填写（未记录）
 本次补充说明：金额改成 300
 执行规则：补充说明优先于参考值；页面与参考不一致时以页面实际为准自行调整；
-参考里的网址只说明上次在哪做的：当前页与第 1 步同一网站时就在当前页执行，
-只有当前页属于别的网站、明显做不了时才跳转到第 1 步所在页面。
+这个任务不绑定具体页面，就在用户当前所在的页面上执行，不要为了找回上次的页面而跳转。
 ```
 
-录下来的网址是上次那一个具体实例（某个视频、某张单据），而保存的任务通常是"对这类页面做这件事"。
-早先的规则写的是"当前页不是第 1 步所在页面就先跳转"，结果在另一个视频上回放"给这个视频加速"时，
-模型先跳回了录制时的那个视频。所以同站不跳转，只有跨站才跳转。
-
-没有补充说明时整行省略，而不是写"本次补充说明：（无）"。连续步骤 URL 相同时渲染成"[同上]"，省 token 也更好读。参考值里的脱敏占位符由 system prompt 现有第 9 条规则处理，不新增规则。`planFormFill` 在到达页面之前就丢掉了 sensitive 字段，Runi 从未替用户填过它们，所以不能写成"已填写"，也不该让模型去索取一个它无法写入的值。
+没有补充说明时整行省略，而不是写"本次补充说明：（无）"。参考值里的脱敏占位符由 system prompt 现有第 9 条规则处理，不新增规则。`planFormFill` 在到达页面之前就丢掉了 sensitive 字段，Runi 从未替用户填过它们，所以不能写成"已填写"，也不该让模型去索取一个它无法写入的值。
 
 用户消息气泡显示"▶ 差旅报销单 · 金额改成 300"（无补充说明时只显示名称）。
 
@@ -199,7 +194,7 @@ assistant 消息操作行（`App.tsx:592` 附近，复制 / 重新生成旁边�
 先写测试再实现，按现有三个 vitest project 分层：
 
 - `unit`
-  - `task-trajectory.test.ts`：各工具从参数 + 结果 + 句柄得到步骤；URL 去 query/hash；sensitive 不录值；`set_storage` 只记键；脱敏生效；值截断；`collectSessionTrajectory` 跨多条消息拼接与超上限保留最后 50 步；`describeTrajectoryStep` 中英文渲染与"[同上]"。
+  - `task-trajectory.test.ts`：各工具从参数 + 结果 + 句柄得到步骤；位置类工具不录、步骤不带网址；sensitive 不录值；`set_storage` 只记键；脱敏生效；值截断；`collectSessionTrajectory` 跨多条消息拼接与超上限保留最后 50 步；`describeTrajectoryStep` 中英文渲染。
   - `run-registry.test.ts` 补用例：只录成功调用；被停止掐断的不录；fieldId 标签在 start 时解析（模拟 end 前句柄表已被替换）；轨迹存档到最后一条 assistant 消息；无写操作时不加字段。
   - `shortcuts.test.ts`：recorded 的合法 / 非法数据；不受 `BUILTINS_REVISION` 影响。
   - `shortcut-prompts.test.ts`：recorded 分支在有 / 无补充说明、中 / 英文下的 prompt；不预取。

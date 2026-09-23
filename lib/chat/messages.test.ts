@@ -283,7 +283,7 @@ describe('conversationTitle', () => {
 
 describe('toMessageRecords trajectory', () => {
   it('persists the recorded trajectory of an assistant reply', () => {
-    const trajectory = [{ tool: 'browser_click', url: 'https://example.com/a', target: '「下一步」' }];
+    const trajectory = [{ tool: 'browser_click', target: '「下一步」' }];
     const records = toMessageRecords('conv-1', [
       { id: 'u1', role: 'user', content: 'go', createdAt: 1 },
       { id: 'a1', role: 'assistant', content: 'done', createdAt: 2, trajectory },

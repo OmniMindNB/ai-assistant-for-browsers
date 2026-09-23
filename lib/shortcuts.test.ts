@@ -449,7 +449,7 @@ describe('recorded shortcuts', () => {
     customized: true,
     name: '差旅报销单',
     prompt: '帮我填一张差旅报销单',
-    trajectory: [{ tool: 'browser_click', url: 'https://example.com/a', target: '「下一步」' }],
+    trajectory: [{ tool: 'browser_click', target: '「下一步」' }],
   };
 
   it('accepts a well-formed recorded shortcut and keeps its trajectory', () => {
@@ -480,7 +480,7 @@ describe('recorded shortcuts', () => {
   it('flags only the corrupted recorded entry and keeps the rest', () => {
     const result = validateShortcutConfigs([
       recorded,
-      { ...recorded, id: 'shortcut-rec-2', trajectory: [{ tool: 'browser_click' }] },
+      { ...recorded, id: 'shortcut-rec-2', trajectory: [{ tool: 'browser_click', target: 3 }] },
     ]);
     expect(result.shortcuts.map((item) => item.id)).toEqual(['shortcut-rec-1']);
     expect(result.errors).toEqual(['Shortcut at index 1 has an invalid trajectory.']);

@@ -680,7 +680,7 @@ describe('grouped options settings', () => {
     customized: true,
     name: 'Expense report',
     prompt: 'File an expense report',
-    trajectory: [{ tool: 'browser_click', url: 'https://example.com/x', target: '「Next」' }],
+    trajectory: [{ tool: 'browser_click', target: '「Next」' }],
   };
 
   it('labels recorded tasks and shows their steps read-only', async () => {

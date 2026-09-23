@@ -37,16 +37,11 @@ import { sendToContentScript } from './content-script-messaging';
 import { newMessageId, type SetAgentOverlayPayload } from '@/lib/messaging';
 
 interface RecordingContext {
-  url: string | undefined;
   table: FormFieldTable | undefined;
 }
 
 async function captureRecordingContext(tabId: number): Promise<RecordingContext> {
-  const [url, table] = await Promise.all([
-    fetchTargetUrl(tabId),
-    getFormFieldsForTab(tabId).catch(() => undefined),
-  ]);
-  return { url, table };
+  return { table: await getFormFieldsForTab(tabId).catch(() => undefined) };
 }
 
 interface RunState {
@@ -558,12 +553,9 @@ export async function startRun(request: StartRunRequest): Promise<void> {
         state.recordingChain = state.recordingChain
           .then(async () => {
             const [context, redaction] = await Promise.all([recordingStart, recordRedaction]);
-            const afterUrl = toolName === 'browser_switch_tab'
-              ? await fetchTargetUrl(state.session.currentTabId)
-              : undefined;
             state.trajectory = appendTrajectorySteps(
               state.trajectory,
-              buildTrajectorySteps({ toolName, args, url: context.url, table: context.table, afterUrl, details, redaction }),
+              buildTrajectorySteps({ toolName, args, table: context.table, details, redaction }),
             );
           })
           // 录制是锦上添花：任何失败都只是少录一步，绝不能让 run 的收尾卡住。
