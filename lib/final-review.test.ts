@@ -226,11 +226,12 @@ describe('side-panel custom shortcut wiring', () => {
   );
 
   it('uses one generic shortcut action instead of hard-coded actions', () => {
-    expect(storeSource).toContain('runShortcut: async (shortcut) =>');
+    expect(storeSource).toContain('runShortcut: async (shortcut, options) =>');
     // 首次执行与「重新生成」共用 runResolvedShortcut 拼 prompt：两条路各写一份迟早会分叉，
     // 选区因此可能来自当时存下的重放配方而不是页面现读，参数是 selectionText 而非 selection?.text。
+    // 第五个参数 options.supplement 是录制型指令的补充说明（见 shortcut-prompts.ts）。
     expect(storeSource).toContain(
-      'buildShortcutExecution(resolved, t, selectionText, pagePrefetch)',
+      'buildShortcutExecution(resolved, t, selectionText, pagePrefetch, options.supplement)',
     );
     expect(storeSource).not.toContain('summarizePage: async');
     expect(storeSource).not.toContain('explainSelection: async');

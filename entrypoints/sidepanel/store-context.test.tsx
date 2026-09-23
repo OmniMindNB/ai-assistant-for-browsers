@@ -1432,6 +1432,53 @@ describe('chat store page context', () => {
     expect(sent).not.toBe('📄 总结当前网页');
   });
 
+  const recordedShortcut = {
+    id: 'shortcut-rec-1',
+    origin: 'recorded' as const,
+    scope: 'page' as const,
+    customized: true,
+    name: '差旅报销单',
+    prompt: '帮我填一张差旅报销单',
+    trajectory: [{ tool: 'browser_click', url: 'https://example.com/expense/new', target: '「报销金额」' }],
+  };
+
+  it('runs a recorded shortcut without prefetching the page and forwards the supplement', async () => {
+    await connectPort();
+    mocks.sendMessage.mockImplementation(async (type: string) => {
+      if (type === 'GET_ACTIVE_TAB') return { ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } };
+      return { ok: true, data: {} };
+    });
+
+    await useChat.getState().runShortcut(recordedShortcut, { supplement: '金额改成 300' });
+
+    expect(mocks.sendMessage.mock.calls.some(([type]) => type === 'EXTRACT_PAGE')).toBe(false);
+    const sent = lastStartRunCall().agentUserContent;
+    expect(sent).toContain('金额改成 300');
+    expect(sent).toContain('「报销金额」');
+    const userMessage = useChat.getState().messages.find((message) => message.role === 'user');
+    expect(userMessage?.content).toBe('▶ 差旅报销单 · 金额改成 300');
+    expect(userMessage?.rerun?.supplement).toBe('金额改成 300');
+  });
+
+  it('regenerates a recorded reply with the same supplement and still without prefetching', async () => {
+    await connectPort();
+    mocks.sendMessage.mockImplementation(async (type: string) => {
+      if (type === 'GET_ACTIVE_TAB') return { ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } };
+      return { ok: true, data: {} };
+    });
+    useChat.setState({
+      messages: [
+        { id: 'u1', role: 'user', content: '▶ 差旅报销单 · 金额改成 300', createdAt: 1, kind: 'action', rerun: { shortcut: recordedShortcut, supplement: '金额改成 300' } },
+        { id: 'a1', role: 'assistant', content: 'done', createdAt: 2 },
+      ],
+    });
+
+    await expect(useChat.getState().regenerate('a1')).resolves.toBe(true);
+
+    expect(mocks.sendMessage.mock.calls.some(([type]) => type === 'EXTRACT_PAGE')).toBe(false);
+    expect(lastStartRunCall().agentUserContent).toContain('金额改成 300');
+  });
+
   // 划词类快捷方式重新生成时，页面上的选区多半已经没了——必须用当时存下来的那份。
   it('replays a selection shortcut with the stored selection instead of re-reading the page', async () => {
     await connectPort();

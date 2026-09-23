@@ -1,5 +1,6 @@
 import type { Translate } from '@/lib/i18n';
 import type { ResolvedShortcut } from '@/lib/shortcuts';
+import { renderTrajectoryForPrompt } from '@/lib/agent/task-trajectory';
 import { renderPageOutline, type PagePrefetchPlan } from './page-prefetch';
 
 export const MAX_SHORTCUT_SELECTION_CHARS = 4000;
@@ -16,7 +17,26 @@ export function buildShortcutExecution(
   translate: Translate,
   selection?: string,
   pagePrefetch?: PagePrefetchPlan,
+  supplement?: string,
 ): ShortcutExecution {
+  // 录制型指令：不做正文预取——回放要的是表单和按钮，不是正文，起始页也可能根本不是当前页
+  // （ref: docs/superpowers/specs/2026-09-23-task-replay-design.md §6.3）。
+  if (shortcut.origin === 'recorded') {
+    const note = supplement?.trim() ?? '';
+    const vars = {
+      name: shortcut.name,
+      goal: shortcut.prompt,
+      steps: renderTrajectoryForPrompt(shortcut.trajectory ?? [], translate),
+      note,
+    };
+    return {
+      display: translate(note ? 'store.recordedTaskDisplayWithNote' : 'store.recordedTaskDisplay', vars),
+      agentUserContent: translate(note ? 'store.recordedTaskPromptWithNote' : 'store.recordedTaskPrompt', vars),
+      browserTools: 'all',
+      systemPromptSuffix: '',
+    };
+  }
+
   if (shortcut.scope === 'page') {
     // 有预取内容时把正文直接塞进首轮 user turn，模型不必再发起 browser_read_page 就能回答，
     // 省掉「总结本页」这类最高频场景里结构性多出来的一整轮 LLM 往返

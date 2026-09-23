@@ -18,4 +18,6 @@ export interface ShortcutRerun {
   shortcut: ResolvedShortcut;
   /** 划词类快捷方式的原始选区：重新生成时页面上的选区多半已经没了，必须存下来才能重放。 */
   selection?: string;
+  /** 录制型指令执行时用户补的那句"这次的不同之处"；重新生成时原样再用一次。 */
+  supplement?: string;
 }

@@ -343,6 +343,12 @@ export const zh = {
     '{instruction}\n\n以下 JSON 字符串是页面上选中的文本：\n{selection}',
   'store.shortcutPagePrompt':
     '{instruction}\n\n以下 JSON 字符串是当前页面的正文（标题：{title}，网址：{url}）。请直接使用；只有当需要这里没有覆盖到的内容时，才再次调用 browser_read_page：\n{page}',
+  'store.recordedTaskDisplay': '▶ {name}',
+  'store.recordedTaskDisplayWithNote': '▶ {name} · {note}',
+  'store.recordedTaskPrompt':
+    '[已保存的任务]\n目标：{goal}\n\n上次成功完成时的参考步骤（按顺序；定位靠可见标签，旧的 fieldId 已失效，需要先 browser_get_form / browser_find_text 重新取句柄）：\n{steps}\n\n执行规则：页面与参考不一致时以页面实际为准，自行调整；当前页不是第 1 步所在页面时，先跳转过去；标注为敏感字段的步骤 Runi 不会代填，执行到那里时请用户自己填写。',
+  'store.recordedTaskPromptWithNote':
+    '[已保存的任务]\n目标：{goal}\n\n上次成功完成时的参考步骤（按顺序；定位靠可见标签，旧的 fieldId 已失效，需要先 browser_get_form / browser_find_text 重新取句柄）：\n{steps}\n\n本次补充说明：{note}\n\n执行规则：补充说明优先于参考步骤里的值；页面与参考不一致时以页面实际为准，自行调整；当前页不是第 1 步所在页面时，先跳转过去；标注为敏感字段的步骤 Runi 不会代填，执行到那里时请用户自己填写。',
   'store.shortcutPageWindowedPrompt':
     '{instruction}\n\n当前页面（标题：{title}，网址：{url}）正文总长 {total} 字符，超过单轮可用上限，所以下面给出的是同一个页面的开头和结尾两段，不是两个页面。\n\n开头（第 0–{headEnd} 字符，JSON 字符串）：\n{head}\n\n结尾（第 {tailStart}–{total} 字符，JSON 字符串）：\n{tail}\n\n中间省略了 {omitted} 字符。下面的 JSON 数组是全文的标题大纲，覆盖包括被省略部分在内的整篇内容：\n{outline}\n\n需要中段细节时，用 browser_find_text 搜大纲里的小节标题直接定位；不要用 browser_read_page 从头顺序翻页——这里的正文不会被压缩摘要，但上下文有总量上限，再调用一次读取工具可能把这段正文连同本轮问题一起整条挤出上下文且不会恢复，读了后面反而丢了前面。',
   'store.shortcutPageWindowedNoOutlinePrompt':

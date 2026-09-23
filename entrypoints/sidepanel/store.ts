@@ -146,7 +146,7 @@ interface ChatState {
   editMessage: (id: string, newContent: string) => Promise<boolean>;
   /** 重新生成某条 assistant 回复：找到它前面最近一条 user 消息，原样重发（等价于免打开编辑框的 editMessage）。 */
   regenerate: (assistantId: string) => Promise<boolean>;
-  runShortcut: (shortcut: ShortcutConfig) => Promise<void>;
+  runShortcut: (shortcut: ShortcutConfig, options?: { supplement?: string }) => Promise<void>;
   stop: () => void;
   clear: () => void;
   refreshConversations: () => Promise<void>;
@@ -853,6 +853,7 @@ export const useChat = create<ChatState>((set, get) => ({
     if (rerun) {
       return runResolvedShortcut(set, get, rerun.shortcut, {
         presetSelection: rerun.selection,
+        supplement: rerun.supplement,
         truncateToId: userMessage.id,
         retry: () => { void get().regenerate(assistantId); },
       });
@@ -860,9 +861,10 @@ export const useChat = create<ChatState>((set, get) => ({
     return get().editMessage(userMessage.id, userMessage.content);
   },
 
-  runShortcut: async (shortcut) => {
+  runShortcut: async (shortcut, options) => {
     await runResolvedShortcut(set, get, resolveShortcut({ ...shortcut }, t), {
-      retry: () => { void get().runShortcut(shortcut); },
+      supplement: options?.supplement,
+      retry: () => { void get().runShortcut(shortcut, options); },
     });
   },
 
@@ -1162,6 +1164,8 @@ interface RunShortcutOptions {
   presetSelection?: string;
   /** 重新生成时截断到这条消息之前，替换掉原来那一轮，而不是在末尾再追加一轮。 */
   truncateToId?: string;
+  /** 录制型指令的补充说明（见 shortcut-rerun.ts）。 */
+  supplement?: string;
   retry: () => void;
 }
 
@@ -1220,30 +1224,33 @@ async function runResolvedShortcut(
       return false;
     }
     if (!isCurrentOrigin(origin, get)) return false;
-    try {
-      const response = (await sendMessage(
-        'EXTRACT_PAGE',
-        undefined,
-        tab.id,
-      )) as MessageResponse<PageContent>;
-      if (!isCurrentOrigin(origin, get)) return false;
-      if (response.ok && response.data) {
-        // 预取跑在脱敏之后的正文上（background.ts 的 extractActivePage 已经过了 redactText），
-        // 所以长度判断和头尾切分用的就是模型最终会看到的那份文本。
-        // 正文太短时 planPagePrefetch 给出 skip：不设 pagePrefetch，退回工具路径，
-        // 模型自己调 browser_read_page，读不到就如实说读不到——比拿着空串断言「页面内容太少」诚实。
-        const plan = planPagePrefetch(response.data);
-        if (plan.kind !== 'skip') pagePrefetch = plan;
+    // 录制型指令不预取正文：回放要的是表单和按钮，起始页也可能不是当前页（见 shortcut-prompts.ts）。
+    if (resolved.origin !== 'recorded') {
+      try {
+        const response = (await sendMessage(
+          'EXTRACT_PAGE',
+          undefined,
+          tab.id,
+        )) as MessageResponse<PageContent>;
+        if (!isCurrentOrigin(origin, get)) return false;
+        if (response.ok && response.data) {
+          // 预取跑在脱敏之后的正文上（background.ts 的 extractActivePage 已经过了 redactText），
+          // 所以长度判断和头尾切分用的就是模型最终会看到的那份文本。
+          // 正文太短时 planPagePrefetch 给出 skip：不设 pagePrefetch，退回工具路径，
+          // 模型自己调 browser_read_page，读不到就如实说读不到——比拿着空串断言「页面内容太少」诚实。
+          const plan = planPagePrefetch(response.data);
+          if (plan.kind !== 'skip') pagePrefetch = plan;
+        }
+      } catch {
+        // 静默降级，见上方注释。
       }
-    } catch {
-      // 静默降级，见上方注释。
     }
     set({ busy: false });
   }
 
   let execution;
   try {
-    execution = buildShortcutExecution(resolved, t, selectionText, pagePrefetch);
+    execution = buildShortcutExecution(resolved, t, selectionText, pagePrefetch, options.supplement);
   } catch (error) {
     if (!isCurrentOrigin(origin, get)) return false;
     set({ busy: false, error: errMsg(error), retryAction: options.retry });
@@ -1258,6 +1265,7 @@ async function runResolvedShortcut(
     rerun: {
       shortcut: resolved,
       selection: selectionText?.slice(0, MAX_SHORTCUT_SELECTION_CHARS),
+      ...(options.supplement?.trim() ? { supplement: options.supplement.trim() } : {}),
     },
   };
 

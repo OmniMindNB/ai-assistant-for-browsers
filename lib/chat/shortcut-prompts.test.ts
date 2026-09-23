@@ -162,3 +162,41 @@ describe('buildShortcutExecution', () => {
     }
   });
 });
+
+describe('buildShortcutExecution for recorded shortcuts', () => {
+  const recorded: ResolvedShortcut = {
+    id: 'shortcut-rec-1',
+    origin: 'recorded',
+    scope: 'page',
+    customized: true,
+    name: '差旅报销单',
+    prompt: '帮我填一张差旅报销单',
+    trajectory: [
+      { tool: 'browser_fill_form', url: 'https://example.com/expense/new', values: [{ target: '「报销金额」', value: '280' }] },
+      { tool: 'browser_click', url: 'https://example.com/expense/new', target: '「下一步」' },
+    ],
+  };
+
+  it('sends the goal and the reference steps, keeps browser tools, and never prefetches', () => {
+    const execution = buildShortcutExecution(recorded, zhT);
+    expect(execution.browserTools).toBe('all');
+    expect(execution.systemPromptSuffix).toBe('');
+    expect(execution.display).toBe('▶ 差旅报销单');
+    expect(execution.agentUserContent).toContain('帮我填一张差旅报销单');
+    expect(execution.agentUserContent).toContain('1. [https://example.com/expense/new] 「报销金额」填入 "280"');
+    expect(execution.agentUserContent).toContain('2. [同上] 点击「下一步」');
+    expect(execution.agentUserContent).not.toContain('本次补充说明');
+  });
+
+  it('adds the supplement to both the prompt and the displayed label', () => {
+    const execution = buildShortcutExecution(recorded, zhT, undefined, undefined, '  金额改成 300 ');
+    expect(execution.display).toBe('▶ 差旅报销单 · 金额改成 300');
+    expect(execution.agentUserContent).toContain('本次补充说明：金额改成 300');
+  });
+
+  it('ignores a page prefetch plan even if one is passed', () => {
+    const plan = planPagePrefetch({ title: 'T', url: 'https://example.com/', text: 'x'.repeat(5000) });
+    const execution = buildShortcutExecution(recorded, t, undefined, plan);
+    expect(execution.agentUserContent).not.toContain('x'.repeat(100));
+  });
+});
