@@ -477,6 +477,22 @@ describe('recorded shortcuts', () => {
     expect(validateShortcutConfigs([custom]).errors).toHaveLength(1);
   });
 
+  it('keeps a valid playbook on a recorded shortcut and normalizes it', () => {
+    const result = validateShortcutConfigs([
+      { ...recorded, playbook: { applicability: ' 视频页 ', steps: ['找到播放器', ' '] } },
+    ]);
+    expect(result.errors).toEqual([]);
+    expect(result.shortcuts[0].playbook).toEqual({ applicability: '视频页', steps: ['找到播放器'] });
+  });
+
+  it('rejects a playbook on a non-recorded shortcut and flags a malformed one', () => {
+    const custom = { id: 'c1', origin: 'custom', scope: 'page', customized: true, name: 'n', prompt: 'p', playbook: { applicability: 'x', steps: ['a'] } };
+    expect(validateShortcutConfigs([custom]).errors).toEqual(['Shortcut at index 0 cannot carry a playbook.']);
+    const result = validateShortcutConfigs([recorded, { ...recorded, id: 'shortcut-rec-2', playbook: { applicability: 'x', steps: [] } }]);
+    expect(result.shortcuts.map((item) => item.id)).toEqual(['shortcut-rec-1']);
+    expect(result.errors).toEqual(['Shortcut at index 1 has an invalid playbook.']);
+  });
+
   it('flags only the corrupted recorded entry and keeps the rest', () => {
     const result = validateShortcutConfigs([
       recorded,

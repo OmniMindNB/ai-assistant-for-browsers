@@ -3,6 +3,7 @@ import { MAX_TRAJECTORY_STEPS, type TrajectoryStep } from '@/lib/agent/task-traj
 import { validateShortcutConfigs } from '@/lib/shortcuts';
 import type { ChatMessage } from './messages';
 import { buildRecordedTaskDraft, canSaveAsTask, toRecordedShortcut } from './recorded-task';
+import { MAX_PLAYBOOK_CONTEXT_CHARS } from './task-playbook';
 
 const step = (n: number): TrajectoryStep => ({ tool: 'browser_click', target: `「按钮${n}」` });
 
@@ -120,6 +121,21 @@ describe('buildRecordedTaskDraft', () => {
     expect(withValue[1].trajectory![0].values![0].value).toBe('1');
   });
 
+  it('collects the assistant replies, newest first within the budget, back in chronological order', () => {
+    const messages = [
+      { id: 'u1', role: 'user', content: 'go', createdAt: 1 },
+      { id: 'a1', role: 'assistant', content: 'first reply', createdAt: 2, trajectory: [step(1)] },
+      { id: 'u2', role: 'user', content: 'more', createdAt: 3 },
+      { id: 'a2', role: 'assistant', content: 'x'.repeat(MAX_PLAYBOOK_CONTEXT_CHARS), createdAt: 4 },
+    ] as ChatMessage[];
+    const draft = buildRecordedTaskDraft(messages, 'a2')!;
+    expect(draft.replyContext).toHaveLength(MAX_PLAYBOOK_CONTEXT_CHARS);
+    expect(draft.replyContext).not.toContain('first reply');
+
+    const short = buildRecordedTaskDraft(messages.slice(0, 2), 'a1')!;
+    expect(short.replyContext).toBe('first reply');
+  });
+
   it('returns null when nothing can be saved', () => {
     expect(buildRecordedTaskDraft(conversation, 'u1')).toBeNull();
   });
@@ -130,5 +146,18 @@ describe('toRecordedShortcut', () => {
     const config = toRecordedShortcut({ name: ' 报销单 ', goal: ' 填报销单 ', steps: [step(1)] });
     expect(config).toMatchObject({ origin: 'recorded', scope: 'page', customized: true, name: '报销单', prompt: '填报销单' });
     expect(validateShortcutConfigs([config]).errors).toEqual([]);
+  });
+});
+
+describe('toRecordedShortcut with a playbook', () => {
+  it('stores a cleaned playbook, and drops one left without steps', () => {
+    const base = { name: 'n', goal: 'g', steps: [step(1)] };
+    expect(toRecordedShortcut({ ...base, playbook: { applicability: ' 视频页 ', steps: ['a', ''] } }).playbook).toEqual({
+      applicability: '视频页',
+      steps: ['a'],
+    });
+    expect(toRecordedShortcut({ ...base, playbook: { applicability: '视频页', steps: [' '] } }).playbook).toBeUndefined();
+    expect(toRecordedShortcut(base).playbook).toBeUndefined();
+    expect(validateShortcutConfigs([toRecordedShortcut({ ...base, playbook: { applicability: 'x', steps: ['a'] } })]).errors).toEqual([]);
   });
 });

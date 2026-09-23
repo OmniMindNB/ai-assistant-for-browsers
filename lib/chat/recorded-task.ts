@@ -5,6 +5,7 @@
 import { isPageLocationTool, MAX_TRAJECTORY_STEPS, type TrajectoryStep } from '@/lib/agent/task-trajectory';
 import { newShortcutId, type ShortcutConfig } from '@/lib/shortcuts';
 import { conversationTitle, type ChatMessage } from './messages';
+import { MAX_PLAYBOOK_CONTEXT_CHARS, parsePlaybook, type TaskPlaybook } from './task-playbook';
 
 export interface RecordedTaskDraft {
   name: string;
@@ -14,6 +15,8 @@ export interface RecordedTaskDraft {
   truncated: boolean;
   /** 区间内有回复报告了 partial/failure——提示，不阻止保存。 */
   incompleteOutcome: boolean;
+  /** 区间内助手回复的摘录，供模型整理通用做法：从最近的往前取，合计不超过 MAX_PLAYBOOK_CONTEXT_CHARS。 */
+  replyContext: string;
 }
 
 function rangeUpTo(messages: readonly ChatMessage[], messageId: string): ChatMessage[] | null {
@@ -39,6 +42,25 @@ export function canSaveAsTask(messages: readonly ChatMessage[], messageId: strin
 function cloneStep(step: TrajectoryStep): TrajectoryStep {
   const { url: _legacyUrl, ...rest } = step as TrajectoryStep & { url?: unknown };
   return { ...rest, ...(rest.values ? { values: rest.values.map((value) => ({ ...value })) } : {}) };
+}
+
+/**
+ * 越靠后的回复越接近"最后是怎么做成的"，所以预算先给最近的；超出时截取那条回复的结尾。
+ * 拼回时恢复时间顺序，模型读起来才是一条连贯的经过。
+ */
+function collectReplyContext(range: readonly ChatMessage[]): string {
+  const picked: string[] = [];
+  let remaining = MAX_PLAYBOOK_CONTEXT_CHARS;
+  for (const message of [...range].reverse()) {
+    if (remaining <= 0) break;
+    if (message.role !== 'assistant') continue;
+    const text = message.content.trim();
+    if (!text) continue;
+    const piece = text.length > remaining ? text.slice(text.length - remaining) : text;
+    picked.unshift(piece);
+    remaining -= piece.length + 1;
+  }
+  return picked.join('\n');
 }
 
 /**
@@ -72,10 +94,18 @@ export function buildRecordedTaskDraft(messages: readonly ChatMessage[], message
     steps: all.slice(-MAX_TRAJECTORY_STEPS).map(cloneStep),
     truncated: all.length > MAX_TRAJECTORY_STEPS,
     incompleteOutcome: range.some((message) => message.taskOutcome !== undefined && message.taskOutcome.outcome !== 'success'),
+    replyContext: collectReplyContext(range),
   };
 }
 
-export function toRecordedShortcut(input: { name: string; goal: string; steps: TrajectoryStep[] }): ShortcutConfig {
+export function toRecordedShortcut(input: {
+  name: string;
+  goal: string;
+  steps: TrajectoryStep[];
+  playbook?: TaskPlaybook;
+}): ShortcutConfig {
+  // 用户在抽屉里可能把做法删空或改出空行：走同一个规范化，什么都不剩就按没有做法保存。
+  const playbook = input.playbook ? parsePlaybook(input.playbook) : null;
   return {
     id: newShortcutId(),
     origin: 'recorded',
@@ -84,5 +114,6 @@ export function toRecordedShortcut(input: { name: string; goal: string; steps: T
     name: input.name.trim(),
     prompt: input.goal.trim(),
     trajectory: input.steps.map(cloneStep),
+    ...(playbook ? { playbook } : {}),
   };
 }

@@ -1,5 +1,6 @@
 import type { Translate } from './i18n';
 import { parseTrajectory, type TrajectoryStep } from './agent/task-trajectory';
+import { parsePlaybook, type TaskPlaybook } from './chat/task-playbook';
 
 export type ShortcutScope = 'page' | 'selection' | 'none';
 /**
@@ -17,6 +18,8 @@ export interface ShortcutConfig {
   name?: string;
   prompt?: string;
   trajectory?: TrajectoryStep[];
+  /** 保存时由模型总结的通用做法；有它时回放不再发 trajectory（ref: 2026-09-23-generalized-task-playbook-design.md）。 */
+  playbook?: TaskPlaybook;
 }
 
 export interface ResolvedShortcut {
@@ -27,6 +30,8 @@ export interface ResolvedShortcut {
   name: string;
   prompt: string;
   trajectory?: TrajectoryStep[];
+  /** 保存时由模型总结的通用做法；有它时回放不再发 trajectory（ref: 2026-09-23-generalized-task-playbook-design.md）。 */
+  playbook?: TaskPlaybook;
 }
 
 export interface ShortcutLoadResult {
@@ -239,6 +244,15 @@ export function validateShortcutConfigs(value: unknown): ShortcutLoadResult {
       errors.push(`${label} cannot carry a trajectory.`);
       return;
     }
+    if (item.origin !== 'recorded' && item.playbook !== undefined) {
+      errors.push(`${label} cannot carry a playbook.`);
+      return;
+    }
+    const playbook = item.playbook === undefined ? undefined : parsePlaybook(item.playbook);
+    if (playbook === null) {
+      errors.push(`${label} has an invalid playbook.`);
+      return;
+    }
     if (item.origin === 'builtin' && !item.customized) {
       const builtin = BUILTINS.find((candidate) => candidate.id === id)!;
       if (item.scope !== builtin.scope) {
@@ -272,6 +286,7 @@ export function validateShortcutConfigs(value: unknown): ShortcutLoadResult {
       ...(name !== undefined ? { name } : {}),
       ...(prompt !== undefined ? { prompt } : {}),
       ...(trajectory ? { trajectory } : {}),
+      ...(playbook ? { playbook } : {}),
     });
   });
 
