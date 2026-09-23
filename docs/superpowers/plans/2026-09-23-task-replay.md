@@ -15,6 +15,39 @@
 1. 设计稿说"新模块 `lib/agent/task-trajectory.ts`"。本计划拆成两个：`task-trajectory.ts`（类型、校验、人读渲染——面板和设置页也要用）与 `trajectory-recorder.ts`（从工具调用构造步骤——只在 background 用，依赖 `permissions.ts` 和脱敏）。不拆的话，`lib/shortcuts.ts` 和设置页会为了一个类型把 `permissions.ts` 整个拖进 options 页的 bundle。
 2. 设计稿写"🔒 填写了一个敏感字段（未记录，需要时用 ask_user 向用户索取）"。这是错的：`fill-form-request.ts` 的 `planFormFill` 在到达页面之前就丢掉了 sensitive 字段——Runi 从来没替用户填过它们。轨迹里改为"🔒 敏感字段「X」需由用户自己填写（未记录）"，回放 prompt 也改为"执行到那里时请用户自己填写"，而不是让模型去索取一个它本来就不能写入的值。
 
+## 执行进度（2026-09-23 更新）
+
+按 superpowers:subagent-driven-development 逐任务执行：每个任务先由实现子代理完成，再经独立审查，必要时修一轮后复审。**Task 1–9 已完成并推送到 origin/main（`45d401e`）；换机器后从 Task 10 继续，不要重做前面的任务。**
+
+| 任务 | 状态 | 提交范围 | 审查 |
+|---|---|---|---|
+| Task 1 录制器 | ✅ 完成 | `8ac59cd..13fea21` | 修 1 轮后通过 |
+| Task 2 校验与渲染 | ✅ 完成 | `13fea21..36060a8` | 修 1 轮后通过 |
+| Task 3 字段落库 | ✅ 完成 | `36060a8..890d7e0` | 一次通过 |
+| Task 4 run-registry 录制 | ✅ 完成 | `890d7e0..4c7341d` | 一次通过 |
+| Task 5 recorded origin | ✅ 完成 | `4c7341d..70fa728` | 一次通过 |
+| Task 6 回放 prompt 与 store | ✅ 完成 | `70fa728..177b335` | 一次通过 |
+| Task 7 保存草稿 | ✅ 完成 | `177b335..19c9db6` | 一次通过 |
+| Task 8 保存抽屉与按钮 | ✅ 完成 | `19c9db6..1df6934` | 一次通过 |
+| Task 9 待执行胶囊 | ✅ 完成 | `1df6934..45d401e` | 修 1 轮后通过 |
+| Task 10 设置页 | ⏳ 待做 | — | — |
+| Task 11 文档与全量验证 | ⏳ 待做 | — | — |
+| 全分支最终审查 | ⏳ 待做 | — | — |
+
+**已完成任务与下文计划原文的偏差（代码以实际提交为准）：**
+
+- **Task 1**：`browser_fill_form` 里查不到句柄的字段不录值，只留 `{ target }`（原文会照录）——无法判断是否敏感时 fail-closed。
+- **Task 2**：`parseTrajectory` 对 `sensitive` 条目丢掉 `value`/`checked`；`target`/`detail` 超过 `MAX_TRAJECTORY_VALUE_CHARS` 时截断而不是整条拒绝（批量点击的 target 会拼接多个标签，合法地超过标签上限）。
+- **Task 4**：计划里"正常结束的 run 以 busy:false 留在 runs 里"的前提是错的——`finally` 末尾会 `runs.delete`。测试的 `settledReply` 改为等 `getRunState(tabId) === undefined` 后读落库记录；另加了 `recordingChainStarted` 标志，只在本轮真有可录调用时才 `await state.recordingChain`（无条件 await 会打乱 8 个旧测试依赖的微任务时序）。
+- **Task 6 / Task 9**：仓库级守卫测试 `lib/final-review.test.ts` 把 `runShortcut(...)` / `buildShortcutExecution(...)` 的签名写成了字面串，已随签名变化重新钉住，守卫意图不变。
+- **Task 8**：没有照抄 HistoryDrawer 的 Esc + Tab 焦点圈逻辑，而是抽成 `entrypoints/sidepanel/components/useModalKeyboard.ts`，SaveTaskDrawer 与 HistoryDrawer 共用。
+- **Task 9**：胶囊挂起时输入框只当纯文本——`/` 命令面板与 `@` 标签页选择器都不弹出，回车一定执行挂起的任务；点工具栏胶囊会先清掉挂起的任务。
+
+**留给最终审查分诊的遗留项：**
+
+- 暂缓（真实但超出本功能范围）：`browser_select` 按选择器寻址、拿不到句柄，底层 `selectOptionInPage` 也没有敏感字段拦截，选中值只经过通用脱敏就进入轨迹。
+- 次要：保存抽屉关闭后焦点没有回到书签按钮；`recordingChainStarted` 可改为修掉那几个旧测试后删除；缺"被停止的调用不录""录制失败 run 仍正常收尾"的测试；`validateShortcutConfigs` 里保留 id 检查重复一次；`parseTrajectory` 未限制 `url` 长度；补充说明在两处各自 `trim`；挂起任务时残留的 `mention` 状态未清理。
+
 ## Global Constraints
 
 - 直接在 `main` 上提交，不开分支（CLAUDE.md「Git」一节）。代码注释与提交信息用中文。每个提交信息以一行 `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` 结尾。
@@ -79,7 +112,7 @@
   export function stripUrl(raw: string | undefined): string;
   ```
 
-- [ ] **Step 1: 建类型文件**
+- [x] **Step 1: 建类型文件**
 
 `lib/agent/task-trajectory.ts`（本 Task 只放类型与常量，Task 2 再往里加函数）：
 
@@ -122,7 +155,7 @@ export const MAX_TRAJECTORY_VALUE_CHARS = 500;
 export const MAX_TRAJECTORY_LABEL_CHARS = 120;
 ```
 
-- [ ] **Step 2: 写失败的测试**
+- [x] **Step 2: 写失败的测试**
 
 `lib/agent/trajectory-recorder.test.ts`：
 
@@ -298,12 +331,12 @@ describe('appendTrajectorySteps', () => {
 });
 ```
 
-- [ ] **Step 3: 运行测试确认失败**
+- [x] **Step 3: 运行测试确认失败**
 
 Run: `pnpm vitest run lib/agent/trajectory-recorder.test.ts`
 Expected: FAIL，`Failed to resolve import "./trajectory-recorder"`。
 
-- [ ] **Step 4: 实现录制器**
+- [x] **Step 4: 实现录制器**
 
 `lib/agent/trajectory-recorder.ts`：
 
@@ -487,17 +520,17 @@ export function buildTrajectorySteps(input: RecordInput): TrajectoryStep[] {
 }
 ```
 
-- [ ] **Step 5: 运行测试确认通过**
+- [x] **Step 5: 运行测试确认通过**
 
 Run: `pnpm vitest run lib/agent/trajectory-recorder.test.ts`
 Expected: PASS（全部用例）。
 
-- [ ] **Step 6: 类型检查**
+- [x] **Step 6: 类型检查**
 
 Run: `pnpm compile`
 Expected: 无错误。
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git add lib/agent/task-trajectory.ts lib/agent/trajectory-recorder.ts lib/agent/trajectory-recorder.test.ts
@@ -523,7 +556,7 @@ git commit -m "feat(agent): 新增任务轨迹录制器——成功的写操作�
   ```
   以及 i18n 键 `trajectory.*`（见 Step 3）。
 
-- [ ] **Step 1: 写失败的测试**
+- [x] **Step 1: 写失败的测试**
 
 `lib/agent/task-trajectory.test.ts`：
 
@@ -630,12 +663,12 @@ describe('renderTrajectoryForPrompt', () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `pnpm vitest run lib/agent/task-trajectory.test.ts`
 Expected: FAIL，`parseTrajectory is not a function`（或导入报错）。
 
-- [ ] **Step 3: 加 i18n 键**
+- [x] **Step 3: 加 i18n 键**
 
 在 `lib/i18n/locales/zh.ts` 的对象里（放在 `store.*` 一组之后）追加：
 
@@ -695,7 +728,7 @@ Expected: FAIL，`parseTrajectory is not a function`（或导入报错）。
   'trajectory.sameUrl': 'same page',
 ```
 
-- [ ] **Step 4: 实现校验与渲染**
+- [x] **Step 4: 实现校验与渲染**
 
 在 `lib/agent/task-trajectory.ts` 顶部加 `import type { Translate } from '@/lib/i18n';`，文件末尾追加：
 
@@ -821,17 +854,17 @@ export function renderTrajectoryForPrompt(steps: readonly TrajectoryStep[], tran
 }
 ```
 
-- [ ] **Step 5: 运行测试确认通过**
+- [x] **Step 5: 运行测试确认通过**
 
 Run: `pnpm vitest run lib/agent/task-trajectory.test.ts lib/agent/trajectory-recorder.test.ts`
 Expected: PASS。
 
-- [ ] **Step 6: 类型检查**
+- [x] **Step 6: 类型检查**
 
 Run: `pnpm compile`
 Expected: 无错误（en 与 zh 键一致）。
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git add lib/agent/task-trajectory.ts lib/agent/task-trajectory.test.ts lib/i18n/locales/zh.ts lib/i18n/locales/en.ts
@@ -852,7 +885,7 @@ git commit -m "feat(agent): 轨迹校验与人读渲染——抽屉和回放 pro
 - Consumes: Task 1 的 `TrajectoryStep`。
 - Produces: `ChatMessage.trajectory?: TrajectoryStep[]`、`ChatMessageRecord.trajectory?: TrajectoryStep[]`。
 
-- [ ] **Step 1: 写失败的测试**
+- [x] **Step 1: 写失败的测试**
 
 在 `lib/chat/messages.test.ts` 末尾追加（若文件顶部还没有 `toMessageRecords` 的 import，把它加进现有的 `./messages` import 里）：
 
@@ -870,12 +903,12 @@ describe('toMessageRecords trajectory', () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `pnpm vitest run lib/chat/messages.test.ts`
 Expected: FAIL（类型检查不参与 vitest，因此表现为 `expected undefined to deeply equal [...]`）。
 
-- [ ] **Step 3: 加字段并接通映射**
+- [x] **Step 3: 加字段并接通映射**
 
 `lib/chat/messages.ts`：顶部加 `import type { TrajectoryStep } from '@/lib/agent/task-trajectory';`，在 `ChatMessage` 的 `rerun?` 之后加：
 
@@ -901,17 +934,17 @@ Expected: FAIL（类型检查不参与 vitest，因此表现为 `expected undefi
 
 `entrypoints/sidepanel/store.ts` 里 `openConversation` 把 records 映射成 messages 的对象（`rerun: r.rerun,` 那一行）之后加 `trajectory: r.trajectory,`。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `pnpm vitest run lib/chat/messages.test.ts`
 Expected: PASS。
 
-- [ ] **Step 5: 类型检查**
+- [x] **Step 5: 类型检查**
 
 Run: `pnpm compile`
 Expected: 无错误。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add lib/chat/messages.ts lib/chat/messages.test.ts lib/db.ts entrypoints/sidepanel/store.ts
@@ -930,7 +963,7 @@ git commit -m "feat(chat): assistant 消息带上参考轨迹并随历史落库"
 - Consumes: Task 1 的 `isRecordableTool` / `buildTrajectorySteps` / `appendTrajectorySteps` / `TrajectoryStep`；已有的 `getFormFieldsForTab`、`fetchTargetUrl`、`loadRedactionSettings`、`defaultRedactionSettings`。
 - Produces: 每轮结束时最后一条 assistant 消息上的 `trajectory`（Task 3 定义的字段）。
 
-- [ ] **Step 1: 写失败的测试**
+- [x] **Step 1: 写失败的测试**
 
 在 `lib/agent/run-registry.test.ts` 末尾追加一个 describe（复用文件里已有的 `mocks`、`makeFakeAgent`、`makeRequest`、`installTabsStub`、`installAlarmsStub`）：
 
@@ -1043,12 +1076,12 @@ describe('run-registry trajectory recording', () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `pnpm vitest run lib/agent/run-registry.test.ts -t "trajectory recording"`
 Expected: FAIL——第 1、3、4 个用例拿到的 `trajectory` 是 `undefined`。
 
-- [ ] **Step 3: 扩展 RunState 与初始化**
+- [x] **Step 3: 扩展 RunState 与初始化**
 
 `lib/agent/run-registry.ts` 顶部加：
 
@@ -1105,7 +1138,7 @@ async function captureRecordingContext(tabId: number): Promise<RecordingContext>
   const recordRedaction = loadRedactionSettings().catch(() => defaultRedactionSettings());
 ```
 
-- [ ] **Step 4: 在事件订阅里录制**
+- [x] **Step 4: 在事件订阅里录制**
 
 在 `tool_execution_start` 分支里（`state.pendingToolArgs.set(...)` 之后）加：
 
@@ -1142,7 +1175,7 @@ async function captureRecordingContext(tabId: number): Promise<RecordingContext>
 
 注意 `browser_switch_tab` 的 `afterUrl` 读的是 `end` 那一刻的 `state.session.currentTabId`——`tool_execution_end` 是同步事件，而 `then` 回调在它之后才执行，此时 session 已经切过去了；Step 1 的第 4 个用例覆盖这一点。
 
-- [ ] **Step 5: finally 里存档**
+- [x] **Step 5: finally 里存档**
 
 在 `finally` 块里，`if (runs.get(state.tabId) === state) {` 这一行**之前**加：
 
@@ -1157,12 +1190,12 @@ async function captureRecordingContext(tabId: number): Promise<RecordingContext>
               ...(state.trajectory.length > 0 ? { trajectory: state.trajectory } : {}),
 ```
 
-- [ ] **Step 6: 运行测试确认通过**
+- [x] **Step 6: 运行测试确认通过**
 
 Run: `pnpm vitest run lib/agent/run-registry.test.ts`
 Expected: PASS（新用例与全部既有用例）。
 
-- [ ] **Step 7: 类型检查并提交**
+- [x] **Step 7: 类型检查并提交**
 
 Run: `pnpm compile`
 Expected: 无错误。
@@ -1184,7 +1217,7 @@ git commit -m "feat(agent): run 期间录制成功的写操作，轮次结束时
 - Consumes: Task 2 的 `parseTrajectory`、`TrajectoryStep`。
 - Produces: `ShortcutOrigin = 'builtin' | 'custom' | 'recorded'`；`ShortcutConfig.trajectory?` / `ResolvedShortcut.trajectory?`；`resolveShortcut` 对 recorded 原样带出 `trajectory`。
 
-- [ ] **Step 1: 写失败的测试**
+- [x] **Step 1: 写失败的测试**
 
 在 `lib/shortcuts.test.ts` 末尾追加：
 
@@ -1238,12 +1271,12 @@ describe('recorded shortcuts', () => {
 
 （`translator` 与 `en` 已在文件顶部定义/导入。）
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `pnpm vitest run lib/shortcuts.test.ts -t "recorded shortcuts"`
 Expected: FAIL，`has an invalid origin.`。
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `lib/shortcuts.ts`：
 
@@ -1293,12 +1326,12 @@ Expected: FAIL，`has an invalid origin.`。
 
 `resolveShortcut` 不用改：recorded 的 `customized` 恒为 `true`，走 `config.customized || ...` 分支原样展开 `config`，`trajectory` 随之带出。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `pnpm vitest run lib/shortcuts.test.ts`
 Expected: PASS。
 
-- [ ] **Step 5: 类型检查并提交**
+- [x] **Step 5: 类型检查并提交**
 
 Run: `pnpm compile`
 Expected: 无错误。若 `components/ShortcutSettings.tsx` 等处对 `ShortcutOrigin` 做了穷举 switch 导致报错，在该处给 `'recorded'` 补与 `'custom'` 相同的分支（Task 10 会再细化）。
@@ -1328,7 +1361,7 @@ git commit -m "feat(shortcuts): 新增 recorded 类型的快捷指令，校验�
   ChatState.runShortcut: (shortcut: ShortcutConfig, options?: { supplement?: string }) => Promise<void>
   ```
 
-- [ ] **Step 1: 写失败的 prompt 测试**
+- [x] **Step 1: 写失败的 prompt 测试**
 
 在 `lib/chat/shortcut-prompts.test.ts` 末尾追加：
 
@@ -1372,12 +1405,12 @@ describe('buildShortcutExecution for recorded shortcuts', () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `pnpm vitest run lib/chat/shortcut-prompts.test.ts -t "recorded"`
 Expected: FAIL（走进了普通 page 分支，`display` 是 `'差旅报销单'`）。
 
-- [ ] **Step 3: 加 i18n 键**
+- [x] **Step 3: 加 i18n 键**
 
 `zh.ts`（放在 `store.shortcutPagePrompt` 附近）：
 
@@ -1401,7 +1434,7 @@ Expected: FAIL（走进了普通 page 分支，`display` 是 `'差旅报销单'`
     '[Saved task]\nGoal: {goal}\n\nReference steps from the last successful run (in order; elements are identified by their visible labels, the old fieldIds are no longer valid, so call browser_get_form / browser_find_text first to get fresh handles):\n{steps}\n\nNote for this run: {note}\n\nRules: the note for this run overrides values in the reference steps; where the page differs from the reference, follow the page and adapt; if the current page is not where step 1 happened, navigate there first; Runi never fills steps marked as sensitive fields, so ask the user to fill those in themselves when you reach them.',
 ```
 
-- [ ] **Step 4: 实现 prompt 分支与 rerun 字段**
+- [x] **Step 4: 实现 prompt 分支与 rerun 字段**
 
 `lib/chat/shortcut-prompts.ts`：顶部加 `import { renderTrajectoryForPrompt } from '@/lib/agent/task-trajectory';`，函数签名加第 5 个参数 `supplement?: string`，在函数体最开头（`if (shortcut.scope === 'page')` 之前）加：
 
@@ -1432,12 +1465,12 @@ Expected: FAIL（走进了普通 page 分支，`display` 是 `'差旅报销单'`
   supplement?: string;
 ```
 
-- [ ] **Step 5: 运行 prompt 测试确认通过**
+- [x] **Step 5: 运行 prompt 测试确认通过**
 
 Run: `pnpm vitest run lib/chat/shortcut-prompts.test.ts`
 Expected: PASS。
 
-- [ ] **Step 6: 写失败的 store 测试**
+- [x] **Step 6: 写失败的 store 测试**
 
 在 `entrypoints/sidepanel/store-context.test.tsx` 里，紧挨着 `'regenerates a shortcut reply by replaying its rerun recipe...'` 用例之后追加：
 
@@ -1490,12 +1523,12 @@ Expected: PASS。
   });
 ```
 
-- [ ] **Step 7: 运行 store 测试确认失败**
+- [x] **Step 7: 运行 store 测试确认失败**
 
 Run: `pnpm vitest run entrypoints/sidepanel/store-context.test.tsx -t "recorded"`
 Expected: FAIL（调用了 `EXTRACT_PAGE`，且 `rerun.supplement` 为 `undefined`）。
 
-- [ ] **Step 8: 接通 store**
+- [x] **Step 8: 接通 store**
 
 `entrypoints/sidepanel/store.ts`：
 
@@ -1528,12 +1561,12 @@ Expected: FAIL（调用了 `EXTRACT_PAGE`，且 `rerun.supplement` 为 `undefine
       ...(options.supplement?.trim() ? { supplement: options.supplement.trim() } : {}),
    ```
 
-- [ ] **Step 9: 运行测试确认通过**
+- [x] **Step 9: 运行测试确认通过**
 
 Run: `pnpm vitest run entrypoints/sidepanel/store-context.test.tsx lib/chat/shortcut-prompts.test.ts`
 Expected: PASS。
 
-- [ ] **Step 10: 类型检查并提交**
+- [x] **Step 10: 类型检查并提交**
 
 Run: `pnpm compile`
 Expected: 无错误。`App.tsx` 的 `executeShortcut` 此时仍只传一个参数，合法。
@@ -1561,7 +1594,7 @@ git commit -m "feat(chat): 录制型指令的回放 prompt——带参考轨迹�
   export function toRecordedShortcut(input: { name: string; goal: string; steps: TrajectoryStep[] }): ShortcutConfig;
   ```
 
-- [ ] **Step 1: 写失败的测试**
+- [x] **Step 1: 写失败的测试**
 
 `lib/chat/recorded-task.test.ts`：
 
@@ -1653,12 +1686,12 @@ describe('toRecordedShortcut', () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `pnpm vitest run lib/chat/recorded-task.test.ts`
 Expected: FAIL，`Failed to resolve import "./recorded-task"`。
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `lib/chat/recorded-task.ts`：
 
@@ -1730,12 +1763,12 @@ export function toRecordedShortcut(input: { name: string; goal: string; steps: T
 }
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `pnpm vitest run lib/chat/recorded-task.test.ts`
 Expected: PASS。
 
-- [ ] **Step 5: 类型检查并提交**
+- [x] **Step 5: 类型检查并提交**
 
 Run: `pnpm compile`
 Expected: 无错误。
@@ -1766,7 +1799,7 @@ git commit -m "feat(chat): 从会话生成录制指令的保存草稿" -m "Co-Au
   export function IconPlay(props: IconProps): JSX.Element;  // Task 9 使用
   ```
 
-- [ ] **Step 1: 加图标**
+- [x] **Step 1: 加图标**
 
 `entrypoints/sidepanel/icons.tsx` 末尾追加（与现有图标同一个 `Svg` 包装）：
 
@@ -1788,7 +1821,7 @@ export function IconPlay({ className }: IconProps) {
 }
 ```
 
-- [ ] **Step 2: 加 i18n 键**
+- [x] **Step 2: 加 i18n 键**
 
 `zh.ts`：
 
@@ -1824,7 +1857,7 @@ export function IconPlay({ className }: IconProps) {
   'recordedTask.savedNotice': 'Saved "{name}". Type / to run it.',
 ```
 
-- [ ] **Step 3: 写失败的 UI 测试**
+- [x] **Step 3: 写失败的 UI 测试**
 
 在 `workbench-components.test.tsx` 末尾追加（`chatStore`、`LocaleProvider`、`App`、`render`、`screen`、`userEvent`、`waitFor`、`within`、`vi` 均已在文件内可用；测试 locale 为 en）：
 
@@ -1937,12 +1970,12 @@ describe('save as task', () => {
 
 在文件顶部的 `@testing-library/react` import 里补上 `cleanup`。
 
-- [ ] **Step 4: 运行测试确认失败**
+- [x] **Step 4: 运行测试确认失败**
 
 Run: `pnpm vitest run entrypoints/sidepanel/components/workbench-components.test.tsx -t "save as task"`
 Expected: FAIL，找不到 `Save as task` 按钮。
 
-- [ ] **Step 5: 实现抽屉组件**
+- [x] **Step 5: 实现抽屉组件**
 
 `entrypoints/sidepanel/components/SaveTaskDrawer.tsx`：
 
@@ -2173,7 +2206,7 @@ export function SaveTaskDrawer({ open, messages, messageId, onClose, onSaved }: 
 }
 ```
 
-- [ ] **Step 6: 接进 App**
+- [x] **Step 6: 接进 App**
 
 `entrypoints/sidepanel/App.tsx`：
 
@@ -2246,12 +2279,12 @@ export function SaveTaskDrawer({ open, messages, messageId, onClose, onSaved }: 
             )}
    ```
 
-- [ ] **Step 7: 运行测试确认通过**
+- [x] **Step 7: 运行测试确认通过**
 
 Run: `pnpm vitest run entrypoints/sidepanel/components/workbench-components.test.tsx`
 Expected: PASS（新用例与全部既有用例）。既有用例里的 `getByRole('status')` 不会因新增的 notice 变得有歧义：notice 只在保存成功后出现。
 
-- [ ] **Step 8: 类型检查并提交**
+- [x] **Step 8: 类型检查并提交**
 
 Run: `pnpm compile`
 Expected: 无错误。
@@ -2275,7 +2308,7 @@ git commit -m "feat(sidepanel): 回复上新增「保存为指令」，抽屉里
 - Consumes: Task 8 的 `IconPlay`；Task 6 的 `runShortcut(shortcut, options?)`。
 - Produces: `WorkbenchComposerProps.onRunShortcut(shortcut: ShortcutConfig, options?: { supplement?: string }): void`。
 
-- [ ] **Step 1: 加 i18n 键**
+- [x] **Step 1: 加 i18n 键**
 
 `zh.ts`：
 
@@ -2291,7 +2324,7 @@ git commit -m "feat(sidepanel): 回复上新增「保存为指令」，抽屉里
   'workbench.cancelPendingTask': 'Cancel running "{name}"',
 ```
 
-- [ ] **Step 2: 写失败的测试**
+- [x] **Step 2: 写失败的测试**
 
 在 `workbench-components.test.tsx` 的 `describe('workbench composer', ...)` 块内末尾追加：
 
@@ -2373,12 +2406,12 @@ git commit -m "feat(sidepanel): 回复上新增「保存为指令」，抽屉里
   });
 ```
 
-- [ ] **Step 3: 运行测试确认失败**
+- [x] **Step 3: 运行测试确认失败**
 
 Run: `pnpm vitest run entrypoints/sidepanel/components/workbench-components.test.tsx -t "recorded task"`
 Expected: FAIL（选中即执行，`onRunShortcut` 被立刻调用）。
 
-- [ ] **Step 4: 实现**
+- [x] **Step 4: 实现**
 
 `WorkbenchComposer.tsx`：
 
@@ -2476,12 +2509,12 @@ Expected: FAIL（选中即执行，`onRunShortcut` 被立刻调用）。
   }
 ```
 
-- [ ] **Step 5: 运行测试确认通过**
+- [x] **Step 5: 运行测试确认通过**
 
 Run: `pnpm vitest run entrypoints/sidepanel/components/workbench-components.test.tsx`
 Expected: PASS（新用例与既有的 slash 命令用例：`'opens slash commands, filters, and runs the selected command'` 断言 `onRunShortcut` 以单参数被调用——`toHaveBeenCalledWith(readingShortcut.config)` 与现实现一致，因为普通指令仍走 `onRunShortcut(command.config)`）。
 
-- [ ] **Step 6: 类型检查并提交**
+- [x] **Step 6: 类型检查并提交**
 
 Run: `pnpm compile`
 Expected: 无错误。
