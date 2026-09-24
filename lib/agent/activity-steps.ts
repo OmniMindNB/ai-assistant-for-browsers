@@ -15,6 +15,12 @@ export interface ActivityStep {
   signature?: string;
   /** 第几次尝试；只有合并过重试的行才有值（>= 2）。 */
   attempt?: number;
+  /**
+   * 失败时工具返回的报错原文（已 redactText、已截断，见 run-diagnostics.ts 的 extractToolErrorText）。
+   * 只在 tool_execution_end 且 isError 时写入；面板暂不渲染，供会话导出排查问题
+   * （ref: 2026-09-24-conversation-export-design.md §3.1）。
+   */
+  errorText?: string;
 }
 
 export function upsertActivityStep(steps: ActivityStep[], step: ActivityStep): ActivityStep[] {
@@ -43,10 +49,11 @@ export function finishActivityStep(
   id: string,
   status: 'done' | 'failed',
   description: string,
+  errorText?: string,
 ): ActivityStep[] {
   const index = steps.findIndex((s) => s.id === id);
   if (index === -1) return steps;
   const next = steps.slice();
-  next[index] = { ...next[index], status, description };
+  next[index] = { ...next[index], status, description, ...(errorText !== undefined ? { errorText } : {}) };
   return next;
 }

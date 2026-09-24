@@ -117,3 +117,27 @@ describe('finishActivityStep', () => {
     expect(next[1]).toEqual({ id: 'b', description: 'B done', status: 'done' });
   });
 });
+
+// 会话导出靠 errorText 回答"它为什么失败"（ref: 2026-09-24-conversation-export-design.md §3.1）。
+describe('finishActivityStep errorText', () => {
+  it('records the error text on a failed step', () => {
+    const steps: ActivityStep[] = [{ id: 'a', description: 'A', status: 'running', signature: 's' }];
+    const next = finishActivityStep(steps, 'a', 'failed', 'A failed', '字段 f3 写入后读回不一致');
+    expect(next[0]).toEqual({ id: 'a', description: 'A failed', status: 'failed', signature: 's', errorText: '字段 f3 写入后读回不一致' });
+  });
+
+  it('does not add an errorText key when none is given', () => {
+    const next = finishActivityStep([{ id: 'a', description: 'A', status: 'running' }], 'a', 'done', 'A done');
+    expect(next[0]).not.toHaveProperty('errorText');
+  });
+
+  it('keeps only the last attempt\'s error text across a merged retry', () => {
+    let steps: ActivityStep[] = [{ id: 'c1', description: 'x', status: 'running', signature: 'sig' }];
+    steps = finishActivityStep(steps, 'c1', 'failed', 'x', '第一次失败');
+    steps = upsertActivityStep(steps, { id: 'c2', description: 'x', status: 'running', signature: 'sig' });
+    expect(steps).toHaveLength(1);
+    expect(steps[0]).not.toHaveProperty('errorText');
+    steps = finishActivityStep(steps, 'c2', 'failed', 'x', '第二次失败');
+    expect(steps[0]).toMatchObject({ attempt: 2, errorText: '第二次失败' });
+  });
+});
