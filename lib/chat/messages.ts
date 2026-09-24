@@ -5,6 +5,7 @@ import type { ActivityStep } from '@/lib/agent/activity-steps';
 import type { ShortcutRerun } from './shortcut-rerun';
 import type { TabReferenceMeta } from './tab-reference';
 import type { TrajectoryStep } from '@/lib/agent/task-trajectory';
+import type { RunDiagnostics } from '@/lib/agent/run-diagnostics';
 
 // 侧边栏消息的形状与派生规则（ref: docs/superpowers/specs/2026-07-26-edit-history-message-design.md §3）。
 // 本功能的全部可测逻辑集中在这里：vitest 只覆盖 lib/**，entrypoints/ 没有测试基建。
@@ -45,6 +46,11 @@ export interface ChatMessage {
    * 供「保存为指令」取用（ref: docs/superpowers/specs/2026-09-23-task-replay-design.md §3.5）。
    */
   trajectory?: TrajectoryStep[];
+  /**
+   * 这一轮的运行诊断（模型、协议、耗时、调用次数）；仅 assistant 消息、且由 run-registry 正常收尾时才有值。
+   * 供会话导出排查问题（ref: docs/superpowers/specs/2026-09-24-conversation-export-design.md §3.2）。
+   */
+  runDiagnostics?: RunDiagnostics;
 }
 
 const TITLE_MAX_CHARS = 40;
@@ -122,6 +128,7 @@ export function toMessageRecords(
     contextTruncated: message.contextTruncated,
     rerun: message.rerun,
     trajectory: message.trajectory,
+    runDiagnostics: message.runDiagnostics,
   }));
 }
 

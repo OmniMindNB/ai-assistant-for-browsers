@@ -402,6 +402,75 @@ describe('run-registry confirm/question/stop/port', () => {
     expect(finished?.description).toContain('https://example.com/login?next=/order');
   });
 
+  it('stores a redacted errorText on a failed step, and none on a successful one', async () => {
+    mocks.createBrowserAgent.mockReturnValue(
+      makeFakeAgent([
+        { type: 'turn_start' },
+        { type: 'tool_execution_start', toolCallId: 'ok-1', toolName: 'browser_get_form', args: {} },
+        { type: 'tool_execution_end', toolCallId: 'ok-1', toolName: 'browser_get_form', isError: false, result: { content: [{ type: 'text', text: '表单' }], details: {} } },
+        { type: 'tool_execution_start', toolCallId: 'bad-1', toolName: 'browser_click', args: { selector: '#go' } },
+        { type: 'tool_execution_end', toolCallId: 'bad-1', toolName: 'browser_click', isError: true, result: { content: [{ type: 'text', text: '联系 13812345678 失败' }], details: {} } },
+      ]),
+    );
+
+    await startRun(makeRequest({ tabId: 90 }));
+    await vi.waitFor(() => expect(getRunState(90)).toBeUndefined());
+
+    const lastRecord = mocks.replaceConversationMessages.mock.calls.at(-1)?.[1].at(-1);
+    const ok = lastRecord?.activitySteps?.find((step) => step.id === 'ok-1');
+    const bad = lastRecord?.activitySteps?.find((step) => step.id === 'bad-1');
+    expect(ok).not.toHaveProperty('errorText');
+    expect(bad?.errorText).toBeDefined();
+    expect(bad?.errorText).not.toContain('13812345678');
+  });
+
+  it('attaches runDiagnostics to the final assistant message without the api key', async () => {
+    mocks.createBrowserAgent.mockReturnValue(
+      makeFakeAgent([
+        { type: 'turn_start' },
+        { type: 'tool_execution_start', toolCallId: 'c-1', toolName: 'browser_get_form', args: {} },
+        { type: 'tool_execution_end', toolCallId: 'c-1', toolName: 'browser_get_form', isError: false, result: { content: [], details: {} } },
+        { type: 'turn_start' },
+      ]),
+    );
+
+    await startRun(makeRequest({
+      tabId: 91,
+      provider: { id: 'p1', name: 'Local', baseURL: 'http://localhost:11434/v1', apiKey: 'sk-secret', model: 'qwen' } as never,
+    }));
+    await vi.waitFor(() => expect(getRunState(91)).toBeUndefined());
+
+    const lastRecord = mocks.replaceConversationMessages.mock.calls.at(-1)?.[1].at(-1);
+    expect(lastRecord?.role).toBe('assistant');
+    expect(lastRecord?.runDiagnostics).toMatchObject({
+      providerName: 'Local',
+      baseUrlHost: 'localhost:11434',
+      modelId: 'qwen',
+      llmTurns: 2,
+      toolCalls: 1,
+      readToolCallBudget: 12,
+      writeToolCallBudget: 24,
+      withoutBrowserTools: false,
+    });
+    expect(JSON.stringify(lastRecord?.runDiagnostics)).not.toContain('sk-secret');
+  });
+
+  it('attaches runDiagnostics even when the user stopped the run', async () => {
+    const agent = makeFakeAgent([]);
+    let rejectPrompt!: (e: unknown) => void;
+    agent.prompt = vi.fn(() => new Promise<void>((_resolve, reject) => { rejectPrompt = reject; }));
+    mocks.createBrowserAgent.mockReturnValue(agent);
+
+    await startRun(makeRequest({ tabId: 92 }));
+    stopRun(92);
+    rejectPrompt(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+    await vi.waitFor(() => expect(getRunState(92)).toBeUndefined());
+
+    const lastRecord = mocks.replaceConversationMessages.mock.calls.at(-1)?.[1].at(-1);
+    expect(lastRecord?.stopped).toBe(true);
+    expect(lastRecord?.runDiagnostics?.providerName).toBe('p1');
+  });
+
   it('stop aborts the agent and clears pending confirmation/question', async () => {
     const agent = makeFakeAgent([]);
     mocks.createBrowserAgent.mockReturnValue(agent);

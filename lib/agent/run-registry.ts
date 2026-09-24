@@ -15,6 +15,7 @@ import { summarizeToolCallForConfirmation } from './confirm-summary';
 import { describeToolActivity } from './activity-description';
 import { upsertActivityStep, finishActivityStep, type ActivityStep } from './activity-steps';
 import { toolSignature } from './tool-policy';
+import { buildRunDiagnostics, extractToolErrorText } from './run-diagnostics';
 import { replaceConversationMessages } from '@/lib/db';
 import { conversationTitle, toMessageRecords, type ChatMessage } from '@/lib/chat/messages';
 import { t } from '@/lib/i18n';
@@ -495,6 +496,13 @@ export async function startRun(request: StartRunRequest): Promise<void> {
 
   // 录制用的脱敏配置一轮只读一次；读不到就用内置规则，绝不因此让录制（更不能让 run）失败。
   const recordRedaction = loadRedactionSettings().catch(() => defaultRedactionSettings());
+  // 失败步骤的 errorText 要在同步的 tool_execution_end 回调里当场脱敏，所以这里先把配置取出来；
+  // 上面那个 promise 仍留给录制链使用（ref: 2026-09-24-conversation-export-design.md §3.1）。
+  const errorRedaction = await recordRedaction;
+  // 会话导出的运行诊断（§3.2）：只数事件，不依赖默认关闭的 perf-trace.ts。
+  const runStartedAt = Date.now();
+  let llmTurns = 0;
+  let toolCallCount = 0;
 
   let acc = '';
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -505,12 +513,14 @@ export async function startRun(request: StartRunRequest): Promise<void> {
   };
 
   const unsubscribe = agent.subscribe((event: AgentEvent) => {
+    if (event.type === 'turn_start') llmTurns += 1;
     if (event.type === 'message_update' && event.assistantMessageEvent.type === 'text_delta') {
       acc += event.assistantMessageEvent.delta;
       if (flushTimer === null) flushTimer = setTimeout(flush, STREAM_FLUSH_INTERVAL_MS);
     }
 
     if (event.type === 'tool_execution_start' && !state.terminatedToolCallIds.has(event.toolCallId)) {
+      toolCallCount += 1;
       state.pendingToolArgs.set(event.toolCallId, { toolName: event.toolName, args: event.args });
       if (isRecordableTool(event.toolName) && !state.recordingStarts.has(event.toolCallId)) {
         state.recordingStarts.set(event.toolCallId, captureRecordingContext(state.session.currentTabId));
@@ -570,6 +580,7 @@ export async function startRun(request: StartRunRequest): Promise<void> {
           // 结果一并交给文案：调用参数只说"打算做什么"，重定向后的落地地址、
           // 部分失败的实际落地字段数只有结果里有（见 activity-description.ts）。
           describeToolActivity(event.toolName, info?.args, finalStatus, event.result),
+          event.isError ? extractToolErrorText(event.result, errorRedaction) : undefined,
         );
         pushAndPersist(state);
       }
@@ -642,6 +653,20 @@ export async function startRun(request: StartRunRequest): Promise<void> {
               ...(finishedSteps.length > 0 ? { activitySteps: finishedSteps } : {}),
               ...(state.contextTruncated ? { contextTruncated: true } : {}),
               ...(state.trajectory.length > 0 ? { trajectory: state.trajectory } : {}),
+              ...(last.role === 'assistant'
+                ? {
+                    runDiagnostics: buildRunDiagnostics({
+                      provider: request.provider,
+                      withoutBrowserTools: request.withoutBrowserTools === true,
+                      readToolCallBudget: request.readToolCallBudget,
+                      writeToolCallBudget: request.writeToolCallBudget,
+                      startedAt: runStartedAt,
+                      endedAt: Date.now(),
+                      llmTurns,
+                      toolCalls: toolCallCount,
+                    }),
+                  }
+                : {}),
             },
           ];
         }

@@ -149,6 +149,16 @@ describe('toMessageRecords', () => {
     expect(records[0].rerun).toEqual(shortcutRerun('selection', '选中的文字'));
   });
 
+  it('保留 assistant 消息的运行诊断', () => {
+    const runDiagnostics = {
+      providerName: 'DeepSeek', api: 'openai-completions', baseUrlHost: 'api.deepseek.com', modelId: 'm',
+      vision: false, withoutBrowserTools: false, readToolCallBudget: 20, writeToolCallBudget: 40,
+      startedAt: 1, durationMs: 2, llmTurns: 1, toolCalls: 0,
+    };
+    const records = toMessageRecords('c-1', [msg('a', 'user', '问'), { ...msg('b', 'assistant', '答'), runDiagnostics }]);
+    expect(records[1].runDiagnostics).toEqual(runDiagnostics);
+  });
+
   it('不丢弃有内容的末尾 assistant 消息', () => {
     const records = toMessageRecords('c-1', [msg('a', 'user', '问'), msg('b', 'assistant', '答')]);
     expect(records).toHaveLength(2);

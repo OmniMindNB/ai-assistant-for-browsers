@@ -5,6 +5,7 @@ import type { ActivityStep } from './agent/activity-steps';
 import type { ShortcutRerun } from './chat/shortcut-rerun';
 import type { TabReferenceMeta } from './chat/tab-reference';
 import type { TrajectoryStep } from './agent/task-trajectory';
+import type { RunDiagnostics } from './agent/run-diagnostics';
 
 // 本地持久化（ref: technical-plan.md §2.4）
 // 对话历史 / Skill 定义存 IndexedDB；API Key 等配置走 chrome.storage（见 settings.ts）。
@@ -68,6 +69,11 @@ export interface ChatMessageRecord {
    * 不建索引，同上无需 Dexie 版本迁移；存量记录无此字段即视为这一轮没有可保存的轨迹。
    */
   trajectory?: TrajectoryStep[];
+  /**
+   * 这一轮的运行诊断，供会话导出排查问题。
+   * 不建索引，同上无需 Dexie 版本迁移；存量记录无此字段即视为没有诊断信息。
+   */
+  runDiagnostics?: RunDiagnostics;
 }
 
 export interface ConversationRecord {
