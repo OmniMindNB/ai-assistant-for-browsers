@@ -36,8 +36,19 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # vitest 不做类型检查，类型错误只有 tsc 抓得到。
+      - name: Type check
+        run: pnpm compile
+
       - name: Test
         run: pnpm test
+
+      # 构建失败（打包、PDF.js 资源拷贝）同样要挡在 main 之外。
+      - name: Build extension
+        run: pnpm build
+
+      - name: Verify PDF.js assets
+        run: pnpm verify:pdfjs-assets
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
