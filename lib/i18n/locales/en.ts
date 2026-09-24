@@ -417,6 +417,8 @@ export const en: Record<keyof typeof zh, string> = {
   'recordedTask.valueAria': 'Value for {target}',
   'recordedTask.deleteStepAria': 'Delete step {index}',
   'recordedTask.save': 'Save',
+  'recordedTask.skipSummarySave': 'Skip and save now',
+  'recordedTask.skipSummaryNote': 'Saving now keeps only the recorded steps, without a reusable method, so it may not work on similar sites.',
   'recordedTask.savedNotice': 'Saved "{name}". Type / to run it.',
   'recordedTask.summaryLoading': 'Summarizing a reusable method…',
   'recordedTask.summaryFailed': 'Could not summarize a reusable method: {reason}. The recorded steps are below and can still be saved.',

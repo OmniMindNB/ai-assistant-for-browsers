@@ -415,6 +415,8 @@ export const zh = {
   'recordedTask.valueAria': '{target} 的写入值',
   'recordedTask.deleteStepAria': '删除第 {index} 步',
   'recordedTask.save': '保存',
+  'recordedTask.skipSummarySave': '跳过整理，直接保存',
+  'recordedTask.skipSummaryNote': '现在保存只含录制步骤，不含通用做法，换到同类网站可能用不了。',
   'recordedTask.savedNotice': '已保存「{name}」，输入 / 即可调用',
   'recordedTask.summaryLoading': '正在整理通用做法…',
   'recordedTask.summaryFailed': '没能整理出通用做法：{reason}。下面是录制的原始步骤，仍可保存。',

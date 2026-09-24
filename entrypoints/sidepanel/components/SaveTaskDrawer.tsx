@@ -122,6 +122,7 @@ export function SaveTaskDrawer({ open, messages, messageId, onClose, onSaved, pr
   const cleaned = playbook ? parsePlaybook(playbook) : null;
   const hasSteps = playbook?.steps.some((step) => step.trim()) ?? false;
   const playbookIncomplete = summary.status === 'ready' && playbook !== null && hasSteps && cleaned === null;
+  const summarizing = summary.status === 'loading';
   const canSave =
     !saving &&
     draft.name.trim().length > 0 &&
@@ -357,22 +358,33 @@ export function SaveTaskDrawer({ open, messages, messageId, onClose, onSaved, pr
           )}
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-neutral-200 p-3 dark:border-neutral-800">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
-          >
-            {t('common.cancel')}
-          </button>
-          <button
-            type="button"
-            onClick={() => void save()}
-            disabled={!canSave}
-            className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {t('recordedTask.save')}
-          </button>
+        {/* 整理中不禁用保存：completeOnce 没有超时，禁用后模型一卡住用户就只能关抽屉丢掉编辑（spec §5.3）。
+            但此时存下的没有通用做法，所以按钮降为次要样式并写明后果，而不是让用户以为存的是整理后的版本。 */}
+        <div className="border-t border-neutral-200 p-3 dark:border-neutral-800">
+          {summarizing && (
+            <p className="mb-2 text-right text-xs text-neutral-500 dark:text-neutral-400">{t('recordedTask.skipSummaryNote')}</p>
+          )}
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-md px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
+            >
+              {t('common.cancel')}
+            </button>
+            <button
+              type="button"
+              onClick={() => void save()}
+              disabled={!canSave}
+              className={
+                summarizing
+                  ? 'rounded-md border border-neutral-300 px-3 py-1.5 text-xs text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800'
+                  : 'rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50'
+              }
+            >
+              {summarizing ? t('recordedTask.skipSummarySave') : t('recordedTask.save')}
+            </button>
+          </div>
         </div>
       </aside>
     </div>
