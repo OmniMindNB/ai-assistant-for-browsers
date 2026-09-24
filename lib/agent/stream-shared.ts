@@ -176,3 +176,96 @@ export function extractImageParts(content: unknown): ImageContent[] {
       Boolean(part && typeof part === 'object' && (part as { type?: unknown }).type === 'image'),
   );
 }
+
+/**
+ * 退避重试的间隔：第 n 次重试前等 LLM_RETRY_DELAYS_MS[n]，数组长度即最多重试次数。
+ * 一次多步任务的每一轮都要打一次 LLM，跑到第九步时撞上一次偶发的 429/503，此前花掉的轮数就全白费了；
+ * 这类失败绝大多数几秒内就会自愈，值得在报错前再试两次。
+ */
+export const LLM_RETRY_DELAYS_MS = [1000, 3000] as const;
+
+/**
+ * 服务端用 Retry-After 要求等待的时长超过这个值时不再干等，直接把 429 交给用户：
+ * 侧边栏里静默卡半分钟以上，比一条讲清楚原因的报错更让人困惑。
+ */
+export const MAX_RETRY_AFTER_MS = 20_000;
+
+/**
+ * 只重试"过一会儿大概率就好"的状态码：超时、限流、网关/服务端故障，以及 Anthropic 的 529 过载。
+ * 400/401/403/404 是配置或请求本身的问题，重试只会让用户多等几秒才看到同一个错误。
+ */
+const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504, 529]);
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error ? error.name === 'AbortError' : (error as { name?: unknown } | null)?.name === 'AbortError';
+}
+
+/** 等待 ms；signal 触发时立即以 AbortError 结束，用户在退避期间点"停止"不必等完这段间隔。 */
+export function abortableSleep(ms: number, signal?: AbortSignal | null): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const abortError = () => new DOMException('signal is aborted without reason', 'AbortError');
+    if (signal?.aborted) {
+      reject(abortError());
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(abortError());
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+/** Retry-After 可以是秒数，也可以是 HTTP 日期；解析不出来返回 undefined，交给默认退避间隔。 */
+function parseRetryAfterMs(header: string | null): number | undefined {
+  if (!header) return undefined;
+  const seconds = Number(header);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const date = Date.parse(header);
+  return Number.isNaN(date) ? undefined : Math.max(0, date - Date.now());
+}
+
+export interface LlmFetchDeps {
+  fetch: (url: string, init: RequestInit) => Promise<Response>;
+  sleep: (ms: number, signal?: AbortSignal | null) => Promise<void>;
+}
+
+const defaultLlmFetchDeps: LlmFetchDeps = {
+  // 惰性读取全局 fetch：测试用 vi.stubGlobal 替换它，模块加载时就绑定会绕过替换。
+  fetch: (url, init) => fetch(url, init),
+  sleep: abortableSleep,
+};
+
+/**
+ * 发起一次 LLM 请求，对瞬时故障做有限次数的退避重试。只覆盖"还没拿到响应体"这一段：
+ * 流已经开始输出后中途断开不在这里重试，因为已经推给界面的增量无法收回。
+ * 重试用尽后把最后一次响应（或错误）原样交回，报错文案仍由调用方的 describeHttpFailure/describeStreamError 负责。
+ */
+export async function fetchLlmWithRetry(
+  url: string,
+  init: RequestInit,
+  deps: LlmFetchDeps = defaultLlmFetchDeps,
+): Promise<Response> {
+  for (let attempt = 0; ; attempt += 1) {
+    const isLastAttempt = attempt >= LLM_RETRY_DELAYS_MS.length;
+    let delay: number;
+    try {
+      const response = await deps.fetch(url, init);
+      if (response.ok || isLastAttempt || !RETRYABLE_STATUSES.has(response.status)) return response;
+      const retryAfter = parseRetryAfterMs(response.headers.get('Retry-After'));
+      if (retryAfter !== undefined && retryAfter > MAX_RETRY_AFTER_MS) return response;
+      delay = retryAfter ?? LLM_RETRY_DELAYS_MS[attempt];
+      // 这条响应不会再读了，释放它的连接。
+      await response.body?.cancel().catch(() => undefined);
+    } catch (error) {
+      // 只有网络层失败（fetch 自身抛 TypeError）值得重试；用户停止（AbortError）必须立刻结束。
+      if (isLastAttempt || isAbortError(error) || !(error instanceof TypeError)) throw error;
+      delay = LLM_RETRY_DELAYS_MS[attempt];
+    }
+    await deps.sleep(delay, init.signal);
+  }
+}

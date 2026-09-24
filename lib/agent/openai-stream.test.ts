@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AssistantMessageEvent, AssistantMessageEventStream, Api, Context, Model } from '@earendil-works/pi-ai';
 import { browserOpenAIStream, convertMessages, convertUserContent, openAiCompletionsUrl } from './openai-stream';
+import { LLM_RETRY_DELAYS_MS } from './stream-shared';
 
 function makeModel(): Model<Api> {
   return {
@@ -47,6 +48,7 @@ async function finalMessage(context: Context): Promise<{ type: string; text?: st
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe('openAiCompletionsUrl', () => {
@@ -128,18 +130,43 @@ describe('browserOpenAIStream', () => {
   // fetch() 从未拿到响应（DNS/连接被拒/CORS）时抛的是 TypeError，跟上面 404 那类"拿到了响应
   // 但状态非 2xx"是不同的失败层级；这里确认它也带着请求地址，而不是一句裸的 "Failed to fetch"。
   it('explains a network-layer failure (fetch() itself rejecting) with the request URL', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+    vi.stubGlobal('fetch', fetchMock);
 
     const context = { messages: [{ role: 'user', content: 'hi' }] } as unknown as Context;
     const stream = browserOpenAIStream(makeModel(), context, { apiKey: 'k' }) as AssistantMessageEventStream;
-    const events = await collectEvents(stream);
+    const pending = collectEvents(stream);
+    await vi.runAllTimersAsync();
+    const events = await pending;
 
+    // 网络层失败先按退避重试，重试用尽才报错。
+    expect(fetchMock).toHaveBeenCalledTimes(LLM_RETRY_DELAYS_MS.length + 1);
     const errorEvent = events.at(-1);
     expect(errorEvent?.type).toBe('error');
     if (errorEvent?.type === 'error') {
       expect(errorEvent.error.errorMessage).toContain('https://ark.example.com/api/coding/v3/chat/completions');
       expect(errorEvent.error.errorMessage).toContain('Failed to fetch');
     }
+  });
+
+  // 长任务每一轮都要打一次 LLM，一次偶发的 503 不该让前面几轮白跑。
+  it('recovers from a transient 503 by retrying before any output is streamed', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('', { status: 503 }))
+      .mockResolvedValueOnce(sseResponse([{ choices: [{ delta: { content: '好了' }, finish_reason: 'stop' }] }]));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const stream = browserOpenAIStream(makeModel(), contextWithTools([]), { apiKey: 'k' }) as AssistantMessageEventStream;
+    const pending = collectEvents(stream);
+    await vi.runAllTimersAsync();
+    const events = await pending;
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(events.at(-1)?.type).toBe('done');
+    expect(events.filter((event) => event.type === 'start')).toHaveLength(1);
   });
 
   // 用户点"停止"时 agent.abort() 会让这条 fetch 以 AbortError 失败。它不是故障：收尾消息必须

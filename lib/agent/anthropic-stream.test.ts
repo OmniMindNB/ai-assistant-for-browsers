@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AssistantMessageEvent, AssistantMessageEventStream, Api, Context, Model } from '@earendil-works/pi-ai';
 import { PERF_TRACE_FLAG, currentPerfUsage, resetPerfTrace } from './perf-trace';
 import { anthropicMessagesUrl, browserAnthropicStream, buildAnthropicSystem, convertMessagesForAnthropic } from './anthropic-stream';
+import { LLM_RETRY_DELAYS_MS } from './stream-shared';
 
 function makeModel(): Model<Api> {
   return {
@@ -43,6 +44,7 @@ async function collectEvents(stream: AsyncIterable<AssistantMessageEvent>): Prom
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe('anthropicMessagesUrl', () => {
@@ -418,18 +420,57 @@ describe('browserAnthropicStream', () => {
   // fetch() 从未拿到响应（DNS/连接被拒/CORS）时抛的是 TypeError，跟上面 404 那类"拿到了响应
   // 但状态非 2xx"是不同的失败层级；这里确认它也带着请求地址，而不是一句裸的 "Failed to fetch"。
   it('explains a network-layer failure (fetch() itself rejecting) with the request URL', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+    vi.stubGlobal('fetch', fetchMock);
 
     const context = { messages: [{ role: 'user', content: 'hi' }] } as unknown as Context;
     const stream = browserAnthropicStream(makeModel(), context, { apiKey: 'k' }) as AssistantMessageEventStream;
-    const events = await collectEvents(stream);
+    const pending = collectEvents(stream);
+    await vi.runAllTimersAsync();
+    const events = await pending;
 
+    // 网络层失败先按退避重试，重试用尽才报错。
+    expect(fetchMock).toHaveBeenCalledTimes(LLM_RETRY_DELAYS_MS.length + 1);
     const errorEvent = events.at(-1);
     expect(errorEvent?.type).toBe('error');
     if (errorEvent?.type === 'error') {
       expect(errorEvent.error.errorMessage).toContain('https://example.com/v1/messages');
       expect(errorEvent.error.errorMessage).toContain('Failed to fetch');
     }
+  });
+
+  // Anthropic 高峰期会返回 529 overloaded，几秒后通常就恢复；不该因此让整次多步任务失败。
+  it('recovers from a transient 529 overloaded response by retrying', async () => {
+    vi.useFakeTimers();
+    const sse = [
+      'event: content_block_start',
+      'data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}',
+      '',
+      'event: content_block_delta',
+      'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"好了"}}',
+      '',
+      'event: content_block_stop',
+      'data: {"type":"content_block_stop","index":0}',
+      '',
+      'event: message_stop',
+      'data: {"type":"message_stop"}',
+      '',
+    ].join('\n');
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('{"type":"error","error":{"type":"overloaded_error"}}', { status: 529 }))
+      .mockResolvedValueOnce(sseResponse(sse));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const context = { messages: [{ role: 'user', content: 'hi' }] } as unknown as Context;
+    const stream = browserAnthropicStream(makeModel(), context, { apiKey: 'k' }) as AssistantMessageEventStream;
+    const pending = collectEvents(stream);
+    await vi.runAllTimersAsync();
+    const events = await pending;
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(events.at(-1)?.type).toBe('done');
   });
 
   // 与 openai-stream.test.ts 里同名用例同因：用户停止导致的 AbortError 不是模型故障，

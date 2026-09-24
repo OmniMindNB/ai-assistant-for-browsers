@@ -1,7 +1,7 @@
 // lib/agent/openai-stream.ts
 import { createAssistantMessageEventStream, type Api, type AssistantMessageEvent, type Context, type Model, type ToolCall, type Usage, type UserMessage } from '@earendil-works/pi-ai';
 import type { StreamFn } from '@earendil-works/pi-agent-core';
-import { buildPartial, createAssistantMessage, describeHttpFailure, describeStreamError, extractImageParts, finishStream, stringifyContent, type ToolCallAccumulator } from './stream-shared';
+import { buildPartial, createAssistantMessage, describeHttpFailure, describeStreamError, extractImageParts, fetchLlmWithRetry, finishStream, stringifyContent, type ToolCallAccumulator } from './stream-shared';
 import { isPerfTraceEnabled, readOpenAiUsage, recordPerfUsage } from './perf-trace';
 
 // OpenAI 生态的约定与 Anthropic 相反：版本段写在 base_url 里，客户端只补 `/chat/completions`
@@ -70,7 +70,7 @@ async function runOpenAIStream(
 
   try {
     url = openAiCompletionsUrl(model.baseUrl);
-    const response = await fetch(url, {
+    const response = await fetchLlmWithRetry(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

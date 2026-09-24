@@ -3,7 +3,7 @@ import { createAssistantMessageEventStream, type Api, type AssistantMessageEvent
 import type { StreamFn } from '@earendil-works/pi-agent-core';
 import { splitSystemPromptForCache } from './system-prompt';
 import { readAnthropicUsage, recordPerfUsage } from './perf-trace';
-import { buildPartial, createAssistantMessage, describeHttpFailure, describeStreamError, extractImageParts, finishStream, stringifyContent, type ToolCallAccumulator } from './stream-shared';
+import { buildPartial, createAssistantMessage, describeHttpFailure, describeStreamError, extractImageParts, fetchLlmWithRetry, finishStream, stringifyContent, type ToolCallAccumulator } from './stream-shared';
 
 export const ANTHROPIC_VERSION = '2023-06-01';
 
@@ -79,7 +79,7 @@ async function runAnthropicStream(
 
   try {
     url = anthropicMessagesUrl(model.baseUrl);
-    const response = await fetch(url, {
+    const response = await fetchLlmWithRetry(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
