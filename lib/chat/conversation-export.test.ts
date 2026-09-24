@@ -9,6 +9,8 @@ import { createTabSession } from '@/lib/agent/tab-session';
 import { WRITE_TOOL_NAMES } from '@/lib/agent/permissions';
 import {
   buildConversationExport,
+  exportFileName,
+  renderConversationExportMarkdown,
   EXPORT_SCHEMA,
   KEPT_WRITE_ARG_KEYS,
   MASKED_WRITE_ARG_KEYS,
@@ -198,5 +200,85 @@ describe('buildConversationExport', () => {
       record({ tabReferences: [{ id: 3, title: '订单 13812345678', url: 'https://a.com/o?id=1' }] }),
     ]);
     expect(doc.messages[0].tabReferences).toEqual([{ title: expect.not.stringContaining('13812345678'), url: 'https://a.com/o' }]);
+  });
+});
+
+describe('renderConversationExportMarkdown', () => {
+  const runDiagnostics = {
+    providerName: 'DeepSeek', api: 'openai-completions', baseUrlHost: 'api.deepseek.com', modelId: 'deepseek-v4-pro',
+    vision: false, withoutBrowserTools: false, readToolCallBudget: 20, writeToolCallBudget: 40,
+    startedAt: 1, durationMs: 38200, llmTurns: 5, toolCalls: 9,
+  };
+
+  function render(records: ChatMessageRecord[]) {
+    return renderConversationExportMarkdown(build(records), t);
+  }
+
+  it('renders header, rounds, run info, steps table and a parseable JSON appendix', () => {
+    const md = render([
+      record({ content: '帮我填表' }),
+      record({ role: 'assistant', content: '已完成', runDiagnostics, taskOutcome: { outcome: 'partial', reason: '卡在第二步' }, activitySteps: [
+        { id: 's1', description: '读取页面表单', status: 'done', signature: 'browser_get_form:{}' },
+        { id: 's2', description: '填写 | 3 个字段', status: 'failed', attempt: 2, signature: 'browser_fill_form:{"fields":[{"fieldId":"f3","value":"abc"}]}', errorText: '第一行\n第二行' },
+      ] }),
+      record({ content: '再来一次' }),
+    ]);
+    expect(md).toContain('# Runi 会话导出：');
+    expect(md).toContain('- 扩展版本：1.4.0 · 界面语言：zh');
+    expect(md).toContain('## 第 1 轮');
+    expect(md).toContain('## 第 2 轮');
+    expect(md).toContain('DeepSeek · deepseek-v4-pro（openai-completions @ api.deepseek.com）');
+    expect(md).toContain('耗时 38.2s');
+    expect(md).toContain('**任务结果**：partial —— 卡在第二步');
+    expect(md).toContain('| # | 状态 | 步骤 | 调用 | 失败原因 |');
+    expect(md).toContain('填写 \\| 3 个字段');
+    expect(md).toContain('第一行<br>第二行');
+    expect(md).toContain('✗ ×2');
+    expect(md).not.toContain('"value":"abc"');
+
+    const fence = md.match(/\n(`{3,})json\n/)![1];
+    const json = md.slice(md.lastIndexOf(`${fence}json\n`) + fence.length + 5, md.lastIndexOf(`\n${fence}`));
+    expect(JSON.parse(json).schema).toBe(EXPORT_SCHEMA);
+  });
+
+  it('omits the run info line for legacy messages without diagnostics', () => {
+    const md = render([record({ content: '问' }), record({ role: 'assistant', content: '答' })]);
+    expect(md).not.toContain('**运行信息**');
+  });
+
+  it('puts a leading assistant message into round 1', () => {
+    const md = render([record({ role: 'assistant', content: '欢迎' }), record({ content: '问' })]);
+    expect(md.indexOf('## 第 1 轮')).toBeLessThan(md.indexOf('欢迎'));
+    expect(md).toContain('## 第 2 轮');
+  });
+
+  // Review Focus #2
+  it('closes an unbalanced code fence so later sections are not swallowed', () => {
+    const md = render([record({ role: 'assistant', content: '看这段：\n```js\nconst a = 1;' }), record({ content: '下一轮' })]);
+    const beforeRound2 = md.slice(0, md.indexOf('## 第 2 轮'));
+    const fenceLines = beforeRound2.split('\n').filter((line) => /^\s*(`{3,}|~{3,})/.test(line));
+    expect(fenceLines.length % 2).toBe(0);
+  });
+
+  it('uses a JSON fence longer than any backtick run inside the JSON', () => {
+    const md = render([record({ content: '````四个反引号````' })]);
+    expect(md).toMatch(/\n`{5,}json\n/);
+  });
+});
+
+describe('exportFileName', () => {
+  const at = new Date(2026, 8, 24, 14, 3).getTime();
+  it('formats title and local timestamp', () => {
+    expect(exportFileName('帮我填表', at)).toBe('runi-帮我填表-20260924-1403.md');
+  });
+  // Review Focus #4
+  it('replaces illegal characters and falls back when nothing usable is left', () => {
+    expect(exportFileName('a/b:c*?', at)).toBe('runi-a_b_c__-20260924-1403.md');
+    expect(exportFileName('   ', at)).toBe('runi-conversation-20260924-1403.md');
+    expect(exportFileName('...', at)).toBe('runi-conversation-20260924-1403.md');
+  });
+  it('clips long titles to 40 chars', () => {
+    const name = exportFileName('字'.repeat(100), at);
+    expect(name).toBe(`runi-${'字'.repeat(40)}-20260924-1403.md`);
   });
 });
