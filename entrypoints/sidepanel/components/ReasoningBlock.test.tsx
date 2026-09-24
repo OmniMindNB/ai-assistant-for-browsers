@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { REASONING_SEGMENT_HEAD_CHARS } from '@/lib/agent/reasoning';
@@ -110,6 +110,44 @@ describe('ReasoningBlock', () => {
     );
     expect(screen.getByRole('button', { name: 'Thinking…' })).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByText('r more')).toBeNull();
+  });
+
+  describe('auto-follow scrolling', () => {
+    const scrollTops: number[] = [];
+    function stubScrolling() {
+      scrollTops.length = 0;
+      vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(500);
+      vi.spyOn(HTMLElement.prototype, 'scrollTop', 'set').mockImplementation((value: number) => { scrollTops.push(value); });
+    }
+    afterEach(() => vi.restoreAllMocks());
+
+    it('follows new reasoning to the bottom while auto-expanded', () => {
+      stubScrolling();
+      const { rerender } = renderBlock({ segments: ['r'], ...thinking });
+      scrollTops.length = 0;
+      rerender(
+        <LocaleProvider>
+          <ReasoningBlock segments={['r more']} {...thinking} />
+        </LocaleProvider>,
+      );
+      expect(scrollTops).toContain(500);
+    });
+
+    // 终审 Minor 4（升级）：正文出来后用户自己展开回看，新一轮推理不能把视图拽到底部。
+    it('does not yank a block the user opened after body text appeared', async () => {
+      stubScrolling();
+      const user = userEvent.setup();
+      const reading = { running: true, autoExpand: false };
+      const { rerender } = renderBlock({ segments: ['a', 'b'], ...reading });
+      await user.click(screen.getByRole('button', { name: 'Thinking · step 2' }));
+      scrollTops.length = 0;
+      rerender(
+        <LocaleProvider>
+          <ReasoningBlock segments={['a', 'b', 'c']} {...reading} />
+        </LocaleProvider>,
+      );
+      expect(scrollTops).not.toContain(500);
+    });
   });
 
   // Review Focus #4：存量记录只有旧的字数字段。

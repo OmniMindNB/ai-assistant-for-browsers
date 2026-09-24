@@ -34,11 +34,12 @@ export function ReasoningBlock({
   const totalChars = segments.reduce((sum, segment) => sum + segment.length, 0);
   const totalSegments = droppedSegments + segments.length;
 
+  // 只在自动展开（还没有正文）时跟随到底：正文出来后用户自己展开回看某一段，新一轮推理不该把视图拽走。
   useEffect(() => {
-    if (!running || !expanded) return;
+    if (!autoExpand || !expanded) return;
     const node = scrollRef.current;
     if (node) node.scrollTop = node.scrollHeight;
-  }, [running, expanded, totalChars]);
+  }, [autoExpand, expanded, totalChars]);
 
   if (segments.length === 0) return null;
 
