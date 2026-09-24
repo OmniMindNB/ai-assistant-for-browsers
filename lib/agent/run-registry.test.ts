@@ -340,6 +340,78 @@ describe('run-registry startRun', () => {
     secondPromptResolve?.();
     await new Promise((resolve) => setTimeout(resolve, 50));
   });
+
+  /** 最后一条推给面板的快照。 */
+  function lastSnapshot(posted: unknown[]): { busy: boolean; messages: Array<Record<string, unknown>> } {
+    const snapshots = posted.filter((m) => (m as { type?: string }).type === 'snapshot');
+    return snapshots.at(-1) as { busy: boolean; messages: Array<Record<string, unknown>> };
+  }
+
+  it('segments reasoning by LLM turn and archives it on the final assistant message', async () => {
+    const agent = makeFakeAgent([
+      { type: 'turn_start' },
+      { type: 'message_update', assistantMessageEvent: { type: 'thinking_delta', delta: '先' } },
+      { type: 'message_update', assistantMessageEvent: { type: 'thinking_delta', delta: '想' } },
+      { type: 'message_end', message: { role: 'assistant', content: [] } },
+      { type: 'turn_start' },
+      { type: 'message_update', assistantMessageEvent: { type: 'thinking_delta', delta: '再想' } },
+      { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '答案' } },
+      { type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: '答案' }] } },
+    ]);
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    const posted: unknown[] = [];
+    attachPort(21, { postMessage: (m) => posted.push(m) });
+
+    await startRun(makeRequest({ tabId: 21 }));
+    await vi.waitFor(() => expect(lastSnapshot(posted)?.busy).toBe(false));
+
+    const last = lastSnapshot(posted).messages.at(-1);
+    expect(last?.content).toBe('答案');
+    expect(last?.reasoning).toEqual(['先想', '再想']);
+    expect(last).not.toHaveProperty('reasoningOmittedChars');
+
+    // 同一份字段也落进了 Dexie。
+    const persisted = mocks.replaceConversationMessages.mock.calls.at(-1)?.[1] as Array<{ reasoning?: string[] }>;
+    expect(persisted.at(-1)?.reasoning).toEqual(['先想', '再想']);
+  });
+
+  // Review Focus #1：思考到一半点停止，没有正文、也没等到 message_end。
+  it('keeps reasoning streamed before the user stopped the run', async () => {
+    const agent = makeFakeAgent([]);
+    agent.prompt = vi.fn(async () => {
+      const listener = agent.subscribe.mock.calls[0]?.[0] as (event: unknown) => void;
+      listener({ type: 'turn_start' });
+      listener({ type: 'message_update', assistantMessageEvent: { type: 'thinking_delta', delta: '想到一半' } });
+      stopRun(22);
+    });
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    const posted: unknown[] = [];
+    attachPort(22, { postMessage: (m) => posted.push(m) });
+
+    await startRun(makeRequest({ tabId: 22 }));
+    await vi.waitFor(() => expect(lastSnapshot(posted)?.busy).toBe(false));
+
+    const last = lastSnapshot(posted).messages.at(-1);
+    expect(last?.stopped).toBe(true);
+    expect(last?.reasoning).toEqual(['想到一半']);
+  });
+
+  it('writes no reasoning fields when the model produced none', async () => {
+    const agent = makeFakeAgent([
+      { type: 'turn_start' },
+      { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'hi' } },
+      { type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'hi' }] } },
+    ]);
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    const posted: unknown[] = [];
+    attachPort(23, { postMessage: (m) => posted.push(m) });
+
+    await startRun(makeRequest({ tabId: 23 }));
+    await vi.waitFor(() => expect(lastSnapshot(posted)?.busy).toBe(false));
+
+    const last = lastSnapshot(posted).messages.at(-1);
+    expect(last).not.toHaveProperty('reasoning');
+  });
 });
 
 describe('run-registry confirm/question/stop/port', () => {

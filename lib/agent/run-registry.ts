@@ -16,6 +16,7 @@ import { describeToolActivity } from './activity-description';
 import { upsertActivityStep, finishActivityStep, type ActivityStep } from './activity-steps';
 import { toolSignature } from './tool-policy';
 import { buildRunDiagnostics, extractToolErrorText } from './run-diagnostics';
+import { appendReasoning, emptyReasoning, reasoningMessageFields, type ReasoningBuffer } from './reasoning';
 import { replaceConversationMessages } from '@/lib/db';
 import { conversationTitle, toMessageRecords, type ChatMessage } from '@/lib/chat/messages';
 import { t } from '@/lib/i18n';
@@ -263,10 +264,14 @@ function describeThrownAgentError(error: unknown): string {
   return t('store.modelCallFailed', { reason });
 }
 
-function replaceLastAssistant(state: RunState, content: string): void {
+function replaceLastAssistant(
+  state: RunState,
+  content: string,
+  extra: Pick<ChatMessage, 'reasoning' | 'reasoningOmittedChars'> = {},
+): void {
   const last = state.messages[state.messages.length - 1];
   if (!last) return;
-  state.messages = [...state.messages.slice(0, -1), { ...last, content }];
+  state.messages = [...state.messages.slice(0, -1), { ...last, content, ...extra }];
 }
 
 function keepaliveAlarmName(tabId: number): string {
@@ -505,10 +510,12 @@ export async function startRun(request: StartRunRequest): Promise<void> {
   let toolCallCount = 0;
 
   let acc = '';
+  // 推理与 acc 平行累积：同一个 48ms flush 一起写到占位 assistant 消息上（ref: 设计稿 §3.2）。
+  let reasoning: ReasoningBuffer = emptyReasoning();
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
   const flush = () => {
     if (flushTimer !== null) { clearTimeout(flushTimer); flushTimer = null; }
-    replaceLastAssistant(state, acc);
+    replaceLastAssistant(state, acc, reasoningMessageFields(reasoning));
     pushAndPersist(state);
   };
 
@@ -516,6 +523,10 @@ export async function startRun(request: StartRunRequest): Promise<void> {
     if (event.type === 'turn_start') llmTurns += 1;
     if (event.type === 'message_update' && event.assistantMessageEvent.type === 'text_delta') {
       acc += event.assistantMessageEvent.delta;
+      if (flushTimer === null) flushTimer = setTimeout(flush, STREAM_FLUSH_INTERVAL_MS);
+    }
+    if (event.type === 'message_update' && event.assistantMessageEvent.type === 'thinking_delta') {
+      reasoning = appendReasoning(reasoning, llmTurns, event.assistantMessageEvent.delta);
       if (flushTimer === null) flushTimer = setTimeout(flush, STREAM_FLUSH_INTERVAL_MS);
     }
 
@@ -602,13 +613,15 @@ export async function startRun(request: StartRunRequest): Promise<void> {
         // 用户停止是这一轮正常结束的原因，不是"模型没说话"：不能交给 describeEmptyAgentRun
         // 去猜，它只看得到流式层留下的 stopReason，会把中止解释成模型调用失败。
         wasUserStopped = true;
-        replaceLastAssistant(state, acc.trim() ? acc : t('store.generationAborted'));
+        // finally 会清掉尚未触发的 flush 定时器：停止/出错时最后几段推理可能还没刷进消息，
+        // 所以收尾这几处都要显式带上推理，不能指望 flush 已经写过。
+        replaceLastAssistant(state, acc.trim() ? acc : t('store.generationAborted'), reasoningMessageFields(reasoning));
       } else {
         if (!acc.trim()) {
           const last = findLastAssistant(agent.state.messages);
           acc = extractLastAssistantText(agent.state.messages) || describeEmptyAgentRun(last);
         }
-        replaceLastAssistant(state, acc);
+        replaceLastAssistant(state, acc, reasoningMessageFields(reasoning));
       }
     } catch (e) {
       // 只 console.error 的话（迁移后一度就是这样），占位 assistant 消息会永远停在空内容上：
@@ -621,11 +634,11 @@ export async function startRun(request: StartRunRequest): Promise<void> {
         // 但即便有部分文本，也要标 stopped：不然一段中途截断的回答会跟正常说完的回答
         // 长得一模一样，用户没法区分"模型就说到这"和"被我自己掐断了"。
         wasUserStopped = true;
-        replaceLastAssistant(state, acc.trim() ? acc : t('store.generationAborted'));
+        replaceLastAssistant(state, acc.trim() ? acc : t('store.generationAborted'), reasoningMessageFields(reasoning));
       } else {
         console.error('[Runi] agent.prompt 异常', e);
         const errorText = describeThrownAgentError(e);
-        replaceLastAssistant(state, acc.trim() ? `${acc}\n\n${errorText}` : errorText);
+        replaceLastAssistant(state, acc.trim() ? `${acc}\n\n${errorText}` : errorText, reasoningMessageFields(reasoning));
       }
     } finally {
       unsubscribe();
