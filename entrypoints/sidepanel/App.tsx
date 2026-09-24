@@ -83,6 +83,7 @@ export default function App() {
     respondToConfirmation,
     respondToQuestion,
     restoreTabConversation,
+    exportConversation,
   } = useChat();
 
   // 整理通用做法用输入框里当前选中的模型，而不是 provider 的默认模型。
@@ -292,6 +293,7 @@ export default function App() {
         onPick={pickConversation}
         onRemove={removeConversation}
         onClearAll={clearAllConversations}
+        onExport={(id) => void exportConversation(id)}
         returnFocusRef={historyTriggerRef}
       />
 
@@ -316,6 +318,8 @@ export default function App() {
             onToggleHistory={toggleHistory}
             onNewChat={newChat}
             onOpenSettings={openSettings}
+            onExport={() => void exportConversation(conversationId)}
+            exportDisabled={busy || messages.length === 0}
             historyTriggerRef={historyTriggerRef}
           />
 

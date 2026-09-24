@@ -68,6 +68,7 @@ const chatStore = {
   clearAllConversations: vi.fn(),
   respondToConfirmation: vi.fn(),
   restoreTabConversation: vi.fn(),
+  exportConversation: vi.fn(),
 };
 let storageChangeListener: ((changes: Record<string, unknown>, areaName: string) => void) | undefined;
 
@@ -117,7 +118,7 @@ function Harness() {
   );
 }
 
-function renderDrawer(onRemove = vi.fn(), onClearAll = vi.fn(), conversations = records) {
+function renderDrawer(onRemove = vi.fn(), onClearAll = vi.fn(), conversations = records, onExport?: (id: string) => void) {
   return render(
     <LocaleProvider>
       <HistoryDrawer
@@ -130,6 +131,7 @@ function renderDrawer(onRemove = vi.fn(), onClearAll = vi.fn(), conversations = 
         onPick={vi.fn()}
         onRemove={onRemove}
         onClearAll={onClearAll}
+        onExport={onExport}
       />
     </LocaleProvider>,
   );
@@ -2442,5 +2444,39 @@ describe('save as task', () => {
 
     expect(within(dialog).getByRole('button', { name: 'Save' })).toBeDisabled();
     expect(within(dialog).getByText('Works on and at least one method step must be filled in.')).toBeInTheDocument();
+  });
+});
+
+describe('会话导出入口', () => {
+  it('历史抽屉的导出按钮带着会话 id 回调', async () => {
+    const user = userEvent.setup();
+    const onExport = vi.fn();
+    renderDrawer(vi.fn(), vi.fn(), records, onExport);
+    await user.click(screen.getByRole('button', { name: 'Export conversation Shopping comparison' }));
+    expect(onExport).toHaveBeenCalledWith('shopping');
+  });
+
+  it('没传 onExport 时历史抽屉不渲染导出按钮', () => {
+    renderDrawer();
+    expect(screen.queryByRole('button', { name: /Export conversation/ })).not.toBeInTheDocument();
+  });
+
+  it('顶栏导出按钮可点击，exportDisabled 时禁用', async () => {
+    const user = userEvent.setup();
+    const onExport = vi.fn();
+    const { rerender } = render(
+      <LocaleProvider>
+        <WorkbenchHeader historyOpen={false} onToggleHistory={vi.fn()} onNewChat={vi.fn()} onOpenSettings={vi.fn()} onExport={onExport} />
+      </LocaleProvider>,
+    );
+    await user.click(screen.getByRole('button', { name: 'Export current conversation' }));
+    expect(onExport).toHaveBeenCalledOnce();
+
+    rerender(
+      <LocaleProvider>
+        <WorkbenchHeader historyOpen={false} onToggleHistory={vi.fn()} onNewChat={vi.fn()} onOpenSettings={vi.fn()} onExport={onExport} exportDisabled />
+      </LocaleProvider>,
+    );
+    expect(screen.getByRole('button', { name: 'Export current conversation' })).toBeDisabled();
   });
 });

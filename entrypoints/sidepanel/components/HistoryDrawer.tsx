@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type RefObject } from 'react';
 import type { ConversationRecord } from '@/lib/db';
 import { useTranslation } from '@/lib/i18n';
 import { groupConversationsByDay, type ConversationGroupKey } from '@/lib/workbench/presentation';
-import { IconClose, IconPlus, IconTrash } from '../icons';
+import { IconClose, IconDownload, IconPlus, IconTrash } from '../icons';
 import { useModalKeyboard } from './useModalKeyboard';
 
 export interface HistoryDrawerProps {
@@ -15,6 +15,8 @@ export interface HistoryDrawerProps {
   onPick(id: string): void;
   onRemove(id: string): void;
   onClearAll(): void;
+  /** 导出某个会话；不传则不显示导出按钮。 */
+  onExport?(id: string): void;
   returnFocusRef?: RefObject<HTMLButtonElement | null>;
 }
 
@@ -34,6 +36,7 @@ export function HistoryDrawer({
   onPick,
   onRemove,
   onClearAll,
+  onExport,
   returnFocusRef,
 }: HistoryDrawerProps) {
   const { t } = useTranslation();
@@ -211,6 +214,17 @@ export function HistoryDrawer({
                             {new Date(conversation.updatedAt).toLocaleString()}
                           </div>
                         </button>
+                        {onExport && (
+                          <button
+                            type="button"
+                            onClick={() => onExport(conversation.id)}
+                            aria-label={t('export.exportConversationAriaLabel', { title: conversation.title || '' })}
+                            title={t('export.exportConversationAriaLabel', { title: conversation.title || '' })}
+                            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-neutral-400 opacity-0 transition-opacity hover:bg-neutral-200 hover:text-neutral-700 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 group-hover:opacity-100 dark:text-neutral-500 dark:hover:bg-neutral-700 dark:hover:text-neutral-200"
+                          >
+                            <IconDownload className="h-4 w-4 shrink-0" />
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() =>

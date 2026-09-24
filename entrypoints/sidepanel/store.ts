@@ -68,6 +68,9 @@ import {
 import { extractPdfAttachment } from '@/lib/chat/pdfjs-runtime';
 import type { ImageContent } from '@earendil-works/pi-ai';
 import { getCurrentLocale, t } from '@/lib/i18n';
+import { loadRedactionSettings } from '@/lib/redaction';
+import { buildConversationExport, exportFileName, renderConversationExportMarkdown } from '@/lib/chat/conversation-export';
+import { downloadTextFile } from '@/lib/workbench/download-file';
 import { isCurrentTabReadable } from '@/lib/current-tab-readability';
 import {
   loadShortcutConfigs,
@@ -153,6 +156,8 @@ interface ChatState {
   openConversation: (id: string) => Promise<boolean>;
   removeConversation: (id: string) => Promise<void>;
   clearAllConversations: () => Promise<void>;
+  /** 把一个会话导出成排查问题用的 .md（ref: 2026-09-24-conversation-export-design.md §5）。统一读 IndexedDB，不读面板内存。 */
+  exportConversation: (id: string) => Promise<void>;
   respondToConfirmation: (approved: boolean) => void;
   respondToQuestion: (answer: string) => void;
   restoreTabConversation: () => Promise<void>;
@@ -1084,6 +1089,30 @@ export const useChat = create<ChatState>((set, get) => ({
     });
     await get().refreshConversations();
     get().clear();
+  },
+
+  exportConversation: async (id) => {
+    try {
+      const [conversations, records, redaction] = await Promise.all([
+        listConversations(),
+        getConversationMessages(id),
+        loadRedactionSettings(),
+      ]);
+      const conversation = conversations.find((c) => c.id === id);
+      if (!conversation) throw new Error(t('export.notFound'));
+      const doc = buildConversationExport({
+        conversation,
+        records,
+        redaction,
+        extensionVersion: browser.runtime.getManifest().version,
+        locale: getCurrentLocale(),
+        exportedAt: Date.now(),
+        t,
+      });
+      downloadTextFile(exportFileName(doc.conversation.title, doc.exportedAt), renderConversationExportMarkdown(doc, t));
+    } catch (error) {
+      set({ error: t('export.failed', { error: errMsg(error) }) });
+    }
   },
 }));
 

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { useTranslation } from '@/lib/i18n';
 import { planStatusUpdate } from '@/lib/workbench/status-throttle';
-import { IconGear, IconMenu, IconPlus, IconStop } from '../icons';
+import { IconDownload, IconGear, IconMenu, IconPlus, IconStop } from '../icons';
 
 export interface WorkbenchHeaderProps {
   historyOpen: boolean;
@@ -14,6 +14,10 @@ export interface WorkbenchHeaderProps {
   onToggleHistory(): void;
   onNewChat(): void;
   onOpenSettings(): void;
+  /** 导出当前会话；不传则不显示按钮。 */
+  onExport?(): void;
+  /** 当前会话为空或正在运行时为 true——运行中导出只会拿到半截记录。 */
+  exportDisabled?: boolean;
   historyTriggerRef?: RefObject<HTMLButtonElement | null>;
 }
 
@@ -70,6 +74,8 @@ export function WorkbenchHeader({
   onToggleHistory,
   onNewChat,
   onOpenSettings,
+  onExport,
+  exportDisabled,
   historyTriggerRef,
 }: WorkbenchHeaderProps) {
   const { t } = useTranslation();
@@ -123,6 +129,18 @@ export function WorkbenchHeader({
             className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-neutral-600 transition-colors hover:bg-neutral-200/70 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
           >
             <IconStop className="h-5 w-5" />
+          </button>
+        )}
+        {onExport && (
+          <button
+            type="button"
+            onClick={onExport}
+            disabled={exportDisabled}
+            aria-label={t('export.exportCurrent')}
+            title={t('export.exportCurrent')}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-neutral-600 transition-colors hover:bg-neutral-200/70 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
+          >
+            <IconDownload className="h-5 w-5" />
           </button>
         )}
         <button
