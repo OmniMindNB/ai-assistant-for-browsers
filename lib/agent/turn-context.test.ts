@@ -74,6 +74,11 @@ describe('toAgentMessages', () => {
   it('空文本的 assistant 消息翻译成空 content 数组', () => {
     expect(toAgentMessages([assistantMsg({ content: '' })])[0]).toMatchObject({ content: [] });
   });
+
+  it('never replays assistant reasoning to the model', () => {
+    const result = toAgentMessages([userMsg(), assistantMsg({ reasoning: ['不该回传的推理'] })]);
+    expect(JSON.stringify(result)).not.toContain('不该回传的推理');
+  });
 });
 
 describe('toAgentMessages：图片跨轮回放', () => {

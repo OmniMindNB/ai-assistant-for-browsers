@@ -247,6 +247,16 @@ describe('buildConversationExport', () => {
     ]);
     expect(doc.messages[0].tabReferences).toEqual([{ title: expect.not.stringContaining('13812345678'), url: 'https://a.com/o' }]);
   });
+
+  // 推理只给面板回看用，导出不带（ref: 2026-09-24-reasoning-display-design.md §3.3）。
+  it('never exports assistant reasoning', () => {
+    const doc = build([
+      record({ content: '问' }),
+      record({ role: 'assistant', content: '答', reasoning: ['推理里的秘密步骤'], reasoningOmittedChars: 3 }),
+    ]);
+    expect(JSON.stringify(doc)).not.toContain('推理里的秘密步骤');
+    expect(renderConversationExportMarkdown(doc, t)).not.toContain('推理里的秘密步骤');
+  });
 });
 
 describe('renderConversationExportMarkdown', () => {

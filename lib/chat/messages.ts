@@ -51,6 +51,14 @@ export interface ChatMessage {
    * 供会话导出排查问题（ref: docs/superpowers/specs/2026-09-24-conversation-export-design.md §3.2）。
    */
   runDiagnostics?: RunDiagnostics;
+  /**
+   * 推理模型本轮流式返回的推理内容，按 LLM 调用分段（一次调用一段），已按
+   * lib/agent/reasoning.ts 的 MAX_REASONING_CHARS 滑动窗口限量；仅 assistant 消息、且真的收到过推理时才有值。
+   * 只供面板回看：不回传给模型、不进会话导出（ref: docs/superpowers/specs/2026-09-24-reasoning-display-design.md）。
+   */
+  reasoning?: string[];
+  /** 滑动窗口丢掉的最早那部分推理的字数；没有丢弃时不写。 */
+  reasoningOmittedChars?: number;
 }
 
 const TITLE_MAX_CHARS = 40;
@@ -129,6 +137,8 @@ export function toMessageRecords(
     rerun: message.rerun,
     trajectory: message.trajectory,
     runDiagnostics: message.runDiagnostics,
+    reasoning: message.reasoning,
+    reasoningOmittedChars: message.reasoningOmittedChars,
   }));
 }
 

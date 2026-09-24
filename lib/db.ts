@@ -74,6 +74,13 @@ export interface ChatMessageRecord {
    * 不建索引，同上无需 Dexie 版本迁移；存量记录无此字段即视为没有诊断信息。
    */
   runDiagnostics?: RunDiagnostics;
+  /**
+   * 推理内容（按 LLM 调用分段，已限量），仅 assistant 消息有意义，见 ChatMessage.reasoning。
+   * 不建索引，同上无需 Dexie 版本迁移；存量记录无此字段即视为没有推理。
+   */
+  reasoning?: string[];
+  /** 滑动窗口丢掉的推理字数，见 ChatMessage.reasoningOmittedChars。 */
+  reasoningOmittedChars?: number;
 }
 
 export interface ConversationRecord {

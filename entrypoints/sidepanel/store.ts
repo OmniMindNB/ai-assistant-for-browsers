@@ -964,6 +964,8 @@ export const useChat = create<ChatState>((set, get) => ({
         rerun: r.rerun,
         trajectory: r.trajectory,
         runDiagnostics: r.runDiagnostics,
+        reasoning: r.reasoning,
+        reasoningOmittedChars: r.reasoningOmittedChars,
       }));
     set({
       messages,

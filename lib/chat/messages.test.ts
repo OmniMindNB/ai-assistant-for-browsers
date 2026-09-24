@@ -159,6 +159,15 @@ describe('toMessageRecords', () => {
     expect(records[1].runDiagnostics).toEqual(runDiagnostics);
   });
 
+  it('carries reasoning and its omitted-char count into the record', () => {
+    const records = toMessageRecords('c-1', [
+      msg('a', 'user', '问'),
+      { ...msg('b', 'assistant', '答'), reasoning: ['先想', '再想'], reasoningOmittedChars: 12 },
+    ]);
+    expect(records[1].reasoning).toEqual(['先想', '再想']);
+    expect(records[1].reasoningOmittedChars).toBe(12);
+  });
+
   it('不丢弃有内容的末尾 assistant 消息', () => {
     const records = toMessageRecords('c-1', [msg('a', 'user', '问'), msg('b', 'assistant', '答')]);
     expect(records).toHaveLength(2);
