@@ -57,6 +57,46 @@ export function buildPartial(
   return { ...createAssistantMessage(model, timestamp, stopReason), content };
 }
 
+export interface ThinkingEmitter {
+  /** 追加一段推理；空串忽略。第一次调用时先发 thinking_start。 */
+  delta(text: string): void;
+  /** 推理块开着时发 thinking_end 并关闭；没开着时什么都不做。可重复调用。 */
+  end(): void;
+}
+
+/**
+ * 两个 streamFn 共用的推理事件发射器（ref: docs/superpowers/specs/2026-09-24-reasoning-display-design.md §3.1）。
+ *
+ * 推理只走事件，不进 AssistantMessage.content：content 被上下文压缩、tool-call-repair、
+ * task-outcome 等多处读取，正文固定在 contentIndex 0 的约定也依赖它；我们本来就不回传推理，
+ * 放进去没有好处。因此 partial 仍由调用方用 buildPartial 构造（不带推理），thinking 事件的
+ * contentIndex 统一写 0——pi-ai 的类型要求有这个字段，唯一的消费方 run-registry.ts 不读它。
+ */
+export function createThinkingEmitter(
+  push: (event: AssistantMessageEvent) => void,
+  partial: () => AssistantMessage,
+): ThinkingEmitter {
+  let open = false;
+  let content = '';
+  return {
+    delta(text) {
+      if (!text) return;
+      if (!open) {
+        open = true;
+        content = '';
+        push({ type: 'thinking_start', contentIndex: 0, partial: partial() });
+      }
+      content += text;
+      push({ type: 'thinking_delta', contentIndex: 0, delta: text, partial: partial() });
+    },
+    end() {
+      if (!open) return;
+      open = false;
+      push({ type: 'thinking_end', contentIndex: 0, content, partial: partial() });
+    },
+  };
+}
+
 /**
  * `toolNames` 是弱模型兜底用的：模型没走 tool_calls 而把调用写进正文时，据此把它捞回来
  * （ref: lib/agent/tool-call-repair.ts）。传空数组即关闭兜底。

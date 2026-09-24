@@ -1,7 +1,7 @@
 // lib/agent/openai-stream.ts
 import { createAssistantMessageEventStream, type Api, type AssistantMessageEvent, type Context, type Model, type ToolCall, type Usage, type UserMessage } from '@earendil-works/pi-ai';
 import type { StreamFn } from '@earendil-works/pi-agent-core';
-import { buildPartial, createAssistantMessage, describeHttpFailure, describeStreamError, extractImageParts, fetchLlmWithRetry, finishStream, stringifyContent, type ToolCallAccumulator } from './stream-shared';
+import { buildPartial, createAssistantMessage, createThinkingEmitter, type ThinkingEmitter, describeHttpFailure, describeStreamError, extractImageParts, fetchLlmWithRetry, finishStream, stringifyContent, type ToolCallAccumulator } from './stream-shared';
 import { isPerfTraceEnabled, readOpenAiUsage, recordPerfUsage } from './perf-trace';
 
 // OpenAI 生态的约定与 Anthropic 相反：版本段写在 base_url 里，客户端只补 `/chat/completions`
@@ -17,6 +17,10 @@ interface OpenAIStreamChunk {
   choices?: Array<{
     delta?: {
       content?: string | null;
+      /** DeepSeek / Qwen / Kimi 等推理模型的推理增量。 */
+      reasoning_content?: string | null;
+      /** OpenRouter 与部分 vLLM 部署用这个字段名。 */
+      reasoning?: string | null;
       tool_calls?: Array<{
         index: number;
         id?: string;
@@ -63,6 +67,8 @@ async function runOpenAIStream(
   const toolCalls = new Map<number, ToolCallAccumulator>();
   // 弱模型兜底：模型没走 tool_calls 而把调用写进正文时，finishStream 据此把它捞回来。
   const toolNames = context.tools?.map((tool) => tool.name) ?? [];
+  // text 与 toolCalls 是下面持续改写的局部变量，partial 用闭包现取，拿到的永远是当下状态。
+  const thinking = createThinkingEmitter(push, () => buildPartial(model, startedAt, text, toolCalls, 'stop'));
   // catch 块要用它拼网络层失败的提示，声明在 try 外面才能跨块读到。
   let url = model.baseUrl;
 
@@ -120,6 +126,7 @@ async function runOpenAIStream(
         if (!trimmed || !trimmed.startsWith('data:')) continue;
         const data = trimmed.slice('data:'.length).trim();
         if (data === '[DONE]') {
+          thinking.end();
           if (textStarted) {
             push({
               type: 'text_end',
@@ -144,15 +151,18 @@ async function runOpenAIStream(
           }
           text += delta;
           push({ type: 'text_delta', contentIndex: 0, delta, partial: buildPartial(model, startedAt, text, toolCalls, 'stop') });
-        });
+        }, thinking);
       }
     }
 
+    thinking.end();
     if (textStarted) {
       push({ type: 'text_end', contentIndex: 0, content: text, partial: buildPartial(model, startedAt, text, toolCalls, 'stop') });
     }
     finishStream(model, push, startedAt, text, toolCalls, mapOpenAiFinishReason(finishReason, toolCalls.size > 0), toolNames);
   } catch (error) {
+    // 推理块开着就先收口，保证 start/end 成对，再报错。
+    thinking.end();
     // 收尾消息的 stopReason 必须跟事件上的 reason 一致：pi-agent-core 的 agent-loop 只读
     // response.result()（那条消息本身），事件上的 reason 会被丢掉。用户点停止时如果这里仍写
     // 'error'，上层就只能看到一条"模型报错"，把用户自己的中止说成配置问题（ref: 用户反馈——
@@ -176,12 +186,24 @@ function processChunk(
   text: string,
   toolCalls: Map<number, ToolCallAccumulator>,
   appendText: (delta: string) => void,
+  thinking: ThinkingEmitter,
 ): void {
   const choice = chunk.choices?.[0];
   const delta = choice?.delta;
   if (!delta) return;
 
-  if (delta.content) appendText(delta.content);
+  // 推理与正文 / 工具调用的先后：同一个 chunk 里先推理、后正文。只接受非空字符串——
+  // DeepSeek 推理阶段 content 是 ""、推理结束后 reasoning_content 是 null，都不能开关推理块。
+  const reasoning = typeof delta.reasoning_content === 'string' && delta.reasoning_content
+    ? delta.reasoning_content
+    : typeof delta.reasoning === 'string' ? delta.reasoning : '';
+  if (reasoning) thinking.delta(reasoning);
+
+  if (delta.content) {
+    thinking.end();
+    appendText(delta.content);
+  }
+  if (delta.tool_calls?.length) thinking.end();
 
   for (const toolCall of delta.tool_calls ?? []) {
     const current = toolCalls.get(toolCall.index) ?? {

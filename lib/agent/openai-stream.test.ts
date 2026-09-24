@@ -358,3 +358,115 @@ describe('convertMessages 并行工具调用不破坏 tool 消息连续性', () 
     expect(imageParts[1]).toMatchObject({ image_url: { url: 'data:image/jpeg;base64,BBBB' } });
   });
 });
+
+describe('reasoning content', () => {
+  async function eventsFor(body: Response): Promise<AssistantMessageEvent[]> {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(body));
+    const context = { messages: [{ role: 'user', content: 'hi' }] } as unknown as Context;
+    const stream = browserOpenAIStream(makeModel(), context, { apiKey: 'k' }) as AssistantMessageEventStream;
+    return collectEvents(stream);
+  }
+
+  /** 只看推理、正文、工具调用和收尾这几类事件的顺序。 */
+  function kinds(events: AssistantMessageEvent[]): string[] {
+    return events
+      .map((event) => event.type)
+      .filter((type) => type.startsWith('thinking') || type.startsWith('text') || type === 'toolcall_delta' || type === 'done' || type === 'error');
+  }
+
+  function doneContent(events: AssistantMessageEvent[]): unknown[] {
+    const done = events.at(-1);
+    if (done?.type !== 'done') throw new Error(`expected done, got ${done?.type}`);
+    return done.message.content;
+  }
+
+  it('emits thinking events for reasoning_content and closes them before the answer text', async () => {
+    const events = await eventsFor(sseResponse([
+      { choices: [{ delta: { reasoning_content: '先想' } }] },
+      { choices: [{ delta: { reasoning_content: '一下' } }] },
+      { choices: [{ delta: { content: '答案' } }] },
+      { choices: [{ delta: {}, finish_reason: 'stop' }] },
+    ]));
+    expect(kinds(events)).toEqual([
+      'thinking_start', 'thinking_delta', 'thinking_delta', 'thinking_end',
+      'text_start', 'text_delta', 'text_end', 'done',
+    ]);
+    expect(events.find((event) => event.type === 'thinking_end')).toMatchObject({ content: '先想一下', contentIndex: 0 });
+    // 推理只走事件，不进最终消息的 content。
+    expect(doneContent(events)).toEqual([{ type: 'text', text: '答案' }]);
+  });
+
+  it('accepts the `reasoning` field used by OpenRouter and some vLLM deployments', async () => {
+    const events = await eventsFor(sseResponse([
+      { choices: [{ delta: { reasoning: 'r1' } }] },
+      { choices: [{ delta: { content: 'ok' } }] },
+    ]));
+    expect(events.find((event) => event.type === 'thinking_delta')).toMatchObject({ delta: 'r1' });
+  });
+
+  // Review Focus #2：DeepSeek 推理阶段 content 是 ""，推理结束后 reasoning_content 是 null。
+  it('ignores empty and null fields instead of opening or closing blocks early', async () => {
+    const events = await eventsFor(sseResponse([
+      { choices: [{ delta: { reasoning_content: 'a', content: '' } }] },
+      { choices: [{ delta: { reasoning_content: '', content: '' } }] },
+      { choices: [{ delta: { reasoning_content: 'b', content: null } }] },
+      { choices: [{ delta: { reasoning_content: null, content: '答' } }] },
+    ]));
+    expect(kinds(events)).toEqual([
+      'thinking_start', 'thinking_delta', 'thinking_delta', 'thinking_end',
+      'text_start', 'text_delta', 'text_end', 'done',
+    ]);
+  });
+
+  it('closes the thinking block before the first tool call', async () => {
+    const events = await eventsFor(sseResponse([
+      { choices: [{ delta: { reasoning_content: '要点击按钮' } }] },
+      { choices: [{ delta: { tool_calls: [{ index: 0, id: 'c1', function: { name: 'browser_click', arguments: '{}' } }] } }] },
+      { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+    ]));
+    const order = kinds(events);
+    expect(order).toContain('thinking_end');
+    expect(order.indexOf('thinking_end')).toBeLessThan(order.indexOf('toolcall_delta'));
+    expect(doneContent(events)).toEqual([expect.objectContaining({ type: 'toolCall', name: 'browser_click' })]);
+  });
+
+  // Review Focus #3
+  it('closes the thinking block when the response ends with only reasoning', async () => {
+    const events = await eventsFor(sseResponse([
+      { choices: [{ delta: { reasoning_content: '想太久了' } }] },
+      { choices: [{ delta: {}, finish_reason: 'length' }] },
+    ]));
+    expect(kinds(events)).toEqual(['thinking_start', 'thinking_delta', 'thinking_end', 'done']);
+    expect(doneContent(events)).toEqual([]);
+  });
+
+  it('opens a fresh thinking block each time reasoning resumes after text', async () => {
+    const events = await eventsFor(sseResponse([
+      { choices: [{ delta: { reasoning_content: 'r1' } }] },
+      { choices: [{ delta: { content: 't1' } }] },
+      { choices: [{ delta: { reasoning_content: 'r2' } }] },
+      { choices: [{ delta: { content: 't2' } }] },
+    ]));
+    expect(events.filter((event) => event.type === 'thinking_start')).toHaveLength(2);
+    expect(events.filter((event) => event.type === 'thinking_end')).toHaveLength(2);
+    expect(doneContent(events)).toEqual([{ type: 'text', text: 't1t2' }]);
+  });
+
+  it('closes an open thinking block before reporting a mid-stream error', async () => {
+    const body = 'data: {"choices":[{"delta":{"reasoning_content":"r"}}]}\n\ndata: {broken\n\n';
+    const events = await eventsFor(new Response(body, { status: 200 }));
+    expect(kinds(events)).toEqual(['thinking_start', 'thinking_delta', 'thinking_end', 'error']);
+  });
+
+  it('never sends thinking parts back in the request body', () => {
+    const context = {
+      messages: [
+        { role: 'user', content: '问' },
+        { role: 'assistant', content: [{ type: 'thinking', thinking: '不该回传' }, { type: 'text', text: '答' }] },
+      ],
+    } as unknown as Context;
+    const wire = convertMessages(context);
+    expect(JSON.stringify(wire)).not.toContain('不该回传');
+    expect(wire[1]).toEqual({ role: 'assistant', content: '答', tool_calls: undefined });
+  });
+});
