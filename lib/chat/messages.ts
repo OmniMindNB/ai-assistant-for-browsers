@@ -161,24 +161,61 @@ export function conversationTitle(messages: ChatMessage[]): string {
   return text ? text.slice(0, TITLE_MAX_CHARS) : DEFAULT_TITLE;
 }
 
+function reasoningFieldsOf(source: ChatMessage): Partial<ChatMessage> {
+  return {
+    reasoning: source.reasoning,
+    ...(source.reasoningTrimmedChars !== undefined ? { reasoningTrimmedChars: source.reasoningTrimmedChars } : {}),
+    ...(source.reasoningDroppedSegments !== undefined ? { reasoningDroppedSegments: source.reasoningDroppedSegments } : {}),
+    ...(source.reasoningOmittedChars !== undefined ? { reasoningOmittedChars: source.reasoningOmittedChars } : {}),
+  };
+}
+
 /**
- * background 运行中的快照会去掉历史消息上的推理（见 lib/agent/reasoning.ts 的 stripHistoryReasoning），
- * 面板按消息 id 把自己手里的那份补回来，避免运行期间历史推理折叠块闪没。
+ * 补不回的传输省略段并进 reasoningDroppedSegments：编号仍然正确，块顶显示"更早的 k 段已省略"。
+ * 这时省略的字数已经说不准了，所以一并去掉 reasoningOmittedChars，免得显示一个偏小的数。
+ * 孤儿恢复写库前也要走这里（toMessageRecords 不写 reasoningUnsentSegments）。
+ */
+export function foldUnsentReasoning(message: ChatMessage): ChatMessage {
+  if (!message.reasoningUnsentSegments) return message;
+  const { reasoningUnsentSegments, reasoningOmittedChars: _omitted, ...rest } = message;
+  return { ...rest, reasoningDroppedSegments: (message.reasoningDroppedSegments ?? 0) + reasoningUnsentSegments };
+}
+
+/** 按绝对段号从面板手里取出这一帧没发的那几段补在前面；补不上就 fold。 */
+function fillUnsentReasoning(message: ChatMessage, source: ChatMessage | undefined): ChatMessage {
+  const unsent = message.reasoningUnsentSegments ?? 0;
+  const own = message.reasoning ?? [];
+  const from = (message.reasoningDroppedSegments ?? 0) - (source?.reasoningDroppedSegments ?? 0);
+  const held = source?.reasoning;
+  if (!held || from < 0 || held.length < from + unsent) return foldUnsentReasoning(message);
+  const trimmed = [
+    ...(source?.reasoningTrimmedChars?.slice(from, from + unsent) ?? new Array<number>(unsent).fill(0)),
+    ...(message.reasoningTrimmedChars ?? new Array<number>(own.length).fill(0)),
+  ];
+  const { reasoningUnsentSegments: _unsent, reasoningTrimmedChars: _trimmed, ...rest } = message;
+  return {
+    ...rest,
+    reasoning: [...held.slice(from, from + unsent), ...own],
+    ...(trimmed.some((n) => n > 0) ? { reasoningTrimmedChars: trimmed } : {}),
+  };
+}
+
+/**
+ * background 运行中的快照会瘦身推理（见 lib/agent/reasoning.ts 的 stripHistoryReasoning / slimLiveReasoning）：
+ * 历史消息整份去掉推理，最后一条只带正在增长的那一段。面板按消息 id 把自己手里的那份补回来，
+ * 避免运行期间推理折叠块闪没或段数跳动。没有 reasoningUnsentSegments 的消息（收尾的完整快照）原样采用。
  */
 export function restoreStrippedReasoning(previous: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
   const known = new Map<string, ChatMessage>();
   for (const message of previous) {
     if (message.reasoning !== undefined) known.set(message.id, message);
   }
-  if (known.size === 0) return incoming;
   return incoming.map((message) => {
-    if (message.reasoning !== undefined) return message;
     const source = known.get(message.id);
-    if (!source) return message;
-    return {
-      ...message,
-      reasoning: source.reasoning,
-      ...(source.reasoningOmittedChars !== undefined ? { reasoningOmittedChars: source.reasoningOmittedChars } : {}),
-    };
+    if (message.reasoning === undefined) {
+      return source ? { ...message, ...reasoningFieldsOf(source) } : message;
+    }
+    if (!message.reasoningUnsentSegments) return message;
+    return fillUnsentReasoning(message, source);
   });
 }

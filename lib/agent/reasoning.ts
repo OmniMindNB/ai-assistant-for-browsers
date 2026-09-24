@@ -137,3 +137,22 @@ export function stripHistoryReasoning(messages: ChatMessage[]): ChatMessage[] {
     return rest;
   });
 }
+
+/**
+ * 运行中快照用：最后一条消息只带正在增长的那一段（ref: 按段限量设计稿 §3.5）。
+ * 已完成的段在它们定型后的"段数变化帧"或 attachPort 的完整帧里发过，面板按绝对段号补回
+ * （lib/chat/messages.ts 的 restoreStrippedReasoning）。这样每帧推理体积 ≤ 单段上限，不随运行长度增长。
+ */
+export function slimLiveReasoning(messages: ChatMessage[]): ChatMessage[] {
+  const last = messages[messages.length - 1];
+  if (!last?.reasoning || last.reasoning.length <= 1) return messages;
+  const keptTrimmed = last.reasoningTrimmedChars?.at(-1) ?? 0;
+  const { reasoningTrimmedChars: _trimmed, ...rest } = last;
+  const slim: ChatMessage = {
+    ...rest,
+    reasoning: [last.reasoning[last.reasoning.length - 1]],
+    ...(keptTrimmed > 0 ? { reasoningTrimmedChars: [keptTrimmed] } : {}),
+    reasoningUnsentSegments: (last.reasoningUnsentSegments ?? 0) + last.reasoning.length - 1,
+  };
+  return [...messages.slice(0, -1), slim];
+}

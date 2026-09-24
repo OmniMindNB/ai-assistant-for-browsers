@@ -398,6 +398,47 @@ describe('run-registry startRun', () => {
 
   // 终审 Important #1：20k 上限是按条算的，而快照每 48ms 带上整段历史——运行中的快照
   // 只保留当前这条的推理，历史推理留在 state.messages 里照常落库，收尾快照再完整带上。
+  // 设计稿 §3.5：段数变化那一帧带全，平时只带正在增长的那一段。
+  it('sends every segment on the frame a new segment appears and only the growing one otherwise', async () => {
+    const agent = makeFakeAgent([]);
+    let listener: (event: unknown) => void = () => undefined;
+    let release: () => void = () => undefined;
+    agent.prompt = vi.fn(async () => {
+      listener = agent.subscribe.mock.calls[0]?.[0] as (event: unknown) => void;
+      listener({ type: 'turn_start' });
+      listener({ type: 'message_update', assistantMessageEvent: { type: 'thinking_delta', delta: '一' } });
+      listener({ type: 'message_end', message: { role: 'assistant', content: [] } });
+      listener({ type: 'turn_start' });
+      listener({ type: 'message_update', assistantMessageEvent: { type: 'thinking_delta', delta: '二' } });
+      listener({ type: 'message_end', message: { role: 'assistant', content: [] } });
+      listener({ type: 'turn_start' });
+      listener({ type: 'message_update', assistantMessageEvent: { type: 'thinking_delta', delta: '三' } });
+      await new Promise<void>((resolve) => { release = resolve; });
+    });
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    const posted: unknown[] = [];
+    attachPort(25, { postMessage: (m) => posted.push(m) });
+
+    await startRun(makeRequest({ tabId: 25 }));
+    // 等 48ms flush 把第三段首次刷出去（段数 2 → 3，这一帧带全）。
+    await vi.waitFor(() => expect(lastSnapshot(posted).messages.at(-1)?.reasoning).toEqual(['一', '二', '三']));
+    // 同一段继续增长：再一帧只带这一段。
+    listener({ type: 'message_update', assistantMessageEvent: { type: 'thinking_delta', delta: '续' } });
+    await vi.waitFor(() => expect(lastSnapshot(posted).messages.at(-1)?.reasoning).toEqual(['三续']));
+    expect(lastSnapshot(posted).messages.at(-1)?.reasoningUnsentSegments).toBe(2);
+
+    // Review Focus #2：面板中途挂上来，拿到的是完整一帧。
+    const attached = attachPort(25, { postMessage: (m) => posted.push(m) });
+    expect(attached?.messages.at(-1)?.reasoning).toEqual(['一', '二', '三续']);
+    expect(attached?.messages.at(-1)).not.toHaveProperty('reasoningUnsentSegments');
+
+    release();
+    await vi.waitFor(() => expect(lastSnapshot(posted)?.busy).toBe(false));
+    const final = lastSnapshot(posted).messages.at(-1);
+    expect(final?.reasoning).toEqual(['一', '二', '三续']);
+    expect(final).not.toHaveProperty('reasoningUnsentSegments');
+  });
+
   it('strips history reasoning from in-flight snapshots but keeps it for persistence and the final snapshot', async () => {
     const agent = makeFakeAgent([
       { type: 'turn_start' },
@@ -717,6 +758,27 @@ describe('run-registry orphan scan', () => {
     expect(resolved[0].messages.at(-1)?.role).toBe('assistant');
     expect(mocks.replaceConversationMessages).toHaveBeenCalled();
     expect(mocks.replaceConversationMessages).toHaveBeenCalledWith('conv-1', expect.any(Array), expect.any(String));
+  });
+
+  // Review Focus #3：storage.session 里是瘦身快照，写库前要把没发的段并进丢弃计数。
+  it('folds unsent reasoning segments into the dropped count before persisting an orphan', async () => {
+    const { listOrphanRunTabIds, loadRunStateSnapshot } = await import('./run-state-storage');
+    vi.mocked(listOrphanRunTabIds).mockResolvedValueOnce([97]);
+    const snapshot = makeOrphanSnapshot(97, 'conv-slim');
+    vi.mocked(loadRunStateSnapshot).mockResolvedValueOnce({
+      ...snapshot,
+      messages: [
+        ...snapshot.messages,
+        { id: 'a1', role: 'assistant' as const, content: '', createdAt: 2, reasoning: ['三'], reasoningUnsentSegments: 2, reasoningOmittedChars: 5 },
+      ],
+    });
+
+    const { scanForOrphans } = await import('./run-registry');
+    await scanForOrphans();
+
+    const persisted = mocks.replaceConversationMessages.mock.calls.at(-1)?.[1] as Array<{ reasoning?: string[]; reasoningDroppedSegments?: number; reasoningOmittedChars?: number }>;
+    expect(persisted.at(-1)).toMatchObject({ reasoning: ['三'], reasoningDroppedSegments: 2 });
+    expect(persisted.at(-1)?.reasoningOmittedChars).toBeUndefined();
   });
 
   it('does nothing when there is no stale storage.session entry', async () => {

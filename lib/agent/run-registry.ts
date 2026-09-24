@@ -16,9 +16,9 @@ import { describeToolActivity } from './activity-description';
 import { upsertActivityStep, finishActivityStep, type ActivityStep } from './activity-steps';
 import { toolSignature } from './tool-policy';
 import { buildRunDiagnostics, extractToolErrorText } from './run-diagnostics';
-import { appendReasoning, emptyReasoning, reasoningMessageFields, stripHistoryReasoning, type ReasoningBuffer, type ReasoningFields } from './reasoning';
+import { appendReasoning, emptyReasoning, reasoningMessageFields, reasoningSegmentTotal, slimLiveReasoning, stripHistoryReasoning, type ReasoningBuffer, type ReasoningFields } from './reasoning';
 import { replaceConversationMessages } from '@/lib/db';
-import { conversationTitle, toMessageRecords, type ChatMessage } from '@/lib/chat/messages';
+import { conversationTitle, foldUnsentReasoning, toMessageRecords, type ChatMessage } from '@/lib/chat/messages';
 import { t } from '@/lib/i18n';
 import type { TaskOutcome } from './task-outcome';
 import type {
@@ -95,6 +95,11 @@ interface RunState {
    * 通过 vi.waitFor 断言过，多余的微任务会把 busy:false 这个瞬时态"挤"到它们够不着的地方）。
    */
   recordingChainStarted: boolean;
+  /**
+   * 上一次快照里最后一条消息的推理段数（含丢弃的）。段数比它大就说明刚开了新段，
+   * 这一帧要把已定型的段全发出去；否则只发正在增长的那一段（ref: 推理按段限量设计稿 §3.5）。
+   */
+  sentReasoningSegments: number;
 }
 
 const runs = new Map<number, RunState>();
@@ -168,13 +173,20 @@ export function getRunState(tabId: number): RunState | undefined {
   return runs.get(tabId);
 }
 
-function snapshotOf(state: RunState): RunSnapshot {
+function snapshotOf(state: RunState, full = false): RunSnapshot {
+  let messages = state.messages;
+  if (state.busy) {
+    // 运行中只带当前这条的推理，见 stripHistoryReasoning；收尾（busy:false）那份完整带上。
+    messages = stripHistoryReasoning(messages);
+    const total = reasoningSegmentTotal(messages[messages.length - 1]);
+    if (!full && total <= state.sentReasoningSegments) messages = slimLiveReasoning(messages);
+    state.sentReasoningSegments = Math.max(state.sentReasoningSegments, total);
+  }
   return {
     tabId: state.tabId,
     conversationId: state.conversationId,
     busy: state.busy,
-    // 运行中只带当前这条的推理，见 stripHistoryReasoning；收尾（busy:false）那份完整带上。
-    messages: state.busy ? stripHistoryReasoning(state.messages) : state.messages,
+    messages,
     activitySteps: state.activitySteps,
     pendingConfirmation: state.pendingConfirmation,
     pendingQuestion: state.pendingQuestion,
@@ -400,6 +412,7 @@ export async function startRun(request: StartRunRequest): Promise<void> {
     recordingStarts: new Map(),
     recordingChain: Promise.resolve(),
     recordingChainStarted: false,
+    sentReasoningSegments: 0,
   };
   runs.set(request.tabId, state);
   startKeepalive(request.tabId);
@@ -706,7 +719,8 @@ export async function startRun(request: StartRunRequest): Promise<void> {
 export function attachPort(tabId: number, port: PortLike): RunSnapshot | undefined {
   listeners.set(tabId, port);
   const state = runs.get(tabId);
-  return state ? snapshotOf(state) : undefined;
+  // 新挂上来的面板手里没有已完成的段，第一帧必须完整。
+  return state ? snapshotOf(state, true) : undefined;
 }
 
 /** Port 断开只表示"暂时没人在看"，绝不能连带清理 RunState 或调用 agent.abort()——
@@ -726,10 +740,12 @@ export async function scanForOrphans(): Promise<import('./run-port-protocol').Or
     if (runs.has(tabId)) continue; // 这个 tab 已经有存活的 run，说明这条快照是它自己刚写的，不是孤儿
     const snapshot = await loadRunStateSnapshot(tabId);
     if (!snapshot) continue;
-    const last = snapshot.messages[snapshot.messages.length - 1];
+    // 持久化的是瘦身快照：先把没发的段并进丢弃计数，否则 toMessageRecords 丢掉这个字段后编号会错位。
+    const recovered = snapshot.messages.map(foldUnsentReasoning);
+    const last = recovered[recovered.length - 1];
     const messages: ChatMessage[] = last && last.role === 'assistant' && !last.content
-      ? [...snapshot.messages.slice(0, -1), { ...last, content: t('store.interruptedByRestart') }]
-      : [...snapshot.messages, { id: `orphan-${tabId}-${Date.now()}`, role: 'assistant' as const, content: t('store.interruptedByRestart'), createdAt: Date.now() }];
+      ? [...recovered.slice(0, -1), { ...last, content: t('store.interruptedByRestart') }]
+      : [...recovered, { id: `orphan-${tabId}-${Date.now()}`, role: 'assistant' as const, content: t('store.interruptedByRestart'), createdAt: Date.now() }];
 
     // 上一次 worker 死掉时 startRun 的 finally 没跑过，那个 20s 周期的保活 alarm
     // 还留在 chrome.alarms 里空转。这一步与写入成功与否无关，先无条件清掉。

@@ -4,6 +4,7 @@ import {
   canRegenerateMessage,
   conversationTitle,
   discardedCount,
+  foldUnsentReasoning,
   findMessageIndex,
   findPrecedingUserMessage,
   isEditableMessage,
@@ -331,7 +332,7 @@ describe('toMessageRecords reasoning', () => {
 describe('restoreStrippedReasoning', () => {
   it('puts back reasoning the background stripped from history, matched by id', () => {
     const previous: ChatMessage[] = [
-      { id: 'a1', role: 'assistant', content: '旧答', createdAt: 1, reasoning: ['旧推理'], reasoningOmittedChars: 5 },
+      { id: 'a1', role: 'assistant', content: '旧答', createdAt: 1, reasoning: ['旧推理'], reasoningOmittedChars: 5, reasoningTrimmedChars: [2], reasoningDroppedSegments: 1 },
     ];
     const incoming: ChatMessage[] = [
       { id: 'a1', role: 'assistant', content: '旧答', createdAt: 1 },
@@ -339,6 +340,7 @@ describe('restoreStrippedReasoning', () => {
     ];
     const result = restoreStrippedReasoning(previous, incoming);
     expect(result[0]).toMatchObject({ reasoning: ['旧推理'], reasoningOmittedChars: 5 });
+    expect(result[0]).toMatchObject({ reasoningTrimmedChars: [2], reasoningDroppedSegments: 1 });
     expect(result[1].reasoning).toEqual(['新推理']);
   });
 
@@ -346,5 +348,72 @@ describe('restoreStrippedReasoning', () => {
     const incoming: ChatMessage[] = [{ id: 'x', role: 'assistant', content: 'c', createdAt: 1 }];
     const result = restoreStrippedReasoning([], incoming);
     expect(result[0]).toBe(incoming[0]);
+  });
+
+  it('fills segments the background did not send, by absolute segment index', () => {
+    const previous: ChatMessage[] = [
+      { id: 'a2', role: 'assistant', content: '', createdAt: 2, reasoning: ['一', '二'], reasoningTrimmedChars: [0, 6], reasoningDroppedSegments: 1, reasoningOmittedChars: 30 },
+    ];
+    const incoming: ChatMessage[] = [
+      { id: 'a2', role: 'assistant', content: '', createdAt: 2, reasoning: ['三'], reasoningUnsentSegments: 2, reasoningDroppedSegments: 1, reasoningOmittedChars: 30 },
+    ];
+    const [merged] = restoreStrippedReasoning(previous, incoming);
+    expect(merged.reasoning).toEqual(['一', '二', '三']);
+    expect(merged.reasoningTrimmedChars).toEqual([0, 6, 0]);
+    expect(merged.reasoningDroppedSegments).toBe(1);
+    expect(merged.reasoningOmittedChars).toBe(30);
+    expect(merged).not.toHaveProperty('reasoningUnsentSegments');
+  });
+
+  it('fills from the right offset when the background dropped more segments since', () => {
+    const previous: ChatMessage[] = [
+      { id: 'a2', role: 'assistant', content: '', createdAt: 2, reasoning: ['一', '二', '三'] },
+    ];
+    const incoming: ChatMessage[] = [
+      { id: 'a2', role: 'assistant', content: '', createdAt: 2, reasoning: ['四'], reasoningUnsentSegments: 2, reasoningDroppedSegments: 1, reasoningOmittedChars: 9 },
+    ];
+    const [merged] = restoreStrippedReasoning(previous, incoming);
+    expect(merged.reasoning).toEqual(['二', '三', '四']);
+    expect(merged.reasoningDroppedSegments).toBe(1);
+  });
+
+  it('folds unsent segments into the dropped count when the panel cannot fill them', () => {
+    const incoming: ChatMessage[] = [
+      { id: 'a2', role: 'assistant', content: '', createdAt: 2, reasoning: ['三'], reasoningUnsentSegments: 2, reasoningDroppedSegments: 1, reasoningOmittedChars: 30 },
+    ];
+    const [merged] = restoreStrippedReasoning([], incoming);
+    expect(merged.reasoning).toEqual(['三']);
+    expect(merged.reasoningDroppedSegments).toBe(3);
+    expect(merged).not.toHaveProperty('reasoningOmittedChars');
+    expect(merged).not.toHaveProperty('reasoningUnsentSegments');
+  });
+
+  // Review Focus #1：收尾的完整快照不带 unsent，必须原样采用，不能从面板手里补出已经被兜底丢掉的段。
+  it('adopts a full snapshot as-is even if the panel still holds segments dropped since', () => {
+    const previous: ChatMessage[] = [
+      { id: 'a2', role: 'assistant', content: '', createdAt: 2, reasoning: ['一', '二', '三'] },
+    ];
+    const full: ChatMessage = { id: 'a2', role: 'assistant', content: '答', createdAt: 2, reasoning: ['三', '四'], reasoningDroppedSegments: 2, reasoningOmittedChars: 7 };
+    const [merged] = restoreStrippedReasoning(previous, [full]);
+    expect(merged).toBe(full);
+  });
+});
+
+describe('foldUnsentReasoning', () => {
+  it('returns the same message when nothing is unsent', () => {
+    const message: ChatMessage = { id: 'a', role: 'assistant', content: '', createdAt: 1, reasoning: ['x'] };
+    expect(foldUnsentReasoning(message)).toBe(message);
+  });
+
+  // Review Focus #3：孤儿恢复写库前要先并掉，否则 toMessageRecords 丢了这个字段，编号就错位了。
+  it('moves the unsent count into reasoningDroppedSegments and drops the now-unknown char count', () => {
+    const message: ChatMessage = {
+      id: 'a', role: 'assistant', content: '', createdAt: 1,
+      reasoning: ['x'], reasoningUnsentSegments: 4, reasoningOmittedChars: 12,
+    };
+    const folded = foldUnsentReasoning(message);
+    expect(folded.reasoningDroppedSegments).toBe(4);
+    expect(folded).not.toHaveProperty('reasoningUnsentSegments');
+    expect(folded).not.toHaveProperty('reasoningOmittedChars');
   });
 });

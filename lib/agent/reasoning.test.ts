@@ -8,6 +8,7 @@ import {
   emptyReasoning,
   reasoningMessageFields,
   reasoningSegmentTotal,
+  slimLiveReasoning,
   stripHistoryReasoning,
   type ReasoningLimits,
 } from './reasoning';
@@ -179,5 +180,35 @@ describe('stripHistoryReasoning', () => {
     expect(result[1]).toBe(user);
     expect(result[2]).toBe(live);
     expect(history.reasoning).toEqual(['旧推理']);
+  });
+});
+
+describe('slimLiveReasoning', () => {
+  const user = { id: 'u', role: 'user' as const, content: 'q', createdAt: 1 };
+
+  it('keeps only the growing segment of the last message and records how many were not sent', () => {
+    const live = {
+      id: 'a', role: 'assistant' as const, content: '', createdAt: 2,
+      reasoning: ['一', '二', '三'], reasoningTrimmedChars: [0, 5, 2], reasoningDroppedSegments: 4, reasoningOmittedChars: 80,
+    };
+    const [, slim] = slimLiveReasoning([user, live]);
+    expect(slim).toMatchObject({
+      reasoning: ['三'], reasoningTrimmedChars: [2], reasoningUnsentSegments: 2,
+      reasoningDroppedSegments: 4, reasoningOmittedChars: 80,
+    });
+    expect(live.reasoning).toEqual(['一', '二', '三']);
+  });
+
+  it('omits reasoningTrimmedChars when the kept segment was not trimmed', () => {
+    const live = { id: 'a', role: 'assistant' as const, content: '', createdAt: 2, reasoning: ['一', '二'], reasoningTrimmedChars: [5, 0] };
+    const [slim] = slimLiveReasoning([live]);
+    expect(slim).not.toHaveProperty('reasoningTrimmedChars');
+    expect(slim.reasoningUnsentSegments).toBe(1);
+  });
+
+  it('returns the same array when there is at most one segment', () => {
+    const messages = [user, { id: 'a', role: 'assistant' as const, content: '', createdAt: 2, reasoning: ['一'] }];
+    expect(slimLiveReasoning(messages)).toBe(messages);
+    expect(slimLiveReasoning([])).toEqual([]);
   });
 });
