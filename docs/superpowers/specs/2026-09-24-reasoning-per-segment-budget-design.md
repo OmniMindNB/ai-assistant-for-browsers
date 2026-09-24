@@ -90,17 +90,19 @@ interface ReasoningBuffer {
 
 运行中（busy）的快照在现有的 `stripHistoryReasoning`（去掉历史消息的推理）之外，对**最后一条消息**再做一次瘦身：
 
-- **平时**：`reasoning` 只带最后一段（`reasoningTrimmedChars` 同样只带最后一个元素），`reasoningDroppedSegments` 设成 `真实丢弃段数 + 没发送的已完成段数`。这时 `reasoningOmittedChars` 只填真实丢弃的字数，表示"前面这些段传输时省掉了"的那部分不计入字数。
+- **平时**：`reasoning` 只带最后一段（`reasoningTrimmedChars` 同样只带最后一个元素），另设一个**只在传输中使用**的字段 `reasoningUnsentSegments = 没发送的已完成段数`。`reasoningDroppedSegments` 和 `reasoningOmittedChars` 仍然只表示兜底真实丢弃的部分。
+  - 为什么要单独设一个字段，而不是把没发送的段也计进 `reasoningDroppedSegments`：那样的话，收尾的完整快照到达时，面板分不清"前面这些段是被兜底丢掉的"还是"只是这一帧没发"，就会把真正已经丢弃的段从自己手里补回来，界面显示的内容和落库的对不上。
+  - `reasoningUnsentSegments` 挂在 `ChatMessage` 上，但 `toMessageRecords` 不写它，所以不会进入 Dexie。
 - **段数变化的那一帧发完整的**：新的一段刚出现时（即 `droppedSegments + segments.length` 比上一次广播时大），这一帧带上所有已完成的段。这时上一段已经定型，面板收到的就是它的最终版本。
 - **`attachPort` 返回完整快照**：面板中途重开或新挂上来时，手里什么都没有，所以第一帧要完整。
 
 实现上，`snapshotOf` 增加一个参数 `full: boolean`；`RunState` 记录上次广播时的段数，用来判断"段数变化"。
 
-**面板合并**：`restoreStrippedReasoning` 扩展为按段合并。对同一个 id 的消息，如果收到的 `reasoningDroppedSegments` 比自己手里的大，并且自己手里有中间缺的那几段，就用自己的补上，并把 `reasoningDroppedSegments` 和 `reasoningOmittedChars` 恢复成自己手里的值。补不上的时候（理论上不会发生，因为 Port 消息是有序的，而且挂载时的第一帧是完整的），就原样显示，编号仍然正确，只是块顶会显示"更早的 k 段已省略"（界面不区分是兜底丢弃的还是传输中缺的）。
+**面板合并**：`restoreStrippedReasoning` 扩展为按段合并。收到带 `reasoningUnsentSegments = k` 的消息时，从自己手里同 id 的消息中，按绝对段号（`droppedSegments + 下标`）取出缺的那 k 段补在前面，并去掉这个传输字段。补不上的时候（理论上不会发生，因为 Port 消息是有序的，而且挂载时的第一帧是完整的），就把 k 并进 `reasoningDroppedSegments`，同时去掉 `reasoningOmittedChars`，因为这时已经说不准省略了多少字。这样编号仍然正确，块顶显示"更早的 k 段已省略"。这个"并进去"的操作叫 `foldUnsentReasoning`。
 
 **体积**：平时每帧最多约 6,000 字；完整帧每次 LLM 调用只发一次，最多 100,000 字。
 
-**孤儿恢复的代价**：`storage.session` 里存的是瘦身后的快照。worker 中途被回收时，`scanForOrphans` 写回 Dexie 的最后一条消息只有最后一段的推理，但编号正确，块顶会显示"更早的 k 段已省略"。这和原设计稿已经接受的"孤儿恢复会丢历史推理"是同一类代价，而且只影响推理，不影响正文。
+**孤儿恢复的代价**：`storage.session` 里存的是瘦身后的快照。worker 中途被回收时，`scanForOrphans` 写回 Dexie 之前先对消息做 `foldUnsentReasoning`，所以最后一条消息只有最后一段的推理，但编号正确，块顶会显示"更早的 k 段已省略"。这和原设计稿已经接受的"孤儿恢复会丢历史推理"是同一类代价，而且只影响推理，不影响正文。
 
 ### 3.6 界面
 
