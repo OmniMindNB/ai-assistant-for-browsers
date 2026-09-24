@@ -66,3 +66,22 @@ export function reasoningMessageFields(buffer: ReasoningBuffer): Pick<ChatMessag
     ...(buffer.omittedChars > 0 ? { reasoningOmittedChars: buffer.omittedChars } : {}),
   };
 }
+
+/**
+ * 运行中快照用：去掉最后一条以外所有消息上的推理（ref: 设计稿 §3.2 的补充，来自实现后的终审）。
+ *
+ * MAX_REASONING_CHARS 是按条限的，而 snapshotOf 每 48ms 把整段历史经 Port 发给面板、写进
+ * storage.session——几十轮推理模型对话的历史推理能叠到 MB 级，把"运行时限量控制快照体积"
+ * 这个初衷架空。历史推理在一轮运行中不会变，面板手里本来就有（restoreStrippedReasoning 按 id 补回），
+ * 所以运行中的快照只带当前这条；state.messages 与落库不受影响，收尾快照仍然完整。
+ *
+ * 代价：worker 中途被回收时，孤儿恢复只能拿到这份瘦身快照，写回 Dexie 会丢掉历史轮次的推理
+ * （正文不受影响）。那是罕见路径，用它换每一轮流式期间的快照体积。
+ */
+export function stripHistoryReasoning(messages: ChatMessage[]): ChatMessage[] {
+  return messages.map((message, index) => {
+    if (index === messages.length - 1 || message.reasoning === undefined) return message;
+    const { reasoning: _reasoning, reasoningOmittedChars: _omitted, ...rest } = message;
+    return rest;
+  });
+}

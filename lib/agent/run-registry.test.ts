@@ -396,6 +396,35 @@ describe('run-registry startRun', () => {
     expect(last?.reasoning).toEqual(['想到一半']);
   });
 
+  // 终审 Important #1：20k 上限是按条算的，而快照每 48ms 带上整段历史——运行中的快照
+  // 只保留当前这条的推理，历史推理留在 state.messages 里照常落库，收尾快照再完整带上。
+  it('strips history reasoning from in-flight snapshots but keeps it for persistence and the final snapshot', async () => {
+    const agent = makeFakeAgent([
+      { type: 'turn_start' },
+      { type: 'message_update', assistantMessageEvent: { type: 'thinking_delta', delta: '新推理' } },
+      { type: 'message_end', message: { role: 'assistant', content: [] } },
+    ]);
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    const posted: unknown[] = [];
+    attachPort(24, { postMessage: (m) => posted.push(m) });
+    const oldAnswer = { id: 'a0', role: 'assistant' as const, content: '旧答', createdAt: 0, reasoning: ['旧推理'] };
+
+    await startRun(makeRequest({ tabId: 24, historyMessages: [oldAnswer] }));
+    await vi.waitFor(() => expect(lastSnapshot(posted)?.busy).toBe(false));
+
+    const snapshots = posted.filter((m) => (m as { type?: string }).type === 'snapshot') as Array<{ busy: boolean; messages: Array<Record<string, unknown>> }>;
+    const inFlight = snapshots.filter((s) => s.busy);
+    expect(inFlight.length).toBeGreaterThan(0);
+    for (const snapshot of inFlight) {
+      expect(snapshot.messages.find((m) => m.id === 'a0')).not.toHaveProperty('reasoning');
+    }
+    expect(inFlight.some((s) => (s.messages.at(-1)?.reasoning as string[] | undefined)?.[0] === '新推理')).toBe(true);
+
+    expect(lastSnapshot(posted).messages.find((m) => m.id === 'a0')?.reasoning).toEqual(['旧推理']);
+    const persisted = mocks.replaceConversationMessages.mock.calls.at(-1)?.[1] as Array<{ reasoning?: string[] }>;
+    expect(persisted[0]?.reasoning).toEqual(['旧推理']);
+  });
+
   it('writes no reasoning fields when the model produced none', async () => {
     const agent = makeFakeAgent([
       { type: 'turn_start' },

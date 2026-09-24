@@ -426,6 +426,33 @@ describe('chat store page context', () => {
     expect(systemPrompt).toMatch(/当前时间：\d{4}-\d{2}-\d{2} \d{2}:\d{2} 星期./);
   });
 
+  it('applySnapshot restores history reasoning that in-flight snapshots strip', async () => {
+    await connectPort();
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    useChat.setState({
+      conversationId: 'A',
+      messages: [
+        { id: 'u0', role: 'user', content: '旧问', createdAt: 1 },
+        { id: 'a0', role: 'assistant', content: '旧答', createdAt: 2, reasoning: ['旧推理'] },
+      ],
+    });
+    await useChat.getState().send('新问');
+
+    emitSnapshot({
+      tabId: 7,
+      conversationId: 'A',
+      busy: true,
+      messages: [
+        { id: 'u0', role: 'user', content: '旧问', createdAt: 1 },
+        { id: 'a0', role: 'assistant', content: '旧答', createdAt: 2 },
+        { id: 'a1', role: 'assistant', content: '', createdAt: 3, reasoning: ['新推理'] },
+      ],
+    });
+    const messages = useChat.getState().messages;
+    expect(messages.find((m) => m.id === 'a0')?.reasoning).toEqual(['旧推理']);
+    expect(messages.find((m) => m.id === 'a1')?.reasoning).toEqual(['新推理']);
+  });
+
   it('applySnapshot ignores a snapshot whose tabId does not match the active run, or that arrives after the client has navigated away', async () => {
     // applySnapshot 的过滤条件是 run.tabId === snapshot.tabId 且 isCurrentOrigin(run.origin, get)——
     // 后者比较的是"当前 store 的 conversationId 是否还等于这个 run 发起时捕获的 origin"，

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_REASONING_CHARS, appendReasoning, emptyReasoning, reasoningMessageFields } from './reasoning';
+import { MAX_REASONING_CHARS, appendReasoning, emptyReasoning, reasoningMessageFields, stripHistoryReasoning } from './reasoning';
 
 describe('appendReasoning', () => {
   it('appends deltas of the same LLM turn into one segment', () => {
@@ -79,5 +79,26 @@ describe('reasoningMessageFields', () => {
     const fields = reasoningMessageFields(buffer);
     expect(fields).toEqual({ reasoning: ['def'], reasoningOmittedChars: 3 });
     expect(fields.reasoning).not.toBe(buffer.segments);
+  });
+});
+
+describe('stripHistoryReasoning', () => {
+  const history = { id: 'a1', role: 'assistant' as const, content: '旧答', createdAt: 1, reasoning: ['旧推理'], reasoningOmittedChars: 5 };
+  const user = { id: 'u2', role: 'user' as const, content: '新问', createdAt: 2 };
+  const live = { id: 'a2', role: 'assistant' as const, content: '', createdAt: 3, reasoning: ['正在想'] };
+
+  it('drops reasoning from every message but the last', () => {
+    const result = stripHistoryReasoning([history, user, live]);
+    expect(result[0]).not.toHaveProperty('reasoning');
+    expect(result[0]).not.toHaveProperty('reasoningOmittedChars');
+    expect(result[0].content).toBe('旧答');
+    expect(result[2].reasoning).toEqual(['正在想']);
+  });
+
+  it('keeps untouched messages by reference and never mutates its input', () => {
+    const result = stripHistoryReasoning([history, user, live]);
+    expect(result[1]).toBe(user);
+    expect(result[2]).toBe(live);
+    expect(history.reasoning).toEqual(['旧推理']);
   });
 });

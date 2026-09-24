@@ -16,7 +16,7 @@ import { describeToolActivity } from './activity-description';
 import { upsertActivityStep, finishActivityStep, type ActivityStep } from './activity-steps';
 import { toolSignature } from './tool-policy';
 import { buildRunDiagnostics, extractToolErrorText } from './run-diagnostics';
-import { appendReasoning, emptyReasoning, reasoningMessageFields, type ReasoningBuffer } from './reasoning';
+import { appendReasoning, emptyReasoning, reasoningMessageFields, stripHistoryReasoning, type ReasoningBuffer } from './reasoning';
 import { replaceConversationMessages } from '@/lib/db';
 import { conversationTitle, toMessageRecords, type ChatMessage } from '@/lib/chat/messages';
 import { t } from '@/lib/i18n';
@@ -173,7 +173,8 @@ function snapshotOf(state: RunState): RunSnapshot {
     tabId: state.tabId,
     conversationId: state.conversationId,
     busy: state.busy,
-    messages: state.messages,
+    // 运行中只带当前这条的推理，见 stripHistoryReasoning；收尾（busy:false）那份完整带上。
+    messages: state.busy ? stripHistoryReasoning(state.messages) : state.messages,
     activitySteps: state.activitySteps,
     pendingConfirmation: state.pendingConfirmation,
     pendingQuestion: state.pendingQuestion,

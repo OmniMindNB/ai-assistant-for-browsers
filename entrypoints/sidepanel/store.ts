@@ -30,6 +30,7 @@ import {
   findMessageIndex,
   findPrecedingUserMessage,
   isEditableMessage,
+  restoreStrippedReasoning,
   type ChatMessage,
 } from '@/lib/chat/messages';
 import { buildSystemPrompt } from '@/lib/agent/system-prompt';
@@ -383,7 +384,8 @@ function applySnapshot(snapshot: SnapshotMessage): void {
   const run = activeRun;
   if (!run || run.tabId !== snapshot.tabId || !isCurrentOrigin(run.origin, get)) return;
   set({
-    messages: snapshot.messages,
+    // 运行中的快照去掉了历史消息的推理（见 lib/agent/reasoning.ts 的 stripHistoryReasoning），按 id 补回。
+    messages: restoreStrippedReasoning(get().messages, snapshot.messages),
     activitySteps: snapshot.activitySteps,
     pendingConfirmation: snapshot.pendingConfirmation,
     pendingQuestion: snapshot.pendingQuestion,

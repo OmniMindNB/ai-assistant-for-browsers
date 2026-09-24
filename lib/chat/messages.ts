@@ -148,3 +148,25 @@ export function conversationTitle(messages: ChatMessage[]): string {
   const text = first?.content.trim();
   return text ? text.slice(0, TITLE_MAX_CHARS) : DEFAULT_TITLE;
 }
+
+/**
+ * background 运行中的快照会去掉历史消息上的推理（见 lib/agent/reasoning.ts 的 stripHistoryReasoning），
+ * 面板按消息 id 把自己手里的那份补回来，避免运行期间历史推理折叠块闪没。
+ */
+export function restoreStrippedReasoning(previous: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
+  const known = new Map<string, ChatMessage>();
+  for (const message of previous) {
+    if (message.reasoning !== undefined) known.set(message.id, message);
+  }
+  if (known.size === 0) return incoming;
+  return incoming.map((message) => {
+    if (message.reasoning !== undefined) return message;
+    const source = known.get(message.id);
+    if (!source) return message;
+    return {
+      ...message,
+      reasoning: source.reasoning,
+      ...(source.reasoningOmittedChars !== undefined ? { reasoningOmittedChars: source.reasoningOmittedChars } : {}),
+    };
+  });
+}

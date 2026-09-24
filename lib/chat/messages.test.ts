@@ -7,6 +7,7 @@ import {
   findMessageIndex,
   findPrecedingUserMessage,
   isEditableMessage,
+  restoreStrippedReasoning,
   toMessageRecords,
   type ChatMessage,
 } from './messages';
@@ -309,5 +310,26 @@ describe('toMessageRecords trajectory', () => {
     ]);
     expect(records[1].trajectory).toEqual(trajectory);
     expect(records[0].trajectory).toBeUndefined();
+  });
+});
+
+describe('restoreStrippedReasoning', () => {
+  it('puts back reasoning the background stripped from history, matched by id', () => {
+    const previous: ChatMessage[] = [
+      { id: 'a1', role: 'assistant', content: '旧答', createdAt: 1, reasoning: ['旧推理'], reasoningOmittedChars: 5 },
+    ];
+    const incoming: ChatMessage[] = [
+      { id: 'a1', role: 'assistant', content: '旧答', createdAt: 1 },
+      { id: 'a2', role: 'assistant', content: '', createdAt: 2, reasoning: ['新推理'] },
+    ];
+    const result = restoreStrippedReasoning(previous, incoming);
+    expect(result[0]).toMatchObject({ reasoning: ['旧推理'], reasoningOmittedChars: 5 });
+    expect(result[1].reasoning).toEqual(['新推理']);
+  });
+
+  it('returns incoming messages untouched when nothing needs restoring', () => {
+    const incoming: ChatMessage[] = [{ id: 'x', role: 'assistant', content: 'c', createdAt: 1 }];
+    const result = restoreStrippedReasoning([], incoming);
+    expect(result[0]).toBe(incoming[0]);
   });
 });
