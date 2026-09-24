@@ -911,7 +911,7 @@ describe('applyFormFill', () => {
     const seen: string[] = [];
     const pointerEvents: Event[] = [];
     for (const type of [
-      'pointerover', 'pointerenter', 'mouseover', 'mouseenter',
+      'pointerover', 'pointerenter', 'mouseover', 'mouseenter', 'pointermove', 'mousemove',
       'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click',
     ]) {
       button.addEventListener(type, (event) => {
@@ -928,7 +928,7 @@ describe('applyFormFill', () => {
 
     expect(output.submitted?.status).toBe('ok');
     expect(seen).toEqual([
-      'pointerover', 'pointerenter', 'mouseover', 'mouseenter',
+      'pointerover', 'pointerenter', 'mouseover', 'mouseenter', 'pointermove', 'mousemove',
       'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click',
     ]);
     expect(pointerEvents).toHaveLength(2);
@@ -936,6 +936,28 @@ describe('applyFormFill', () => {
       expect(event).toBeInstanceOf(PointerEvent);
       expect((event as PointerEvent).pointerType).toBe('mouse');
     }
+  });
+
+  // 与 clickElementInPage 同一条语义（两处是各自内联的注入函数，必须分别钉住）：enter 逐层发给
+  // 新进入的祖先；在同一 hover 容器内移动不触发容器的 leave/enter，out 带 relatedTarget。
+  it('fires enter on newly entered ancestors and keeps the shared hover container entered between clicks', async () => {
+    render(`<li id="item"><a id="parent" href="#p">菜单</a><ul><li><a id="child" href="#c">子项</a></li></ul></li>`);
+    const raws = collectFormFields(INPUT).raws.filter((raw) => raw.tag === 'a');
+    const item = document.getElementById('item')!;
+    const child = document.getElementById('child')!;
+    const seen: string[] = [];
+    item.addEventListener('mouseenter', () => seen.push('item:mouseenter'));
+    item.addEventListener('mouseleave', () => seen.push('item:mouseleave'));
+
+    await applyFormFill({ url: location.href, items: [], submit: { fieldId: 'f1', path: raws[0].path, expect: { tag: 'a' } } });
+    expect(seen).toEqual(['item:mouseenter']);
+
+    let related: EventTarget | null = null;
+    item.addEventListener('mouseout', (e) => { related = (e as MouseEvent).relatedTarget; });
+    await applyFormFill({ url: location.href, items: [], submit: { fieldId: 'f2', path: raws[1].path, expect: { tag: 'a' } } });
+
+    expect(seen).toEqual(['item:mouseenter']);
+    expect(related).toBe(child);
   });
 
   it('flashes a highlight overlay on the submit target before dispatching the click', async () => {

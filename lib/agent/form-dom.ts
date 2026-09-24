@@ -910,16 +910,31 @@ export async function applyFormFill(input: ApplyFillInput): Promise<ApplyFillOut
 
         // 同 clickElementInPage：给上一次点击的元素补一套「鼠标离开」事件，防止它弹出的
         // hover 菜单粘住不消失。⚠️ 与 clickElementInPage 重复，不能共用 helper。
+        // 进出事件语义（relatedTarget、enter/leave 只发给祖先链差集）的理由见 clickElementInPage。
         const runiWindow = window as Window & { __runiLastClickTarget__?: Element };
-        const lastClicked = runiWindow.__runiLastClickTarget__;
-        if (lastClicked && lastClicked.isConnected && lastClicked !== dispatchTarget) {
-          const leaveOpts = { bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse', isPrimary: true };
+        const previousTarget = runiWindow.__runiLastClickTarget__;
+        const lastClicked = previousTarget && previousTarget.isConnected ? previousTarget : null;
+        const ancestorChain = (node: Element): Element[] => {
+          const chain: Element[] = [];
+          let current: Element | null = node;
+          while (current) {
+            chain.push(current);
+            current = current.parentElement ?? ((current.getRootNode() as ShadowRoot).host ?? null);
+          }
+          return chain;
+        };
+        const targetChain = ancestorChain(dispatchTarget);
+        const lastChain = lastClicked ? ancestorChain(lastClicked) : [];
+        if (lastClicked && lastClicked !== dispatchTarget) {
+          const leaving = lastChain.filter((element) => !targetChain.includes(element));
+          const leaveOpts = { bubbles: true, cancelable: true, relatedTarget: dispatchTarget, pointerId: 1, pointerType: 'mouse', isPrimary: true };
           lastClicked.dispatchEvent(new PointerEvent('pointerout', leaveOpts));
-          lastClicked.dispatchEvent(new PointerEvent('pointerleave', { ...leaveOpts, bubbles: false }));
-          lastClicked.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, cancelable: true }));
-          lastClicked.dispatchEvent(new MouseEvent('mouseleave', { bubbles: false, cancelable: true }));
+          for (const element of leaving) element.dispatchEvent(new PointerEvent('pointerleave', { ...leaveOpts, bubbles: false, cancelable: false }));
+          lastClicked.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, cancelable: true, relatedTarget: dispatchTarget }));
+          for (const element of leaving) element.dispatchEvent(new MouseEvent('mouseleave', { bubbles: false, cancelable: false, relatedTarget: dispatchTarget }));
           (lastClicked as HTMLElement).blur?.();
         }
+        const entering = targetChain.filter((element) => !lastChain.includes(element)).reverse();
 
         // 涟漪与 click 同刻派发。⚠️ 与 clickElementInPage 重复，不能共用 helper。
         // 子帧场景同上：顶层收不到这个事件，派发了也没有观众。
@@ -929,10 +944,12 @@ export async function applyFormFill(input: ApplyFillInput): Promise<ApplyFillOut
 
         const pointerOpts = { bubbles: true, cancelable: true, clientX: centerX, clientY: centerY, pointerId: 1, pointerType: 'mouse', isPrimary: true };
         const mouseOpts = { bubbles: true, cancelable: true, clientX: centerX, clientY: centerY, button: 0 };
-        dispatchTarget.dispatchEvent(new PointerEvent('pointerover', pointerOpts));
-        dispatchTarget.dispatchEvent(new PointerEvent('pointerenter', { ...pointerOpts, bubbles: false }));
-        dispatchTarget.dispatchEvent(new MouseEvent('mouseover', mouseOpts));
-        dispatchTarget.dispatchEvent(new MouseEvent('mouseenter', { ...mouseOpts, bubbles: false }));
+        dispatchTarget.dispatchEvent(new PointerEvent('pointerover', { ...pointerOpts, relatedTarget: lastClicked }));
+        for (const element of entering) element.dispatchEvent(new PointerEvent('pointerenter', { ...pointerOpts, bubbles: false, cancelable: false, relatedTarget: lastClicked }));
+        dispatchTarget.dispatchEvent(new MouseEvent('mouseover', { ...mouseOpts, relatedTarget: lastClicked }));
+        for (const element of entering) element.dispatchEvent(new MouseEvent('mouseenter', { ...mouseOpts, bubbles: false, cancelable: false, relatedTarget: lastClicked }));
+        dispatchTarget.dispatchEvent(new PointerEvent('pointermove', pointerOpts));
+        dispatchTarget.dispatchEvent(new MouseEvent('mousemove', mouseOpts));
         dispatchTarget.dispatchEvent(new PointerEvent('pointerdown', pointerOpts));
         dispatchTarget.dispatchEvent(new MouseEvent('mousedown', mouseOpts));
         (dispatchTarget as HTMLElement).focus?.();
@@ -1558,18 +1575,41 @@ export async function clickElementInPage(input: { selector: string; index: numbe
   // 粘在页面上不消失——page.window 在多次 executeScript 调用之间是同一个真实的
   // 页面全局对象，可以安全地把它当会话状态存（导航会换新的 window，天然重置）。
   // ⚠️ 与 applyFormFill 的 submit 分支重复：两处都是被序列化注入的独立函数，不能共用 helper。
+  //
+  // 进出事件按真实浏览器的语义派发，两条缺一不可：
+  // - out/over 互相带上对方作为 relatedTarget。null 等于宣称指针离开了窗口，jQuery .hover()
+  //   和 React onMouseLeave 都靠它判断指针是否仍在容器内，会据此把「父菜单→子菜单」
+  //   途中的整个菜单关掉。
+  // - enter/leave 不冒泡，只发给指针真正新进入/离开的那些祖先（两条祖先链的差集）。
+  //   只发给命中的最内层元素时，绑在外层容器上的原生 mouseenter（原生 JS、Vue
+  //   @mouseenter）永远收不到，hover 菜单打不开。
+  // 祖先链穿过 shadow root 走到宿主，与指针事件的组合路径一致。
   const runiWindow = window as Window & { __runiLastClickTarget__?: Element };
-  const lastClicked = runiWindow.__runiLastClickTarget__;
-  if (lastClicked && lastClicked.isConnected && lastClicked !== dispatchTarget) {
-    const leaveOpts = { bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse', isPrimary: true };
+  const previousTarget = runiWindow.__runiLastClickTarget__;
+  const lastClicked = previousTarget && previousTarget.isConnected ? previousTarget : null;
+  const ancestorChain = (node: Element): Element[] => {
+    const chain: Element[] = [];
+    let current: Element | null = node;
+    while (current) {
+      chain.push(current);
+      current = current.parentElement ?? ((current.getRootNode() as ShadowRoot).host ?? null);
+    }
+    return chain;
+  };
+  const targetChain = ancestorChain(dispatchTarget);
+  const lastChain = lastClicked ? ancestorChain(lastClicked) : [];
+  if (lastClicked && lastClicked !== dispatchTarget) {
+    const leaving = lastChain.filter((element) => !targetChain.includes(element)); // 由内向外
+    const leaveOpts = { bubbles: true, cancelable: true, relatedTarget: dispatchTarget, pointerId: 1, pointerType: 'mouse', isPrimary: true };
     lastClicked.dispatchEvent(new PointerEvent('pointerout', leaveOpts));
-    lastClicked.dispatchEvent(new PointerEvent('pointerleave', { ...leaveOpts, bubbles: false }));
-    lastClicked.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, cancelable: true }));
-    lastClicked.dispatchEvent(new MouseEvent('mouseleave', { bubbles: false, cancelable: true }));
+    for (const element of leaving) element.dispatchEvent(new PointerEvent('pointerleave', { ...leaveOpts, bubbles: false, cancelable: false }));
+    lastClicked.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, cancelable: true, relatedTarget: dispatchTarget }));
+    for (const element of leaving) element.dispatchEvent(new MouseEvent('mouseleave', { bubbles: false, cancelable: false, relatedTarget: dispatchTarget }));
     // 用真正的 blur() 而不是派发合成事件：它同时会把浏览器的焦点状态清空，避免下面
     // dispatchTarget.focus() 再对它触发一次原生 blur，重复两遍。
     (lastClicked as HTMLElement).blur?.();
   }
+  const entering = targetChain.filter((element) => !lastChain.includes(element)).reverse(); // 由外向内
 
   // 涟漪与 click 在同一刻派发：用户看到的「点了一下」和页面真正收到的点击是同一件事。
   // ⚠️ 与 applyFormFill 的 submit 分支重复，两处都是序列化注入的独立函数，不能共用 helper。
@@ -1577,10 +1617,13 @@ export async function clickElementInPage(input: { selector: string; index: numbe
 
   const pointerOpts = { bubbles: true, cancelable: true, clientX: centerX, clientY: centerY, pointerId: 1, pointerType: 'mouse', isPrimary: true };
   const mouseOpts = { bubbles: true, cancelable: true, clientX: centerX, clientY: centerY, button: 0 };
-  dispatchTarget.dispatchEvent(new PointerEvent('pointerover', pointerOpts));
-  dispatchTarget.dispatchEvent(new PointerEvent('pointerenter', { ...pointerOpts, bubbles: false }));
-  dispatchTarget.dispatchEvent(new MouseEvent('mouseover', mouseOpts));
-  dispatchTarget.dispatchEvent(new MouseEvent('mouseenter', { ...mouseOpts, bubbles: false }));
+  dispatchTarget.dispatchEvent(new PointerEvent('pointerover', { ...pointerOpts, relatedTarget: lastClicked }));
+  for (const element of entering) element.dispatchEvent(new PointerEvent('pointerenter', { ...pointerOpts, bubbles: false, cancelable: false, relatedTarget: lastClicked }));
+  dispatchTarget.dispatchEvent(new MouseEvent('mouseover', { ...mouseOpts, relatedTarget: lastClicked }));
+  for (const element of entering) element.dispatchEvent(new MouseEvent('mouseenter', { ...mouseOpts, bubbles: false, cancelable: false, relatedTarget: lastClicked }));
+  // 一部分悬停逻辑只听 move（Floating UI useHover、mega menu 的 menu-aim、Radix 子菜单）。
+  dispatchTarget.dispatchEvent(new PointerEvent('pointermove', pointerOpts));
+  dispatchTarget.dispatchEvent(new MouseEvent('mousemove', mouseOpts));
   dispatchTarget.dispatchEvent(new PointerEvent('pointerdown', pointerOpts));
   dispatchTarget.dispatchEvent(new MouseEvent('mousedown', mouseOpts));
   (dispatchTarget as HTMLElement).focus?.();

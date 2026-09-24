@@ -76,6 +76,7 @@ const FORM_WORKFLOW = [
   '8. 表单字段按所在框架分组：带「嵌入框架」标题的字段位于 iframe 内，同样可以正常读取、填写和点击，不要因为它在 iframe 里就放弃。',
   '9. 字段值形如「[XXX已脱敏]」（如 [手机号已脱敏]、[邮箱已脱敏]）是隐私脱敏管线插入的占位符，不是真实数据：不要把它抄进其他字段，也不要通过 browser_fill_form/browser_type 原样写回页面；如果任务确实需要真实值，如实告诉用户该字段已被脱敏，请用户自己提供或填写。',
   '10. 页面刚打开就调用 browser_get_form 却返回 0 个字段，且页面标题或正文明显有表单内容时，优先怀疑页面还没渲染完（客户端渲染的页面、广告较多的页面尤其常见），用 browser_wait_for(domIdle) 等它渲染完再重新调用一次 browser_get_form，不要凭空构造或猜测 fieldId 去调用 browser_fill_form/browser_click——这类 fieldId 一定是无效的。',
+  '11. 悬停才出现的元素（下拉子菜单、表格行上的操作按钮）：browser_click 会先模拟鼠标移入再点击，脚本驱动的悬停菜单点一下父项就会展开，展开后的子项会在工具结果里回报。但纯 CSS :hover 控制显隐的元素无法用合成事件触发：它们默认不在 browser_get_form 的结果里（传 includeHidden: true 才能看到），点击会返回不可点击。遇到这种情况不要反复点父元素等它出现：目标是链接就取它的 href 用 browser_navigate 直接打开；否则先用 browser_set_style 把它设为可见，再点击。',
 ].join('\n');
 
 /** 注入进 <runtime_context> 的页面信息长度上限：标题和地址都由网页控制，必须截断。 */

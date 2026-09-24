@@ -49,14 +49,14 @@ describe('clickElementInPage', () => {
     const button = document.querySelector('button')!;
     const seen: string[] = [];
     for (const type of [
-      'pointerover', 'pointerenter', 'mouseover', 'mouseenter',
+      'pointerover', 'pointerenter', 'mouseover', 'mouseenter', 'pointermove', 'mousemove',
       'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click',
     ]) {
       button.addEventListener(type, () => seen.push(type));
     }
     expect((await clickElementInPage({ selector: 'button', index: 0 })).status).toBe('ok');
     expect(seen).toEqual([
-      'pointerover', 'pointerenter', 'mouseover', 'mouseenter',
+      'pointerover', 'pointerenter', 'mouseover', 'mouseenter', 'pointermove', 'mousemove',
       'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click',
     ]);
   });
@@ -264,6 +264,55 @@ describe('clickElementInPage 的命中测试与 hover 收尾', () => {
     await clickElementInPage({ selector: '#a', index: 0 });
 
     expect(seen).toEqual([]);
+  });
+
+  // 原生 mouseenter/pointerenter 不冒泡：真实浏览器会逐层发给指针新进入的每个祖先。
+  // 只发给命中的最内层元素时，绑在外层容器上的 hover 菜单（原生 JS、Vue @mouseenter）永远收不到。
+  it('fires enter events on every newly entered ancestor of the hit element, outermost first', async () => {
+    document.body.innerHTML = `<div id="menu"><button id="btn"><span id="icon">▾</span></button></div>`;
+    const icon = document.getElementById('icon')!;
+    document.elementFromPoint = () => icon;
+    const seen: string[] = [];
+    for (const id of ['menu', 'btn', 'icon']) {
+      const el = document.getElementById(id)!;
+      el.addEventListener('mouseenter', () => seen.push(`mouseenter:${id}`));
+      el.addEventListener('pointerenter', () => seen.push(`pointerenter:${id}`));
+    }
+
+    await clickElementInPage({ selector: '#btn', index: 0 });
+
+    expect(seen).toEqual([
+      'pointerenter:menu', 'pointerenter:btn', 'pointerenter:icon',
+      'mouseenter:menu', 'mouseenter:btn', 'mouseenter:icon',
+    ]);
+  });
+
+  // 先点父菜单项再点子菜单项：指针始终没离开外层菜单容器。离开事件带 relatedTarget=null
+  // 等于宣称指针离开了窗口，jQuery .hover() / React onMouseLeave 会据此把整个菜单关掉。
+  it('moving to another element inside the same hover container neither leaves nor re-enters the container', async () => {
+    document.body.innerHTML =
+      `<li id="item"><a id="parent">菜单</a><ul><li><a id="child">子项</a></li></ul></li>`;
+    document.elementFromPoint = () => null;
+    await clickElementInPage({ selector: '#parent', index: 0 });
+
+    const item = document.getElementById('item')!;
+    const parent = document.getElementById('parent')!;
+    const child = document.getElementById('child')!;
+    const seen: string[] = [];
+    for (const type of ['mouseleave', 'pointerleave', 'mouseenter', 'pointerenter']) {
+      item.addEventListener(type, () => seen.push(`item:${type}`));
+      parent.addEventListener(type, () => seen.push(`parent:${type}`));
+    }
+    const related: Record<string, EventTarget | null> = {};
+    item.addEventListener('mouseout', (e) => { related.mouseout = (e as MouseEvent).relatedTarget; });
+    item.addEventListener('pointerout', (e) => { related.pointerout = (e as PointerEvent).relatedTarget; });
+    child.addEventListener('mouseover', (e) => { related.mouseover = (e as MouseEvent).relatedTarget; });
+    child.addEventListener('pointerover', (e) => { related.pointerover = (e as PointerEvent).relatedTarget; });
+
+    await clickElementInPage({ selector: '#child', index: 0 });
+
+    expect(seen).toEqual(['parent:pointerleave', 'parent:mouseleave']);
+    expect(related).toEqual({ pointerout: child, mouseout: child, pointerover: parent, mouseover: parent });
   });
 
   it('skips blur-out handling instead of throwing when the previously clicked element left the DOM', async () => {

@@ -75,6 +75,17 @@ describe('buildSystemPrompt tool listing', () => {
   });
 });
 
+// 合成事件触发不了 CSS :hover：悬停才显示的元素默认不在 get_form 结果里，点击也会被判为
+// 不可点击。提示词不讲清楚的话，模型只会反复点父元素等它出现。
+describe('悬停元素引导', () => {
+  it('说明 CSS :hover 元素的处理路径', () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toContain('CSS :hover');
+    expect(prompt).toContain('includeHidden');
+    expect(prompt).toContain('browser_set_style');
+  });
+});
+
 describe('按键策略引导', () => {
   it('提示词说明 Tab/Escape 不触发原生行为', () => {
     const prompt = buildSystemPrompt();
