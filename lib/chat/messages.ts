@@ -52,13 +52,23 @@ export interface ChatMessage {
    */
   runDiagnostics?: RunDiagnostics;
   /**
-   * 推理模型本轮流式返回的推理内容，按 LLM 调用分段（一次调用一段），已按
-   * lib/agent/reasoning.ts 的 MAX_REASONING_CHARS 滑动窗口限量；仅 assistant 消息、且真的收到过推理时才有值。
-   * 只供面板回看：不回传给模型、不进会话导出（ref: docs/superpowers/specs/2026-09-24-reasoning-display-design.md）。
+   * 推理模型本轮流式返回的推理内容，按 LLM 调用分段（一次调用一段）。每段按
+   * lib/agent/reasoning.ts 的 MAX_REASONING_SEGMENT_CHARS 保留首尾，整条按 MAX_REASONING_TOTAL_CHARS
+   * 从最前面整段丢弃；仅 assistant 消息、且真的收到过推理时才有值。
+   * 只供面板回看：不回传给模型、不进会话导出（ref: docs/superpowers/specs/2026-09-24-reasoning-per-segment-budget-design.md）。
    */
   reasoning?: string[];
-  /** 滑动窗口丢掉的最早那部分推理的字数；没有丢弃时不写。 */
+  /** 与 reasoning 等长：每段中间被省略的字数；有任一段被截断才写。截断点固定在 REASONING_SEGMENT_HEAD_CHARS。 */
+  reasoningTrimmedChars?: number[];
+  /** 兜底上限从最前面整段丢掉的段数；编号与段数都从它往后数。为 0 时不写。 */
+  reasoningDroppedSegments?: number;
+  /** 兜底丢掉的那些段合计的字数（存量记录里是旧滑动窗口删掉的字数，含义一致）；为 0 时不写。 */
   reasoningOmittedChars?: number;
+  /**
+   * 仅运行中快照使用、从不落库：reasoning 前面还有几段这一帧没发（面板手里有）。
+   * 面板用 restoreStrippedReasoning 补回；补不上时 foldUnsentReasoning 并进 reasoningDroppedSegments。
+   */
+  reasoningUnsentSegments?: number;
 }
 
 const TITLE_MAX_CHARS = 40;
@@ -139,6 +149,8 @@ export function toMessageRecords(
     runDiagnostics: message.runDiagnostics,
     reasoning: message.reasoning,
     reasoningOmittedChars: message.reasoningOmittedChars,
+    reasoningTrimmedChars: message.reasoningTrimmedChars,
+    reasoningDroppedSegments: message.reasoningDroppedSegments,
   }));
 }
 

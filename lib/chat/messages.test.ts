@@ -313,6 +313,21 @@ describe('toMessageRecords trajectory', () => {
   });
 });
 
+describe('toMessageRecords reasoning', () => {
+  it('persists per-segment reasoning fields but never the transport-only unsent count', () => {
+    const records = toMessageRecords('conv-1', [
+      { id: 'u1', role: 'user', content: 'go', createdAt: 1 },
+      {
+        id: 'a1', role: 'assistant', content: 'done', createdAt: 2,
+        reasoning: ['x'], reasoningTrimmedChars: [4], reasoningDroppedSegments: 2, reasoningOmittedChars: 90,
+        reasoningUnsentSegments: 1,
+      },
+    ]);
+    expect(records[1]).toMatchObject({ reasoningTrimmedChars: [4], reasoningDroppedSegments: 2, reasoningOmittedChars: 90 });
+    expect(records[1]).not.toHaveProperty('reasoningUnsentSegments');
+  });
+});
+
 describe('restoreStrippedReasoning', () => {
   it('puts back reasoning the background stripped from history, matched by id', () => {
     const previous: ChatMessage[] = [

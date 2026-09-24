@@ -252,10 +252,12 @@ describe('buildConversationExport', () => {
   it('never exports assistant reasoning', () => {
     const doc = build([
       record({ content: '问' }),
-      record({ role: 'assistant', content: '答', reasoning: ['推理里的秘密步骤'], reasoningOmittedChars: 3 }),
+      record({ role: 'assistant', content: '答', reasoning: ['推理里的秘密步骤'], reasoningOmittedChars: 3, reasoningTrimmedChars: [9], reasoningDroppedSegments: 1 }),
     ]);
     expect(JSON.stringify(doc)).not.toContain('推理里的秘密步骤');
     expect(renderConversationExportMarkdown(doc, t)).not.toContain('推理里的秘密步骤');
+    expect(JSON.stringify(doc)).not.toContain('reasoningTrimmedChars');
+    expect(JSON.stringify(doc)).not.toContain('reasoningDroppedSegments');
   });
 });
 

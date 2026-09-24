@@ -16,7 +16,7 @@ import { describeToolActivity } from './activity-description';
 import { upsertActivityStep, finishActivityStep, type ActivityStep } from './activity-steps';
 import { toolSignature } from './tool-policy';
 import { buildRunDiagnostics, extractToolErrorText } from './run-diagnostics';
-import { appendReasoning, emptyReasoning, reasoningMessageFields, stripHistoryReasoning, type ReasoningBuffer } from './reasoning';
+import { appendReasoning, emptyReasoning, reasoningMessageFields, stripHistoryReasoning, type ReasoningBuffer, type ReasoningFields } from './reasoning';
 import { replaceConversationMessages } from '@/lib/db';
 import { conversationTitle, toMessageRecords, type ChatMessage } from '@/lib/chat/messages';
 import { t } from '@/lib/i18n';
@@ -268,7 +268,7 @@ function describeThrownAgentError(error: unknown): string {
 function replaceLastAssistant(
   state: RunState,
   content: string,
-  extra: Pick<ChatMessage, 'reasoning' | 'reasoningOmittedChars'> = {},
+  extra: ReasoningFields = {},
 ): void {
   const last = state.messages[state.messages.length - 1];
   if (!last) return;

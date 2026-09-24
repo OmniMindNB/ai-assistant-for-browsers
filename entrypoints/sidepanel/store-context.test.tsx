@@ -364,12 +364,14 @@ describe('chat store page context', () => {
   it('restores reasoning fields when opening a stored conversation', async () => {
     mocks.getConversationMessages.mockResolvedValueOnce([
       { role: 'user', content: '问', createdAt: 1 },
-      { role: 'assistant', content: '答', createdAt: 2, reasoning: ['第一段', '第二段'], reasoningOmittedChars: 40 },
+      { role: 'assistant', content: '答', createdAt: 2, reasoning: ['第一段', '第二段'], reasoningOmittedChars: 40, reasoningTrimmedChars: [0, 7], reasoningDroppedSegments: 3 },
     ]);
     await expect(useChat.getState().openConversation('R')).resolves.toBe(true);
     const assistant = useChat.getState().messages[1];
     expect(assistant?.reasoning).toEqual(['第一段', '第二段']);
     expect(assistant?.reasoningOmittedChars).toBe(40);
+    expect(assistant?.reasoningTrimmedChars).toEqual([0, 7]);
+    expect(assistant?.reasoningDroppedSegments).toBe(3);
   });
 
   it('sends a startRun request without browser tools when a normal send requests it', async () => {

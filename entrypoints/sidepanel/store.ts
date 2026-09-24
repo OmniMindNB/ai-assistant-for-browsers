@@ -968,6 +968,8 @@ export const useChat = create<ChatState>((set, get) => ({
         runDiagnostics: r.runDiagnostics,
         reasoning: r.reasoning,
         reasoningOmittedChars: r.reasoningOmittedChars,
+        reasoningTrimmedChars: r.reasoningTrimmedChars,
+        reasoningDroppedSegments: r.reasoningDroppedSegments,
       }));
     set({
       messages,

@@ -79,8 +79,12 @@ export interface ChatMessageRecord {
    * 不建索引，同上无需 Dexie 版本迁移；存量记录无此字段即视为没有推理。
    */
   reasoning?: string[];
-  /** 滑动窗口丢掉的推理字数，见 ChatMessage.reasoningOmittedChars。 */
+  /** 兜底丢掉的推理字数，见 ChatMessage.reasoningOmittedChars。 */
   reasoningOmittedChars?: number;
+  /** 每段中间省略的字数，见 ChatMessage.reasoningTrimmedChars。不建索引，无需版本迁移。 */
+  reasoningTrimmedChars?: number[];
+  /** 兜底丢掉的段数，见 ChatMessage.reasoningDroppedSegments。不建索引，无需版本迁移。 */
+  reasoningDroppedSegments?: number;
 }
 
 export interface ConversationRecord {
