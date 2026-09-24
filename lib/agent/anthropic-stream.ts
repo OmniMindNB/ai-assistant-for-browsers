@@ -3,7 +3,7 @@ import { createAssistantMessageEventStream, type Api, type AssistantMessageEvent
 import type { StreamFn } from '@earendil-works/pi-agent-core';
 import { splitSystemPromptForCache } from './system-prompt';
 import { readAnthropicUsage, recordPerfUsage } from './perf-trace';
-import { buildPartial, createAssistantMessage, describeHttpFailure, describeStreamError, extractImageParts, fetchLlmWithRetry, finishStream, stringifyContent, type ToolCallAccumulator } from './stream-shared';
+import { buildPartial, createAssistantMessage, createThinkingEmitter, describeHttpFailure, describeStreamError, extractImageParts, fetchLlmWithRetry, finishStream, stringifyContent, type ToolCallAccumulator } from './stream-shared';
 
 export const ANTHROPIC_VERSION = '2023-06-01';
 
@@ -23,7 +23,7 @@ interface AnthropicSseEvent {
   type: string;
   index?: number;
   content_block?: { type?: string; id?: string; name?: string; input?: unknown };
-  delta?: { type?: string; text?: string; partial_json?: string; stop_reason?: string };
+  delta?: { type?: string; text?: string; thinking?: string; partial_json?: string; stop_reason?: string };
   error?: { message?: string };
   // usage 分两处到达：message_start 带输入侧（含缓存命中与写入的 token 数），
   // message_delta 带累计的输出 token 数。缓存到底有没有生效，只有这里看得到。
@@ -68,6 +68,10 @@ async function runAnthropicStream(
   let outputTokens = 0;
   // 弱模型兜底：模型没走 tool_use 而把调用写进正文时，finishStream 据此把它捞回来。
   const toolNames = context.tools?.map((tool) => tool.name) ?? [];
+  // 与 openai-stream.ts 同一套发射器：推理只走事件、不进 content，也不回传（我们不发 thinking 参数，
+  // 只有兼容端点主动返回推理时才会走到这里）。signature_delta 与 redacted_thinking 块没有可展示的内容，直接忽略。
+  const thinking = createThinkingEmitter(push, () => buildPartial(model, startedAt, text, toolCalls, 'stop'));
+  const thinkingBlockIndexes = new Set<number>();
   // catch 块要用它拼网络层失败的提示，声明在 try 外面才能跨块读到。
   let url = model.baseUrl;
 
@@ -126,7 +130,24 @@ async function runAnthropicStream(
         if (!data) continue;
         const event = JSON.parse(data) as AnthropicSseEvent;
 
+        if (event.type === 'content_block_start' && event.index !== undefined && event.content_block?.type === 'thinking') {
+          thinkingBlockIndexes.add(event.index);
+          continue;
+        }
+
+        if (event.type === 'content_block_delta' && event.delta?.type === 'thinking_delta') {
+          thinking.delta(event.delta.thinking ?? '');
+          continue;
+        }
+
+        if (event.type === 'content_block_stop' && event.index !== undefined && thinkingBlockIndexes.has(event.index)) {
+          thinking.end();
+          continue;
+        }
+
         if (event.type === 'content_block_start' && event.index !== undefined && event.content_block?.type === 'text') {
+          // 给不发 content_block_stop 的兼容端点兜底：正文开始即收口推理。
+          thinking.end();
           if (!textStarted) {
             textStarted = true;
             push({ type: 'text_start', contentIndex: 0, partial: buildPartial(model, startedAt, text, toolCalls, 'stop') });
@@ -135,6 +156,7 @@ async function runAnthropicStream(
         }
 
         if (event.type === 'content_block_start' && event.index !== undefined && event.content_block?.type === 'tool_use') {
+          thinking.end();
           toolBlockIndexes.add(event.index);
           toolCalls.set(event.index, {
             id: event.content_block.id ?? `tool-${event.index}`,
@@ -204,6 +226,7 @@ async function runAnthropicStream(
         }
 
         if (event.type === 'message_stop') {
+          thinking.end();
           const usage = readAnthropicUsage(inputUsage, outputTokens);
           if (usage) recordPerfUsage(usage);
           if (textStarted) {
@@ -215,11 +238,13 @@ async function runAnthropicStream(
       }
     }
 
+    thinking.end();
     if (textStarted) {
       push({ type: 'text_end', contentIndex: 0, content: text, partial: buildPartial(model, startedAt, text, toolCalls, 'stop') });
     }
     finishStream(model, push, startedAt, text, toolCalls, mapAnthropicStopReason(anthropicStopReason, toolCalls.size > 0), toolNames);
   } catch (error) {
+    thinking.end();
     // 与 openai-stream.ts 同因：stopReason 要跟事件 reason 一致，否则用户主动停止会被上层
     // 当成模型调用失败（详见那边的注释）。
     const aborted = Boolean(options?.signal?.aborted);

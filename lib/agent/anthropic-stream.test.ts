@@ -678,3 +678,70 @@ describe('前缀缓存的可观测性', () => {
     }
   });
 });
+
+describe('thinking blocks', () => {
+  function sse(events: Array<Record<string, unknown>>): string {
+    return events.map((event) => `event: ${String(event.type)}\ndata: ${JSON.stringify(event)}\n`).join('\n');
+  }
+
+  async function eventsFor(body: string): Promise<AssistantMessageEvent[]> {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse(body)));
+    const context = { systemPrompt: 's', messages: [{ role: 'user', content: 'hi' }] } as unknown as Context;
+    const stream = browserAnthropicStream(makeModel(), context, { apiKey: 'k' }) as AssistantMessageEventStream;
+    return collectEvents(stream);
+  }
+
+  function kinds(events: AssistantMessageEvent[]): string[] {
+    return events
+      .map((event) => event.type)
+      .filter((type) => type.startsWith('thinking') || type.startsWith('text') || type === 'done');
+  }
+
+  it('turns thinking_delta into thinking events and ignores signatures and redacted blocks', async () => {
+    const events = await eventsFor(sse([
+      { type: 'message_start', message: { usage: {} } },
+      { type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'Let me ' } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'think' } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'SIG' } },
+      { type: 'content_block_stop', index: 0 },
+      { type: 'content_block_start', index: 1, content_block: { type: 'redacted_thinking', data: 'OPAQUE' } },
+      { type: 'content_block_stop', index: 1 },
+      { type: 'content_block_start', index: 2, content_block: { type: 'text', text: '' } },
+      { type: 'content_block_delta', index: 2, delta: { type: 'text_delta', text: 'Hi' } },
+      { type: 'content_block_stop', index: 2 },
+      { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 3 } },
+      { type: 'message_stop' },
+    ]));
+    expect(kinds(events)).toEqual([
+      'thinking_start', 'thinking_delta', 'thinking_delta', 'thinking_end',
+      'text_start', 'text_delta', 'text_end', 'done',
+    ]);
+    expect(events.find((event) => event.type === 'thinking_end')).toMatchObject({ content: 'Let me think' });
+    const done = events.at(-1);
+    if (done?.type !== 'done') throw new Error('expected done');
+    expect(done.message.content).toEqual([{ type: 'text', text: 'Hi' }]);
+    expect(JSON.stringify(events)).not.toContain('SIG');
+    expect(JSON.stringify(events)).not.toContain('OPAQUE');
+  });
+
+  it('closes an unterminated thinking block at message_stop', async () => {
+    const events = await eventsFor(sse([
+      { type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'cut' } },
+      { type: 'message_delta', delta: { stop_reason: 'max_tokens' } },
+      { type: 'message_stop' },
+    ]));
+    expect(kinds(events)).toEqual(['thinking_start', 'thinking_delta', 'thinking_end', 'done']);
+  });
+
+  it('never sends thinking parts back in the request body', () => {
+    const context = {
+      messages: [
+        { role: 'user', content: '问' },
+        { role: 'assistant', content: [{ type: 'thinking', thinking: '不该回传', thinkingSignature: 'S' }, { type: 'text', text: '答' }] },
+      ],
+    } as unknown as Context;
+    expect(JSON.stringify(convertMessagesForAnthropic(context))).not.toContain('不该回传');
+  });
+});
