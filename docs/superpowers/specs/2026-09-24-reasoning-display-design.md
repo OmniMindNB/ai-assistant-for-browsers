@@ -63,6 +63,7 @@
 - **滑动窗口**：常量 `MAX_REASONING_CHARS = 20_000`，定义在新文件 `lib/agent/reasoning.ts` 里。不放进 `context-budget.ts`，因为那个文件管的是"多少文本能进模型上下文"，而推理从不进入上下文。追加后如果所有段的总长度超过上限，就从最早的段开头删字，删空的段整段移除，删掉的字数累加到 `reasoningOmittedChars`。这部分做成纯函数 `appendReasoning(state: { segments: string[]; omitted: number }, turn, delta)`，方便测试。
   - **为什么运行时就限量，而不是落库时再截断**：快照每 48ms 会整份经 Port 发给面板并写入 `storage.session`（上限 10MB）。推理动辄几万字，不在运行时限量会把审查报告里的问题 3 放大。
   - **为什么保留最新的内容**：用户最关心的是离最终行动最近的那次推理，运行时面板显示的也是末尾部分。
+- **运行中快照不带历史推理**（实现后终审补充）：上面的上限是按条算的，而快照带的是整段历史，几十轮推理对话仍会把快照叠到 MB 级。因此 busy 期间 `snapshotOf` 用 `stripHistoryReasoning` 去掉最后一条以外所有消息的推理，面板在 `applySnapshot` 里用 `restoreStrippedReasoning` 按 id 补回；`state.messages`、落库和 busy:false 的收尾快照都不受影响。代价有两条：worker 中途被回收时，孤儿恢复写回 Dexie 会丢掉历史轮次的推理（正文不受影响）；面板在运行中途重开时，本轮结束前看不到历史推理。
 - **收尾**：`finally` 归档时，推理已经在最后一条 assistant 消息上了，不需要另外处理。被用户停止的一轮保留已经流出的推理。
 - **不经过 `redactText`**：和 assistant 正文的处理一致。模型看到的文本类页面内容本来就已经脱敏，推理只是模型的输出。截图不脱敏这个已知缺口同样适用于正文，这里不新增风险。
 
