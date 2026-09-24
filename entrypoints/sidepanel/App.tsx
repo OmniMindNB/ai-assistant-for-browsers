@@ -318,8 +318,6 @@ export default function App() {
             onToggleHistory={toggleHistory}
             onNewChat={newChat}
             onOpenSettings={openSettings}
-            onExport={() => void exportConversation(conversationId)}
-            exportDisabled={busy || messages.length === 0}
             historyTriggerRef={historyTriggerRef}
           />
 

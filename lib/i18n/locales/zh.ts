@@ -483,7 +483,6 @@ export const zh = {
   'export.appendix': '附录：结构化数据',
   'export.maskedValue': '‹已省略 {count} 字›',
   'export.exportConversationAriaLabel': '导出会话 {title}',
-  'export.exportCurrent': '导出当前会话',
   'export.notFound': '会话不存在或已被删除',
   'export.failed': '导出失败：{error}',
 } as const;

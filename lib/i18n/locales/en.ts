@@ -487,7 +487,6 @@ export const en: Record<keyof typeof zh, string> = {
   'export.appendix': 'Appendix: structured data',
   'export.maskedValue': '‹{count} chars omitted›',
   'export.exportConversationAriaLabel': 'Export conversation {title}',
-  'export.exportCurrent': 'Export current conversation',
   'export.notFound': 'Conversation not found or already deleted',
   'export.failed': 'Export failed: {error}',
 };

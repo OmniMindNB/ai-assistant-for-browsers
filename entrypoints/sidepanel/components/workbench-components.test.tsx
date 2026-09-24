@@ -2461,22 +2461,12 @@ describe('会话导出入口', () => {
     expect(screen.queryByRole('button', { name: /Export conversation/ })).not.toBeInTheDocument();
   });
 
-  it('顶栏导出按钮可点击，exportDisabled 时禁用', async () => {
-    const user = userEvent.setup();
-    const onExport = vi.fn();
-    const { rerender } = render(
+  it('顶栏不提供导出入口，导出只在历史抽屉里', () => {
+    render(
       <LocaleProvider>
-        <WorkbenchHeader historyOpen={false} onToggleHistory={vi.fn()} onNewChat={vi.fn()} onOpenSettings={vi.fn()} onExport={onExport} />
+        <WorkbenchHeader historyOpen={false} onToggleHistory={vi.fn()} onNewChat={vi.fn()} onOpenSettings={vi.fn()} />
       </LocaleProvider>,
     );
-    await user.click(screen.getByRole('button', { name: 'Export current conversation' }));
-    expect(onExport).toHaveBeenCalledOnce();
-
-    rerender(
-      <LocaleProvider>
-        <WorkbenchHeader historyOpen={false} onToggleHistory={vi.fn()} onNewChat={vi.fn()} onOpenSettings={vi.fn()} onExport={onExport} exportDisabled />
-      </LocaleProvider>,
-    );
-    expect(screen.getByRole('button', { name: 'Export current conversation' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: /Export/ })).not.toBeInTheDocument();
   });
 });
