@@ -595,8 +595,11 @@ const Message = memo(function Message({
         {message.reasoning && message.reasoning.length > 0 && (
           <ReasoningBlock
             segments={message.reasoning}
+            trimmedChars={message.reasoningTrimmedChars}
+            droppedSegments={message.reasoningDroppedSegments}
             omittedChars={message.reasoningOmittedChars}
-            live={busy && isLastMessage && !content}
+            running={busy && isLastMessage}
+            autoExpand={busy && isLastMessage && !content}
           />
         )}
         {content ? (
