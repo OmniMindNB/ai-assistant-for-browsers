@@ -46,9 +46,55 @@ describe('stripUrl', () => {
     expect(stripUrl('')).toBeUndefined();
     expect(stripUrl('not a url')).toBeUndefined();
   });
-  it('keeps non-http schemes without their query', () => {
-    expect(stripUrl('chrome://newtab/?x=1')).toBe('chrome://newtab/');
-    expect(stripUrl('about:blank')).toBe('about:blank');
+  // 终审 #5：非 http(s) 的 pathname 可能就是全部载荷（data:）或本机用户名（file:），只留 scheme + host。
+  it('drops the pathname of non-http schemes', () => {
+    expect(stripUrl('chrome://newtab/?x=1')).toBe('chrome://newtab');
+    expect(stripUrl('about:blank')).toBe('about:');
+    expect(stripUrl('file:///C:/Users/alice/secret.html')).toBe('file:');
+    expect(stripUrl('data:text/html,<b>token=abc</b>')).toBe('data:');
+  });
+});
+
+describe('export privacy fixes from final review', () => {
+  // 终审 #5：http(s) 路径里也可能有邮箱等，同样要过脱敏。
+  it('redacts personal data inside url paths', () => {
+    const doc = build([], { ...conversation, url: 'https://a.com/user/foo@bar.com/orders' });
+    expect(doc.conversation.url).not.toContain('foo@bar.com');
+    expect(sanitizeToolArgs('browser_navigate', { url: 'https://a.com/u/foo@bar.com' }, redaction, t)).not.toEqual({ url: 'https://a.com/u/foo@bar.com' });
+  });
+
+  // 终审 #1：轨迹里的表单填写值不能绕过 §4.2 的屏蔽。
+  it('masks form values recorded in the trajectory', () => {
+    const doc = build([
+      record({ role: 'assistant', content: '好', trajectory: [
+        { tool: 'browser_fill_form', values: [{ target: '「收货地址」', value: '北京市海淀区' }, { target: '「同意条款」', checked: true }] },
+      ] }),
+    ]);
+    expect(JSON.stringify(doc)).not.toContain('北京市海淀区');
+    expect(doc.messages[0].trajectory![0].values).toEqual([
+      { target: '「收货地址」', value: '‹已省略 6 字›' },
+      { target: '「同意条款」', checked: true },
+    ]);
+  });
+
+  // 终审 #2：browser_type 的步骤描述里带着输入的原文。
+  it('does not leak typed text through the step description', () => {
+    const doc = build([
+      record({ role: 'assistant', content: '好', activitySteps: [
+        { id: 's1', description: '已向 "#pwd" 输入 "hunter22"', status: 'done', signature: 'browser_type:{"selector":"#pwd","text":"hunter22"}' },
+      ] }),
+    ]);
+    expect(JSON.stringify(doc)).not.toContain('hunter22');
+    expect(renderConversationExportMarkdown(doc, t)).not.toContain('hunter22');
+  });
+
+  it('keeps a result-derived description when it does not depend on masked values', () => {
+    const doc = build([
+      record({ role: 'assistant', content: '好', activitySteps: [
+        { id: 's1', description: '已填写 2/3 个字段', status: 'done', signature: 'browser_fill_form:{"fields":[{"fieldId":"f1","value":"x"}]}' },
+      ] }),
+    ]);
+    expect(doc.messages[0].steps![0].description).toBe('已填写 2/3 个字段');
   });
 });
 
@@ -258,6 +304,17 @@ describe('renderConversationExportMarkdown', () => {
     const beforeRound2 = md.slice(0, md.indexOf('## 第 2 轮'));
     const fenceLines = beforeRound2.split('\n').filter((line) => /^\s*(`{3,}|~{3,})/.test(line));
     expect(fenceLines.length % 2).toBe(0);
+  });
+
+  // 终审 #3：按 CommonMark 开/闭规则追踪围栏，而不是数行数。
+  it('closes an open fence with the same character and length', () => {
+    const md = render([record({ role: 'assistant', content: '````md\n```js\nx\n```' }), record({ content: '下一轮' })]);
+    expect(md).toContain('```js\nx\n```\n````\n');
+  });
+
+  it('does not append a fence to a well-formed reply mixing ``` and ~~~', () => {
+    const md = render([record({ role: 'assistant', content: '```md\n~~~\n```' }), record({ content: '下一轮' })]);
+    expect(md).toContain('```md\n~~~\n```\n\n## 第 2 轮');
   });
 
   it('uses a JSON fence longer than any backtick run inside the JSON', () => {

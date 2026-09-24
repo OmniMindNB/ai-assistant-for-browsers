@@ -90,14 +90,14 @@ buildConversationExport({
 | 数据 | 处理 |
 |---|---|
 | 用户消息、assistant 回复正文、`quotedText` | `redactText`，不截断。回复本来就基于已脱敏的页面文本生成，但用户自己输入的内容可能含手机号、邮箱 |
-| 会话 `url`、`tabReferences[].url` | 去掉 query 和 hash，只留 `origin + pathname`；解析失败就整段省略 |
+| 会话 `url`、`tabReferences[].url`、参数里的 `url` | http(s) 去掉 query 和 hash，只留 `origin + pathname`；其他 scheme 连 pathname 也不留（`data:` 的 pathname 就是载荷，`file:` 带本机用户名）；之后再 `redactText`（路径里可能有邮箱）。解析失败就整段省略（终审修订）|
 | `tabReferences[].title`、会话标题 | `redactText` |
 | 附件 | 只保留 `kind` / `name` / `mimeType` / `size`（PDF 另加 `pageCount`）。不导出图片 `dataUrl`，也不导出文本附件 `textContent` |
-| 步骤 `description`、`tabLabel` | `redactText` |
+| 步骤 `description`、`tabLabel` | `redactText`。写工具的描述如果依赖被屏蔽的参数（`browser_type` 会把输入原文写进描述），改用屏蔽后的参数重新生成（终审修订）|
 | 步骤 `signature` | 拆出工具名和参数 JSON。参数先按 §4.2 处理，再序列化成字符串，截到 300 字 |
 | 步骤 `errorText` | 落库时已脱敏，原样保留 |
 | `taskOutcome` | 原样保留（模型自报的结果，没有页面原文） |
-| `trajectory` | 落库时已经过 `redactText`、不含敏感值，原样保留 |
+| `trajectory` | 落库时已脱敏、不含 sensitive 字段的值，但普通字段的填写值还在：`values[].value` 按 §4.2 只留长度（终审修订）|
 | `rerun` | 只保留快捷指令的 `id` / `name` / `scope`。`selection` 和 `supplement` 不导出（`selection` 是页面原文，而且那条用户消息的 `quotedText` 已经带了） |
 | `runDiagnostics` | 原样保留 |
 

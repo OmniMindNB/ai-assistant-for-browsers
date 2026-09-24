@@ -5,6 +5,7 @@
 import type { ChatMessageRecord, ConversationRecord } from '@/lib/db';
 import { redactText, type RedactionSettings } from '@/lib/redaction';
 import { WRITE_TOOL_NAMES } from '@/lib/agent/permissions';
+import { describeToolActivity } from '@/lib/agent/activity-description';
 import type { ActivityStep } from '@/lib/agent/activity-steps';
 import type { RunDiagnostics } from '@/lib/agent/run-diagnostics';
 import type { TaskOutcome } from '@/lib/agent/task-outcome';
@@ -81,14 +82,43 @@ function clip(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
-/** 只留 scheme + host + pathname：query/hash 里常带 token、订单号。无法解析时返回 undefined，由调用方整段省略。 */
+/**
+ * http(s) 只留 scheme + host + pathname：query/hash 里常带 token、订单号。其他 scheme 连 pathname 也不留——
+ * data: 的 pathname 就是全部载荷，file: 的路径带本机用户名。无法解析时返回 undefined，由调用方整段省略。
+ */
 export function stripUrl(url: string): string | undefined {
   try {
     const parsed = new URL(url);
-    return parsed.host ? `${parsed.protocol}//${parsed.host}${parsed.pathname}` : `${parsed.protocol}${parsed.pathname}`;
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') return `${parsed.origin}${parsed.pathname}`;
+    return parsed.host ? `${parsed.protocol}//${parsed.host}` : parsed.protocol;
   } catch {
     return undefined;
   }
+}
+
+/** stripUrl 之后再脱敏：路径里也可能有邮箱、手机号（/user/foo@bar.com）。 */
+function exportUrl(url: string, redaction: RedactionSettings): string | undefined {
+  const stripped = stripUrl(url);
+  return stripped === undefined ? undefined : redactText(stripped, redaction);
+}
+
+/** 模型回复里未闭合的代码围栏会把后面的章节全吞进代码块。按 CommonMark 的开/闭规则追踪，用同样的字符和长度补上闭合。 */
+function closeOpenFences(text: string): string {
+  let open: { char: string; length: number } | null = null;
+  for (const line of text.split('\n')) {
+    const match = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    if (!match) continue;
+    const [, run, rest] = match;
+    const char = run[0];
+    if (!open) {
+      // 反引号围栏的 info string 里不能再有反引号，否则这一行不是围栏。
+      if (char === '`' && rest.includes('`')) continue;
+      open = { char, length: run.length };
+    } else if (char === open.char && run.length >= open.length && rest.trim() === '') {
+      open = null;
+    }
+  }
+  return open ? `${text}\n${open.char.repeat(open.length)}` : text;
 }
 
 export function sanitizeToolArgs(toolName: string, args: unknown, redaction: RedactionSettings, t: Translate): unknown {
@@ -96,7 +126,7 @@ export function sanitizeToolArgs(toolName: string, args: unknown, redaction: Red
   const visit = (value: unknown, key: string | undefined): unknown => {
     if (typeof value === 'string') {
       if (maskWrites && key !== undefined && MASKED_WRITE_ARG_KEYS.has(key)) return t('export.maskedValue', { count: value.length });
-      if (key === 'url') return stripUrl(value) ?? '';
+      if (key === 'url') return exportUrl(value, redaction) ?? '';
       return clip(redactText(value, redaction), MAX_ARG_STRING_CHARS);
     }
     // 数组元素继承父键：fieldIds: ['f1'] 仍按 fieldIds 归类。
@@ -119,11 +149,25 @@ function exportStep(step: ActivityStep, redaction: RedactionSettings, t: Transla
     const toolName = colon === -1 ? step.signature : step.signature.slice(0, colon);
     out.toolName = toolName;
     if (colon !== -1) {
+      let args: unknown;
+      let parsed = false;
       try {
-        const args = JSON.parse(step.signature.slice(colon + 1)) as unknown;
-        out.args = clip(JSON.stringify(sanitizeToolArgs(toolName, args, redaction, t)), MAX_ARGS_JSON_CHARS);
+        args = JSON.parse(step.signature.slice(colon + 1)) as unknown;
+        parsed = true;
       } catch {
         // 保持无 args。
+      }
+      if (parsed) {
+        const sanitized = sanitizeToolArgs(toolName, args, redaction, t);
+        out.args = clip(JSON.stringify(sanitized), MAX_ARGS_JSON_CHARS);
+        // 步骤描述是从参数拼出来的（browser_type 会把输入原文写进去）。拿原始参数和已屏蔽参数各生成一遍：
+        // 不一样就说明描述里带了参数内容，改用屏蔽后的版本；一样则保留原描述——它可能含只有结果里才有的信息。
+        if (step.status !== 'notice' && WRITE_TOOL_NAMES.has(toolName)) {
+          const safeDescription = describeToolActivity(toolName, sanitized, step.status);
+          if (describeToolActivity(toolName, args, step.status) !== safeDescription) {
+            out.description = redactText(safeDescription, redaction);
+          }
+        }
       }
     }
   }
@@ -150,7 +194,7 @@ function exportMessage(record: ChatMessageRecord & { role: 'user' | 'assistant' 
   }
   if (record.tabReferences?.length) {
     out.tabReferences = record.tabReferences.map((ref) => {
-      const url = stripUrl(ref.url);
+      const url = exportUrl(ref.url, redaction);
       return { title: redactText(ref.title, redaction), ...(url ? { url } : {}) };
     });
   }
@@ -162,14 +206,22 @@ function exportMessage(record: ChatMessageRecord & { role: 'user' | 'assistant' 
   if (record.stopped) out.stopped = true;
   if (record.contextTruncated) out.contextTruncated = true;
   if (record.activitySteps?.length) out.steps = record.activitySteps.map((step) => exportStep(step, redaction, t));
-  if (record.trajectory?.length) out.trajectory = record.trajectory;
+  // 轨迹落库时只脱敏、不屏蔽：普通字段的填写值还在，必须和 §4.2 一样只留长度。
+  if (record.trajectory?.length) {
+    out.trajectory = record.trajectory.map((step) => (step.values
+      ? {
+          ...step,
+          values: step.values.map((v) => (v.value === undefined ? v : { ...v, value: t('export.maskedValue', { count: v.value.length }) })),
+        }
+      : step));
+  }
   if (record.runDiagnostics) out.runDiagnostics = record.runDiagnostics;
   return out;
 }
 
 export function buildConversationExport(input: ConversationExportInput): ConversationExport {
   const { conversation, redaction, t } = input;
-  const url = conversation.url ? stripUrl(conversation.url) : undefined;
+  const url = conversation.url ? exportUrl(conversation.url, redaction) : undefined;
   return {
     schema: EXPORT_SCHEMA,
     exportedAt: input.exportedAt,
@@ -198,14 +250,6 @@ function formatDateTime(ts: number): string {
 
 function escapeCell(text: string): string {
   return text.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>');
-}
-
-/** 模型回复里未闭合的代码围栏会把后面的章节全吞进代码块；奇数个围栏行就补一个闭合。 */
-function closeOpenFences(text: string): string {
-  const fences = text.split('\n').filter((line) => /^\s*(`{3,}|~{3,})/.test(line));
-  if (fences.length % 2 === 0) return text;
-  const opener = fences[fences.length - 1].trim().match(/^(`{3,}|~{3,})/)![1];
-  return `${text}\n${opener}`;
 }
 
 const STEP_STATUS_ICON: Record<ExportedStep['status'], string> = { done: '✓', failed: '✗', running: '…', notice: 'ℹ' };
