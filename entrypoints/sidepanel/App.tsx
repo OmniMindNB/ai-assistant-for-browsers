@@ -21,6 +21,7 @@ import { ActivityStepList } from './components/ActivityStepList';
 import { WorkbenchComposer } from './components/WorkbenchComposer';
 import { AttachmentChip } from './components/AttachmentChip';
 import { MarkdownBlock } from './components/MarkdownBlock';
+import { ReasoningBlock } from './components/ReasoningBlock';
 import type { PendingConfirmation, PendingQuestion, UIMessage } from './store';
 import type { ActivityStep } from '@/lib/agent/activity-steps';
 import { resolvePageAttached, type ResolvedShortcutCommand } from '@/lib/workbench/presentation';
@@ -591,9 +592,17 @@ const Message = memo(function Message({
         R
       </div>
       <div className="min-w-0 flex-1 rounded-2xl rounded-tl-md bg-white px-4 py-3 shadow-sm ring-1 ring-neutral-200/70 dark:bg-neutral-900 dark:ring-neutral-800">
+        {message.reasoning && message.reasoning.length > 0 && (
+          <ReasoningBlock
+            segments={message.reasoning}
+            omittedChars={message.reasoningOmittedChars}
+            live={busy && isLastMessage && !content}
+          />
+        )}
         {content ? (
           <MarkdownBlock content={content} />
-        ) : busy ? (
+        ) : busy && !(isLastMessage && message.reasoning?.length) ? (
+          // 正在流式输出推理时，"思考中…"标题已经是等待反馈，不再叠一个 TypingDots。
           <TypingDots />
         ) : null}
         {content && showThinkingIndicator && (
