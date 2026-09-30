@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TabSessionController, createTabSession, formatTabList, tabAccessOf, MAX_REFERENCED_TABS } from './tab-session';
+import { TabSessionController, createTabSession, describeClosedTargetFallback, formatTabList, tabAccessOf, MAX_REFERENCED_TABS } from './tab-session';
 
 describe('TabSessionController', () => {
   it('defaults to a single tracked tab: the panel tab itself', () => {
@@ -175,5 +175,42 @@ describe('TabSessionController.reference', () => {
   it('treats a snapshot without access as full (backward compatible)', () => {
     const session = new TabSessionController(1, { currentTabId: 1, trackedTabs: [{ id: 1 }, { id: 9 }] });
     expect(tabAccessOf(session.trackedTabs[1])).toBe('full');
+  });
+});
+
+describe('TabSessionController.dropClosedTab', () => {
+  it('forgets a closed target tab and falls back to the panel tab', () => {
+    const session = createTabSession(1);
+    session.openAndSwitch({ id: 7, url: 'https://a.test/x' });
+    expect(session.dropClosedTab(7)).toEqual({ wasCurrent: true });
+    expect(session.currentTabId).toBe(1);
+    expect(session.isTracked(7)).toBe(false);
+  });
+
+  it('forgets a closed non-target tab without moving the target', () => {
+    const session = createTabSession(1);
+    session.openAndSwitch({ id: 7 });
+    session.openAndSwitch({ id: 8 });
+    expect(session.dropClosedTab(7)).toEqual({ wasCurrent: false });
+    expect(session.currentTabId).toBe(8);
+    expect(session.isTracked(7)).toBe(false);
+  });
+
+  it('never drops the panel tab — it is every fallback path\'s landing spot', () => {
+    const session = createTabSession(1);
+    expect(session.dropClosedTab(1)).toEqual({ wasCurrent: false });
+    expect(session.isTracked(1)).toBe(true);
+  });
+});
+
+describe('describeClosedTargetFallback', () => {
+  it('tells the model the call did not run and where it now stands', () => {
+    const session = createTabSession(1);
+    session.openAndSwitch({ id: 7 });
+    session.dropClosedTab(7);
+    const text = describeClosedTargetFallback(7, session);
+    expect(text).toContain('7');
+    expect(text).toContain('没有执行');
+    expect(text).toContain('| 1 |');
   });
 });

@@ -1398,7 +1398,7 @@ describe('多标签页：session 可选，且遮罩跟随当前操作目标', ()
     const hooks = createBrowserAgentOptions({
       provider: baseProvider,
       tabId: 1,
-      session,
+      session,       tabExists: async () => true,
       tools: [],
       readToolCallBudget: 12,
       writeToolCallBudget: 24,
@@ -1428,7 +1428,7 @@ describe('多标签页：session 可选，且遮罩跟随当前操作目标', ()
     const hooks = createBrowserAgentOptions({
       provider: baseProvider,
       tabId: 1,
-      session,
+      session,       tabExists: async () => true,
       tools: [],
       readToolCallBudget: 12,
       writeToolCallBudget: 24,
@@ -1472,7 +1472,7 @@ describe('多标签页：session 可选，且遮罩跟随当前操作目标', ()
     const hooks = createBrowserAgentOptions({
       provider: baseProvider,
       tabId: 1,
-      session,
+      session,       tabExists: async () => true,
       tools: [],
       readToolCallBudget: 12,
       writeToolCallBudget: 24,
@@ -1503,7 +1503,7 @@ describe('多标签页：session 可选，且遮罩跟随当前操作目标', ()
     const hooks = createBrowserAgentOptions({
       provider: baseProvider,
       tabId: 1,
-      session,
+      session,       tabExists: async () => true,
       tools: [],
       readToolCallBudget: 12,
       writeToolCallBudget: 24,
@@ -1717,7 +1717,7 @@ describe('tab-access 闸门', () => {
       readToolCallBudget: 10,
       writeToolCallBudget: 10,
       steer: vi.fn(),
-      session,
+      session,       tabExists: async () => true,
       ...extra,
     });
   }
@@ -2085,5 +2085,48 @@ describe('上下文字符预算常量之间的不变量', () => {
     expect(worstCaseTokens).toBeLessThan(model.contextWindow);
     // 不是"刚好塞下"：留至少一倍余量，给 tokenizer 差异和估算误差
     expect(worstCaseTokens * 2).toBeLessThan(model.contextWindow);
+  });
+});
+
+describe('createBrowserAgentOptions closed operating target', () => {
+  function hooksWithTarget(tabExists: (tabId: number) => Promise<boolean>) {
+    const session = createTabSession(1);
+    session.openAndSwitch({ id: 7, url: 'https://pi.dev/install.sh' });
+    const onSessionChange = vi.fn();
+    const hooks = createBrowserAgentOptions({
+      provider: baseProvider,
+      tabId: 1,
+      tools: [],
+      session,
+      steer: vi.fn(),
+      tabExists,
+      onSessionChange,
+    });
+    return { hooks, session, onSessionChange };
+  }
+
+  it('blocks the call and falls back to the panel tab once the target tab is gone', async () => {
+    const { hooks, session, onSessionChange } = hooksWithTarget(async (id) => id !== 7);
+    const result = await hooks.beforeToolCall?.(beforeContext('browser_read_page', {}));
+    expect(result).toMatchObject({ block: true, reason: expect.stringContaining('已被关闭') });
+    expect(session.currentTabId).toBe(1);
+    expect(session.isTracked(7)).toBe(false);
+    expect(onSessionChange).toHaveBeenCalledWith(session);
+    // 回退之后下一次调用落在面板 tab 上，照常放行。
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_read_page', {}))).toBeUndefined();
+  });
+
+  it('lets target-independent tools through without probing the target', async () => {
+    const tabExists = vi.fn().mockResolvedValue(false);
+    const { hooks, session } = hooksWithTarget(tabExists);
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_list_tabs', {}))).toBeUndefined();
+    expect(tabExists).not.toHaveBeenCalled();
+    expect(session.currentTabId).toBe(7);
+  });
+
+  it('does nothing while the target tab is still open', async () => {
+    const { hooks, session } = hooksWithTarget(async () => true);
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_read_page', {}))).toBeUndefined();
+    expect(session.currentTabId).toBe(7);
   });
 });

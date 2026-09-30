@@ -101,6 +101,18 @@ export class TabSessionController {
   }
 
   /**
+   * 标签页已经不存在了（用户手动关掉，或地址触发下载后被浏览器关掉）：移出列表，
+   * 关掉的正好是当前目标时回退到面板 tab。面板 tab 本身永不移除——它关了整个回合也就没了。
+   */
+  dropClosedTab(tabId: number): { wasCurrent: boolean } {
+    if (tabId === this.panelTabId) return { wasCurrent: false };
+    this.trackedTabs = this.trackedTabs.filter((tab) => tab.id !== tabId);
+    const wasCurrent = this.currentTabId === tabId;
+    if (wasCurrent) this.currentTabId = this.panelTabId;
+    return { wasCurrent };
+  }
+
+  /**
    * 用户在 @ 选择器里点选的标签页，以只读身份登记（ref: 2026-09-05-cross-tab-context-design.md §4.1）。
    *
    * 语义是**按传入列表全量同步 'read' 项**（新增/更新/移除），'full' 项一律不动：
@@ -140,6 +152,34 @@ export class TabSessionController {
 
 export function createTabSession(panelTabId: number): TabSessionController {
   return new TabSessionController(panelTabId);
+}
+
+/**
+ * 不作用在"当前操作目标"上的工具：目标被关掉后它们照常可用，其中几个正是模型重新定位的手段。
+ * browser_close_tab 按参数里的 tabId 寻址，同理不受影响。
+ */
+export const TARGET_INDEPENDENT_TOOLS: ReadonlySet<string> = new Set([
+  'browser_get_active_tab',
+  'browser_list_tabs',
+  'browser_switch_tab',
+  'browser_open_tab',
+  'browser_close_tab',
+  'ask_user',
+  'wait',
+  'report_task_outcome',
+]);
+
+/**
+ * 当前目标被关掉后回退到面板 tab 时交给模型的说明。这次调用必须拦下而不是悄悄改在面板 tab 上执行：
+ * 模型以为自己还在那个已关闭的页面上，照原计划点击/填写会落到完全不同的页面。
+ */
+export function describeClosedTargetFallback(closedTabId: number, session: TabSessionController): string {
+  return (
+    `当前操作目标标签页 ${closedTabId} 已被关闭（可能是用户关掉的，或该地址触发了文件下载），`
+    + `已自动切回侧边栏所在的标签页 ${session.panelTabId}。这次调用没有执行——`
+    + '请先确认新的操作目标（需要时用 browser_read_page 看一眼当前页面），再决定下一步。\n'
+    + formatTabList(session)
+  );
 }
 
 /** 供 browser_open_tab/switch_tab/close_tab/list_tabs 的工具返回值使用，让模型看到最新状态。 */

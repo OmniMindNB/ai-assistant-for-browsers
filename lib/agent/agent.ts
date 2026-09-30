@@ -25,7 +25,7 @@ import { createTakeoverGateState, resolveTakeoverGate, type TakeoverPromptFn } f
 import { getTakeoverForTab } from './tab-takeover';
 import { createBrowserTools, type BrowserAgentTool } from './tools';
 import { supportsVision } from './vision';
-import { createTabSession, type TabSessionController } from './tab-session';
+import { createTabSession, describeClosedTargetFallback, TARGET_INDEPENDENT_TOOLS, type TabSessionController } from './tab-session';
 import { decideTabAccess, resolveToolTargetTabId } from './tab-access';
 import { getFormFieldsForTab } from './tab-form-fields';
 import { isChildFrameHandle } from './fill-form-request';
@@ -136,6 +136,8 @@ export interface BrowserAgentOptions {
    * 新一轮请求取代，两种情况都不会走到 store.ts 的 finally 里那次保存
    * （ref: 最终审查 Important #4）。 */
   onSessionChange?: (session: TabSessionController) => void;
+  /** 标签页是否还存在。仅供测试注入；省略时查 browser.tabs.get。 */
+  tabExists?: (tabId: number) => Promise<boolean>;
 }
 
 export interface BrowserAgentRuntimeOptions extends BrowserAgentOptions {
@@ -208,6 +210,7 @@ async function resolveOverlayCursor(toolName: string, args: unknown, tabId: numb
 
 export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): AgentOptions {
   const session = options.session ?? createTabSession(options.tabId);
+  const tabExists = options.tabExists ?? ((tabId: number) => browser.tabs.get(tabId).then(() => true, () => false));
   const tools = options.tools ?? createBrowserTools(session, {
     onAskUser: options.onAskUser,
     onTaskOutcome: options.onTaskOutcome,
@@ -258,6 +261,19 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
     toolExecution: 'sequential',
     beforeToolCall: async (context, signal) => {
       if (signal?.aborted) return recordPreExecutionBlock({ block: true, reason: '操作已停止。' });
+      // 当前操作目标可能已经不在了：用户手动关掉，或打开的地址触发下载被浏览器关掉。不处理的话
+      // 之后每个作用在目标上的工具都撞"目标标签页已关闭"，模型要连烧好几步才会想到换一个。
+      // 面板 tab 不查——它关了整个回合也就没了。
+      const closedTargetId = session.currentTabId;
+      if (
+        closedTargetId !== session.panelTabId
+        && !TARGET_INDEPENDENT_TOOLS.has(context.toolCall.name)
+        && !(await tabExists(closedTargetId))
+      ) {
+        session.dropClosedTab(closedTargetId);
+        options.onSessionChange?.(session);
+        return recordPreExecutionBlock({ block: true, reason: describeClosedTargetFallback(closedTargetId, session) });
+      }
       // 在任何闸门之前记下"尝试过写"：被拦下的调用不经过 afterToolCall，放到后面就漏记了。
       // 模型尝试写却失败/被拒之后停下，它的文字是在解释原因，不是早停。
       // 换页面、开关标签页不算：它们不是在改页面，算进来会让一次 browser_open_tab 就解除巡检后的
