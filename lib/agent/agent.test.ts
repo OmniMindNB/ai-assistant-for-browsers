@@ -222,7 +222,8 @@ describe('createBrowserAgentOptions tool policy hooks', () => {
       steer: vi.fn(),
     });
     await hooks.afterToolCall?.(afterContext('browser_inspect_page_implementation', {}, false));
-    expect(await hooks.beforeToolCall?.(beforeContext('browser_read_page', {}))).toMatchObject({ block: true });
+    // read_page 巡检后还能补查一次，所以两次被拦都用 get_page_meta（巡检里已有全部元信息）。
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_get_page_meta', {}))).toMatchObject({ block: true });
     expect(
       await hooks.prepareNextTurnWithContext?.({ context: { messages: [], tools: [] } } as unknown as PrepareNextTurnContext),
     ).toBeUndefined();
@@ -363,7 +364,7 @@ describe('页面位置类工具不算"尝试过写"', () => {
     expect(await hooks.beforeToolCall?.(beforeContext(name, args))).toBeUndefined();
     await hooks.afterToolCall?.(afterContext(name, args, false));
 
-    expect(await hooks.beforeToolCall?.(beforeContext('browser_read_page', {}))).toMatchObject({
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_get_page_meta', {}))).toMatchObject({
       block: true,
       reason: expect.stringContaining('巡检'),
     });
@@ -382,6 +383,76 @@ describe('页面位置类工具不算"尝试过写"', () => {
     } as unknown as PrepareNextTurnContext);
 
     expect(steer).toHaveBeenCalledWith(expect.objectContaining({ content: expect.stringContaining('fieldId') }));
+  });
+});
+
+// 2026-09-30 事故：用户问"两种安装方式的区别"，模型误调了巡检。巡检完成的 steer 和补查拦截理由
+// 只给了两种意图——问页面实现 / 要改页面——问答任务哪边都不沾，模型只能往"页面实现"上套，
+// 最后答成了 CSS @layer 和导航脚本。第三种意图（问的是别的，巡检只是选错了工具）必须有出口：
+// 按原问题作答，且需要正文时读得到——巡检里的正文只截了 textMaxChars，一刀禁掉 read_page
+// 会把内容问答卡在信息不足的状态。
+describe('巡检之后仍然回到用户的原问题', () => {
+  function hooksWith(steer = vi.fn()) {
+    return createBrowserAgentOptions({
+      provider: baseProvider,
+      tabId: 1,
+      tools: [],
+      readToolCallBudget: 20,
+      writeToolCallBudget: 40,
+      steer,
+    });
+  }
+
+  it('巡检完成的 steer 给"问的不是页面实现"留了出口：按原问题作答、可以读正文', async () => {
+    const steer = vi.fn();
+    const hooks = hooksWith(steer);
+    await hooks.afterToolCall?.(afterContext('browser_inspect_page_implementation', {}, false));
+
+    const content = (steer.mock.calls.at(-1)?.[0] as { content: string }).content;
+    expect(content).toContain('原始问题');
+    expect(content).toContain('browser_read_page');
+  });
+
+  it('宽泛资料的拦截理由指向用户的原始问题，而不是"基于巡检结果回答"', async () => {
+    const hooks = hooksWith();
+    await hooks.afterToolCall?.(afterContext('browser_inspect_page_implementation', {}, false));
+
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_get_page_meta', {}))).toMatchObject({
+      block: true,
+      reason: expect.stringContaining('原始问题'),
+    });
+  });
+
+  it('补查额度用尽的拦截理由同样指向用户的原始问题', async () => {
+    const hooks = hooksWith();
+    await hooks.afterToolCall?.(afterContext('browser_inspect_page_implementation', {}, false));
+    await hooks.afterToolCall?.(afterContext('browser_query_dom', { selector: 'main' }, false));
+
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_query_dom', { selector: 'nav' }))).toMatchObject({
+      block: true,
+      reason: expect.stringContaining('原始问题'),
+    });
+  });
+
+  it('巡检之后 read_page 可以补查一次，第二次拦下', async () => {
+    const hooks = hooksWith();
+    await hooks.afterToolCall?.(afterContext('browser_inspect_page_implementation', {}, false));
+
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_read_page', { offset: 4000 }))).toBeUndefined();
+    await hooks.afterToolCall?.(afterContext('browser_read_page', { offset: 4000 }, false));
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_read_page', { offset: 8000 }))).toMatchObject({
+      block: true,
+    });
+  });
+
+  // 事故里模型正是先 read_page、再误调巡检：巡检结果一到，前一份正文就被压成一句话摘要。
+  // "每个工具补查一次"若连巡检之前的调用也算进去，这一次补查恰恰在最需要的场景里拿不到。
+  it('巡检之前读过正文，不影响巡检之后那一次 read_page 补查', async () => {
+    const hooks = hooksWith();
+    await hooks.afterToolCall?.(afterContext('browser_read_page', {}, false));
+    await hooks.afterToolCall?.(afterContext('browser_inspect_page_implementation', {}, false));
+
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_read_page', { offset: 4000 }))).toBeUndefined();
   });
 });
 
@@ -626,7 +697,7 @@ describe('createBrowserAgentOptions task outcome forcing', () => {
       steer: vi.fn(),
     });
     await hooks.afterToolCall?.(afterContext('browser_inspect_page_implementation', {}, false));
-    await hooks.beforeToolCall?.(beforeContext('browser_read_page', {}));
+    await hooks.beforeToolCall?.(beforeContext('browser_get_page_meta', {}));
     await hooks.beforeToolCall?.(beforeContext('browser_get_page_meta', {}));
 
     const next = await hooks.prepareNextTurnWithContext?.({

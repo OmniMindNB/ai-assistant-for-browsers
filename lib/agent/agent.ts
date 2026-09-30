@@ -69,14 +69,17 @@ const NAVIGATION_WATCH_TOOLS = new Set(['browser_click', 'browser_fill_form', 'b
 const POST_NAVIGATION_SETTLE_MS = 500;
 const IMPLEMENTATION_DOSSIER_TOOL = 'browser_inspect_page_implementation';
 const MAX_POST_DOSSIER_FOLLOW_UPS = 4;
+// read_page 在补查组而不在禁用组：巡检里的正文只截了 textMaxChars，模型误把内容问题当实现问题
+// 调了巡检时，这是它拿到其余正文的唯一途径（ref: 2026-09-30 划词问安装方式区别）。
 const POST_DOSSIER_ALLOWED_TOOLS = new Set([
+  'browser_read_page',
   'browser_get_scripts',
   'browser_get_stylesheets',
   'browser_get_html',
   'browser_query_dom',
   'browser_get_computed_style',
 ]);
-const POST_DOSSIER_BLOCKED_TOOLS = new Set(['browser_get_page_meta', 'browser_read_page']);
+const POST_DOSSIER_BLOCKED_TOOLS = new Set(['browser_get_page_meta']);
 /**
  * 产出字段句柄（fieldId）的读工具。它们存在的意义就是喂给后续的写操作——拿过句柄却一次都没尝试
  * 写就以纯文本收尾，几乎一定是早停而不是答完了，这是"未动手就停下"补一轮的唯一触发依据。
@@ -216,6 +219,9 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
   const policy = createAgentToolPolicy({ readToolCallBudget, writeToolCallBudget });
   let implementationDossierCollected = false;
   let postDossierFollowUps = 0;
+  // 只数巡检之后的调用："各补查一次"若把巡检前的读取也算进去，先读正文、再误调巡检的运行
+  // 就再也读不到正文了——前一份结果在巡检到达时已被压成一句话摘要。
+  const postDossierToolCounts = new Map<string, number>();
   let writeToolRanThisRun = false;
   let outcomeReported = false;
   let outcomeForceAttempted = false;
@@ -268,16 +274,16 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
           return recordPreExecutionBlock({
             block: true,
             reason:
-              '页面实现巡检已经包含 meta、正文、HTML、脚本和样式表。不要重复读取这些宽泛资料；请立即基于 browser_inspect_page_implementation 的结果回答。',
+              '页面实现巡检已经包含页面元信息，不要重复读取。请回到用户的原始问题：如果问的是页面实现，基于巡检结果作答；如果问的是别的（例如页面内容），巡检只是参考，按原问题作答，需要更多正文时用 browser_read_page 补读一次。',
           });
         }
         if (POST_DOSSIER_ALLOWED_TOOLS.has(toolName)) {
-          const priorCalls = toolCallCounts.get(toolName) ?? 0;
+          const priorCalls = postDossierToolCounts.get(toolName) ?? 0;
           if (postDossierFollowUps >= MAX_POST_DOSSIER_FOLLOW_UPS || priorCalls >= 1) {
             return recordPreExecutionBlock({
               block: true,
               reason:
-                '页面实现巡检后的定向补查额度已用完，或该工具已经补查过一次。如果用户是在询问页面实现，请停止补查，基于已有证据给出最终回答；如果用户要求修改页面，请直接用已知的选择器调用写工具（如 browser_set_style / browser_modify_dom）动手，开始写入后补查限制会自动解除。',
+                '页面实现巡检后的定向补查额度已用完，或该工具已经补查过一次。请停止补查，基于已有证据回答用户的原始问题（问的不是页面实现时，不要把回答改写成实现分析）；如果用户要求修改页面，请直接用已知的选择器调用写工具（如 browser_set_style / browser_modify_dom）动手，开始写入后补查限制会自动解除。',
             });
           }
         }
@@ -433,11 +439,12 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
         options.steer({
           role: 'user',
           content:
-            '页面实现巡检已经完成。如果用户是在询问页面实现：请优先基于 evidenceSummary 和已有工具结果给出详细、证据驱动的回答；如果仍缺少具体引用证据，最多对 scripts/stylesheets/html/query_dom/computed_style 各补查一次，总补查不超过 4 次，然后必须回答。请点名引用脚本、样式、DOM class、computed style 中的关键线索。如果用户要求修改页面（隐藏元素、改样式等）：不要停下来作答，直接基于巡检结果调用写工具完成修改。',
+            '页面实现巡检已经完成。先对照用户的原始问题判断属于哪一类：如果用户是在询问页面实现：请优先基于 evidenceSummary 和已有工具结果给出详细、证据驱动的回答；如果仍缺少具体引用证据，最多对 scripts/stylesheets/html/query_dom/computed_style 各补查一次，总补查不超过 4 次，然后必须回答。请点名引用脚本、样式、DOM class、computed style 中的关键线索。如果用户要求修改页面（隐藏元素、改样式等）：不要停下来作答，直接基于巡检结果调用写工具完成修改。如果用户问的是别的（例如页面内容本身），巡检结果只作参考，按原始问题作答，不要改写成页面实现分析；巡检里的正文是截断的，需要更多正文时用 browser_read_page 补读一次。',
           timestamp: Date.now(),
         });
       } else if (implementationDossierCollected) {
         postDossierFollowUps += 1;
+        postDossierToolCounts.set(toolName, (postDossierToolCounts.get(toolName) ?? 0) + 1);
       }
 
       // 预算软提醒：修复前模型是被硬阻断的，事先没有任何预警，只能在最后一轮被动收尾。
