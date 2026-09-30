@@ -85,7 +85,9 @@ function toolCallStillPendingMessage(name: string) {
   return { content: [{ type: 'toolCall', id: `${name}-id`, name, arguments: {} }] };
 }
 
-function runtimeOptions(overrides: { onConfirm?: () => Promise<boolean>; onContextTruncated?: () => void } = {}) {
+function runtimeOptions(
+  overrides: { onConfirm?: () => Promise<boolean>; onContextTruncated?: () => void; messages?: AgentMessage[] } = {},
+) {
   return createBrowserAgentOptions({
     provider: baseProvider,
     tabId: 1,
@@ -1770,6 +1772,101 @@ describe('上下文窗口：字符预算兜底', () => {
     const compacted = await hooks.transformContext!(messages);
 
     expect(compacted).toHaveLength(messages.length);
+  });
+});
+
+// 2026-09-30 事故（deepseek-v4.1-flash，划词问"这两种安装方式的区别是什么？"）：单轮跑了 41 次
+// 工具调用、约 83 条消息，撞到 MAX_CONTEXT_MESSAGES 后窗口重切，把下标 0 的那条用户提问整条切掉。
+// 后半程模型看不到问题本身，只能对着巡检结果猜意图，最终答成了"页面是怎么实现的"，还自报 success。
+// 重切只保护了"最后一条"，而单轮任务里定义任务的是本轮第一条——agent.prompt() 追加的那条。
+// 它必须常驻窗口头部：头部固定，前缀缓存反而更稳。
+describe('上下文窗口：本轮任务消息常驻', () => {
+  const TASK = '引用：curl … npm …\n\n这两种安装方式的区别是什么？';
+
+  function pairs(count: number, prefix: string): AgentMessage[] {
+    const messages: AgentMessage[] = [];
+    for (let index = 0; index < count; index += 1) {
+      messages.push(assistantToolCallMessage(`${prefix}-${index}`, 'browser_type', { text: `${index}` }));
+      messages.push(toolResultMessage(`${prefix}-${index}`, 'browser_type', `已输入 ${index}。`));
+    }
+    return messages;
+  }
+
+  function textOf(message: AgentMessage): string {
+    return JSON.stringify((message as unknown as { content: unknown }).content);
+  }
+
+  function countTask(messages: AgentMessage[]): number {
+    return messages.filter((message) => textOf(message).includes('这两种安装方式的区别是什么')).length;
+  }
+
+  it('条数重切后，本轮提问仍在窗口头部', async () => {
+    const hooks = runtimeOptions();
+    const messages: AgentMessage[] = [userMessage(TASK), ...pairs(41, 'call')];
+
+    const compacted = await hooks.transformContext!(messages);
+
+    // 前置条件：确实发生过条数重切，否则下面的断言是空转。
+    expect(compacted.length).toBeLessThan(messages.length);
+    expect(textOf(compacted[0])).toContain('这两种安装方式的区别是什么');
+    expect(countTask(compacted)).toBe(1);
+    // 任务消息之后紧跟的窗口仍然不能以无主 toolResult 开头。
+    expect((compacted[1] as unknown as { role: string }).role).not.toBe('toolResult');
+  });
+
+  it('有历史会话时，常驻的是本轮提问而不是历史里的旧消息', async () => {
+    const prior: AgentMessage[] = [
+      userMessage('上一轮的旧问题'),
+      { role: 'assistant', content: [{ type: 'text', text: '上一轮的回答' }] } as unknown as AgentMessage,
+      userMessage('[系统观察] 本会话上一轮的执行足迹（可能已过时）'),
+    ];
+    const hooks = runtimeOptions({ messages: prior });
+    const messages: AgentMessage[] = [...prior, userMessage(TASK), ...pairs(41, 'call')];
+
+    const compacted = await hooks.transformContext!(messages);
+
+    expect(textOf(compacted[0])).toContain('这两种安装方式的区别是什么');
+    expect(compacted.some((message) => textOf(message).includes('上一轮的旧问题'))).toBe(false);
+  });
+
+  it('字符预算重切后，本轮提问仍在窗口里，且总量仍守住低水位', async () => {
+    const hooks = runtimeOptions();
+    const messages: AgentMessage[] = [userMessage(TASK)];
+    for (let index = 0; index < 6; index += 1) {
+      messages.push(...pairs(1, `call-${index}`));
+      // 中途 steer 进来的大块 user 消息：不进摘要压缩，只有字符预算拦得住。
+      messages.push(userMessage(`#${index} ${'字'.repeat(Math.floor(MAX_CONTEXT_CHARS / 3))}`));
+    }
+
+    const compacted = await hooks.transformContext!(messages);
+
+    expect(compacted.length).toBeLessThan(messages.length);
+    expect(textOf(compacted[0])).toContain('这两种安装方式的区别是什么');
+    expect(contextCostChars(compacted)).toBeLessThanOrEqual(CONTEXT_RECUT_TARGET_CHARS);
+  });
+
+  it('重切之后继续追加，窗口头部保持不变（前缀只增不改）', async () => {
+    const hooks = runtimeOptions();
+    const messages: AgentMessage[] = [userMessage(TASK), ...pairs(41, 'call')];
+
+    const first = await hooks.transformContext!(messages);
+    const head = first.slice(0, 2).map(textOf);
+
+    for (let round = 0; round < 3; round += 1) {
+      messages.push(...pairs(1, `later-${round}`));
+      const next = await hooks.transformContext!(messages);
+      expect(next.slice(0, 2).map(textOf)).toEqual(head);
+    }
+  });
+
+  it('未重切时不重复插入任务消息', async () => {
+    const hooks = runtimeOptions();
+    const messages: AgentMessage[] = [userMessage(TASK), ...pairs(3, 'call')];
+
+    const compacted = await hooks.transformContext!(messages);
+
+    expect(compacted).toHaveLength(messages.length);
+    expect(countTask(compacted)).toBe(1);
   });
 });
 

@@ -225,7 +225,8 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
   let unfinishedActionNudged = false;
   const toolCallCounts = new Map<string, number>();
   // 上下文窗口起点跨轮保持，两次重切之间不动，让请求前缀只增不改（见 planContextWindow）。
-  const contextWindow: ContextWindowState = { start: 0 };
+  // agent.prompt() 把本轮提问追加在初始历史之后，所以它的下标就是初始历史的长度。
+  const contextWindow: ContextWindowState = { start: 0, taskIndex: options.messages?.length ?? 0 };
   const confirmGateState = createConfirmGateState();
   const takeoverGateState = createTakeoverGateState();
   let overlayTabId = options.tabId;
@@ -597,16 +598,17 @@ function sleep(ms: number): Promise<void> {
  * 量级，后者已由 planContextWindow 的迟滞修掉。
  */
 export function compactAgentMessages(messages: AgentMessage[], contextWindow: ContextWindowState): AgentMessage[] {
-  let plan = compactWindow(messages, planContextWindow(messages, contextWindow));
+  const taskIndex = pinnedTaskIndex(messages, contextWindow);
+  let plan = compactWindow(messages, withPinnedTask(planContextWindow(messages, contextWindow), taskIndex));
 
   // 字符预算只能在压缩之后量：压缩前的历史里还躺着几份完整的 DOM dump，按原始大小判断
   // 会把马上就要被压成一句话摘要的消息也切掉。超标时重切一次，且只重切一次——单条消息
   // 本身就超预算时再切也无济于事，那种情况由 recutStartForCharBudget 保底留住最后一条。
   if (contextCostChars(plan.compacted) > MAX_CONTEXT_CHARS) {
-    const recut = recutStartForCharBudget(messages, plan);
+    const recut = recutStartForCharBudget(messages, plan, taskIndex);
     if (recut > contextWindow.start) {
       contextWindow.start = recut;
-      plan = compactWindow(messages, planContextWindow(messages, contextWindow));
+      plan = compactWindow(messages, withPinnedTask(planContextWindow(messages, contextWindow), taskIndex));
     }
   }
 
@@ -634,11 +636,18 @@ interface CompactedWindow {
  * 比整个预算还大，第一次比较就 break，此时仍然返回末尾那条。切空窗口等于把用户这一轮的
  * 提问也丢掉，模型会对着空上下文瞎答——比超预算更糟。
  */
-function recutStartForCharBudget(messages: AgentMessage[], plan: CompactedWindow): number {
+function recutStartForCharBudget(messages: AgentMessage[], plan: CompactedWindow, taskIndex: number): number {
   const last = plan.indices.length - 1;
-  let cost = 0;
+  // 本轮提问无论切点落在哪都会留在窗口里（切在它之后就被钉回头部），所以它的开销先预留，
+  // 回收时跳过它，免得同一条被算两次、或钉回来之后总量越过低水位。
+  const taskPosition = taskIndex < 0 ? -1 : plan.indices.indexOf(taskIndex);
+  let cost = taskPosition < 0 ? 0 : contextCostChars([plan.compacted[taskPosition]]);
   let cut = last;
   for (let index = last; index >= 0; index -= 1) {
+    if (index === taskPosition) {
+      cut = index;
+      continue;
+    }
     const next = cost + contextCostChars([plan.compacted[index]]);
     if (next > CONTEXT_RECUT_TARGET_CHARS) break;
     cost = next;
@@ -750,6 +759,25 @@ function countMessageChars(messages: AgentMessage[]): number {
 /** 跨轮保持的窗口起点。放在 createBrowserAgentOptions 的闭包里，一次运行一份。 */
 export interface ContextWindowState {
   start: number;
+  /**
+   * 本轮提问（agent.prompt() 追加的那条 user 消息）的绝对下标。窗口起点越过它时，它仍被
+   * 钉在窗口头部：单轮长任务里定义任务的就是这一条，切掉它模型就只能对着工具结果猜意图
+   * （ref: 2026-09-30 划词问安装方式区别，41 次调用后提问被切、答成了页面实现巡检）。
+   */
+  taskIndex?: number;
+}
+
+/** 本轮提问的下标；不存在或不是 user 消息（历史被整体替换等）时返回 -1，即不钉。 */
+function pinnedTaskIndex(messages: AgentMessage[], state: ContextWindowState): number {
+  const index = state.taskIndex;
+  if (index === undefined || index >= messages.length) return -1;
+  return messages[index].role === 'user' ? index : -1;
+}
+
+/** 窗口已经越过本轮提问时，把它补回头部；下标保持升序，compactWindow 按原样处理。 */
+function withPinnedTask(indices: number[], taskIndex: number): number[] {
+  if (taskIndex < 0 || (indices.length > 0 && indices[0] <= taskIndex)) return indices;
+  return [taskIndex, ...indices];
 }
 
 /**
