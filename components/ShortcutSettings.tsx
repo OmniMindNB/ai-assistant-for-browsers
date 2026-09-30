@@ -83,6 +83,12 @@ export default function ShortcutSettings() {
     };
   }, []);
 
+  // 打开表单（或从一条的编辑切到另一条）时把焦点放进名称框；focus 顺带把表单滚进视野。
+  const draftTarget = draft ? (editingId ?? 'new') : null;
+  useEffect(() => {
+    if (draftTarget !== null) nameInputRef.current?.focus();
+  }, [draftTarget]);
+
   useEffect(() => {
     let active = true;
     loadShortcutConfigs()
@@ -359,6 +365,114 @@ export default function ShortcutSettings() {
   // 录制指令的作用域固定为 page（它的参考轨迹全是页面操作），轨迹在这里只读——要改就删掉重录。
   const editingRecorded = items.find((item) => item.id === editingId)?.origin === 'recorded';
 
+  // 表单就地出现：编辑时展开在被编辑那一条里，新建时放在列表上方紧挨「添加」按钮。
+  // 以前固定在列表末尾，快捷方式一多，点了靠上那条的「编辑」还得滚到底才找得到表单。
+  const draftForm = draft ? (
+    <form
+      aria-label={editingId ? t('shortcut.editHeading') : t('shortcut.addHeading')}
+      onSubmit={(event) => {
+        event.preventDefault();
+        void saveDraft();
+      }}
+      className="rounded-lg border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900/60"
+    >
+      <h3 className="mb-3 text-sm font-medium text-neutral-800 dark:text-neutral-100">
+        {editingId ? t('shortcut.editHeading') : t('shortcut.addHeading')}
+      </h3>
+      <div className="space-y-3">
+        <label className="block text-xs text-neutral-600 dark:text-neutral-300">
+          <span className="mb-1 block">{t('shortcut.name')}</span>
+          <input
+            ref={nameInputRef}
+            value={draft.name}
+            disabled={saving}
+            aria-invalid={Boolean(fieldErrors.name)}
+            aria-describedby={fieldErrors.name ? 'shortcut-name-error' : undefined}
+            onChange={(event) => {
+              setDraft((current) =>
+                current ? { ...current, name: event.target.value } : current,
+              );
+              setFieldErrors((current) => ({ ...current, name: undefined }));
+            }}
+            className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+          />
+          {fieldErrors.name && (
+            <span
+              id="shortcut-name-error"
+              className="mt-1 block text-xs text-red-600 dark:text-red-400"
+            >
+              {fieldErrors.name}
+            </span>
+          )}
+        </label>
+        {!editingRecorded && (
+          <label className="block text-xs text-neutral-600 dark:text-neutral-300">
+            <span className="mb-1 block">{t('shortcut.scope')}</span>
+            <select
+              value={draft.scope}
+              disabled={saving}
+              onChange={(event) =>
+                setDraft((current) =>
+                  current
+                    ? { ...current, scope: event.target.value as ShortcutScope }
+                    : current,
+                )
+              }
+              className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+            >
+              <option value="page">{t('shortcut.scopePage')}</option>
+              <option value="selection">{t('shortcut.scopeSelection')}</option>
+              <option value="none">{t('shortcut.scopeNone')}</option>
+            </select>
+          </label>
+        )}
+        <label className="block text-xs text-neutral-600 dark:text-neutral-300">
+          <span className="mb-1 block">{t('shortcut.prompt')}</span>
+          <textarea
+            ref={promptInputRef}
+            value={draft.prompt}
+            disabled={saving}
+            rows={5}
+            aria-invalid={Boolean(fieldErrors.prompt)}
+            aria-describedby={fieldErrors.prompt ? 'shortcut-prompt-error' : undefined}
+            onChange={(event) => {
+              setDraft((current) =>
+                current ? { ...current, prompt: event.target.value } : current,
+              );
+              setFieldErrors((current) => ({ ...current, prompt: undefined }));
+            }}
+            className="w-full resize-y rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+          />
+          {fieldErrors.prompt && (
+            <span
+              id="shortcut-prompt-error"
+              className="mt-1 block text-xs text-red-600 dark:text-red-400"
+            >
+              {fieldErrors.prompt}
+            </span>
+          )}
+        </label>
+      </div>
+      <div className="mt-3 flex justify-end gap-2">
+        <button
+          type="button"
+          disabled={saving}
+          onClick={cancelEdit}
+          className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-white disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+        >
+          {t('common.cancel')}
+        </button>
+        <button
+          type="submit"
+          disabled={saving || hasInvalidConfig}
+          className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {t('shortcut.save')}
+        </button>
+      </div>
+    </form>
+  ) : null;
+
   return (
     <section className="mb-6">
       <label className="mb-4 flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
@@ -439,6 +553,8 @@ export default function ShortcutSettings() {
         </p>
       )}
 
+      {draftForm && editingId === null && <div className="mb-3">{draftForm}</div>}
+
       {items.length === 0 ? (
         <p className="rounded-md border border-dashed border-neutral-300 p-4 text-xs text-neutral-400 dark:border-neutral-700 dark:text-neutral-500">
           {t('shortcut.empty')}
@@ -451,7 +567,8 @@ export default function ShortcutSettings() {
             return (
               <li
                 key={item.id}
-                draggable={!saving && !hasInvalidConfig}
+                // 正在编辑的那条不可拖：在输入框里拖选文字会被当成拖动整条。
+                draggable={!saving && !hasInvalidConfig && editingId !== item.id}
                 onDragStart={(event) => startDrag(event, item.id)}
                 onDragEnd={() => setDraggedId(null)}
                 onDragOver={(event) => event.preventDefault()}
@@ -555,117 +672,13 @@ export default function ShortcutSettings() {
                     </button>
                   </div>
                 </div>
+                {editingId === item.id && draftForm && <div className="mt-3">{draftForm}</div>}
               </li>
             );
           })}
         </ul>
       )}
 
-      {draft && (
-        <form
-          aria-label={editingId ? t('shortcut.editHeading') : t('shortcut.addHeading')}
-          onSubmit={(event) => {
-            event.preventDefault();
-            void saveDraft();
-          }}
-          className="mt-4 rounded-lg border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900/60"
-        >
-          <h3 className="mb-3 text-sm font-medium text-neutral-800 dark:text-neutral-100">
-            {editingId ? t('shortcut.editHeading') : t('shortcut.addHeading')}
-          </h3>
-          <div className="space-y-3">
-            <label className="block text-xs text-neutral-600 dark:text-neutral-300">
-              <span className="mb-1 block">{t('shortcut.name')}</span>
-              <input
-                ref={nameInputRef}
-                value={draft.name}
-                disabled={saving}
-                aria-invalid={Boolean(fieldErrors.name)}
-                aria-describedby={fieldErrors.name ? 'shortcut-name-error' : undefined}
-                onChange={(event) => {
-                  setDraft((current) =>
-                    current ? { ...current, name: event.target.value } : current,
-                  );
-                  setFieldErrors((current) => ({ ...current, name: undefined }));
-                }}
-                className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
-              />
-              {fieldErrors.name && (
-                <span
-                  id="shortcut-name-error"
-                  className="mt-1 block text-xs text-red-600 dark:text-red-400"
-                >
-                  {fieldErrors.name}
-                </span>
-              )}
-            </label>
-            {!editingRecorded && (
-              <label className="block text-xs text-neutral-600 dark:text-neutral-300">
-                <span className="mb-1 block">{t('shortcut.scope')}</span>
-                <select
-                  value={draft.scope}
-                  disabled={saving}
-                  onChange={(event) =>
-                    setDraft((current) =>
-                      current
-                        ? { ...current, scope: event.target.value as ShortcutScope }
-                        : current,
-                    )
-                  }
-                  className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
-                >
-                  <option value="page">{t('shortcut.scopePage')}</option>
-                  <option value="selection">{t('shortcut.scopeSelection')}</option>
-                  <option value="none">{t('shortcut.scopeNone')}</option>
-                </select>
-              </label>
-            )}
-            <label className="block text-xs text-neutral-600 dark:text-neutral-300">
-              <span className="mb-1 block">{t('shortcut.prompt')}</span>
-              <textarea
-                ref={promptInputRef}
-                value={draft.prompt}
-                disabled={saving}
-                rows={5}
-                aria-invalid={Boolean(fieldErrors.prompt)}
-                aria-describedby={fieldErrors.prompt ? 'shortcut-prompt-error' : undefined}
-                onChange={(event) => {
-                  setDraft((current) =>
-                    current ? { ...current, prompt: event.target.value } : current,
-                  );
-                  setFieldErrors((current) => ({ ...current, prompt: undefined }));
-                }}
-                className="w-full resize-y rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
-              />
-              {fieldErrors.prompt && (
-                <span
-                  id="shortcut-prompt-error"
-                  className="mt-1 block text-xs text-red-600 dark:text-red-400"
-                >
-                  {fieldErrors.prompt}
-                </span>
-              )}
-            </label>
-          </div>
-          <div className="mt-3 flex justify-end gap-2">
-            <button
-              type="button"
-              disabled={saving}
-              onClick={cancelEdit}
-              className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-white disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
-            >
-              {t('common.cancel')}
-            </button>
-            <button
-              type="submit"
-              disabled={saving || hasInvalidConfig}
-              className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {t('shortcut.save')}
-            </button>
-          </div>
-        </form>
-      )}
 
       <ConfirmDialog
         open={pendingAction !== null}

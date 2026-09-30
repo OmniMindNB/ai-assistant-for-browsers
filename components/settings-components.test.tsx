@@ -496,6 +496,33 @@ describe('grouped options settings', () => {
     expect(screen.getAllByRole('form')).toHaveLength(1);
   });
 
+  // 快捷方式一多，编辑表单若固定在列表末尾，点了靠上那条的「编辑」得滚到底才找得到表单。
+  // 所以编辑表单就地展开在被编辑那一条里，新建表单放在列表上方（紧挨「添加」按钮）。
+  it('opens the edit form inside the edited shortcut and focuses its name', async () => {
+    const user = userEvent.setup();
+    renderWithLocale(<ShortcutSettings />);
+
+    await user.click(await screen.findByRole('button', { name: 'Edit Summarize page' }));
+
+    const form = screen.getByRole('form', { name: 'Edit shortcut' });
+    const item = screen.getByRole('button', { name: 'Edit Summarize page' }).closest('li')!;
+    expect(item).toContainElement(form);
+    expect(item).not.toHaveAttribute('draggable', 'true');
+    expect(within(form).getByRole('textbox', { name: 'Name' })).toHaveFocus();
+  });
+
+  it('opens the add form above the shortcut list', async () => {
+    const user = userEvent.setup();
+    renderWithLocale(<ShortcutSettings />);
+
+    await user.click(await screen.findByRole('button', { name: 'Add shortcut' }));
+
+    const form = screen.getByRole('form', { name: 'Add shortcut' });
+    const list = screen.getByRole('list', { name: 'Shortcuts' });
+    expect(list).not.toContainElement(form);
+    expect(form.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('persists keyboard shortcut reordering', async () => {
     const user = userEvent.setup();
     const set = (globalThis as any).browser.storage.local.set as ReturnType<typeof vi.fn>;
