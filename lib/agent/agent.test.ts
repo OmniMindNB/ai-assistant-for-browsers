@@ -335,6 +335,56 @@ describe('页面位置类工具不解锁写预算', () => {
   });
 });
 
+// 同一事故的另一半：第 5 步巡检、第 6 步 browser_open_tab，"尝试过写"的标志就此置真，
+// 巡检后的补查限额整个失效，之后 read_page 6 次、get_html 7 次全被放行。那道豁免是给
+// "改页面的任务要继续定位元素"留的；换页面、开关标签页不是在改页面，不该触发它。
+describe('页面位置类工具不算"尝试过写"', () => {
+  const LOCATION_WRITES: [string, Record<string, unknown>][] = [
+    ['browser_navigate', { url: 'https://example.com/a' }],
+    ['browser_go_back', {}],
+    ['browser_open_tab', { url: 'https://example.com/b' }],
+    ['browser_close_tab', { tabId: 1 }],
+  ];
+
+  function hooksWith(steer = vi.fn()) {
+    return createBrowserAgentOptions({
+      provider: baseProvider,
+      tabId: 1,
+      tools: [],
+      readToolCallBudget: 20,
+      writeToolCallBudget: 40,
+      steer,
+    });
+  }
+
+  it.each(LOCATION_WRITES)('巡检之后 %s 不解除补查限额', async (name, args) => {
+    const hooks = hooksWith();
+    await hooks.afterToolCall?.(afterContext('browser_inspect_page_implementation', {}, false));
+    expect(await hooks.beforeToolCall?.(beforeContext(name, args))).toBeUndefined();
+    await hooks.afterToolCall?.(afterContext(name, args, false));
+
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_read_page', {}))).toMatchObject({
+      block: true,
+      reason: expect.stringContaining('巡检'),
+    });
+  });
+
+  it.each(LOCATION_WRITES)('%s 之后拿到句柄却没动手就停下，照常补一轮', async (name, args) => {
+    const steer = vi.fn();
+    const hooks = hooksWith(steer);
+    await hooks.beforeToolCall?.(beforeContext(name, args));
+    await hooks.afterToolCall?.(afterContext(name, args, false));
+    await hooks.afterToolCall?.(afterContext('browser_get_form', {}, false));
+
+    await hooks.prepareNextTurnWithContext?.({
+      message: textOnlyMessage('表单有这些字段'),
+      context: { messages: [], tools: [{ name: 'browser_fill_form' }] },
+    } as unknown as PrepareNextTurnContext);
+
+    expect(steer).toHaveBeenCalledWith(expect.objectContaining({ content: expect.stringContaining('fieldId') }));
+  });
+});
+
 describe('createBrowserAgentOptions task outcome forcing', () => {
   const reportTaskOutcomeTool = { name: 'report_task_outcome' } as unknown as BrowserAgentTool;
 
@@ -714,10 +764,11 @@ describe('createBrowserAgentOptions 拿到句柄却未动手就停下时补一�
     const steer = vi.fn();
     const h = hooks(steer);
     await h.afterToolCall?.(afterContext('browser_get_form', {}, false));
-    // javascript: 导航是 permissions.ts 的硬拒绝，走 beforeToolCall 的阻断分支。
-    expect(await h.beforeToolCall?.(beforeContext('browser_navigate', { url: 'javascript:alert(1)' }))).toMatchObject({
-      block: true,
-    });
+    // 对根容器 remove 是 permissions.ts 的硬拒绝，走 beforeToolCall 的阻断分支。
+    // （不用 javascript: 导航做例子：位置类工具本来就不算"尝试过写"，见「页面位置类工具不算"尝试过写"」那组。）
+    expect(
+      await h.beforeToolCall?.(beforeContext('browser_modify_dom', { selector: 'body', action: 'remove' })),
+    ).toMatchObject({ block: true });
     await endTurn(h);
     expect(steer).not.toHaveBeenCalled();
   });

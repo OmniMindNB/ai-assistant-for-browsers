@@ -254,7 +254,11 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
       if (signal?.aborted) return recordPreExecutionBlock({ block: true, reason: '操作已停止。' });
       // 在任何闸门之前记下"尝试过写"：被拦下的调用不经过 afterToolCall，放到后面就漏记了。
       // 模型尝试写却失败/被拒之后停下，它的文字是在解释原因，不是早停。
-      if (WRITE_TOOL_NAMES.has(context.toolCall.name)) writeToolAttemptedThisRun = true;
+      // 换页面、开关标签页不算：它们不是在改页面，算进来会让一次 browser_open_tab 就解除巡检后的
+      // 补查限额、压掉"拿到句柄没动手"的补一轮（ref: 2026-09-30 划词问答巡检后开 tab 跑满 41 次）。
+      if (WRITE_TOOL_NAMES.has(context.toolCall.name) && !isPageLocationTool(context.toolCall.name)) {
+        writeToolAttemptedThisRun = true;
+      }
       // 巡检后的补查限额是给"页面怎么实现的"这类问答收敛用的。一旦尝试过写，说明这是改页面的
       // 任务，定位下一批元素正是它需要的，再限就会把它卡死在零写入的收尾轮里（ref: 2026-09-15
       // 专注阅读事故）。之后的收敛交给通用预算与重复失败检测。
