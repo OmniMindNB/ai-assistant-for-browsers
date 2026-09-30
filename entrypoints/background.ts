@@ -73,6 +73,7 @@ import { MAX_OUTLINE_TITLE_CHARS } from '@/lib/page-outline';
 import { fetchPageResourceText } from '@/lib/page-resource-fetch';
 import { resolveTargetTab } from '@/lib/agent/tab-target';
 import { performGoBack, waitForTabLoadComplete, NAVIGATE_HISTORY_SETTLE_TIMEOUT_MS } from '@/lib/agent/history-nav';
+import { performOpenTab } from '@/lib/agent/open-tab';
 import { sendToContentScript } from '@/lib/agent/content-script-messaging';
 import { clearOverlayForTab, getOverlayForTab, setOverlayForTab } from '@/lib/agent/tab-overlay-state';
 import { clearConversationIdForTab } from '@/lib/agent/tab-conversation';
@@ -1796,13 +1797,21 @@ async function waitForTabLoad(tabId: number): Promise<void> {
       settled = true;
       clearTimeout(timer);
       browser.tabs.onUpdated.removeListener(onUpdated);
+      browser.tabs.onRemoved.removeListener(onRemoved);
       resolve();
     };
     const onUpdated = (updatedTabId: number, changeInfo: { status?: string }): void => {
       if (updatedTabId === tabId && changeInfo.status === 'complete') finish();
     };
+    // 地址触发下载时 Chrome 会直接关掉新开的 tab，complete 永远不会来——不监听关闭就会白等满超时。
+    const onRemoved = (removedTabId: number): void => {
+      if (removedTabId === tabId) finish();
+    };
     const timer = setTimeout(finish, NAVIGATE_SETTLE_TIMEOUT_MS);
     browser.tabs.onUpdated.addListener(onUpdated);
+    browser.tabs.onRemoved.addListener(onRemoved);
+    // 监听挂上之前 tab 可能已经没了（下载判定很快），补查一次。
+    browser.tabs.get(tabId).catch(finish);
   });
 }
 
@@ -1850,17 +1859,11 @@ async function openNewTab(payload: OpenNewTabPayload, panelTabId: number): Promi
   if (!isNavigableUrl(requestedUrl)) throw new Error('仅允许打开 http/https 地址。');
 
   const panelTab = await resolveTargetTab(panelTabId);
-  const created = await browser.tabs.create({ windowId: panelTab.windowId, url: requestedUrl, active: false });
-  if (typeof created.id !== 'number') throw new Error('新标签页创建失败。');
-
-  await waitForTabLoad(created.id);
-
-  const settled = await browser.tabs.get(created.id).catch(() => undefined);
-  return {
-    id: created.id,
-    url: settled?.url || requestedUrl,
-    title: settled?.title ? sanitizePageText(settled.title, MAX_PAGE_TITLE_CHARS) : undefined,
-  };
+  return performOpenTab(requestedUrl, {
+    createTab: (url) => browser.tabs.create({ windowId: panelTab.windowId, url, active: false }),
+    onceLoadComplete: waitForTabLoad,
+    getTab: (id) => browser.tabs.get(id).catch(() => undefined),
+  });
 }
 
 /**
