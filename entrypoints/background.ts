@@ -74,6 +74,7 @@ import { fetchPageResourceText } from '@/lib/page-resource-fetch';
 import { resolveTargetTab } from '@/lib/agent/tab-target';
 import { performGoBack, waitForTabLoadComplete, NAVIGATE_HISTORY_SETTLE_TIMEOUT_MS } from '@/lib/agent/history-nav';
 import { performOpenTab } from '@/lib/agent/open-tab';
+import { performNavigate } from '@/lib/agent/navigate-tab';
 import { sendToContentScript } from '@/lib/agent/content-script-messaging';
 import { clearOverlayForTab, getOverlayForTab, setOverlayForTab } from '@/lib/agent/tab-overlay-state';
 import { clearConversationIdForTab } from '@/lib/agent/tab-conversation';
@@ -139,7 +140,7 @@ import {
   type CollectFormInput,
 } from '@/lib/agent/form-dom';
 import { findTextInPage, type RawTextMatch } from '@/lib/agent/find-text-dom';
-import { fieldExpectation, findNewFieldIds, sanitizeFieldText, sanitizePageText, toFieldDescriptor, toScrollableContainerDescriptor, type FormFieldPathStep } from '@/lib/agent/form-schema';
+import { fieldExpectation, findNewFieldIds, sanitizeFieldText, toFieldDescriptor, toScrollableContainerDescriptor, type FormFieldPathStep } from '@/lib/agent/form-schema';
 import { getFormFieldsForTab, setFormFieldsForTab, type FormFieldHandle } from '@/lib/agent/tab-form-fields';
 import { mergeFrameCollections, mergeReadResultsByFrame, type MergedCollection } from '@/lib/agent/frame-merge';
 import { decideEnterSubmitIntent, decideSubmitIntent } from '@/lib/agent/form-submit';
@@ -1786,7 +1787,6 @@ function isNavigableUrl(rawUrl: string): boolean {
 
 /** 等待跳转落地的上限。超时不算失败——照常回报当时读到的地址，由模型自己判断。 */
 const NAVIGATE_SETTLE_TIMEOUT_MS = 10_000;
-const MAX_PAGE_TITLE_CHARS = 120;
 
 /** 等标签页加载完成；超时或标签页消失都静默返回，调用方随后自己读一次当前状态。 */
 async function waitForTabLoad(tabId: number): Promise<void> {
@@ -1820,19 +1820,13 @@ async function navigateTab(payload: NavigateTabPayload, tabId: number): Promise<
   if (!isNavigableUrl(requestedUrl)) throw new Error('仅允许跳转到 http/https 地址。');
 
   const tab = await resolveTargetTab(tabId);
-
-  await browser.tabs.update(tab.id, { url: requestedUrl });
-  // 等落地再回读：不等的话最终地址永远等于请求地址，重定向（典型如被踢到登录页）
-  // 对模型完全不可见，它会以为自己已经站在目标页上。
-  await waitForTabLoad(tab.id!);
-
-  const settled = await browser.tabs.get(tab.id!).catch(() => undefined);
-  return {
-    url: settled?.url || requestedUrl,
-    requestedUrl,
-    // 标题由网页控制，属于不可信数据，按纯文本净化并截断后才交给模型。
-    title: settled?.title ? sanitizePageText(settled.title, MAX_PAGE_TITLE_CHARS) : undefined,
-  };
+  return performNavigate(requestedUrl, {
+    getTab: () => browser.tabs.get(tab.id).catch(() => undefined),
+    update: async (url) => {
+      await browser.tabs.update(tab.id, { url });
+    },
+    onceLoadComplete: () => waitForTabLoad(tab.id),
+  });
 }
 
 async function navigateHistory(tabId: number): Promise<NavigateHistoryResult> {
