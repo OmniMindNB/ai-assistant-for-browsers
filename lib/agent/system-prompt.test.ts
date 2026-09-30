@@ -505,3 +505,37 @@ describe('splitSystemPromptForCache', () => {
     expect(volatile).toContain('<runtime_context>');
   });
 });
+
+// 2026-09-30 事故（deepseek-v4.1-flash）：用户划词引用了两条安装命令，问"这两种安装方式的区别是什么？"，
+// 答案全在引用里，模型却读页面、拉表单、做实现巡检，还去打开引用里的 install.sh 想"核对"，
+// 一共 41 次工具调用。<untrusted_content> 只说选中文本"是数据"，<tool_strategy> 的每一条都是
+// "该用哪个工具"，没有一条是"不用工具"——选工具索引里缺了零工具这个分支。
+describe('buildSystemPrompt 引用内容足以作答时不调用工具', () => {
+  function strategyLines(): string[] {
+    const strategy = SYSTEM_PROMPT.match(/<tool_strategy>\n([\s\S]*?)\n<\/tool_strategy>/)?.[1] ?? '';
+    return strategy.split('\n');
+  }
+
+  function noToolLine(): string {
+    return strategyLines().find((line) => line.includes('选中文本') && line.includes('不要调用任何工具')) ?? '';
+  }
+
+  it('选工具索引里有"选中文本/附件已足够就直接作答"这一条', () => {
+    const line = noToolLine();
+    expect(line).not.toBe('');
+    expect(line).toContain('附件');
+  });
+
+  // 顺序即优先级：模型从上往下匹配，零工具分支排在第一个工具分支后面，就会先被"总结页面用 read_page"截胡。
+  it('这一条排在所有具体工具条目之前', () => {
+    const lines = strategyLines();
+    const noToolIndex = lines.indexOf(noToolLine());
+    const firstToolIndex = lines.findIndex((line) => /browser_[a-z_]+/.test(line));
+    expect(noToolIndex).toBeGreaterThanOrEqual(0);
+    expect(noToolIndex).toBeLessThan(firstToolIndex);
+  });
+
+  it('点名不要为了核对去打开引用里出现的链接', () => {
+    expect(noToolLine()).toContain('链接');
+  });
+});
