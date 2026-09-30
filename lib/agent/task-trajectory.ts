@@ -37,6 +37,7 @@ export const MAX_TRAJECTORY_STEPS = 50;
  * 保存的指令不和具体页面绑定：录下的只是"在页面上做了什么"，不是"在哪个页面做的"。
  * 所以换页面、开关/切换标签页这类只决定位置的步骤不录，每一步也不带网址——
  * 否则在另一个视频上回放"给这个视频加速"，模型会先跳回录制时的那个视频。
+ * agent.ts 的预算记账也用这张表：位置类调用按读记账，不解锁写档。
  */
 const PAGE_LOCATION_TOOLS: ReadonlySet<string> = new Set([
   'browser_navigate',

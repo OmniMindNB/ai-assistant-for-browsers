@@ -30,6 +30,7 @@ import { decideTabAccess, resolveToolTargetTabId } from './tab-access';
 import { getFormFieldsForTab } from './tab-form-fields';
 import { isChildFrameHandle } from './fill-form-request';
 import { createAgentToolPolicy } from './tool-policy';
+import { isPageLocationTool } from './task-trajectory';
 import { describeToolActivity } from './activity-description';
 import { recordPerfContext } from './perf-trace';
 import {
@@ -279,10 +280,14 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
       }
 
       const isWriteTool = WRITE_TOOL_NAMES.has(context.toolCall.name);
+      // 写档是给"在页面上动手"留的余量。换页面、开关标签页只决定在哪儿，在预算上按读记账：
+      // 既不解锁写档，读档用尽时也不享受边界写入的豁免（ref: 2026-09-30 划词问答里一次
+      // browser_open_tab 批下 40 次写档，本该 20 次收尾的问答跑到 41 次）。
+      const unlocksWriteBudget = isWriteTool && !isPageLocationTool(context.toolCall.name);
       // report_task_outcome 完全豁免预算记账：它既不占预算，也绝不能被预算上限拦下——
       // 预算耗尽的那一轮恰恰是最需要 failure 徽标的一轮（ref: 最终审查 Important）。
       if (context.toolCall.name !== REPORT_TASK_OUTCOME_TOOL_NAME) {
-        const policyBlock = policy.preflight(context.toolCall.name, context.args, isWriteTool);
+        const policyBlock = policy.preflight(context.toolCall.name, context.args, unlocksWriteBudget);
         if (policyBlock) return recordPreExecutionBlock(policyBlock);
       }
 
@@ -344,9 +349,11 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
         );
         if (takeoverBlock) return recordPreExecutionBlock(takeoverBlock);
 
-        policy.approveWrite();
-        const approvedPolicyBlock = policy.preflight(context.toolCall.name, context.args, isWriteTool);
-        if (approvedPolicyBlock) return recordPreExecutionBlock(approvedPolicyBlock);
+        if (unlocksWriteBudget) {
+          policy.approveWrite();
+          const approvedPolicyBlock = policy.preflight(context.toolCall.name, context.args, unlocksWriteBudget);
+          if (approvedPolicyBlock) return recordPreExecutionBlock(approvedPolicyBlock);
+        }
         const cursor = await resolveOverlayCursor(context.toolCall.name, context.toolCall.arguments, session.currentTabId);
         options.onOverlay?.(
           {

@@ -279,6 +279,62 @@ describe('createBrowserAgentOptions tool policy hooks', () => {
   });
 });
 
+// 2026-09-30 事故：划词问答第 6 步 browser_open_tab 打开 install.sh，只因它在 WRITE_TOOL_NAMES 里，
+// 就在读档 20 次之上又批下 40 次写档，本该 20 次收尾的问答一路跑到 41 次调用、83 条消息。
+// 写档是给"改页面"留的余量；换页面、开关/切换标签页只决定在哪儿，不是在页面上动手，
+// 读档内照常可用、照常记账，但不解锁写档。
+describe('页面位置类工具不解锁写预算', () => {
+  const LOCATION_CALLS: [string, Record<string, unknown>][] = [
+    ['browser_navigate', { url: 'https://example.com/a' }],
+    ['browser_go_back', {}],
+    ['browser_open_tab', { url: 'https://example.com/b' }],
+    ['browser_switch_tab', { tabId: 1 }],
+    ['browser_close_tab', { tabId: 1 }],
+  ];
+
+  it.each(LOCATION_CALLS)('%s 之后仍按读档上限收口', async (name, args) => {
+    const hooks = runtimeOptions(); // 读档 1、写档 2
+    expect(await hooks.beforeToolCall?.(beforeContext(name, args))).toBeUndefined();
+    await hooks.afterToolCall?.(afterContext(name, args, false));
+
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_read_page', {}))).toMatchObject({
+      block: true,
+      reason: expect.stringContaining('1'),
+    });
+  });
+
+  it.each(LOCATION_CALLS)('读档用尽时 %s 不能借"边界写入"的豁免闯过去', async (name, args) => {
+    const hooks = runtimeOptions();
+    await hooks.afterToolCall?.(afterContext('browser_read_page', {}, false));
+
+    expect(await hooks.beforeToolCall?.(beforeContext(name, args))).toMatchObject({ block: true });
+  });
+
+  it('换页之后真正动手的写操作照常解锁写档，额度从那一刻起算', async () => {
+    sendMessageSpy.mockResolvedValueOnce({ ok: true, data: { isSubmit: false } });
+    const hooks = createBrowserAgentOptions({
+      provider: baseProvider,
+      tabId: 1,
+      tools: [],
+      readToolCallBudget: 2,
+      writeToolCallBudget: 2,
+      steer: vi.fn(),
+    });
+    await hooks.beforeToolCall?.(beforeContext('browser_navigate', { url: 'https://example.com/form' }));
+    await hooks.afterToolCall?.(afterContext('browser_navigate', { url: 'https://example.com/form' }, false));
+
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_click', { selector: '#go' }))).toBeUndefined();
+    await hooks.afterToolCall?.(afterContext('browser_click', { selector: '#go' }, false));
+    // 写档在「已用 1 次」之上追加 2 次，总上限 3。
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_read_page', {}))).toBeUndefined();
+    await hooks.afterToolCall?.(afterContext('browser_read_page', {}, false));
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_read_page', {}))).toMatchObject({
+      block: true,
+      reason: expect.stringContaining('3'),
+    });
+  });
+});
+
 describe('createBrowserAgentOptions task outcome forcing', () => {
   const reportTaskOutcomeTool = { name: 'report_task_outcome' } as unknown as BrowserAgentTool;
 
