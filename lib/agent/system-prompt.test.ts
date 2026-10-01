@@ -247,10 +247,21 @@ describe('buildSystemPrompt runtime context', () => {
     expect(buildSystemPrompt({ now, timeZone: 'UTC' })).toContain('2026-07-31 14:40 星期五（UTC）');
   });
 
-  it('pins the turn to a single tab and says other tabs are out of reach', () => {
+  it('names the starting tab as the user page and points away-trips at browser_open_tab', () => {
+    // 曾经写着"无法打开新标签页"，而 browser_open_tab 一直在工具表里：模型信了提示词，
+    // "全网搜一下"就在用户自己的页面上一路 browser_navigate，查完回不到原页面
+    // （ref: 2026-10-01 搬瓦工优惠券会话导出）。
     const prompt = buildSystemPrompt({ page: { tabId: 42, title: 'a', url: 'https://e.com' } });
-    expect(prompt).toContain('id=42');
-    expect(prompt).toContain('无法打开新标签页');
+    const runtime = prompt.slice(prompt.indexOf('<runtime_context>'));
+    expect(runtime).toContain('id=42');
+    expect(prompt).not.toContain('无法打开新标签页');
+    expect(runtime).toContain('browser_open_tab');
+  });
+
+  it('tells the model to research other sites in a new tab instead of navigating the user page away', () => {
+    const prompt = buildSystemPrompt({ page: { tabId: 1, title: 'a', url: 'https://e.com' } });
+    const strategy = prompt.slice(0, prompt.indexOf('<runtime_context>'));
+    expect(strategy).toMatch(/搜索[^\n]*browser_open_tab[^\n]*不要[^\n]*browser_navigate/);
   });
 
   it('labels the injected title and url as untrusted', () => {
