@@ -53,6 +53,8 @@ import {
   type SelectOptionResult,
   type SetAgentOverlayPayload,
   type SetAgentOverlayResult,
+  type RunScriptPayload,
+  type RunScriptResult,
   type SetStoragePayload,
   type GetStoragePayload,
   type GetStorageResult,
@@ -155,6 +157,8 @@ import {
   encodeBase64,
   planScreenshotResize,
 } from '@/lib/agent/screenshot-image';
+import { createScriptWorld } from '@/lib/agent/script-world';
+import { runScript } from '@/lib/agent/run-script';
 
 // 以下为模型可见/可调用的消息类型；内部专用消息（如 SET_AGENT_OVERLAY）有意不在此列，以免暴露给模型。
 const SUPPORTED_MESSAGE_TYPES = [
@@ -189,6 +193,7 @@ const SUPPORTED_MESSAGE_TYPES = [
   'CLOSE_TAB',
   'SET_STORAGE',
   'GET_STORAGE',
+  'RUN_SCRIPT',
   'CHAT',
 ] as const;
 
@@ -547,6 +552,9 @@ async function handleMessage(message: Message, sender?: MessageSender): Promise<
 
     case 'GET_STORAGE':
       return getStorage(message.payload as GetStoragePayload, requireTabId(message));
+
+    case 'RUN_SCRIPT':
+      return runUserScript(message.payload as RunScriptPayload, requireTabId(message));
 
     case 'SET_AGENT_OVERLAY':
       return setAgentOverlay(message.payload as SetAgentOverlayPayload, requireTabId(message));
@@ -1904,6 +1912,29 @@ async function getStorage(payload: GetStoragePayload, tabId: number): Promise<Ge
       }
     });
     return { areas };
+  });
+}
+
+// 模块级：configureWorld 每次 worker 启动后做一次。browser.userScripts 在"允许用户脚本"开关
+// 关闭时访问即抛错，所以取值必须放在回调里，交给 createScriptWorld 的 try/catch 兜住。
+const scriptWorld = createScriptWorld({
+  configureWorld: (properties) => browser.userScripts.configureWorld(properties),
+});
+
+/**
+ * AI 生成的脚本只走 chrome.userScripts.execute（商店 Remote Hosted Code 政策认可的通道），
+ * world 写死为 USER_SCRIPT——final-review.test.ts 读源码锁定这一点。
+ */
+async function runUserScript(payload: RunScriptPayload, tabId: number): Promise<RunScriptResult> {
+  return runScript(payload, {
+    ensureWorld: () => scriptWorld.ensure(),
+    execute: (code) => browser.userScripts.execute({
+      target: { tabId },
+      world: 'USER_SCRIPT',
+      js: [{ code }],
+    }),
+    setTimer: (fn, ms) => setTimeout(fn, ms),
+    clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
   });
 }
 

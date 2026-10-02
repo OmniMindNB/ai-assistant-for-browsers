@@ -55,6 +55,9 @@ export const AUTO_APPROVE_TOOL_NAMES = new Set([
   'browser_navigate',
   'browser_go_back',
   'browser_set_storage',
+  // 模型生成的 JS，经 userScripts 在禁网络的 USER_SCRIPT world 运行。自动放行是用户的明确决定
+  // （ref: 2026-10-02-run-script-design.md §6 风险接受）；按写工具记账、受 tab-access 约束。
+  'browser_run_script',
   'browser_close_tab',
 ]);
 

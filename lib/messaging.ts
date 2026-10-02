@@ -39,6 +39,7 @@ export type MessageType =
   | 'CLOSE_TAB'
   | 'SET_STORAGE'
   | 'GET_STORAGE'
+  | 'RUN_SCRIPT'
   | 'SET_AGENT_OVERLAY'
   | 'CHAT';
 
@@ -492,6 +493,21 @@ export interface SetStoragePayload {
 export interface SetStorageResult {
   area: 'local' | 'session';
   key: string;
+}
+
+/**
+ * browser_run_script：经 chrome.userScripts.execute 在 USER_SCRIPT world 运行模型生成的代码
+ * （ref: docs/superpowers/specs/2026-10-02-run-script-design.md）。code 是未包装的函数体，
+ * 包装与超时都在 lib/agent/run-script.ts 里做。
+ */
+export interface RunScriptPayload {
+  code: string;
+  timeoutMs: number;
+}
+
+export interface RunScriptResult {
+  /** 页面里序列化好的返回值 JSON；未脱敏，脱敏在工具层（tools.ts）完成。 */
+  json: string;
 }
 
 export interface GetStoragePayload {

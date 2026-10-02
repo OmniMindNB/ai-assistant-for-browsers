@@ -12,6 +12,13 @@ import { DEFAULT_FIND_TEXT_LIMIT, MAX_FIND_TEXT_LIMIT, parseFindTextParams } fro
 import { DEFAULT_READ_MAX_CHARS, MAX_TOOL_RESULT_CHARS } from './context-budget';
 import { describePageReadWindow, planPageReadWindow } from './page-read-window';
 import {
+  DEFAULT_SCRIPT_TIMEOUT_MS,
+  MAX_SCRIPT_CODE_CHARS,
+  MAX_SCRIPT_TIMEOUT_MS,
+  formatScriptResult,
+  parseRunScriptParams,
+} from './run-script';
+import {
   sendMessage,
   type CaptureScreenshotPayload,
   type CaptureScreenshotResult,
@@ -49,6 +56,8 @@ import {
   type PressKeyResult,
   type QueryDomPayload,
   type QueryDomResult,
+  type RunScriptPayload,
+  type RunScriptResult,
   type ScrollPagePayload,
   type ScrollPageResult,
   type SelectOptionPayload,
@@ -111,6 +120,7 @@ export function createBrowserTools(session: TabSessionController, config: Browse
     makeWaitForTool(session),
     makeNavigateTool(session),
     makeGoBackTool(session),
+    makeRunScriptTool(session),
     makeSetStorageTool(session),
     makeGetStorageTool(session),
     makeOpenTabTool(session),
@@ -1064,6 +1074,40 @@ function makeGoBackTool(session: TabSessionController): BrowserAgentTool {
       // tracked 列表里这条记录，与 makeNavigateTool 是同一个既有惯例。
       session.openAndSwitch({ id: session.currentTabId, title: response.data.title, url: response.data.url });
       return textResult(describeGoBackResult(response.data), response.data as unknown as Record<string, unknown>);
+    },
+  };
+}
+
+function makeRunScriptTool(session: TabSessionController): BrowserAgentTool {
+  return {
+    name: 'browser_run_script',
+    label: 'Run Script',
+    description:
+      'Run a short JavaScript function body in the current page and get back its return value as JSON. '
+      + 'Use it for work the structured tools cannot do in a few calls: extracting many rows into JSON, '
+      + 'counting or filtering elements, bulk-marking or hiding elements. The body runs inside an async function, '
+      + 'so you may use await, and must `return` the result. It can read and modify the DOM, but it cannot see the '
+      + "page's own JavaScript variables or functions, and every network request (fetch, XHR, WebSocket) is blocked. "
+      + 'Prefer the structured tools when they fit; never use this to fill forms — browser_fill_form verifies writes '
+      + 'and protects password/payment fields. The script cannot be stopped once started: do not write unbounded loops.',
+    parameters: Type.Object({
+      code: Type.String({ description: `Function body, at most ${MAX_SCRIPT_CODE_CHARS} characters. End with return <value>.` }),
+      purpose: Type.String({ description: 'One sentence on what this script does, shown to the user.' }),
+      timeoutMs: Type.Optional(
+        Type.Number({ description: `Defaults to ${DEFAULT_SCRIPT_TIMEOUT_MS}, capped at ${MAX_SCRIPT_TIMEOUT_MS}.` }),
+      ),
+    }),
+    execute: async (_toolCallId, params) => {
+      const parsed = parseRunScriptParams(params);
+      const payload: RunScriptPayload = { code: parsed.code, timeoutMs: parsed.timeoutMs };
+      const response = (await sendMessage<RunScriptPayload, RunScriptResult>('RUN_SCRIPT', payload, session.currentTabId)) as MessageResponse<RunScriptResult>;
+      if (!response.ok || !response.data) throw new Error(response.error ?? '脚本执行失败');
+      const redactionSettings = await loadRedactionSettings();
+      // details 留在 agent 消息里：只放用途和长度，不放原始返回值（未脱敏）。
+      return textResult(formatScriptResult(response.data.json, redactionSettings), {
+        purpose: parsed.purpose,
+        resultChars: response.data.json.length,
+      });
     },
   };
 }

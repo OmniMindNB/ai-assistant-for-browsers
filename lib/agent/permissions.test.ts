@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { beforeToolCallPermissionGate, decideToolPermission } from './permissions';
+import { beforeToolCallPermissionGate, decideToolPermission, WRITE_TOOL_NAMES } from './permissions';
+import { decideTabAccess } from './tab-access';
 import { createConfirmGateState } from './confirm-gate';
 import type { BeforeToolCallContext } from '@earendil-works/pi-agent-core';
 
@@ -49,6 +50,7 @@ describe('decideToolPermission', () => {
       'browser_open_tab',
       'browser_navigate',
       'browser_set_storage',
+      'browser_run_script',
       'browser_close_tab',
     ]) {
       expect(decideToolPermission(tool, { code: 'void 0', url: 'https://example.com' }).level).toBe('auto_allow');
@@ -59,6 +61,7 @@ describe('decideToolPermission', () => {
     expect(decideToolPermission('browser_navigate', { url: 'https://example.com' }).level).toBe('auto_allow');
     expect(decideToolPermission('browser_close_tab', { tabId: 2 }).level).toBe('auto_allow');
     expect(decideToolPermission('browser_set_storage', { area: 'local', key: 'theme', value: 'dark' }).level).toBe('auto_allow');
+    expect(decideToolPermission('browser_run_script', { code: 'return 1', purpose: 'p' }).level).toBe('auto_allow');
   });
 
   it('denies navigate to a javascript: URL', () => {
@@ -389,5 +392,13 @@ describe('submit intent escalation', () => {
 
     expect(result).toBeUndefined();
     expect(onConfirm).not.toHaveBeenCalled();
+  });
+});
+
+describe('browser_run_script on a read-only tab', () => {
+  it('is refused by tab-access because it is a write tool', () => {
+    expect(WRITE_TOOL_NAMES.has('browser_run_script')).toBe(true);
+    const decision = decideTabAccess('browser_run_script', { id: 9, access: 'read' });
+    expect(decision.allowed).toBe(false);
   });
 });

@@ -21,6 +21,8 @@ export const MASKED_WRITE_ARG_KEYS: ReadonlySet<string> = new Set(['value', 'tex
 /** 写工具里的定位/枚举参数：排查"点错了元素"要靠它们，只脱敏不屏蔽。守护测试要求每个写工具字符串参数必居其一。 */
 export const KEPT_WRITE_ARG_KEYS: ReadonlySet<string> = new Set([
   'selector', 'styles', 'action', 'attribute', 'fieldId', 'fieldIds', 'key', 'behavior', 'url', 'area',
+  // browser_run_script：代码由模型生成，不是用户数据，排查问题要看它（ref: 2026-10-02-run-script-design.md §3.6）。
+  'code', 'purpose',
 ]);
 
 export interface ExportedAttachment {

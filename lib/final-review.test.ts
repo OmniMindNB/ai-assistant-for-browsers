@@ -4,16 +4,49 @@ import { describe, expect, it } from 'vitest';
 import storeConfig from '../wxt.config';
 import { createBrowserTools } from './agent/tools';
 import { createTabSession } from './agent/tab-session';
+import { SCRIPT_WORLD_CSP } from './agent/script-world';
 import { en } from './i18n/locales/en';
 import { zh } from './i18n/locales/zh';
 
 const readRepoFile = (file: string) => fs.readFileSync(path.resolve(process.cwd(), file), 'utf8');
 
 describe('Chrome Web Store release surface', () => {
-  it('does not request userScripts or expose AI-generated script execution', () => {
+  // 2026-10-02 起脚本执行能力重新上架（ref: docs/superpowers/specs/2026-10-02-run-script-design.md）。
+  // 守卫从"不许有"改为锁定它的安全不变量：只走 userScripts、只在 USER_SCRIPT world、world 禁网络。
+  it('executes AI-generated scripts only through userScripts in a network-locked USER_SCRIPT world', () => {
     const manifest = storeConfig.manifest as { permissions?: string[] };
-    expect(manifest.permissions).not.toContain('userScripts');
-    expect(createBrowserTools(createTabSession(7)).map((tool) => tool.name)).not.toContain('browser_inject_script');
+    expect(manifest.permissions).toContain('userScripts');
+
+    const toolNames = createBrowserTools(createTabSession(7)).map((tool) => tool.name);
+    expect(toolNames).toContain('browser_run_script');
+    expect(toolNames).not.toContain('browser_inject_script');
+    expect(toolNames).not.toContain('browser_eval_raw');
+
+    expect(SCRIPT_WORLD_CSP).toContain("default-src 'none'");
+    expect(SCRIPT_WORLD_CSP).toContain("connect-src 'none'");
+
+    const background = readRepoFile('entrypoints/background.ts');
+    const executeAt = background.indexOf('userScripts.execute(');
+    expect(executeAt).toBeGreaterThan(-1);
+    // 只看 userScripts.execute 这一处：background 里随扩展打包的函数本来就经 scripting 在 MAIN world 运行。
+    const executeCall = background.slice(executeAt, executeAt + 300);
+    expect(executeCall).toContain("world: 'USER_SCRIPT'");
+    expect(executeCall).not.toContain("'MAIN'");
+  });
+
+  it('never evaluates strings with eval or new Function outside tests', () => {
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of fs.readdirSync(path.resolve(process.cwd(), dir), { withFileTypes: true })) {
+        const rel = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(rel);
+        else if (/\.(ts|tsx)$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
+          if (/new Function\(|(^|[^\w.])eval\(/m.test(readRepoFile(rel))) offenders.push(rel);
+        }
+      }
+    };
+    for (const dir of ['lib', 'entrypoints', 'components']) walk(dir);
+    expect(offenders).toEqual([]);
   });
 });
 

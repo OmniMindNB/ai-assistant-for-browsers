@@ -194,6 +194,7 @@ function buildToolStrategy(options: SystemPromptOptions): string[] {
     '- 点击、提交或跳转之后内容还没加载出来：用 browser_wait_for 等具体条件（等元素出现用 appear、等 loading 消失用 disappear、等文本出现用 textContains、不知道等什么就用 domIdle）。不要用 wait 盲等固定秒数——等少了要多花一整轮重试，等多了纯属浪费。',
     '- 需要看页面存了什么本地状态，或核对 browser_set_storage 是否真的写进去了：用 browser_get_storage。不带 key 会一次列出两个存储区的全部键，需要某个键的完整值时再带 key 单取。疑似凭证的键（token、session、api key 等）只会给出键名和长度，值永远拿不到——不要反复尝试，改用别的途径。',
     '- 需要按键（回车提交搜索、方向键选择建议项等）：用 browser_press_key。注意它派发的事件不触发浏览器原生行为——Tab 不会移动焦点、Escape 不会关闭弹层，只有页面自己监听了这些按键才有反应；唯一例外是 Enter 会在页面结构表明会提交表单时真的提交（这种情况会先向用户确认）。输入文本一律用 browser_type / browser_fill_form，不要逐字符按键。',
+    '- 需要批量提取（把几十上百行整理成 JSON）、按条件统计或筛选元素、批量标记/隐藏一类元素，而结构化工具要调很多次才能完成：用 browser_run_script 写一段读写 DOM 的脚本一次完成，用 return 返回结果。它看不到页面自己的 JS 变量，网络请求一律被拦截；填表仍然只用 browser_fill_form。如果它报告脚本能力未启用，改用结构化工具，不要重试。',
   ];
 
   // 只有真的注入了页面信息，才让模型跳过 browser_get_active_tab——否则这条会指向一个不存在的分区。

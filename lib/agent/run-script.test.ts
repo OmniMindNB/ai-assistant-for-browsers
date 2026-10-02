@@ -140,14 +140,15 @@ describe('formatScriptResult', () => {
 
   it('redacts before truncating so a phone across the cut never leaks half', () => {
     // Review Focus #3
-    const pad = 'x'.repeat(DEFAULT_READ_MAX_CHARS - 5);
+    // 填充用带空格的串：连续上万个字母会让内置邮箱正则退化成平方级（redaction.ts 的既有问题）。
+    const pad = 'x '.repeat(DEFAULT_READ_MAX_CHARS).slice(0, DEFAULT_READ_MAX_CHARS - 5);
     const text = formatScriptResult(JSON.stringify(`${pad}13812345678`), redaction);
-    expect(text).not.toContain('13812');
-    expect(text).not.toContain('138123');
+    // 先截断再脱敏的话，截断点前会留下 "1381" 四位原文，脱敏正则认不出半截号码。
+    expect(text).not.toContain('1381');
   });
 
   it('notes truncation', () => {
-    const text = formatScriptResult(JSON.stringify('y'.repeat(DEFAULT_READ_MAX_CHARS * 2)), redaction);
+    const text = formatScriptResult(JSON.stringify('y '.repeat(DEFAULT_READ_MAX_CHARS)), redaction);
     expect(text).toMatch(/已截断/);
   });
 });
