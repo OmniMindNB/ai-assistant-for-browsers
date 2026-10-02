@@ -60,7 +60,7 @@ tools.ts  browser_run_script
 
 - `tabId` 是本轮固定的操作目标，与其他工具相同；不支持 frame 选择，只跑顶层 frame。
 - `wrapScript` 把模型代码包成 `(async () => { <code> })()`，再在外层做 `JSON.stringify`（带循环引用替换器，`undefined` 记为 `null`，函数/DOM 节点转成简短描述），**在页面里就转成字符串**再返回。这样 background 拿到的永远是字符串，不受结构化克隆失败的影响。代码抛出的异常同样在外层捕获，返回 `{ ok: false, error }` 形状的字符串，不让 `execute` 自己 reject。
-- `userScripts.execute` 会等待返回的 Promise 结算（手动验证项 §5.3 确认）。超时由 background 的 `Promise.race` 实现：超时后工具报失败，但**页面里的脚本无法被中止**，一个 `while (true)` 会一直占着那个页面。这是 `execute` API 的限制，工具描述里提醒模型不要写无界循环。
+- `userScripts.execute` 会等待返回的 Promise 结算（2026-10-02 实测：§5.3 第 3 项的 500ms 延迟 Promise 返回 1）。超时由 background 的 `Promise.race` 实现：超时后工具报失败，但**页面里的脚本无法被中止**，一个 `while (true)` 会一直占着那个页面。这是 `execute` API 的限制，工具描述里提醒模型不要写无界循环。
 - `world` 写死为 `'USER_SCRIPT'`，不暴露给模型。
 
 ### 3.3 CSP 与外发边界
