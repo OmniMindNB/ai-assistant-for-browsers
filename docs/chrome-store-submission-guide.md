@@ -19,7 +19,7 @@ pnpm zip
 
 - 产物为 `.output/runi-1.5.0-chrome.zip`。
 - 产物 `manifest.json` 中 `version` 为 `1.5.0`，`default_locale` 为 `zh_CN`。
-- 权限为 `sidePanel`、`storage`、`scripting`、`activeTab`、`tabs`、`alarms`，主机访问权限为 `<all_urls>`；不包含 `userScripts`。
+- 权限为 `sidePanel`、`storage`、`scripting`、`activeTab`、`tabs`、`alarms`、`userScripts`，主机访问权限为 `<all_urls>`。
 - `_locales/en/` 与 `_locales/zh_CN/` 均已包含在 ZIP 中。
 - ZIP 不包含 API Key、个人邮箱截图、测试账号信息或无关文件。
 

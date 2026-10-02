@@ -39,6 +39,7 @@ Use Runi to:
 • Attach text files, images, and PDFs to a request. PDF text is extracted locally before analysis.
 • Inspect page evidence such as readable text, HTML, DOM structure, scripts, stylesheets, and computed styles for technical analysis.
 • Request page transformations and browser-page actions. Known actions run automatically; detected form submissions ask for approval every time.
+• For bulk extraction or bulk page changes, the Agent can run a script to do it in one step (requires “Allow User Scripts” on the extension details page). Scripts run in an environment isolated from the page with network requests blocked.
 • Bring context across multiple tabs in the same window. Type `@` in the composer to pick other tabs and send their content together to the AI. Referenced tabs are read-only — the model can read and analyze them, but write operations are refused.
 • Start common tasks from a shortcut chip: Summarize page, Translate selection, Fill this form, Polish selection, and Focus mode are built in, and you can add your own.
 • Select text on a page and click the Ask Runi bubble to ask about exactly that selection.

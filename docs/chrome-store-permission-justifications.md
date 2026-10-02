@@ -3,7 +3,7 @@
 Paste-ready answers for the Chrome Web Store Developer Dashboard. The `1.5.0` Store build uses this permission set:
 
 ```text
-permissions: sidePanel, storage, scripting, activeTab, tabs, alarms
+permissions: sidePanel, storage, scripting, activeTab, tabs, alarms, userScripts
 host_permissions: <all_urls>
 ```
 
@@ -56,13 +56,13 @@ Used to identify and validate the user-selected target tab, read its title and U
 **English**
 
 ```text
-Used to run packaged page-reading and structured page-write functions in the target tab. Known page actions run automatically; detected form submissions show the planned submission and ask for approval every time. Runi does not execute AI-generated JavaScript.
+Used to run packaged page-reading and structured page-write functions in the target tab. Known page actions run automatically; detected form submissions show the planned submission and ask for approval every time. AI-generated scripts do not use this permission; they run through the separate userScripts permission described below.
 ```
 
 **简体中文**
 
 ```text
-用于在目标标签页中运行随扩展打包的页面读取与结构化写入函数。已知页面操作会自动执行；检测到的表单提交会展示计划提交内容并逐次请求批准。Runi 不执行 AI 生成的 JavaScript。
+用于在目标标签页中运行随扩展打包的页面读取与结构化写入函数。已知页面操作会自动执行；检测到的表单提交会展示计划提交内容并逐次请求批准。AI 生成的脚本不使用此权限，而是走下述独立的 userScripts 权限。
 ```
 
 ## `storage`
@@ -105,6 +105,20 @@ Used to keep the extension service worker alive with a short periodic alarm whil
 
 ```text
 用于在用户发起的 Agent 任务运行期间，通过一个短周期 alarm 维持扩展 Service Worker 存活，避免长任务因 Chrome 回收 Service Worker 而中断。该 alarm 在任务开始时创建、任务结束时清除。Runi 不会安排自己的后台任务；没有用户发起的任务在运行时不会创建任何 alarm。
+```
+
+## `userScripts`
+
+**English**
+
+```text
+Used to run AI-generated JavaScript in the user's target tab through Chrome's official chrome.userScripts.execute() API, for user-requested bulk extraction and bulk transformation of page content that the packaged structured tools cannot do efficiently. Scripts run automatically during a user-initiated Agent request, without per-call approval. They always execute in the USER_SCRIPT world, which Runi configures with a content security policy that blocks network requests (connect-src 'none', default-src 'none'). Script return values are redacted with the same rules as other page content before they are sent to the user's configured AI provider. Chrome also requires the user to turn on "Allow User Scripts" on the extension details page; until then the tool reports that it is unavailable and Runi falls back to structured tools.
+```
+
+**简体中文**
+
+```text
+用于通过 Chrome 官方 chrome.userScripts.execute() API，在用户的目标标签页中运行 AI 生成的 JavaScript，完成用户请求的、随扩展打包的结构化工具难以高效完成的页面批量提取与批量改造。脚本在用户发起的 Agent 请求中自动运行，不逐次确认；始终在 USER_SCRIPT world 中执行，Runi 为该环境设置了禁止网络请求的内容安全策略（connect-src 'none'、default-src 'none'）。脚本返回值在发送到用户配置的 AI Provider 之前，按与其他页面内容相同的规则脱敏。Chrome 还要求用户在扩展详情页打开“允许用户脚本”开关；开关关闭时该工具会报告不可用，Runi 改用结构化工具。
 ```
 
 ## Host access: `<all_urls>`

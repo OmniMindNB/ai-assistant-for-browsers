@@ -10,7 +10,7 @@ language_navigation_label: Language
 ---
 # Runi Privacy Policy
 
-Effective date: 2026-09-08
+Effective date: 2026-10-02
 
 This policy describes how the Runi browser extension processes data. “Runi” means the extension and its developer.
 
@@ -77,12 +77,13 @@ Runi `1.5.0` uses this permission set:
 | `activeTab` | Supports user-invoked access to the active page |
 | `tabs` | Identifies and validates the target tab, reads its title and URL, opens the extension settings page, performs user-requested navigation, and — as a known action executed automatically — opens, closes, or switches between tabs Runi itself opened |
 | `scripting` | Runs packaged read and structured-write functions in the target page |
+| `userScripts` | During an Agent request you initiate, runs AI-generated scripts in the target page through Chrome’s official userScripts API, for bulk extraction or bulk transformation of page content. Scripts run automatically without per-call approval, in a script environment isolated from the page whose content security policy, set by the extension, blocks the script from making network requests directly. Takes effect only after you turn on “Allow User Scripts” on the extension details page |
 | `storage` | Stores provider settings, API keys, shortcuts, language, theme, and workbench preferences, plus temporary tab-to-conversation state, the multi-tab operating target, and execution-overlay state |
 | `sidePanel` | Hosts Runi’s primary interface |
 | `alarms` | Keeps the extension service worker alive while a user-initiated Agent task is running, and clears the alarm when the task ends; not used to schedule any background work |
 | Host access: `<all_urls>` | Lets the same current-page Agent work on user-selected HTTP and HTTPS sites and fetch page-referenced resources |
 
-Read-only tools and known page actions may run after you initiate an Agent request. Detected form submissions require approval every time. Runi does not passively build a browsing-history profile.
+Read-only tools and known page actions may run after you initiate an Agent request. Detected form submissions require approval every time. AI-generated scripts are known page actions and also run automatically; their return values are redacted before being sent to the AI provider, like other page-read results. Runi does not passively build a browsing-history profile.
 
 ## 8. External resources and SSRF protection
 
