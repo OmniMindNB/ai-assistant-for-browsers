@@ -8,6 +8,8 @@ import {
   MIN_SCRIPT_TIMEOUT_MS,
   SCRIPT_API_UNAVAILABLE_ERROR,
   SCRIPT_API_UNAVAILABLE_MARKER,
+  MAX_SCRIPT_ERROR_CHARS,
+  formatScriptError,
   formatScriptResult,
   parseRunScriptParams,
   runScript,
@@ -76,6 +78,7 @@ describe('wrapScript', () => {
 function deps(overrides: Partial<RunScriptDeps> = {}): RunScriptDeps {
   return {
     ensureWorld: async () => true,
+    invalidateWorld: () => {},
     execute: async (code) => [{ result: await evaluateWrapped(code) }],
     setTimer: (fn, ms) => setTimeout(fn, ms),
     clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
@@ -96,7 +99,7 @@ describe('runScript', () => {
   it('reports a syntax error carried on the injection result', async () => {
     // Review Focus #1
     await expect(runScript({ code: 'return (', timeoutMs: 1000 }, deps({ execute: async () => [{ error: 'SyntaxError: Unexpected end of input' }] })))
-      .rejects.toThrow(/脚本语法错误.*Unexpected end of input/);
+      .rejects.toThrow(/脚本执行出错（可能是语法错误）.*Unexpected end of input/);
   });
 
   it('reports an exception thrown by the script', async () => {
@@ -160,4 +163,67 @@ describe('scriptActivityHint', () => {
     expect(scriptActivityHint('browser_click', `${SCRIPT_API_UNAVAILABLE_MARKER} x`)).toBeUndefined();
     expect(scriptActivityHint('browser_run_script', undefined)).toBeUndefined();
   });
+});
+
+describe('review fixes', () => {
+  // I-1：序列化器自己抛错时也必须落进 {ok:false} 信封，不能变成被拒的 Promise。
+  it.each([
+    ['a throwing getter', 'return { get x() { throw new Error("getter"); } }'],
+    ['a throwing toJSON', 'return { toJSON() { throw new Error("tojson"); } }'],
+    ['a thrown null-prototype object', 'throw Object.create(null)'],
+  ])('keeps %s inside the error envelope', async (_label, code) => {
+    const out = await evaluateWrapped(wrapScript(code));
+    expect(typeof out).toBe('string');
+    expect(JSON.parse(out as string).ok).toBe(false);
+  });
+
+  it('does not call every injection error a syntax error', async () => {
+    await expect(runScript({ code: 'return 1', timeoutMs: 1000 }, deps({ execute: async () => [{ error: 'Error: getter' }] })))
+      .rejects.toThrow(/^脚本执行出错（可能是语法错误）：Error: getter/);
+  });
+
+  // I-3：开关在用过之后被关掉——execute 抛错时要重新探测，探测失败就报"未启用"而不是泛泛的失败。
+  it('re-probes the world when execute throws and reports unavailable', async () => {
+    const invalidateWorld = vi.fn();
+    let available = true;
+    const err = runScript(
+      { code: 'return 1', timeoutMs: 1000 },
+      deps({
+        ensureWorld: async () => available,
+        invalidateWorld: () => { invalidateWorld(); available = false; },
+        execute: async () => { throw new Error('userScripts is disabled'); },
+      }),
+    );
+    await expect(err).rejects.toThrow(SCRIPT_API_UNAVAILABLE_ERROR);
+    expect(invalidateWorld).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the generic failure when the world is still available', async () => {
+    await expect(runScript({ code: 'return 1', timeoutMs: 1000 }, deps({ invalidateWorld: () => {}, execute: async () => { throw new Error('No tab with id: 9'); } })))
+      .rejects.toThrow(/脚本执行失败.*No tab with id: 9/);
+  });
+});
+
+describe('formatScriptError', () => {
+  // I-2：脚本异常文本同样是页面数据，进模型前要脱敏、截断、标为不可信。
+  it('redacts, clips and labels the error text', () => {
+    const text = formatScriptError(`脚本抛出异常：Error: 13812345678 ${'e '.repeat(5000)}`, redaction);
+    expect(text).not.toContain('13812345678');
+    expect(text).toContain('untrusted page content');
+    expect(text.length).toBeLessThan(MAX_SCRIPT_ERROR_CHARS + 300);
+  });
+
+  it('keeps the unavailable marker intact so the panel hint still fires', () => {
+    expect(formatScriptError(SCRIPT_API_UNAVAILABLE_ERROR, redaction)).toContain(SCRIPT_API_UNAVAILABLE_MARKER);
+  });
+});
+
+describe('formatScriptResult on huge input', () => {
+  // M-2（升为 Important）：只脱敏会留下的那一段，不能对整份超长返回值跑脱敏正则。
+  it('only redacts what survives truncation', () => {
+    const json = JSON.stringify(`${'a '.repeat(DEFAULT_READ_MAX_CHARS)}${'z'.repeat(60_000)}`);
+    const started = Date.now();
+    formatScriptResult(json, redaction);
+    expect(Date.now() - started).toBeLessThan(1500);
+  }, 120_000);
 });

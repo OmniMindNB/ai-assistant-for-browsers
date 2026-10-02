@@ -112,13 +112,13 @@ Used to keep the extension service worker alive with a short periodic alarm whil
 **English**
 
 ```text
-Used to run AI-generated JavaScript in the user's target tab through Chrome's official chrome.userScripts.execute() API, for user-requested bulk extraction and bulk transformation of page content that the packaged structured tools cannot do efficiently. Scripts run automatically during a user-initiated Agent request, without per-call approval. They always execute in the USER_SCRIPT world, which Runi configures with a content security policy that blocks network requests (connect-src 'none', default-src 'none'). Script return values are redacted with the same rules as other page content before they are sent to the user's configured AI provider. Chrome also requires the user to turn on "Allow User Scripts" on the extension details page; until then the tool reports that it is unavailable and Runi falls back to structured tools.
+Used to run AI-generated JavaScript in the user's target tab through Chrome's official chrome.userScripts.execute() API, for user-requested bulk extraction and bulk transformation of page content that the packaged structured tools cannot do efficiently. Scripts run automatically during a user-initiated Agent request, without per-call approval. They always execute in the USER_SCRIPT world, which Runi configures with a content security policy that blocks the script's own network APIs such as fetch, XHR, WebSocket and beacon (connect-src 'none', default-src 'none'); this does not prevent page navigation or requests made through page elements. Form submissions a script triggers are not covered by Runi's per-submission approval, which applies to submissions detected in its structured tools. Script return values are redacted with the same rules as other page content before they are sent to the user's configured AI provider. Chrome also requires the user to turn on "Allow User Scripts" on the extension details page; until then the tool reports that it is unavailable and Runi falls back to structured tools.
 ```
 
 **简体中文**
 
 ```text
-用于通过 Chrome 官方 chrome.userScripts.execute() API，在用户的目标标签页中运行 AI 生成的 JavaScript，完成用户请求的、随扩展打包的结构化工具难以高效完成的页面批量提取与批量改造。脚本在用户发起的 Agent 请求中自动运行，不逐次确认；始终在 USER_SCRIPT world 中执行，Runi 为该环境设置了禁止网络请求的内容安全策略（connect-src 'none'、default-src 'none'）。脚本返回值在发送到用户配置的 AI Provider 之前，按与其他页面内容相同的规则脱敏。Chrome 还要求用户在扩展详情页打开“允许用户脚本”开关；开关关闭时该工具会报告不可用，Runi 改用结构化工具。
+用于通过 Chrome 官方 chrome.userScripts.execute() API，在用户的目标标签页中运行 AI 生成的 JavaScript，完成用户请求的、随扩展打包的结构化工具难以高效完成的页面批量提取与批量改造。脚本在用户发起的 Agent 请求中自动运行，不逐次确认；始终在 USER_SCRIPT world 中执行，Runi 为该环境设置了内容安全策略（connect-src 'none'、default-src 'none'），禁止脚本自身的 fetch、XHR、WebSocket、beacon 等网络接口，但不能阻止页面跳转或经由页面元素发出的请求。脚本触发的表单提交不经过 Runi 的逐次提交确认，该确认只适用于结构化工具检测到的提交。脚本返回值在发送到用户配置的 AI Provider 之前，按与其他页面内容相同的规则脱敏。Chrome 还要求用户在扩展详情页打开“允许用户脚本”开关；开关关闭时该工具会报告不可用，Runi 改用结构化工具。
 ```
 
 ## Host access: `<all_urls>`

@@ -37,3 +37,14 @@ describe('createScriptWorld', () => {
     expect(await world.ensure()).toBe(false);
   });
 });
+
+describe('createScriptWorld.invalidate', () => {
+  it('forces the next ensure to configure again', async () => {
+    const configureWorld = vi.fn().mockResolvedValue(undefined);
+    const world = createScriptWorld({ configureWorld });
+    await world.ensure();
+    world.invalidate();
+    await world.ensure();
+    expect(configureWorld).toHaveBeenCalledTimes(2);
+  });
+});

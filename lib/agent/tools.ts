@@ -15,6 +15,7 @@ import {
   DEFAULT_SCRIPT_TIMEOUT_MS,
   MAX_SCRIPT_CODE_CHARS,
   MAX_SCRIPT_TIMEOUT_MS,
+  formatScriptError,
   formatScriptResult,
   parseRunScriptParams,
 } from './run-script';
@@ -1101,8 +1102,9 @@ function makeRunScriptTool(session: TabSessionController): BrowserAgentTool {
       const parsed = parseRunScriptParams(params);
       const payload: RunScriptPayload = { code: parsed.code, timeoutMs: parsed.timeoutMs };
       const response = (await sendMessage<RunScriptPayload, RunScriptResult>('RUN_SCRIPT', payload, session.currentTabId)) as MessageResponse<RunScriptResult>;
-      if (!response.ok || !response.data) throw new Error(response.error ?? '脚本执行失败');
       const redactionSettings = await loadRedactionSettings();
+      // 失败文本会原样进模型上下文，而脚本异常常常带着页面内容：先脱敏截断再抛。
+      if (!response.ok || !response.data) throw new Error(formatScriptError(response.error ?? '脚本执行失败', redactionSettings));
       // details 留在 agent 消息里：只放用途和长度，不放原始返回值（未脱敏）。
       return textResult(formatScriptResult(response.data.json, redactionSettings), {
         purpose: parsed.purpose,

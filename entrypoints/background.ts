@@ -1928,6 +1928,7 @@ const scriptWorld = createScriptWorld({
 async function runUserScript(payload: RunScriptPayload, tabId: number): Promise<RunScriptResult> {
   return runScript(payload, {
     ensureWorld: () => scriptWorld.ensure(),
+    invalidateWorld: () => scriptWorld.invalidate(),
     execute: (code) => browser.userScripts.execute({
       target: { tabId },
       world: 'USER_SCRIPT',

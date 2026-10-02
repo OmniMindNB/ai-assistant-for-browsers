@@ -152,11 +152,13 @@ Chrome 138+ 要求用户在扩展详情页手动开启"允许用户脚本"，未
 4. 脚本内 `fetch('https://example.com')` 被拒绝。
 5. 脚本插入 `<img src="https://example.com/x.png">`、设置 `location.href`：记录是否被拦，结果写回本文 §3.3 与 §6。
 6. 在一个强 CSP 站点（如 GitHub）上运行脚本，确认 user script 不受页面 CSP 的 `unsafe-eval` 限制。
+7. 脚本内 `form.requestSubmit()` / 点击提交按钮：记录 world CSP 的 `form-action 'none'` 是否拦住。不拦则脚本触发的提交绕过逐次确认（文案已如实说明，见 §6）。
 
 ## 6. 风险接受
 
 用户在评审中明确选择了自动放行。剩余风险如下，记录在此，不再重新讨论：
 
 - **提示注入**：恶意页面可以诱导模型生成读取 `document.cookie`（非 HttpOnly 部分）、localStorage token 等页面数据的脚本。没有人工确认环节。
+- **表单提交**：脚本可以 `requestSubmit()` 或点击提交按钮，不经过 `confirm_always` 的逐次确认（工具描述要求填表与提交走结构化工具，但这只是对模型的约束）。合规文案已据此限定"检测到的表单提交"的范围。
 - **外发**：world CSP 拦住直接网络 API；借页面 DOM 发起的资源请求和导航可能不被拦（§3.3，以 §5.3 第 5 项结果为准）。读到的数据还会作为工具结果进入模型上下文，经 `redactText` 处理，与其他读取工具同级。
 - **商店审核**：权限说明如实写"自动执行"。如果审核要求逐次确认，回退方案是把工具移到 `confirm_always`，确认卡片展示 `purpose` 与代码，其余设计不变。

@@ -14,8 +14,9 @@ export interface ScriptWorldDeps {
 /**
  * configureWorld 在每次 service worker 启动后做一次就够；失败不缓存——"允许用户脚本"开关
  * 关着时 userScripts 的方法会抛错，用户打开开关后下一次调用必须能自己恢复，不需要重启扩展。
+ * 开关在用过之后被关掉时，execute 会失败，run-script.ts 随即 invalidate 并重新探测。
  */
-export function createScriptWorld(deps: ScriptWorldDeps): { ensure(): Promise<boolean> } {
+export function createScriptWorld(deps: ScriptWorldDeps): { ensure(): Promise<boolean>; invalidate(): void } {
   let configured = false;
   return {
     async ensure() {
@@ -24,9 +25,15 @@ export function createScriptWorld(deps: ScriptWorldDeps): { ensure(): Promise<bo
         await deps.configureWorld({ csp: SCRIPT_WORLD_CSP, messaging: false });
         configured = true;
         return true;
-      } catch {
+      } catch (err) {
+        // 开关关闭是预期情形；但 CSP 字符串被拒之类的配置错误也会走到这里，
+        // 留一行日志，免得它被永远误报成"开关没开"。
+        console.warn('[runi] userScripts.configureWorld failed:', err);
         return false;
       }
+    },
+    invalidate() {
+      configured = false;
     },
   };
 }
