@@ -172,6 +172,11 @@ export function buildTrajectorySteps(input: RecordInput): TrajectoryStep[] {
       const key = str(args.key);
       return [{ ...base, ...(key ? { detail: `${area}.${clip(redact(key), MAX_TRAJECTORY_LABEL_CHARS)}` } : {}) }];
     }
+    case 'browser_run_script': {
+      // 只记用途：录下的代码依赖原站点结构，回放时让模型按用途重写（设计稿 §3.6）。
+      const purpose = str(args.purpose);
+      return [{ ...base, ...(purpose ? { detail: value(purpose) } : {}) }];
+    }
     case 'browser_modify_dom': {
       const selector = selectorTarget(args.selector);
       const action = str(args.action);

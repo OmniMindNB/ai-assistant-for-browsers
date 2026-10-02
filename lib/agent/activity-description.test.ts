@@ -265,3 +265,12 @@ describe('describeToolActivity 的批量点击', () => {
     expect(describeToolActivity('browser_click', { fieldId: 'f7' }, 'running')).toBe('Clicking "f7"');
   });
 });
+
+describe('browser_run_script', () => {
+  it('describes the run by its purpose', () => {
+    const args = { code: 'return 1', purpose: '统计表格行数' };
+    expect(describeToolActivity('browser_run_script', args, 'running')).toContain('统计表格行数');
+    expect(describeToolActivity('browser_run_script', args, 'done')).toContain('统计表格行数');
+    expect(describeToolActivity('browser_run_script', args, 'failed')).toContain('统计表格行数');
+  });
+});

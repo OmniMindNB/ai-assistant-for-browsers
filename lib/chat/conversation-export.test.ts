@@ -117,6 +117,21 @@ describe('sanitizeToolArgs', () => {
     expect(long.selector.length).toBeLessThanOrEqual(121);
   });
 
+  it('keeps browser_run_script code and purpose, redacted and clipped, never masked', () => {
+    const out = sanitizeToolArgs(
+      'browser_run_script',
+      { code: 'return "13812345678"', purpose: '取 13812345678 的订单', timeoutMs: 1000 },
+      redaction,
+      t,
+    ) as { code: string; purpose: string; timeoutMs: number };
+    expect(out.code).toContain('return');
+    expect(out.code).not.toContain('13812345678');
+    expect(out.code).not.toContain('已省略');
+    expect(out.purpose).toContain('订单');
+    expect(out.purpose).not.toContain('13812345678');
+    expect(out.timeoutMs).toBe(1000);
+  });
+
   it('leaves non-string values alone', () => {
     expect(sanitizeToolArgs('browser_set_storage', { area: 'local', key: 'k', value: null }, redaction, t)).toEqual({ area: 'local', key: 'k', value: null });
   });

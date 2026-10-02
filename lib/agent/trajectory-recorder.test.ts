@@ -246,3 +246,17 @@ describe('appendTrajectorySteps', () => {
     expect(next[0].detail).toBe('1');
   });
 });
+
+describe('browser_run_script', () => {
+  it('records the redacted purpose and never the code', () => {
+    const steps = build('browser_run_script', {
+      code: 'return document.title // 13812345678',
+      purpose: '把 13812345678 的订单标红',
+    });
+    expect(steps).toHaveLength(1);
+    expect(steps[0].tool).toBe('browser_run_script');
+    expect(steps[0].detail).toContain('订单标红');
+    expect(steps[0].detail).not.toContain('13812345678');
+    expect(JSON.stringify(steps)).not.toContain('document.title');
+  });
+});

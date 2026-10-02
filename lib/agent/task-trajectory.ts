@@ -167,6 +167,8 @@ export function describeTrajectoryStep(step: TrajectoryStep, translate: Translat
       return translate('trajectory.modifyDom', { detail });
     case 'browser_set_style':
       return translate('trajectory.setStyle', { detail });
+    case 'browser_run_script':
+      return translate('trajectory.runScript', { detail });
     default:
       return translate('trajectory.generic', { tool: step.tool, detail });
   }

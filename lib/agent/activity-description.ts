@@ -196,6 +196,8 @@ export function describeToolActivity(
       return withTarget(status, 'agentActivity.now.findText', 'agentActivity.done.findText', 'agentActivity.failed.findText', str('text'));
     case 'browser_set_storage':
       return withTarget(status, 'agentActivity.now.setStorage', 'agentActivity.done.setStorage', 'agentActivity.failed.setStorage', str('key'));
+    case 'browser_run_script':
+      return withTarget(status, 'agentActivity.now.runScript', 'agentActivity.done.runScript', 'agentActivity.failed.runScript', str('purpose'));
     case 'browser_fill_form': {
       const fields = Array.isArray(record.fields) ? record.fields.length : 0;
       // 部分字段没落地时，按参数里的字段数说"已填写 N 个字段"等于把失败的也算成了成功；

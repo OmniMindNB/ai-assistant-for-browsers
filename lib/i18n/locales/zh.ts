@@ -263,6 +263,9 @@ export const zh = {
   'agentActivity.now.setStorage': '正在写入存储 "{target}"',
   'agentActivity.done.setStorage': '已写入存储 "{target}"',
   'agentActivity.failed.setStorage': '写入存储 "{target}" 失败',
+  'agentActivity.now.runScript': '正在运行脚本："{target}"',
+  'agentActivity.done.runScript': '已运行脚本："{target}"',
+  'agentActivity.failed.runScript': '运行脚本失败："{target}"',
   'agentActivity.now.fillForm': '正在填写 {target} 个字段',
   'agentActivity.done.fillForm': '已填写 {target} 个字段',
   // 每个字段的写入都做过回读校验，只有 ok 算真的写进去了；部分失败必须报实际落地数。
@@ -411,6 +414,7 @@ export const zh = {
   'trajectory.setStorage': '写入存储项 {detail}',
   'trajectory.modifyDom': '修改页面元素：{detail}',
   'trajectory.setStyle': '修改样式：{detail}',
+  'trajectory.runScript': '运行一段脚本：{detail}',
   'trajectory.generic': '{tool}：{detail}',
   'trajectory.none': '（没有记录到页面操作，按目标自行完成）',
   'playbook.outputLanguage': '中文',
