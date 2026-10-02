@@ -2470,3 +2470,29 @@ describe('会话导出入口', () => {
     expect(screen.queryByRole('button', { name: /Export/ })).not.toBeInTheDocument();
   });
 });
+
+describe('ActivityStepList enable-user-scripts hint', () => {
+  it('renders a button that opens the extension details page', () => {
+    const create = vi.fn().mockResolvedValue({});
+    (globalThis as any).browser.tabs = { create };
+    (globalThis as any).browser.runtime.id = 'abc123';
+    render(
+      <LocaleProvider>
+        <ActivityStepList
+          steps={[{ id: 's', description: 'Script failed', status: 'failed', signature: 'sig', hint: 'enable_user_scripts' }]}
+        />
+      </LocaleProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Open extension settings' }));
+    expect(create).toHaveBeenCalledWith({ url: 'chrome://extensions/?id=abc123' });
+  });
+
+  it('renders nothing extra without a hint', () => {
+    render(
+      <LocaleProvider>
+        <ActivityStepList steps={[{ id: 's', description: 'x', status: 'failed', signature: 'sig' }]} />
+      </LocaleProvider>,
+    );
+    expect(screen.queryByRole('button', { name: 'Open extension settings' })).toBeNull();
+  });
+});

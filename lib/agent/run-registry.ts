@@ -16,6 +16,7 @@ import { describeToolActivity } from './activity-description';
 import { upsertActivityStep, finishActivityStep, type ActivityStep } from './activity-steps';
 import { toolSignature } from './tool-policy';
 import { buildRunDiagnostics, extractToolErrorText } from './run-diagnostics';
+import { scriptActivityHint } from './run-script';
 import { appendReasoning, emptyReasoning, reasoningMessageFields, reasoningSegmentTotal, slimLiveReasoning, stripHistoryReasoning, type ReasoningBuffer, type ReasoningFields } from './reasoning';
 import { replaceConversationMessages } from '@/lib/db';
 import { conversationTitle, foldUnsentReasoning, toMessageRecords, type ChatMessage } from '@/lib/chat/messages';
@@ -598,6 +599,7 @@ export async function startRun(request: StartRunRequest): Promise<void> {
       }
       if (!state.terminatedToolCallIds.has(event.toolCallId)) {
         const finalStatus = event.isError ? 'failed' : 'done';
+        const errorText = event.isError ? extractToolErrorText(event.result, errorRedaction) : undefined;
         state.activitySteps = finishActivityStep(
           state.activitySteps,
           event.toolCallId,
@@ -605,7 +607,8 @@ export async function startRun(request: StartRunRequest): Promise<void> {
           // 结果一并交给文案：调用参数只说"打算做什么"，重定向后的落地地址、
           // 部分失败的实际落地字段数只有结果里有（见 activity-description.ts）。
           describeToolActivity(event.toolName, info?.args, finalStatus, event.result),
-          event.isError ? extractToolErrorText(event.result, errorRedaction) : undefined,
+          errorText,
+          scriptActivityHint(event.toolName, errorText),
         );
         pushAndPersist(state);
       }

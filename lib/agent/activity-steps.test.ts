@@ -141,3 +141,17 @@ describe('finishActivityStep errorText', () => {
     expect(steps[0]).toMatchObject({ attempt: 2, errorText: '第二次失败' });
   });
 });
+
+describe('finishActivityStep hint', () => {
+  const running: ActivityStep[] = [{ id: 'a', description: 'x', status: 'running' }];
+
+  it('stores the hint when given', () => {
+    const [step] = finishActivityStep(running, 'a', 'failed', 'y', 'err', 'enable_user_scripts');
+    expect(step.hint).toBe('enable_user_scripts');
+  });
+
+  it('omits the key when no hint', () => {
+    const [step] = finishActivityStep(running, 'a', 'failed', 'y', 'err');
+    expect('hint' in step).toBe(false);
+  });
+});

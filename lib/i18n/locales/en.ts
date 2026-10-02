@@ -270,6 +270,8 @@ export const en: Record<keyof typeof zh, string> = {
   'agentActivity.now.runScript': 'Running script: "{target}"',
   'agentActivity.done.runScript': 'Ran script: "{target}"',
   'agentActivity.failed.runScript': 'Script failed: "{target}"',
+  'agentActivity.enableUserScriptsHint': 'Scripts need the "Allow User Scripts" toggle on the extension details page.',
+  'agentActivity.openExtensionSettings': 'Open extension settings',
   'agentActivity.now.fillForm': 'Filling {target} fields',
   'agentActivity.done.fillForm': 'Filled {target} fields',
   'agentActivity.done.fillFormPartial': 'Filled {ok} of {total} fields',

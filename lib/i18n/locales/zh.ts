@@ -266,6 +266,8 @@ export const zh = {
   'agentActivity.now.runScript': '正在运行脚本："{target}"',
   'agentActivity.done.runScript': '已运行脚本："{target}"',
   'agentActivity.failed.runScript': '运行脚本失败："{target}"',
+  'agentActivity.enableUserScriptsHint': '脚本能力需要在扩展详情页打开"允许用户脚本"开关。',
+  'agentActivity.openExtensionSettings': '打开扩展设置',
   'agentActivity.now.fillForm': '正在填写 {target} 个字段',
   'agentActivity.done.fillForm': '已填写 {target} 个字段',
   // 每个字段的写入都做过回读校验，只有 ok 算真的写进去了；部分失败必须报实际落地数。

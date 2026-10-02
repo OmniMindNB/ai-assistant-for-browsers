@@ -21,6 +21,11 @@ export interface ActivityStep {
    * （ref: 2026-09-24-conversation-export-design.md §3.1）。
    */
   errorText?: string;
+  /**
+   * 失败步骤附带的可操作提示。目前只有一种：browser_run_script 因"允许用户脚本"开关未开而失败，
+   * 面板在这一行下方给出开启入口（ref: 2026-10-02-run-script-design.md §3.5）。
+   */
+  hint?: 'enable_user_scripts';
 }
 
 export function upsertActivityStep(steps: ActivityStep[], step: ActivityStep): ActivityStep[] {
@@ -50,10 +55,17 @@ export function finishActivityStep(
   status: 'done' | 'failed',
   description: string,
   errorText?: string,
+  hint?: ActivityStep['hint'],
 ): ActivityStep[] {
   const index = steps.findIndex((s) => s.id === id);
   if (index === -1) return steps;
   const next = steps.slice();
-  next[index] = { ...next[index], status, description, ...(errorText !== undefined ? { errorText } : {}) };
+  next[index] = {
+    ...next[index],
+    status,
+    description,
+    ...(errorText !== undefined ? { errorText } : {}),
+    ...(hint !== undefined ? { hint } : {}),
+  };
   return next;
 }

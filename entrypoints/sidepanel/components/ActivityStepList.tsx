@@ -85,37 +85,54 @@ function ActivityStepRow({
           : 'text-neutral-600 dark:text-neutral-400';
 
   return (
-    <li className={`flex gap-2 ${expanded ? 'items-start' : 'items-center'} ${colorClass}`}>
-      <span className="mt-0.5 flex h-3 w-3 shrink-0 items-center justify-center">
-        {step.status === 'running' ? (
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-indigo-500" aria-hidden="true" />
-        ) : step.status === 'failed' ? (
-          <IconClose className="h-3 w-3" />
-        ) : step.status === 'notice' ? (
-          // 流程提示不是一次工具调用，画 ✓ 会读成"这件事成功了"。
-          <IconAlertTriangle className="h-3 w-3" />
-        ) : (
-          <IconCheck className="h-3 w-3" />
-        )}
-      </span>
-      {/* 序号给滚动列表一个位置感：24+ 步的写任务里，没有它用户既不知道已经走了多远，
-          也认不出合并后的重试行到底是第几步。tabular-nums 让数字不抖。 */}
-      {ordinal !== undefined && (
-        <span className="shrink-0 tabular-nums text-neutral-400 dark:text-neutral-500" aria-hidden="true">
-          {ordinal}.
+    <li className={`flex flex-col ${colorClass}`}>
+      <div className={`flex gap-2 ${expanded ? 'items-start' : 'items-center'}`}>
+        <span className="mt-0.5 flex h-3 w-3 shrink-0 items-center justify-center">
+          {step.status === 'running' ? (
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-indigo-500" aria-hidden="true" />
+          ) : step.status === 'failed' ? (
+            <IconClose className="h-3 w-3" />
+          ) : step.status === 'notice' ? (
+            // 流程提示不是一次工具调用，画 ✓ 会读成"这件事成功了"。
+            <IconAlertTriangle className="h-3 w-3" />
+          ) : (
+            <IconCheck className="h-3 w-3" />
+          )}
         </span>
+        {/* 序号给滚动列表一个位置感：24+ 步的写任务里，没有它用户既不知道已经走了多远，
+            也认不出合并后的重试行到底是第几步。tabular-nums 让数字不抖。 */}
+        {ordinal !== undefined && (
+          <span className="shrink-0 tabular-nums text-neutral-400 dark:text-neutral-500" aria-hidden="true">
+            {ordinal}.
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={() => setExpanded((prev) => !prev)}
+          title={expanded ? undefined : text}
+          aria-expanded={expanded}
+          className={`min-w-0 flex-1 rounded-sm text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+            expanded ? 'whitespace-pre-wrap break-words' : 'truncate'
+          }`}
+        >
+          {text}
+        </button>
+      </div>
+      {/* 目前唯一的可操作提示：脚本能力因"允许用户脚本"开关未开而失败（ref: 2026-10-02-run-script-design.md §3.5）。 */}
+      {step.hint === 'enable_user_scripts' && (
+        <div className="mt-1 flex flex-wrap items-center gap-2 pl-5 text-neutral-600 dark:text-neutral-400">
+          <span>{t('agentActivity.enableUserScriptsHint')}</span>
+          <button
+            type="button"
+            className="rounded-sm px-1 text-indigo-700 underline hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-indigo-300 dark:hover:bg-indigo-950"
+            onClick={() => {
+              void browser.tabs.create({ url: `chrome://extensions/?id=${browser.runtime.id}` });
+            }}
+          >
+            {t('agentActivity.openExtensionSettings')}
+          </button>
+        </div>
       )}
-      <button
-        type="button"
-        onClick={() => setExpanded((prev) => !prev)}
-        title={expanded ? undefined : text}
-        aria-expanded={expanded}
-        className={`min-w-0 flex-1 rounded-sm text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
-          expanded ? 'whitespace-pre-wrap break-words' : 'truncate'
-        }`}
-      >
-        {text}
-      </button>
     </li>
   );
 }
