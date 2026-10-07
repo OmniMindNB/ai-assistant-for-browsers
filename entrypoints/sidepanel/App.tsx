@@ -23,6 +23,7 @@ import { WorkbenchComposer } from './components/WorkbenchComposer';
 import { AttachmentChip } from './components/AttachmentChip';
 import { MarkdownBlock } from './components/MarkdownBlock';
 import { ReasoningBlock } from './components/ReasoningBlock';
+import { Toast, type ToastMessage } from './components/Toast';
 import type { PendingConfirmation, PendingQuestion, UIMessage } from './store';
 import type { ActivityStep } from '@/lib/agent/activity-steps';
 import { resolvePageAttached, type ResolvedShortcutCommand } from '@/lib/workbench/presentation';
@@ -99,8 +100,10 @@ export default function App() {
   const { t } = useTranslation();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [saveTaskFor, setSaveTaskFor] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [toast, setToast] = useState<ToastMessage | null>(null);
+  const showToast = useCallback((kind: ToastMessage['kind'], text: string) => {
+    setToast({ id: Date.now(), kind, text });
+  }, []);
   const [editingId, setEditingId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const historyTriggerRef = useRef<HTMLButtonElement>(null);
@@ -131,13 +134,6 @@ export default function App() {
   ]);
 
   useEffect(() => () => disposeAttachments(), [disposeAttachments]);
-
-  // 保存成功提示 4 秒后自动消失，跟其余一次性反馈（如复制成功）的时长一致。
-  useEffect(() => {
-    if (!notice) return;
-    const timer = window.setTimeout(() => setNotice(null), 4000);
-    return () => window.clearTimeout(timer);
-  }, [notice]);
 
   useEffect(() => {
     const listener = (
@@ -255,9 +251,10 @@ export default function App() {
   async function openSettings() {
     try {
       await browser.runtime.openOptionsPage();
-      setSettingsError(null);
+      // 这次打开成功了，之前那条"打开失败"就过时了；别的提示不动。
+      setToast((current) => (current?.kind === 'error' && current.text === t('settings.openOptionsFailed') ? null : current));
     } catch {
-      setSettingsError(t('settings.openOptionsFailed'));
+      showToast('error', t('settings.openOptionsFailed'));
     }
   }
 
@@ -317,7 +314,7 @@ export default function App() {
         onSaved={(name) => {
           setSaveTaskFor(null);
           void refreshShortcuts();
-          setNotice(t('recordedTask.savedNotice', { name }));
+          showToast('success', t('recordedTask.savedNotice', { name }));
         }}
       />
 
@@ -330,24 +327,6 @@ export default function App() {
             onOpenSettings={openSettings}
             historyTriggerRef={historyTriggerRef}
           />
-
-          {settingsError && (
-            <div
-              role="alert"
-              className="border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300"
-            >
-              {settingsError}
-            </div>
-          )}
-
-          {notice && (
-            <div
-              role="status"
-              className="border-b border-emerald-200 bg-emerald-50 px-4 py-2 text-xs text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300"
-            >
-              {notice}
-            </div>
-          )}
 
           {providers.length === 0 && <ProviderBanner onOpenSettings={openSettings} />}
 
@@ -422,16 +401,21 @@ export default function App() {
                 )}
               </div>
             </main>
-            {busy && showJumpToBottom && (
-              <button
-                type="button"
-                onClick={jumpToBottom}
-                className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 shadow-lg transition-colors hover:bg-neutral-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
-              >
-                <IconChevronDown className="h-3.5 w-3.5" />
-                {t('chat.jumpToBottom')}
-              </button>
-            )}
+            {/* 浮在输入区正上方的一列：一次性提示和"回到底部"共用这个位置，各占一行而不是互相压住。
+                容器本身不吃点击（pointer-events-none），否则这一整条会挡住下面消息里的按钮。 */}
+            <div className="pointer-events-none absolute inset-x-0 bottom-3 flex flex-col items-center gap-2 px-4">
+              {toast && <Toast toast={toast} onDismiss={() => setToast(null)} />}
+              {busy && showJumpToBottom && (
+                <button
+                  type="button"
+                  onClick={jumpToBottom}
+                  className="pointer-events-auto flex items-center gap-1 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 shadow-lg transition-colors hover:bg-neutral-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                >
+                  <IconChevronDown className="h-3.5 w-3.5" />
+                  {t('chat.jumpToBottom')}
+                </button>
+              )}
+            </div>
           </div>
 
           <WorkbenchComposer

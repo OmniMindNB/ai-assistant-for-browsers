@@ -19,6 +19,7 @@ import { WorkbenchEmptyState } from './WorkbenchEmptyState';
 import { WorkbenchHeader } from './WorkbenchHeader';
 import { WorkbenchComposer, type WorkbenchComposerProps } from './WorkbenchComposer';
 import { AttachmentChip } from './AttachmentChip';
+import { Toast, TOAST_SUCCESS_MS } from './Toast';
 
 const chatStore = {
   messages: [],
@@ -2144,7 +2145,53 @@ describe('workbench history', () => {
 
     await user.click(within(screen.getByRole('banner')).getByRole('button', { name: 'Settings' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Could not open Settings. Please try again.');
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Could not open Settings. Please try again.');
+    // 提示浮在输入区上方，不在 header 下面的顶栏里。
+    expect(alert.compareDocumentPosition(screen.getByRole('main')) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    await user.click(within(alert).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+});
+
+describe('Toast', () => {
+  function renderToast(kind: 'success' | 'error', onDismiss = vi.fn()) {
+    render(
+      <LocaleProvider>
+        <Toast toast={{ id: 1, kind, text: 'Hello' }} onDismiss={onDismiss} />
+      </LocaleProvider>,
+    );
+    return onDismiss;
+  }
+
+  it('成功提示过一会儿自动消失', () => {
+    vi.useFakeTimers();
+    try {
+      const onDismiss = renderToast('success');
+      expect(screen.getByRole('status')).toHaveTextContent('Hello');
+      vi.advanceTimersByTime(TOAST_SUCCESS_MS - 1);
+      expect(onDismiss).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(onDismiss).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // 错误一闪而过等于没说：留着直到用户关掉。
+  it('错误提示不会自动消失，只能手动关掉', async () => {
+    vi.useFakeTimers();
+    let onDismiss: ReturnType<typeof vi.fn>;
+    try {
+      onDismiss = renderToast('error');
+      expect(screen.getByRole('alert')).toHaveTextContent('Hello');
+      vi.advanceTimersByTime(TOAST_SUCCESS_MS * 10);
+      expect(onDismiss).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Close' }));
+    expect(onDismiss).toHaveBeenCalledOnce();
   });
 });
 
