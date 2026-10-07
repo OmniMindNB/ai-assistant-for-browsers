@@ -1033,7 +1033,14 @@ export async function applyFormFill(input: ApplyFillInput): Promise<ApplyFillOut
 
         // ⚠️ 与 clickElementInPage 重复：两处都是被序列化注入的独立函数，不能共用 helper。
         // aria-label 优先：图标按钮的可见文本往往为空或只是一个字形。
-        const rawLabel = button.getAttribute('aria-label') || button.textContent || '';
+        // 元素自己没有文本（单选/复选框这类 <input>）时退回句柄表登记的标签：只回「已点击字段 f14」
+        // 时模型看不出点错了，曾把 Female 单选当成日期框连点两次、静默改掉了已填的性别。
+        const rawLabel =
+          button.getAttribute('aria-label') ||
+          (button.textContent || '').trim() ||
+          input.submit.expect.label ||
+          input.submit.expect.text ||
+          '';
         const label = rawLabel.replace(/\s+/g, ' ').trim().slice(0, 60);
         submitted = {
           fieldId: input.submit.fieldId,

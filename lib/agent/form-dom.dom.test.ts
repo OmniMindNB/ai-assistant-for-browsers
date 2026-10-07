@@ -3,7 +3,7 @@ import { collectFormFields } from './form-dom';
 import { applyFormFill, type ApplyFillItem } from './form-dom';
 import { scrollContainerInPage, scrollPageInPage } from './form-dom';
 import { pressKeyInPage } from './form-dom';
-import { MAX_FIELD_TEXT_CHARS, sanitizeFieldText, toFieldDescriptor } from './form-schema';
+import { MAX_FIELD_TEXT_CHARS, fieldExpectation, sanitizeFieldText, toFieldDescriptor } from './form-schema';
 import { resolveExpectOrigin } from './fill-form-request';
 import type { FormFieldHandle } from './tab-form-fields';
 
@@ -1028,6 +1028,25 @@ describe('applyFormFill', () => {
     expect(output.submitted?.status).toBe('ok');
     expect(output.submitted?.label).toBe('打开文档（新窗口）');
     expect(output.submitted?.opensNewTab).toBe(true);
+  });
+
+  // 2026-10-07 demoqa 导出 #13/#17：模型想点日期框，实际两次点中 f14（Female 单选），结果只有
+  //「已点击字段 f14。」——<input> 没有文本内容，模型看不出点错了，性别就被静默改掉了。
+  it('falls back to the handle label when the clicked element has no text of its own', async () => {
+    render(`
+      <input type="radio" id="g1" name="gender" value="Male"><label for="g1">Male</label>
+      <input type="radio" id="g2" name="gender" value="Female"><label for="g2">Female</label>
+    `);
+    const femaleRaw = collectFormFields(INPUT).raws.find((raw) => raw.value === 'Female')!;
+
+    const output = await applyFormFill({
+      url: location.href,
+      items: [],
+      submit: { fieldId: 'f14', path: femaleRaw.path, expect: fieldExpectation(femaleRaw) },
+    });
+
+    expect(output.submitted?.status).toBe('ok');
+    expect(output.submitted?.label).toBe('Female');
   });
 
   // 与 clickElementInPage 同一条理由：视口外的 submit 按钮 rect 是超界坐标，
