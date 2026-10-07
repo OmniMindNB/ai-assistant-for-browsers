@@ -11,8 +11,8 @@
 // 复用等于把「指向邻居」换个形式再犯一遍。代价是长会话里号码会变稀疏（f5、f9、f14），
 // 这是有意的取舍。
 import { pickFieldLabel, resolveFieldKind, type RawFormField } from './form-schema';
-import { isSamePage } from './page-identity';
-import type { FormFieldTable } from './tab-form-fields';
+import { isSamePage, type PageIdentity } from './page-identity';
+import type { FormFieldHandle, FormFieldTable } from './tab-form-fields';
 
 /**
  * 元素的稳定身份。只取重采之间不会漂移的属性——位置、class、样式一律不进。
@@ -48,6 +48,8 @@ export interface FieldIdAllocation {
   fieldIds: string[];
   /** 与 raws 同序的身份串，存进句柄表供下一次继承。 */
   identities: string[];
+  /** 发完这一批之后已经发到第几号；存进 FormFieldTable.issuedThrough。 */
+  issuedThrough: number;
 }
 
 /**
@@ -65,8 +67,15 @@ export function allocateFieldIds(
   const inherited = new Map<string, string[]>();
   let maxIssued = 0;
 
-  if (previous && isSamePage(previous, { url: currentUrl, documentId: currentDocumentId })) {
-    for (const [fieldId, handle] of Object.entries(previous.fields)) {
+  const samePage = previous !== undefined && isSamePage(previous, { url: currentUrl, documentId: currentDocumentId });
+  if (samePage) {
+    // 同一页面上号码绝不回头：消失元素的号已不在 fields 里，必须靠 issuedThrough 记住它发过；
+    // 旧表没有 identity 也一样——无从继承只意味着这批元素拿新号，不意味着可以重发旧号。
+    maxIssued = previous!.issuedThrough ?? 0;
+    for (const fieldId of Object.keys(previous!.fields)) {
+      maxIssued = Math.max(maxIssued, fieldNumber(fieldId));
+    }
+    for (const [fieldId, handle] of Object.entries(previous!.fields)) {
       if (fieldNumber(fieldId) === 0) continue;
       // identity 缺失 = 这张表是本次改动之前存下的，无从继承，只能整体退回文档序编号。
       if (!handle.identity) continue;
@@ -81,9 +90,6 @@ export function allocateFieldIds(
     for (const sameIdentity of inherited.values()) {
       sameIdentity.sort((left, right) => fieldNumber(left) - fieldNumber(right));
     }
-    for (const fieldId of Object.keys(previous!.fields)) {
-      maxIssued = Math.max(maxIssued, fieldNumber(fieldId));
-    }
   }
 
   const fieldIds = identities.map((identity) => {
@@ -94,5 +100,50 @@ export function allocateFieldIds(
     return `f${maxIssued}`;
   });
 
-  return { fieldIds, identities };
+  return { fieldIds, identities, issuedThrough: maxIssued };
+}
+
+export interface ComposeFieldTableInput {
+  previous: FormFieldTable | undefined;
+  /** 这一次采集到的页面身份。 */
+  page: PageIdentity;
+  /** 这一次采集发出的句柄（f*、s*，以及写操作后内部重采保留的 t*）。 */
+  handles: Record<string, FormFieldHandle>;
+  /** 这一次采集的全部指纹（按文档序）。 */
+  fingerprints: string[];
+  /** allocateFieldIds 返回的 issuedThrough。 */
+  issuedThrough: number;
+  /** 是否只采了 selector 指定的那一块。 */
+  scoped: boolean;
+}
+
+/**
+ * 这一次采集之后要存的句柄表。
+ *
+ * 带 selector 的读取只看到页面的一小块，不能拿它覆盖整张表：2026-10-07 第三份开端口导出里
+ * 模型用 selector 只读弹窗、读到 0 个元素，刚报给它的端口输入框和「确定」的 fieldId 随即作废，
+ * 下一次完整读取又从小号重编，同一个 f107 先后指向两个不同的元素。所以同一页面上的范围读取
+ * 并入旧表：范围外的旧句柄照留（写入前仍逐个校验 path + 结构指纹，失效的报 not_found /
+ * mismatch，不会落到别处）；「新出现元素」的基线也不动，否则下一次完整读取会把范围外的一切
+ * 都当成新元素。s* 是按位置发的号，不跨调用保留——与完整读取一致。
+ *
+ * 完整读取、或者已经换了页面时，整表替换。已发号同一页面上只增不减。
+ */
+export function composeFieldTable(input: ComposeFieldTableInput): FormFieldTable {
+  const { previous, page, handles, fingerprints, scoped } = input;
+  const samePage = previous !== undefined && isSamePage(previous, page);
+  const issuedThrough = samePage ? Math.max(input.issuedThrough, previous!.issuedThrough ?? 0) : input.issuedThrough;
+
+  if (!scoped || !samePage) {
+    return { url: page.url, documentId: page.documentId, fields: handles, fingerprints, issuedThrough };
+  }
+
+  const kept = Object.fromEntries(Object.entries(previous!.fields).filter(([fieldId]) => fieldId.startsWith('f')));
+  return {
+    url: page.url,
+    documentId: page.documentId,
+    fields: { ...kept, ...handles },
+    fingerprints: previous!.fingerprints,
+    issuedThrough,
+  };
 }

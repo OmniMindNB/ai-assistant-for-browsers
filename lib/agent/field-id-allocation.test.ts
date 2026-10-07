@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allocateFieldIds, fieldIdentity } from './field-id-allocation';
+import { allocateFieldIds, composeFieldTable, fieldIdentity } from './field-id-allocation';
 import type { RawFormField } from './form-schema';
 import type { FormFieldTable } from './tab-form-fields';
 
@@ -20,7 +20,7 @@ function raw(overrides: Partial<RawFormField> = {}): RawFormField {
 
 /** 用 allocateFieldIds 的输出装一张句柄表，模拟 background 的 snapshotFields 存表。 */
 function tableFrom(raws: RawFormField[], url = URL, previous?: FormFieldTable): FormFieldTable {
-  const { fieldIds, identities } = allocateFieldIds(raws, previous, url);
+  const { fieldIds, identities, issuedThrough } = allocateFieldIds(raws, previous, url);
   const fields: FormFieldTable['fields'] = {};
   fieldIds.forEach((fieldId, index) => {
     fields[fieldId] = {
@@ -31,7 +31,7 @@ function tableFrom(raws: RawFormField[], url = URL, previous?: FormFieldTable): 
       identity: identities[index],
     };
   });
-  return { url, fields };
+  return { url, fields, issuedThrough };
 }
 
 const q1a = raw({ type: 'radio', name: 'q1', value: 'A', ancestorLabelText: 'A' });
@@ -91,7 +91,7 @@ describe('allocateFieldIds', () => {
     expect(fieldIds).toEqual(['f1', 'f2']);
   });
 
-  it('旧表没有 identity（升级前存下的）时退回文档序编号', () => {
+  it('旧表没有 identity（升级前存下的）时无从继承，但也不复用它发过的号', () => {
     const legacy: FormFieldTable = {
       url: URL,
       fields: {
@@ -99,7 +99,70 @@ describe('allocateFieldIds', () => {
       },
     };
     const { fieldIds } = allocateFieldIds([q1a, q1b], legacy, URL);
-    expect(fieldIds).toEqual(['f1', 'f2']);
+    expect(fieldIds).toEqual(['f2', 'f3']);
+  });
+
+  // 号码最大的那个元素消失（弹窗关了）之后，旧算法只看表里剩下的号，下一个新元素会拿到它的号。
+  it('号码最大的元素消失后，它的号也不会发给下一个新元素', () => {
+    const dialogButton = raw({ tag: 'button', elementText: '确定', interactive: true });
+    const withDialog = tableFrom([q1a, q1b, dialogButton]); // 确定 = f3
+    const afterClose = tableFrom([q1a, q1b], URL, withDialog); // f3 不在表里了
+    const toast = raw({ tag: 'button', elementText: '撤销', interactive: true });
+
+    const { fieldIds, issuedThrough } = allocateFieldIds([q1a, q1b, toast], afterClose, URL);
+    expect(fieldIds).toEqual(['f1', 'f2', 'f4']);
+    expect(issuedThrough).toBe(4);
+  });
+});
+
+// 2026-10-07 第三份开端口导出 #9/#12：模型用 selector 只读弹窗，读到 1 个和 0 个元素，
+// 整张句柄表被这一小块覆盖——刚报给它的 f217（端口）/f220（确定）全部作废，下一次完整读取
+// 又从小号重编，f107 从「设置多台实例的防火墙？」变成了端口输入框。
+describe('composeFieldTable', () => {
+  const handle = (label: string) => ({ path: q1a.path, expect: { tag: 'button', label }, sensitive: false, kind: 'button' as const, identity: label });
+  const previous: FormFieldTable = {
+    url: URL,
+    documentId: 'doc-1',
+    fields: { f1: handle('控制台'), f2: handle('添加规则'), s1: { path: q1a.path, expect: { tag: 'div' }, sensitive: false, kind: 'scrollable' } },
+    fingerprints: ['fp-1', 'fp-2'],
+    issuedThrough: 9,
+  };
+  const page = { url: URL, documentId: 'doc-1' };
+
+  it('同一页面上的范围读取并入旧表：范围外的句柄、新元素基线、已发号都保留', () => {
+    const table = composeFieldTable({
+      previous, page, scoped: true, issuedThrough: 10,
+      handles: { f10: handle('确定') }, fingerprints: ['fp-10'],
+    });
+    expect(Object.keys(table.fields).sort()).toEqual(['f1', 'f10', 'f2']);
+    // 只读了一小块：拿它当「上一次看到的全部」，下一次完整读取会把范围外的一切都标成新元素
+    expect(table.fingerprints).toEqual(['fp-1', 'fp-2']);
+    expect(table.issuedThrough).toBe(10);
+  });
+
+  it('可滚动容器的 s* 是按位置发的号，不跨调用保留', () => {
+    const table = composeFieldTable({ previous, page, scoped: true, issuedThrough: 9, handles: {}, fingerprints: [] });
+    expect(table.fields).not.toHaveProperty('s1');
+  });
+
+  it('完整读取整表替换，但已发号只增不减', () => {
+    const table = composeFieldTable({
+      previous, page, scoped: false, issuedThrough: 3,
+      handles: { f1: handle('控制台') }, fingerprints: ['fp-1'],
+    });
+    expect(Object.keys(table.fields)).toEqual(['f1']);
+    expect(table.fingerprints).toEqual(['fp-1']);
+    expect(table.issuedThrough).toBe(9);
+  });
+
+  it('换了页面：不合并旧表，号码从这一页重新算', () => {
+    const table = composeFieldTable({
+      previous, page: { url: 'https://exam.example.com/paper/2', documentId: 'doc-2' }, scoped: true, issuedThrough: 1,
+      handles: { f1: handle('下一题') }, fingerprints: ['fp-x'],
+    });
+    expect(Object.keys(table.fields)).toEqual(['f1']);
+    expect(table.fingerprints).toEqual(['fp-x']);
+    expect(table.issuedThrough).toBe(1);
   });
 });
 

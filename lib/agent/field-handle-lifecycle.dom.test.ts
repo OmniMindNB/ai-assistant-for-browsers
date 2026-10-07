@@ -7,7 +7,7 @@
 // 把它们组合起来，再接上真正注入页面的 applyFormFill，覆盖单元测试各自看不到的那条缝：
 // 一次成功的点击之后，模型手里的 fieldId 还指不指得着原来那个元素。
 import { beforeEach, describe, expect, it } from 'vitest';
-import { allocateFieldIds } from './field-id-allocation';
+import { allocateFieldIds, composeFieldTable } from './field-id-allocation';
 import { keepFindTextHandles, mergeFindTextHandles } from './find-text';
 import { planFieldClicks } from './fill-form-request';
 import { applyFormFill, collectFormFields } from './form-dom';
@@ -376,5 +376,74 @@ describe('单页应用改地址：同一文档内 pushState 不让句柄表失�
 
     const result = await clickLive({ ...table, documentId: 'another-document' }, addRule);
     expect(result.fieldsTableStale).toBe(true);
+  });
+});
+
+// 2026-10-07 第三份开端口导出 #11–#16：点「添加规则」后报出弹窗里的端口输入框和「确定」，模型随后
+// 用 selector 只读弹窗、读到 0 个元素——整张句柄表被覆盖，刚拿到的号作废，再次完整读取时
+// 同一个号还被发给了别的元素。按 background.ts snapshotFields 的接线复现。
+describe('带 selector 的读取不覆盖句柄表', () => {
+  function snapshotScoped(previous: FormFieldTable | undefined, selector?: string): FormFieldTable {
+    const collected = collectFormFields({ ...INPUT, selector });
+    const { fieldIds, identities, issuedThrough } = allocateFieldIds(collected.raws, previous, collected.url, collected.documentId);
+    const handles: Record<string, FormFieldHandle> = {};
+    collected.raws.forEach((raw, index) => {
+      handles[fieldIds[index]] = {
+        path: raw.path,
+        expect: fieldExpectation(raw),
+        sensitive: false,
+        kind: toFieldDescriptor(raw, fieldIds[index]).kind,
+        identity: identities[index],
+      };
+    });
+    return composeFieldTable({
+      previous,
+      page: { url: collected.url, documentId: collected.documentId },
+      handles,
+      fingerprints: [],
+      issuedThrough,
+      scoped: Boolean(selector),
+    });
+  }
+
+  const idOf = (table: FormFieldTable, label: string) =>
+    Object.keys(table.fields).find((id) => table.fields[id].expect.text === label || table.fields[id].expect.label === label);
+
+  beforeEach(() => {
+    document.body.innerHTML = `
+      <nav><a href="/console">控制台</a></nav>
+      <main><button>添加规则</button></main>`;
+  });
+
+  it('只读一块之后，弹窗里先前发的 fieldId 照样能点', async () => {
+    const before = snapshotScoped(undefined);
+    document.body.insertAdjacentHTML('beforeend', '<div class="tea-dialog"><button>确定</button></div>');
+    const withDialog = snapshotScoped(before); // 点击后的内部重采
+    const confirm = idOf(withDialog, '确定')!;
+    let clicked = false;
+    document.querySelector('.tea-dialog button')!.addEventListener('click', () => { clicked = true; });
+
+    const scoped = snapshotScoped(withDialog, '[class*="modal"]'); // 模型猜错了容器：0 个元素
+    expect(scoped.fields[confirm]).toBeDefined();
+
+    const result = await applyFormFill({
+      url: scoped.url, documentId: scoped.documentId, items: [],
+      submit: { fieldId: confirm, path: scoped.fields[confirm].path, expect: scoped.fields[confirm].expect },
+    });
+    expect(result.submitted?.status).toBe('ok');
+    expect(clicked).toBe(true);
+  });
+
+  it('只读一块再完整读取：元素保持原号，号码不会被重发给别的元素', () => {
+    const before = snapshotScoped(undefined);
+    const addRule = idOf(before, '添加规则')!;
+    const scoped = snapshotScoped(before, 'nav'); // 只读到「控制台」
+    document.querySelector('main')!.insertAdjacentHTML('beforeend', '<button>导入规则</button>');
+    const after = snapshotScoped(scoped);
+
+    expect(idOf(after, '添加规则')).toBe(addRule);
+    const issuedBefore = new Set(Object.keys(before.fields));
+    const importRule = idOf(after, '导入规则')!;
+    expect(issuedBefore.has(importRule)).toBe(false);
   });
 });

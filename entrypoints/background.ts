@@ -120,7 +120,7 @@ import {
   skippedFrameGroupOutcomes,
   type FormFillFrameGroup,
 } from '@/lib/agent/fill-form-request';
-import { allocateFieldIds } from '@/lib/agent/field-id-allocation';
+import { allocateFieldIds, composeFieldTable } from '@/lib/agent/field-id-allocation';
 import {
   DEFAULT_FIND_TEXT_LIMIT,
   MAX_FIND_TEXT_LIMIT,
@@ -803,7 +803,7 @@ async function snapshotFields(
   // 号码按身份继承上一张表，不按文档序重编（ref: field-id-allocation.ts 顶部注释）：
   // 本函数在每次成功写操作后都会被 collectNewFieldsAfterWrite 重跑一遍，位置编号会让
   // 模型手里那批写操作之前拿到的 fieldId 集体指向邻居。
-  const { fieldIds, identities } = allocateFieldIds(
+  const { fieldIds, identities, issuedThrough } = allocateFieldIds(
     collected.raws,
     previous,
     collected.url,
@@ -862,12 +862,18 @@ async function snapshotFields(
     if (newFieldIds.has(field.fieldId)) field.isNew = true;
   }
 
-  await setFormFieldsForTab(tabId, {
-    url: collected.url,
-    documentId: collected.documentId,
-    fields: handles,
-    fingerprints: fields.map((field) => field.fingerprint),
-  });
+  // 带 selector 的范围读取并入旧表、不覆盖它；已发号同一页面上只增不减（ref: composeFieldTable）。
+  await setFormFieldsForTab(
+    tabId,
+    composeFieldTable({
+      previous,
+      page: { url: collected.url, documentId: collected.documentId },
+      handles,
+      fingerprints: fields.map((field) => field.fingerprint),
+      issuedThrough,
+      scoped: Boolean(payload?.selector),
+    }),
+  );
 
   return {
     collected,

@@ -57,6 +57,11 @@ export interface FormFieldTable {
    * 旧版本存下的表没有这个字段，读到 undefined 即视为「首次读取」，不标记新元素。
    */
   fingerprints?: string[];
+  /**
+   * 这一页已经发到第几号 f*。号码只增不减：元素消失后它的号随句柄一起离开 fields，光看 fields
+   * 里剩下的号会把它再发给下一个新元素（ref: field-id-allocation.ts）。旧表没有它，退回看 fields。
+   */
+  issuedThrough?: number;
 }
 
 function storageKey(tabId: number): string {

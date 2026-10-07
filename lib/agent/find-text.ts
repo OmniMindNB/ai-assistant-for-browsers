@@ -128,5 +128,7 @@ export function mergeFindTextHandles(
     documentId: currentDocumentId,
     fields,
     fingerprints: keepExisting ? existing!.fingerprints : undefined,
+    // 这一页发到第几号 f* 也要跟着留下，否则下一次 get_form 会把已作废的号再发出去。
+    issuedThrough: keepExisting ? existing!.issuedThrough : undefined,
   };
 }

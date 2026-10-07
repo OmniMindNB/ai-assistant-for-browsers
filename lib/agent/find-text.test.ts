@@ -126,6 +126,12 @@ describe('keepFindTextHandles', () => {
 });
 
 describe('mergeFindTextHandles', () => {
+  // 漏了它，查一次文字就把「这一页发到第几号」丢了，下一次 get_form 会重发已作废的号。
+  it('carries the issued-through counter over when the page is unchanged', () => {
+    const merged = mergeFindTextHandles({ ...table(), issuedThrough: 42 }, 'https://a.test/orders', [hit()]);
+    expect(merged.issuedThrough).toBe(42);
+  });
+
   it('assigns sequential t* fieldIds starting at t1', () => {
     const merged = mergeFindTextHandles(undefined, 'https://a.test/orders', [hit(), hit(), hit()]);
     expect(Object.keys(merged.fields).sort()).toEqual(['t1', 't2', 't3']);
