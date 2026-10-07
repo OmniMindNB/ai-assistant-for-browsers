@@ -26,6 +26,11 @@ export interface RawFormField {
   labelledByText?: string;
   forLabelText?: string;
   ancestorLabelText?: string;
+  /**
+   * 控件在表格单元格里时，所在列的表头文字（同一张表的 thead / 首行 th，或固定表头组件里前面那张
+   * 只有 thead 的表）。表格式表单的字段名只写在表头里——见 pickFieldLabel。
+   */
+  columnHeaderText?: string;
   required: boolean;
   disabled: boolean;
   readOnly: boolean;
@@ -72,6 +77,19 @@ const SENSITIVE_TOKEN = /(^|[^a-z])(otp|totp|cvv|cvc|csc|ssn|passcode)([^a-z]|$)
 export function pickFieldLabel(raw: RawFormField): string | undefined {
   const tag = raw.tag.toLowerCase();
   const isClickableTag = tag === 'button' || tag === 'a' || raw.interactive === true;
+  const clean = (value: string | undefined): string => (value ?? '').replace(/\s+/g, ' ').trim();
+
+  // 表格式表单：字段名只在表头里，控件自己只有当前值（下拉框显示「TCP」）或 placeholder。
+  // 显式标签照旧优先；没有时用「表头：原来的值」，两样都留——模型既要知道这是「协议」，
+  // 也要知道它现在是 TCP（ref: 2026-10-07 第六份开端口导出 #6）。
+  const explicit = [raw.forLabelText, raw.ancestorLabelText, raw.ariaLabel, raw.labelledByText].map(clean).find(Boolean);
+  const header = clean(raw.columnHeaderText);
+  if (!explicit && header) {
+    const detail = [raw.placeholder, isClickableTag ? raw.elementText : undefined, raw.name].map(clean).find(Boolean);
+    const composed = detail && detail !== header ? `${header}：${detail}` : header;
+    return composed.slice(0, MAX_LABEL_CHARS);
+  }
+
   const candidates = [
     raw.forLabelText,
     raw.ancestorLabelText,

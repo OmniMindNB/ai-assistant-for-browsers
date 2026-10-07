@@ -30,6 +30,24 @@ function raw(overrides: Partial<RawFormField> = {}): RawFormField {
 }
 
 describe('pickFieldLabel', () => {
+  // 2026-10-07 第六份开端口导出 #6：腾讯云「添加规则」是表格式布局，表头一行「应用类型 | 来源 | 协议 |
+  // 端口 | 策略 | 备注」，控件在下一行。清单里只有 f184「TCP」、f185「如53,80,443或80-90」，模型看不出
+  // 哪个是协议、哪个是端口，又用 selector 读了一遍弹窗。列表头补上字段名，原来的值留着。
+  it('prefixes the column header when the field has no explicit label', () => {
+    expect(pickFieldLabel(raw({ tag: 'div', interactive: true, elementText: 'TCP', columnHeaderText: '协议' }))).toBe('协议：TCP');
+    expect(pickFieldLabel(raw({ placeholder: '如53,80,443或80-90', columnHeaderText: '端口' }))).toBe('端口：如53,80,443或80-90');
+  });
+
+  it('uses the column header alone when there is nothing else, or when it says the same thing', () => {
+    expect(pickFieldLabel(raw({ columnHeaderText: '备注' }))).toBe('备注');
+    expect(pickFieldLabel(raw({ placeholder: '备注', columnHeaderText: '备注' }))).toBe('备注');
+  });
+
+  it('keeps an explicit label ahead of the column header', () => {
+    expect(pickFieldLabel(raw({ forLabelText: '端口号', placeholder: '如 80', columnHeaderText: '端口' }))).toBe('端口号');
+    expect(pickFieldLabel(raw({ ariaLabel: '协议选择', columnHeaderText: '协议' }))).toBe('协议选择');
+  });
+
   it('prefers the <label for> text over everything else', () => {
     const field = raw({
       forLabelText: '邮箱',

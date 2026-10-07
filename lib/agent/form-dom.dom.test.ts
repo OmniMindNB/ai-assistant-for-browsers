@@ -1842,3 +1842,48 @@ describe('scrollContainerInPage origin guard', () => {
     expect(el.scrollTop).toBe(300);
   });
 });
+
+// 表格式表单的列表头（ref: form-schema.ts pickFieldLabel 的列表头分支）。
+describe('collectFormFields：表格里的控件带上所在列的表头', () => {
+  const headerOf = (predicate: (raw: ReturnType<typeof collectFormFields>['raws'][number]) => boolean) =>
+    collectFormFields(INPUT).raws.find(predicate)?.columnHeaderText;
+
+  it('同一张表的 thead', () => {
+    render(
+      '<table><thead><tr><th>应用类型</th><th>协议</th><th>端口</th></tr></thead>' +
+        '<tbody><tr><td><div tabindex="0">自定义</div></td><td><div tabindex="0">TCP</div></td><td><input placeholder="如80" /></td></tr></tbody></table>',
+    );
+    expect(headerOf((raw) => raw.elementText === 'TCP')).toBe('协议');
+    expect(headerOf((raw) => raw.placeholder === '如80')).toBe('端口');
+  });
+
+  it('固定表头组件：表头在前面另一张只有 thead 的表里（腾讯云 app-lighthouse-table 就是这样）', () => {
+    render(
+      '<div class="table"><div class="header"><table><thead><tr><th></th><th>应用类型</th><th>来源</th><th>协议</th><th>端口</th></tr></thead></table></div>' +
+        '<div class="body"><table><tbody><tr><td><input type="checkbox" /></td><td><div tabindex="0">自定义</div></td>' +
+        '<td><input placeholder="输入IP地址或CIDR段" /></td><td><div tabindex="0">TCP</div></td><td><input placeholder="如53,80,443或80-90" /></td></tr></tbody></table></div></div>',
+    );
+    expect(headerOf((raw) => raw.elementText === 'TCP')).toBe('协议');
+    expect(headerOf((raw) => raw.placeholder === '如53,80,443或80-90')).toBe('端口');
+    expect(headerOf((raw) => raw.placeholder === '输入IP地址或CIDR段')).toBe('来源');
+  });
+
+  it('按 colspan 对齐列', () => {
+    render(
+      '<table><thead><tr><th colspan="2">时间段</th><th>备注</th></tr></thead>' +
+        '<tbody><tr><td><input name="from" /></td><td><input name="to" /></td><td><input name="memo" /></td></tr></tbody></table>',
+    );
+    expect(headerOf((raw) => raw.name === 'to')).toBe('时间段');
+    expect(headerOf((raw) => raw.name === 'memo')).toBe('备注');
+  });
+
+  it('首行全是 th、没有 thead 的表同样认', () => {
+    render('<table><tr><th>协议</th></tr><tr><td><div tabindex="0">TCP</div></td></tr></table>');
+    expect(headerOf((raw) => raw.elementText === 'TCP')).toBe('协议');
+  });
+
+  it('没有表头的布局表格不给列表头', () => {
+    render('<table><tr><td>用户名</td><td><input name="user" /></td></tr></table>');
+    expect(headerOf((raw) => raw.name === 'user')).toBeUndefined();
+  });
+});

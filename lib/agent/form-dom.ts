@@ -292,6 +292,48 @@ export function collectFormFields(
         : undefined;
     const elementText = tag === 'button' || tag === 'a' || interactive ? textOf(element) : undefined;
 
+    // 表格式表单的字段名只写在表头里（腾讯云「添加规则」：表头一行「应用类型 | 来源 | 协议 | 端口 …」，
+    // 控件在下一行）。按列序号（计入 colspan）找同列表头：先找同一张表的 thead / 首行全 th；
+    // 固定表头组件把表头放在前面另一张只有 thead 的表里，再往上最多三层找它。
+    const columnHeaderText = ((): string | undefined => {
+      const cell = element.closest('td');
+      const row = cell?.parentElement;
+      const table = cell?.closest('table');
+      if (!cell || !row || !table) return undefined;
+      let column = 0;
+      for (const sibling of Array.from(row.children)) {
+        if (sibling === cell) break;
+        column += (sibling as HTMLTableCellElement).colSpan || 1;
+      }
+      const ownHeaderRow = (candidate: HTMLTableElement): HTMLTableRowElement | undefined => {
+        const headRow = candidate.tHead?.rows[0];
+        if (headRow) return headRow;
+        const first = candidate.rows[0];
+        if (first && first !== row && first.cells.length > 0 && Array.from(first.cells).every((c) => c.tagName === 'TH')) return first;
+        return undefined;
+      };
+      let headerRow = ownHeaderRow(table);
+      let scope = table.parentElement;
+      for (let depth = 0; !headerRow && scope && depth < 3; depth += 1, scope = scope.parentElement) {
+        const preceding = Array.from(scope.querySelectorAll('table')).filter(
+          (other) => other !== table && other.tHead && (other.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+        );
+        const nearest = preceding[preceding.length - 1];
+        if (nearest) headerRow = nearest.tHead!.rows[0];
+      }
+      if (!headerRow) return undefined;
+      let start = 0;
+      for (const headerCell of Array.from(headerRow.cells)) {
+        const span = headerCell.colSpan || 1;
+        if (column >= start && column < start + span) {
+          const text = (headerCell.textContent || '').replace(/\s+/g, ' ').trim();
+          return text && text.length <= 30 ? text : undefined;
+        }
+        start += span;
+      }
+      return undefined;
+    })();
+
     return {
       path: buildPath(element),
       tag,
@@ -304,6 +346,7 @@ export function collectFormFields(
       labelledByText,
       forLabelText,
       ancestorLabelText: textOf(element.closest('label')),
+      columnHeaderText,
       required: asInput.required === true,
       disabled: asInput.disabled === true,
       readOnly: asInput.readOnly === true,
