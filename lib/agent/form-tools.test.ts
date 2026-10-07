@@ -643,3 +643,49 @@ describe('browser_read_page：读取上限与压缩层的硬上限同源', () =>
     expect(text).toContain('不要就此认为页面没有内容');
   });
 });
+
+// 2026-10-07 demoqa 导出 #4：自动补全输入框的文字写进去不等于选上了。fill_form 把它算进「9 个成功」，
+// 模型过了好几轮才发现 Subjects 根本没选中。待选定要单列出来，并指明下一步是点候选项。
+describe('自动补全输入框的「待选定」结果', () => {
+  const PENDING_DETAIL = '这是自动补全输入框：文字已输入、候选列表保持打开，但还没有选定任何选项。请从新出现的选项里点击一项完成选择。';
+
+  it('browser_fill_form counts a pending autocomplete separately from real successes', async () => {
+    sendMessage.mockResolvedValueOnce({
+      id: '1',
+      ok: true,
+      data: {
+        outcomes: [
+          { fieldId: 'f10', status: 'ok', actualValue: 'Alex' },
+          { fieldId: 'f18', status: 'ok', actualValue: 'Maths', pendingSelection: true, detail: PENDING_DETAIL },
+        ],
+      },
+    });
+    const output = await fillFormTool().execute('call-1', { fields: [] });
+    const text = (output.content[0] as { text: string }).text;
+    expect(text).toContain('1 个成功，0 个失败，1 个待选定');
+    expect(text).toContain(`- f18：待选定 —— ${PENDING_DETAIL}`);
+  });
+
+  it('browser_fill_form does not fail the call when the only field is a pending autocomplete', async () => {
+    sendMessage.mockResolvedValueOnce({
+      id: '1',
+      ok: true,
+      data: { outcomes: [{ fieldId: 'f18', status: 'ok', actualValue: 'Maths', pendingSelection: true, detail: PENDING_DETAIL }] },
+    });
+    const output = await fillFormTool().execute('call-1', { fields: [{ fieldId: 'f18', value: 'Maths' }] });
+    expect((output.content[0] as { text: string }).text).toContain('1 个待选定');
+  });
+
+  it('browser_type tells the model the text is typed but nothing is selected yet', async () => {
+    const typeTool = createBrowserTools(createTabSession(1)).find((candidate) => candidate.name === 'browser_type')!;
+    sendMessage.mockResolvedValueOnce({
+      id: '1',
+      ok: true,
+      data: { selector: '#subjectsInput', matched: true, value: 'Maths', status: 'ok', actualValue: 'Maths', pendingSelection: true, detail: PENDING_DETAIL },
+    });
+    const output = await typeTool.execute('call-1', { selector: '#subjectsInput', text: 'Maths' });
+    const text = (output.content[0] as { text: string }).text;
+    expect(text).toContain('已在匹配 "#subjectsInput" 的元素中输入文本。');
+    expect(text).toContain(PENDING_DETAIL);
+  });
+});

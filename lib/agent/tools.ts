@@ -812,10 +812,15 @@ function makeFillFormTool(session: TabSessionController): BrowserAgentTool {
       }
 
       const outcomes = response.data.outcomes;
-      const succeeded = outcomes.filter((outcome) => outcome.status === 'ok');
+      // 自动补全输入框写进文字不等于选上了：单列为「待选定」，不算成功也不算失败，
+      // 并原样转述下一步（点候选项）——混进成功数里，模型会以为这个字段已经填好。
+      const pending = outcomes.filter((outcome) => outcome.status === 'ok' && outcome.pendingSelection);
+      const succeeded = outcomes.filter((outcome) => outcome.status === 'ok' && !outcome.pendingSelection);
       const failed = outcomes.filter((outcome) => outcome.status !== 'ok');
+      const pendingCount = pending.length > 0 ? `，${pending.length} 个待选定` : '';
       const lines = [
-        `表单填写结果：${succeeded.length} 个成功，${failed.length} 个失败。`,
+        `表单填写结果：${succeeded.length} 个成功，${failed.length} 个失败${pendingCount}。`,
+        ...pending.map((outcome) => `- ${outcome.fieldId}：待选定${outcome.detail ? ` —— ${outcome.detail}` : ''}`),
         ...failed.map((outcome) =>
           `- ${outcome.fieldId}：${outcome.status}${outcome.detail ? ` —— ${outcome.detail}` : ''}${
             outcome.actualValue !== undefined ? `（实际值："${outcome.actualValue}"）` : ''
@@ -833,7 +838,7 @@ function makeFillFormTool(session: TabSessionController): BrowserAgentTool {
       // 一个字段都没落地时按失败收尾（clickBatch 早就是这条规矩）：返回成功会让面板的
       // 步骤时间线显示「已填写 N 个字段」，而页面上其实什么都没变。提交按钮点成了是例外，
       // 那一下确实改变了页面，整轮不能算没发生。
-      if (outcomes.length > 0 && succeeded.length === 0 && response.data.submitted?.status !== 'ok') {
+      if (outcomes.length > 0 && succeeded.length === 0 && pending.length === 0 && response.data.submitted?.status !== 'ok') {
         throw new Error(lines.join('\n'));
       }
 
@@ -859,7 +864,9 @@ function makeTypeTool(session: TabSessionController): BrowserAgentTool {
       const response = (await sendMessage<TypeTextPayload, TypeTextResult>('TYPE_TEXT', payload, session.currentTabId)) as MessageResponse<TypeTextResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '输入失败');
       if (response.data.status !== 'ok') throw new Error(response.data.detail ?? response.data.status);
-      const typed = `已在匹配 "${response.data.selector}" 的元素中输入文本。`;
+      const typed = response.data.pendingSelection && response.data.detail
+        ? `已在匹配 "${response.data.selector}" 的元素中输入文本。${response.data.detail}`
+        : `已在匹配 "${response.data.selector}" 的元素中输入文本。`;
       const appeared = describeNewFields(response.data.newFields ?? []);
       return textResult(appeared ? `${typed}\n${appeared}` : typed, response.data as unknown as Record<string, unknown>);
     },

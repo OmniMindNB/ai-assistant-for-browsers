@@ -649,6 +649,8 @@ export interface ApplyFillOutcome {
   status: 'ok' | 'mismatch' | 'not_found' | 'not_writable' | 'invalid_value';
   detail?: string;
   actualValue?: string;
+  /** 自动补全输入框：文字已输入、保持焦点，但还没有选定任何选项——需要再点一个候选项。 */
+  pendingSelection?: boolean;
 }
 
 export interface ApplyFillInput {
@@ -804,9 +806,51 @@ export async function applyFormFill(input: ApplyFillInput): Promise<ApplyFillOut
     return true;
   };
 
+  // 自动补全输入框（react-select 一类）失焦就清空输入、收起候选——Chrome 实测在一个 microtask
+  // 之内。所以它写完不能 blur，候选要趁它还有焦点时点选。
+  // ⚠️ 与 typeTextInPage 重复：序列化注入，不能共用 helper。
+  const isAutocompleteInput = (element: Element): boolean => {
+    const role = (element.getAttribute('role') || '').toLowerCase();
+    const autocomplete = (element.getAttribute('aria-autocomplete') || '').toLowerCase();
+    return role === 'combobox' || autocomplete === 'list' || autocomplete === 'both';
+  };
+  // 候选通常要一两帧才渲染出来（demoqa 实测 20–50ms），写后重采赶在它前面就什么都列不出。
+  // 能找到 aria-controls 指向的列表就等到里面出现选项（最多 500ms），找不到就固定等 150ms。
+  const waitForSuggestions = async (element: Element): Promise<void> => {
+    const listId = element.getAttribute('aria-controls') || element.getAttribute('aria-owns');
+    if (!listId) {
+      await new Promise((done) => setTimeout(done, 150));
+      return;
+    }
+    const deadline = Date.now() + 500;
+    while (Date.now() < deadline) {
+      const list = element.ownerDocument.getElementById(listId);
+      if (list && list.querySelector('[role="option"]')) return;
+      await new Promise((done) => setTimeout(done, 50));
+    }
+  };
+
+  // 自动补全字段排到最后写：后面任何一个字段的 focus() 都会让它失焦清空。一次只能留一个
+  // 保持焦点，多出来的如实拒绝，而不是写进去再被下一个冲掉、却回报成功。
+  // 结果按 fieldId 合并（mergeFillOutcomes），这里改变写入顺序不影响回报顺序。
+  const writesAutocomplete = (item: ApplyFillItem): boolean => {
+    if (typeof item.value !== 'string') return false;
+    try {
+      const element = resolve(item.path);
+      return Boolean(element) && isAutocompleteInput(element as Element);
+    } catch {
+      return false;
+    }
+  };
+  const orderedItems = [
+    ...input.items.filter((item) => !writesAutocomplete(item)),
+    ...input.items.filter((item) => writesAutocomplete(item)),
+  ];
+  let autocompleteWritten = false;
+
   const outcomes: ApplyFillOutcome[] = [];
 
-  for (const item of input.items) {
+  for (const item of orderedItems) {
     try {
       const element = resolve(item.path);
       if (!element) {
@@ -825,6 +869,16 @@ export async function applyFormFill(input: ApplyFillInput): Promise<ApplyFillOut
       const asInput = element as HTMLInputElement;
       if (asInput.disabled === true || asInput.readOnly === true) {
         outcomes.push({ fieldId: item.fieldId, status: 'not_writable', detail: '字段处于禁用或只读状态。' });
+        continue;
+      }
+
+      const autocompleteTarget = typeof item.value === 'string' && isAutocompleteInput(element);
+      if (autocompleteTarget && autocompleteWritten) {
+        outcomes.push({
+          fieldId: item.fieldId,
+          status: 'not_writable',
+          detail: '一次调用只能处理一个自动补全输入框（候选项要趁它保持焦点时点选），请先选定上一个，再单独填写这一个。',
+        });
         continue;
       }
 
@@ -913,6 +967,8 @@ export async function applyFormFill(input: ApplyFillInput): Promise<ApplyFillOut
 
         host.dispatchEvent(new Event('change', { bubbles: true }));
         host.blur();
+        // 同下方 text 分支：等框架把 blur 引起的重渲染落到 DOM 再回读。
+        await new Promise((done) => setTimeout(done, 0));
         const actual = host.textContent ?? '';
         outcomes.push(
           actual === value
@@ -931,7 +987,29 @@ export async function applyFormFill(input: ApplyFillInput): Promise<ApplyFillOut
       else asInput.value = value;
       fireInput(asInput, value);
       asInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+      if (autocompleteTarget) {
+        autocompleteWritten = true;
+        await waitForSuggestions(asInput);
+        const typed = asInput.value;
+        outcomes.push(
+          typed === value
+            ? {
+                fieldId: item.fieldId,
+                status: 'ok',
+                actualValue: typed,
+                pendingSelection: true,
+                detail: '这是自动补全输入框：文字已输入、候选列表保持打开，但还没有选定任何选项。请从新出现的选项里点击一项完成选择。',
+              }
+            : { fieldId: item.fieldId, status: 'invalid_value', detail: '写入后回读不符，页面组件可能改写或拒绝了这个值。', actualValue: typed },
+        );
+        continue;
+      }
+
       asInput.blur();
+      // 回读推迟一个任务：框架对 blur/input 的重渲染（受控组件改写、失焦清空）在 microtask 里
+      // 才落到 DOM，同步回读读到的是刚写进去的值，会把没落地的写入报成成功。
+      await new Promise((done) => setTimeout(done, 0));
       const actual = asInput.value;
       outcomes.push(
         actual === value
@@ -1629,6 +1707,8 @@ export interface LegacyWriteStatus {
   label?: string;
   /** 命中 <a target="_blank">：当前标签页不会变化，必须点破。 */
   opensNewTab?: boolean;
+  /** 自动补全输入框：文字已输入、保持焦点，但还没有选定任何选项。 */
+  pendingSelection?: boolean;
 }
 
 // ⚠️ 序列化注入，禁止引用模块作用域绑定（包括本文件的其它函数）。
@@ -1840,7 +1920,38 @@ export async function typeTextInPage(input: { selector: string; index: number; t
     target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: input.text }));
   }
   target.dispatchEvent(new Event('change', { bubbles: true }));
+
+  // 自动补全输入框失焦就清空、收起候选（Chrome 实测在一个 microtask 之内），所以不 blur，
+  // 等候选渲染出来，好让写后重采把它们作为新元素列给模型。
+  // ⚠️ 与 applyFormFill 的 isAutocompleteInput / waitForSuggestions 重复：序列化注入，不能共用 helper。
+  const role = (target.getAttribute('role') || '').toLowerCase();
+  const ariaAutocomplete = (target.getAttribute('aria-autocomplete') || '').toLowerCase();
+  if (!editable && (role === 'combobox' || ariaAutocomplete === 'list' || ariaAutocomplete === 'both')) {
+    const listId = target.getAttribute('aria-controls') || target.getAttribute('aria-owns');
+    if (listId) {
+      const deadline = Date.now() + 500;
+      while (Date.now() < deadline) {
+        const list = document.getElementById(listId);
+        if (list && list.querySelector('[role="option"]')) break;
+        await new Promise((done) => setTimeout(done, 50));
+      }
+    } else {
+      await new Promise((done) => setTimeout(done, 150));
+    }
+    const typed = asInput.value;
+    return typed === nextValue
+      ? {
+          status: 'ok',
+          actualValue: typed,
+          pendingSelection: true,
+          detail: '这是自动补全输入框：文字已输入、候选列表保持打开，但还没有选定任何选项。请从新出现的选项里点击一项完成选择。',
+        }
+      : { status: 'invalid_value', detail: '写入后回读不符，页面组件可能改写或拒绝了这个值。', actualValue: typed };
+  }
+
   target.blur();
+  // 回读推迟一个任务：框架对 blur 的重渲染在 microtask 里才落到 DOM，同步回读会把没落地的写入报成成功。
+  await new Promise((done) => setTimeout(done, 0));
 
   const actual = editable ? (target.textContent ?? '') : asInput.value;
   return actual === nextValue

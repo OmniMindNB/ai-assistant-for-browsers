@@ -1663,6 +1663,7 @@ async function typeText(payload: TypeTextPayload, tabId: number): Promise<TypeTe
     status: result.status,
     detail: result.detail,
     actualValue: result.actualValue,
+    pendingSelection: result.pendingSelection,
     // 输入触发自动补全下拉是这里最典型的收益场景。
     newFields: result.status === 'ok' ? await collectNewFieldsAfterWrite(tabId) : undefined,
   };

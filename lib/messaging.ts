@@ -378,6 +378,8 @@ export interface TypeTextResult {
   status: 'ok' | 'not_found' | 'not_clickable' | 'not_writable' | 'invalid_value' | 'blocked_sensitive';
   detail?: string;
   actualValue?: string;
+  /** 自动补全输入框：文字已输入、保持焦点，但还没有选定任何选项——detail 说明下一步。 */
+  pendingSelection?: boolean;
   /** 本次输入之后页面新出现的可交互元素（典型如自动补全下拉）。句柄表已同步刷新。 */
   newFields?: FormFieldDescriptor[];
 }
@@ -650,6 +652,8 @@ export interface FillFormFieldOutcome {
   detail?: string;
   /** 写后回读的实际值；敏感字段永不回传。 */
   actualValue?: string;
+  /** 自动补全输入框：文字已输入、保持焦点，但还没有选定任何选项——detail 说明下一步。 */
+  pendingSelection?: boolean;
 }
 
 export interface FillFormResult {

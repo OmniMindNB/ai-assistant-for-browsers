@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { collectFormFields } from './form-dom';
 import { applyFormFill, type ApplyFillItem } from './form-dom';
 import { scrollContainerInPage, scrollPageInPage } from './form-dom';
-import { pressKeyInPage } from './form-dom';
+import { pressKeyInPage, typeTextInPage } from './form-dom';
 import { MAX_FIELD_TEXT_CHARS, fieldExpectation, sanitizeFieldText, toFieldDescriptor } from './form-schema';
 import { resolveExpectOrigin } from './fill-form-request';
 import type { FormFieldHandle } from './tab-form-fields';
@@ -1925,5 +1925,102 @@ describe('collectFormFields：表格里的控件带上所在列的表头', () =>
   it('没有表头的布局表格不给列表头', () => {
     render('<table><tr><td>用户名</td><td><input name="user" /></td></tr></table>');
     expect(headerOf((raw) => raw.name === 'user')).toBeUndefined();
+  });
+});
+
+// 2026-10-07 demoqa 导出 #4/#6，Chrome 实测（窗口有焦点时）：react-select 的输入框失焦后，
+// 输入框在一个 microtask 之内被清空、下拉随之关闭；而回读紧跟在 blur() 之后同步执行，读到的
+// 还是刚写进去的值——fill_form 报了成功，实际什么都没选上。下面用「blur 后在 microtask 里清空」
+// 模拟 React 的重渲染时机。
+describe('applyFormFill / typeTextInPage on autocomplete inputs and late re-renders', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  const clearOnBlurLikeReact = (input: HTMLInputElement): void => {
+    input.addEventListener('blur', () => queueMicrotask(() => { input.value = ''; }));
+  };
+
+  const fillItem = (selector: string, fieldId: string, value: string): ApplyFillItem => {
+    const element = document.querySelector(selector)!;
+    const raw = collectFormFields(INPUT).raws.find((candidate) => candidate.id === element.id)!;
+    return { fieldId, path: raw.path, expect: fieldExpectation(raw), kind: 'text', value };
+  };
+
+  const AUTOCOMPLETE = `
+    <input id="subjects" role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls="subjects-listbox">
+    <div id="subjects-listbox" role="listbox"><div role="option" tabindex="-1">Maths</div></div>
+  `;
+
+  it('reads a plain text field back only after the page has re-rendered from the blur', async () => {
+    render(`<input id="nick" type="text">`);
+    clearOnBlurLikeReact(document.querySelector('input')!);
+
+    const output = await applyFormFill({ url: location.href, items: [fillItem('#nick', 'f1', 'Alex')] });
+
+    expect(output.outcomes[0]).toMatchObject({ fieldId: 'f1', status: 'invalid_value', actualValue: '' });
+  });
+
+  it('keeps an autocomplete input focused and reports the text as typed but not yet selected', async () => {
+    render(AUTOCOMPLETE);
+    const subjects = document.querySelector<HTMLInputElement>('#subjects')!;
+    clearOnBlurLikeReact(subjects);
+
+    const output = await applyFormFill({ url: location.href, items: [fillItem('#subjects', 'f18', 'Maths')] });
+
+    expect(output.outcomes[0]).toMatchObject({ fieldId: 'f18', status: 'ok', actualValue: 'Maths', pendingSelection: true });
+    expect(document.activeElement).toBe(subjects);
+    expect(subjects.value).toBe('Maths');
+  });
+
+  it('writes the autocomplete input last so later fields in the batch do not blur it away', async () => {
+    render(`${AUTOCOMPLETE}<input id="address" type="text">`);
+    const subjects = document.querySelector<HTMLInputElement>('#subjects')!;
+    clearOnBlurLikeReact(subjects);
+
+    const output = await applyFormFill({
+      url: location.href,
+      items: [fillItem('#subjects', 'f18', 'Maths'), fillItem('#address', 'f19', '123 MG Road')],
+    });
+
+    const byId = Object.fromEntries(output.outcomes.map((outcome) => [outcome.fieldId, outcome]));
+    expect(byId.f18).toMatchObject({ status: 'ok', pendingSelection: true });
+    expect(byId.f19).toMatchObject({ status: 'ok', actualValue: '123 MG Road' });
+    expect(document.activeElement).toBe(subjects);
+    expect(subjects.value).toBe('Maths');
+  });
+
+  it('refuses a second autocomplete input in the same call instead of letting it blur the first', async () => {
+    render(`${AUTOCOMPLETE}<input id="city" role="combobox" aria-autocomplete="list">`);
+
+    const output = await applyFormFill({
+      url: location.href,
+      items: [fillItem('#subjects', 'f18', 'Maths'), fillItem('#city', 'f20', 'Delhi')],
+    });
+
+    const byId = Object.fromEntries(output.outcomes.map((outcome) => [outcome.fieldId, outcome]));
+    expect(byId.f18).toMatchObject({ status: 'ok', pendingSelection: true });
+    expect(byId.f20.status).toBe('not_writable');
+    expect((document.querySelector('#city') as HTMLInputElement).value).toBe('');
+  });
+
+  it('browser_type keeps an autocomplete input focused and flags it as pending selection', async () => {
+    render(AUTOCOMPLETE);
+    const subjects = document.querySelector<HTMLInputElement>('#subjects')!;
+    clearOnBlurLikeReact(subjects);
+
+    const result = await typeTextInPage({ selector: '#subjects', index: 0, text: 'Maths', replace: true });
+
+    expect(result).toMatchObject({ status: 'ok', actualValue: 'Maths', pendingSelection: true });
+    expect(document.activeElement).toBe(subjects);
+  });
+
+  it('browser_type reads a plain input back after the blur re-render', async () => {
+    render(`<input id="nick" type="text">`);
+    clearOnBlurLikeReact(document.querySelector('input')!);
+
+    const result = await typeTextInPage({ selector: '#nick', index: 0, text: 'Alex', replace: true });
+
+    expect(result).toMatchObject({ status: 'invalid_value', actualValue: '' });
   });
 });
