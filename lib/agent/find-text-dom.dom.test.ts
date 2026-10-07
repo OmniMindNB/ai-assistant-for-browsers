@@ -117,3 +117,54 @@ describe('findTextInPage', () => {
     expect(output.origin).toBe(window.location.origin);
   });
 });
+
+// 2026-10-07 第五份开端口导出 #8/#9：find_text 找到了规则列表里的「6000」，但上下文只有父元素——
+// 表格单元格的父元素就是这一格，模型看不出这条规则的协议和策略，只好再 read_page 一遍。
+describe('findTextInPage：表格行与列表项的上下文', () => {
+  it('命中在表格行里时，上下文是整行，逐格用 | 分开', () => {
+    document.body.innerHTML =
+      '<table><tbody><tr><td>自定义</td><td>全部IPv4地址</td><td>TCP</td><td><span>6000</span></td><td>允许</td></tr></tbody></table>';
+    const [match] = run('6000').matches;
+    expect(match.text).toBe('6000');
+    expect(match.context).toBe('自定义 | 全部IPv4地址 | TCP | 6000 | 允许');
+  });
+
+  it('命中在列表项里时，上下文是整个列表项', () => {
+    document.body.innerHTML = '<ul><li><b>A123</b><i>已发货</i></li><li><b>B456</b><i>待付款</i></li></ul>';
+    const [match] = run('已发货').matches;
+    expect(match.context).toBe('A123 | 已发货');
+  });
+
+  it('ARIA 表格（div role=row）同样取整行', () => {
+    document.body.innerHTML =
+      '<div role="table"><div role="row"><div role="cell">TCP</div><div role="cell"><span>6000</span></div></div></div>';
+    expect(run('6000').matches[0].context).toBe('TCP | 6000');
+  });
+
+  it('不在行里时照旧取父元素', () => {
+    document.body.innerHTML = '<div><span>总计</span> ¥1,280.00</div>';
+    expect(run('总计').matches[0].context).toBe('总计 ¥1,280.00');
+  });
+});
+
+// 同一份导出里「命中 3 个（可见 1 个）」：另外两个是 <script> 里的配置文字，永远不会显示在页面上。
+describe('findTextInPage：不搜脚本、样式这类不显示的内容', () => {
+  it('script / style / noscript / template 里的文字不算命中', () => {
+    document.body.innerHTML =
+      '<span>端口 3000</span><script>var cfg = { timeout: 6000 };</script><style>.a{width:6000px}</style>' +
+      '<noscript>6000</noscript><template><b>6000</b></template>';
+    expect(run('6000').matches).toHaveLength(0);
+    expect(run('3000').matches.map((match) => match.text)).toEqual(['端口 3000']);
+  });
+
+  it('容器只因为里面有脚本才含这段文字时，容器也不算命中', () => {
+    document.body.innerHTML = '<div id="app"><p>hello</p><script>var a = 6000;</script></div>';
+    expect(run('6000').matches).toHaveLength(0);
+  });
+
+  it('容器自己的可见文字命中时照常返回，脚本的文字不混进命中文本', () => {
+    document.body.innerHTML = '<div>开放 6000 端口<script>var a = 1;</script></div>';
+    const [match] = run('6000').matches;
+    expect(match.text).toBe('开放 6000 端口');
+  });
+});

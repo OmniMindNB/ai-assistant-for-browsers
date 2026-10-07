@@ -471,7 +471,7 @@ function makeFindTextTool(session: TabSessionController): BrowserAgentTool {
     name: 'browser_find_text',
     label: 'Find Text',
     description:
-      'Locate elements by their visible text — a status label, a total amount, an error message — and get back a fieldId usable with browser_click, plus a snippet of surrounding context so you often do not need a separate read. This finds content, not controls: for a button, link, or form field you intend to operate, use browser_get_form instead — its handles carry write verification this one does not, and it already covers every clickable element.',
+      'Locate elements by their visible text — a status label, a total amount, an error message — and get back a fieldId usable with browser_click, plus the surrounding context — the whole table row or list item (cells separated by |) when the match sits inside one, so a single call is enough to confirm that a row such as a newly added rule reads as expected; you rarely need a separate read afterwards. This finds content, not controls: for a button, link, or form field you intend to operate, use browser_get_form instead — its handles carry write verification this one does not, and it already covers every clickable element.',
     parameters: Type.Object({
       text: Type.String({ description: 'The visible text to search for.' }),
       mode: Type.Optional(

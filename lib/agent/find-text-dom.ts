@@ -114,11 +114,33 @@ export const findTextInPage = (mainInput: FindTextInput, childInput: FindTextInp
     return steps;
   };
 
+  // 不会显示在页面上的内容：脚本、样式、noscript、template。只按 textContent 匹配时，
+  // <script> 里的配置文字（timeout: 6000）会算命中，含着它的容器也会（2026-10-07 第五份
+  // 开端口导出：「命中 3 个（可见 1 个）」，另外两个都是脚本）。
+  const HIDDEN_CONTENT_SELECTOR = 'script, style, noscript, template';
+  // 元素里可显示的文字：逐个文本节点累加，跳过落在上述子树里的。只有元素里确实有这类子树时
+  // 才走这条慢路——常见元素直接用 textContent。
+  const displayText = (element: Element): string => {
+    if (!element.querySelector(HIDDEN_CONTENT_SELECTOR)) return element.textContent || '';
+    let text = '';
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const hiddenAncestor = node.parentElement?.closest(HIDDEN_CONTENT_SELECTOR);
+      if (hiddenAncestor && element.contains(hiddenAncestor)) continue;
+      text += node.nodeValue ?? '';
+    }
+    return text;
+  };
+
   const root: ParentNode = document.body ?? document.documentElement;
   const allCandidates: Element[] = [];
   if (queryNormalized) {
     for (const element of Array.from(root.querySelectorAll('*'))) {
-      if (matches(normalize(element.textContent || ''))) allCandidates.push(element);
+      // 先用 textContent 粗筛（便宜），命中了再排除不显示的内容、按可显示文字复核。
+      if (!matches(normalize(element.textContent || ''))) continue;
+      if (element.closest(HIDDEN_CONTENT_SELECTOR)) continue;
+      if (!matches(normalize(displayText(element)))) continue;
+      allCandidates.push(element);
     }
   }
 
@@ -136,19 +158,35 @@ export const findTextInPage = (mainInput: FindTextInput, childInput: FindTextInp
 
   const clip = (raw: string): string => (raw.length > RAW_TEXT_SAFETY_CAP ? raw.slice(0, RAW_TEXT_SAFETY_CAP) : raw);
 
+  // 上下文：命中落在表格行 / 列表项里时取整行，逐个子节点用 | 分开——单元格的父元素就是这一格，
+  // 「6000」的上下文还是「6000」，模型看不出这条规则的协议和策略，只好再读一遍整页
+  // （2026-10-07 第五份开端口导出 #9）。不在行里时照旧取父元素。
+  const ROW_SELECTOR = 'tr, li, [role="row"], [role="listitem"]';
+  const contextOf = (element: Element): string | undefined => {
+    const row = element.closest(ROW_SELECTOR);
+    if (row && row !== element) {
+      const cells = Array.from(row.childNodes)
+        .filter((child) => !(child instanceof Element && child.matches(HIDDEN_CONTENT_SELECTOR)))
+        .map((child) => normalize(child instanceof Element ? displayText(child) : child.textContent || ''))
+        .filter(Boolean);
+      return clip(cells.length > 1 ? cells.join(' | ') : normalize(displayText(row)));
+    }
+    const parent = element.parentElement;
+    return parent ? clip(normalize(displayText(parent))) : undefined;
+  };
+
   const rawMatches: RawTextMatch[] = kept.map((element) => {
     const tag = element.tagName.toLowerCase();
-    const parent = element.parentElement;
     return {
       path: buildPath(element),
       tag,
       type: element.getAttribute('type') || undefined,
       name: element.getAttribute('name') || undefined,
       href: tag === 'a' ? element.getAttribute('href') || undefined : undefined,
-      text: clip(normalize(element.textContent || '')),
+      text: clip(normalize(displayText(element))),
       visible: isVisible(element),
       clickable: isClickable(element),
-      context: parent ? clip(normalize(parent.textContent || '')) : undefined,
+      context: contextOf(element),
     };
   });
 
