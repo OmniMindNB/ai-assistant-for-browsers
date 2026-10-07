@@ -1230,6 +1230,9 @@ describe('点击跳转后附上落地页的元素清单', () => {
       expect(texts[0]).toBe('ok');
       expect(texts[1]).toMatch(/^\[页面位置\]/);
       expect(texts[2]).toMatch(/^\[跳转后页面\]/);
+      // 已经替模型重读过：位置说明指向清单，不再劝它「重新获取页面信息」
+      expect(texts[1]).toContain('句柄表已刷新');
+      expect(texts[1]).not.toContain('可能已经失效');
     } finally {
       sendMessageSpy.mockReset();
     }
@@ -1254,6 +1257,7 @@ describe('点击跳转后附上落地页的元素清单', () => {
       const result = await hooks.afterToolCall?.(afterContext('browser_click', { fieldId: 'f56' }, false));
       expect(landingLine(result)).toBeUndefined();
       expect((result as { content: { text: string }[] }).content[1].text).toMatch(/^\[页面位置\]/);
+      expect((result as { content: { text: string }[] }).content[1].text).toContain('可能已经失效');
     } finally {
       sendMessageSpy.mockReset();
     }

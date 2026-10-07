@@ -451,10 +451,15 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
             const previousUrl = lastKnownUrl.get(session.currentTabId);
             // 写进工具结果本身，而不是另发一条 steer：模型读结果时就能看到落在哪，
             // 不必再花一轮去确认。
-            locationNote = describePageLocation(previousUrl, newUrl, ALWAYS_REPORT_LOCATION_TOOLS.has(toolName));
             if (previousUrl !== undefined && previousUrl !== newUrl) {
               landingNote = await readLandingPage(session.currentTabId);
             }
+            locationNote = describePageLocation(
+              previousUrl,
+              newUrl,
+              ALWAYS_REPORT_LOCATION_TOOLS.has(toolName),
+              landingNote !== undefined,
+            );
             lastKnownUrl.set(session.currentTabId, newUrl);
           }
         }

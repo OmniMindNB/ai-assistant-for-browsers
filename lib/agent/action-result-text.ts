@@ -173,20 +173,32 @@ export const MAX_LANDING_FIELDS = 40;
 export function describeLandingFields(fields: FormFieldDescriptor[]): string | undefined {
   const usable = fields.filter((field) => field.visible && !field.disabled);
   if (usable.length === 0) return undefined;
+  const usage =
+    '这些 fieldId 现在就能直接用于 browser_click / browser_fill_form；需要选项、必填、周边文字等细节时再调用 browser_get_form。';
 
-  const listed = usable
-    .slice(0, MAX_LANDING_FIELDS)
-    .map(listFieldEntry)
-    .join('、');
+  // 单页应用跳转前后是同一个文档，isNew 标出了跳转后才出现的元素——主内容区。按文档序列，
+  // 40 个名额会先被顶栏和侧边栏占满（2026-10-07 第三份开端口导出：「控制台、我的收藏、
+  // 云服务器……」占满清单，「管理防火墙规则」「添加规则」都在被截掉的部分里）。
+  const appeared = usable.filter((field) => field.isNew);
+  if (appeared.length > 0) {
+    const listed = appeared.slice(0, MAX_LANDING_FIELDS).map(listFieldEntry).join('、');
+    const omitted = appeared.length - Math.min(appeared.length, MAX_LANDING_FIELDS);
+    const tail = omitted > 0 ? `等，另有 ${omitted} 个未列出` : '';
+    const kept = usable.length - appeared.length;
+    const keptNote = kept > 0 ? `另有 ${kept} 个跳转前就在（多为顶栏、侧边栏），未列出。` : '';
+    return (
+      `[跳转后页面] 已重新读取页面，共 ${usable.length} 个可交互元素。跳转后新出现 ${appeared.length} 个：${listed}${tail}。${keptNote}` +
+      usage
+    );
+  }
+
+  // 没有任何元素被标为新出现：整页跳转换了文档，旧页面的指纹没有可比性。只能按文档序列。
+  const listed = usable.slice(0, MAX_LANDING_FIELDS).map(listFieldEntry).join('、');
   const omitted = usable.length - Math.min(usable.length, MAX_LANDING_FIELDS);
   const tail = omitted > 0 ? `等，另有 ${omitted} 个未列出` : '';
   const unusable = fields.length - usable.length;
   const unusableNote = unusable > 0 ? `另有 ${unusable} 个不可见或已禁用，未列出。` : '';
-
-  return (
-    `[跳转后页面] 已重新读取页面，${usable.length} 个可交互元素：${listed}${tail}。${unusableNote}` +
-    '这些 fieldId 现在就能直接用于 browser_click / browser_fill_form；需要选项、必填、周边文字等细节时再调用 browser_get_form。'
-  );
+  return `[跳转后页面] 已重新读取页面，${usable.length} 个可交互元素：${listed}${tail}。${unusableNote}${usage}`;
 }
 
 export function describePressKeyResult(result: PressKeyResult): string {
@@ -220,9 +232,14 @@ export function describePageLocation(
   previousUrl: string | undefined,
   currentUrl: string,
   alwaysReport: boolean,
+  /** 跳转后已经重读元素、刷新了句柄表，并附上了 [跳转后页面] 清单。 */
+  handlesRefreshed = false,
 ): string | undefined {
   if (previousUrl !== undefined && previousUrl !== currentUrl) {
-    return `[页面位置] 地址已变化：从 "${previousUrl}" 跳转到 "${currentUrl}"。页面可能仍在加载，原有的 fieldId 与表单状态可能已经失效，请视情况重新获取页面信息。`;
+    // 已经替模型重读过的话，「可能已经失效、请重新获取」只会把它推回去再调一次 get_form。
+    return handlesRefreshed
+      ? `[页面位置] 地址已变化：从 "${previousUrl}" 跳转到 "${currentUrl}"。已等页面稳定并重新读取元素，句柄表已刷新，见下方 [跳转后页面]。`
+      : `[页面位置] 地址已变化：从 "${previousUrl}" 跳转到 "${currentUrl}"。页面可能仍在加载，原有的 fieldId 与表单状态可能已经失效，请视情况重新获取页面信息。`;
   }
   if (!alwaysReport) return undefined;
   if (previousUrl === undefined) return `[页面位置] 当前地址："${currentUrl}"。`;

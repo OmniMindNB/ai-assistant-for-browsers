@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BatchClickOutcome, ClickElementResult, FormFieldDescriptor, NavigateHistoryResult, NavigateTabResult, ScrollPageResult } from '@/lib/messaging';
-import { describeBatchClickResult, describeClickResult, describeGoBackResult, describeLandingFields, describeNavigateResult, describeNewFields, describeScrollResult, MAX_LANDING_FIELDS, MAX_LISTED_NEW_FIELDS } from './action-result-text';
+import { describeBatchClickResult, describeClickResult, describeGoBackResult, describeLandingFields, describeNavigateResult, describePageLocation, describeNewFields, describeScrollResult, MAX_LANDING_FIELDS, MAX_LISTED_NEW_FIELDS } from './action-result-text';
 
 function scroll(overrides: Partial<ScrollPageResult> = {}): ScrollPageResult {
   return { x: 0, y: 800, scrolledBy: 800, pixelsAbove: 800, pixelsBelow: 2400, viewportHeight: 1200, ...overrides };
@@ -273,5 +273,55 @@ describe('describeLandingFields', () => {
   it('says nothing when the landed page has no usable element', () => {
     expect(describeLandingFields([])).toBeUndefined();
     expect(describeLandingFields([{ ...fieldDescriptor('f1', 'x'), visible: false }])).toBeUndefined();
+  });
+});
+
+// 2026-10-07 第三份开端口导出 #4/#11/#17：清单的 40 个名额全被顶栏和侧边栏占了（控制台、我的收藏、
+// 云服务器……Hermes Agent ×2），主内容区的「管理防火墙规则」「添加规则」都在被截掉的六七十个里。
+// 单页应用跳转前后是同一个文档，哪些元素是新出现的本来就知道。
+describe('describeLandingFields：新出现的元素优先', () => {
+  const isNew = (field: FormFieldDescriptor): FormFieldDescriptor => ({ ...field, isNew: true });
+
+  it('有新出现的元素时只列它们，跳转前就在的只报个数', () => {
+    const text = describeLandingFields([
+      fieldDescriptor('f3', '控制台', 'link'),
+      fieldDescriptor('f27', 'Hermes Agent', 'link'),
+      isNew(fieldDescriptor('f95', '管理防火墙规则')),
+      isNew(fieldDescriptor('f96', '概要', 'link')),
+    ])!;
+    expect(text).toContain('共 4 个可交互元素');
+    expect(text).toContain('跳转后新出现 2 个：f95「管理防火墙规则」、f96「概要」');
+    expect(text).toContain('另有 2 个跳转前就在');
+    expect(text).not.toContain('控制台');
+    expect(text).not.toContain('Hermes Agent');
+  });
+
+  it('新元素超过上限时截断并报数', () => {
+    const fields = Array.from({ length: MAX_LANDING_FIELDS + 3 }, (_, index) => isNew(fieldDescriptor(`f${index + 1}`, `项${index + 1}`)));
+    const text = describeLandingFields([fieldDescriptor('f900', '控制台'), ...fields])!;
+    expect(text).toContain(`跳转后新出现 ${MAX_LANDING_FIELDS + 3} 个`);
+    expect(text).toContain('等，另有 3 个未列出');
+    expect(text).toContain('另有 1 个跳转前就在');
+  });
+
+  it('没有任何元素被标为新出现（整页跳转，旧页面没有可比的基线）：照旧按文档序列出', () => {
+    const text = describeLandingFields([fieldDescriptor('f1', '登录'), fieldDescriptor('f2', '注册')])!;
+    expect(text).toContain('2 个可交互元素：f1「登录」、f2「注册」');
+    expect(text).not.toContain('跳转后新出现');
+  });
+});
+
+describe('describePageLocation', () => {
+  // 第 3 条修复之后，同一文档里改地址不再让句柄失效；已经附上落地页清单时，「fieldId 可能已经失效、
+  // 请重新获取」只会把模型推回去再调一次 get_form（第三份开端口导出 #5/#6、#12/#13）。
+  it('附了落地页清单时说句柄已刷新，不再说可能失效', () => {
+    const text = describePageLocation('https://a/1', 'https://a/2', true, true)!;
+    expect(text).toContain('从 "https://a/1" 跳转到 "https://a/2"');
+    expect(text).toContain('[跳转后页面]');
+    expect(text).not.toContain('可能已经失效');
+  });
+
+  it('没附清单时照旧提醒可能失效', () => {
+    expect(describePageLocation('https://a/1', 'https://a/2', true)).toContain('可能已经失效');
   });
 });
