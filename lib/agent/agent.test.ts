@@ -14,7 +14,7 @@ vi.mock('./tab-form-fields', async () => {
   return { ...actual, getFormFieldsForTab: (...args: unknown[]) => getFormFieldsForTabSpy(...args) };
 });
 
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import type {
   AfterToolCallContext,
   AgentMessage,
@@ -1030,7 +1030,7 @@ describe('执行期遮罩', () => {
 // ref: docs/superpowers/specs/2026-08-31-page-agent-benchmark.md §3.2 —
 // browser_navigate/browser_open_tab 自己的结果文案已经告诉模型跳到哪了；这里只补
 // browser_click / browser_fill_form / browser_type 隐式触发的导航，此前对模型完全不可见。
-describe('隐式导航的 <sys> 观察通道', () => {
+describe('写工具结果里的页面位置', () => {
   function hooksWithSteer(steer: (m: AgentMessage) => void = vi.fn()) {
     return createBrowserAgentOptions({
       provider: baseProvider,
@@ -1042,120 +1042,137 @@ describe('隐式导航的 <sys> 观察通道', () => {
     });
   }
 
-  it('browser_navigate 从自身结果里静默记录基线，不额外查询 URL 也不发观察消息', async () => {
+  /** afterToolCall 追加的那一行；没有追加时返回 undefined。 */
+  function locationLine(result: unknown): string | undefined {
+    const content = (result as { content?: { type: string; text?: string }[] } | undefined)?.content;
+    return content?.find((part) => part.text?.startsWith('[页面位置]'))?.text;
+  }
+
+  async function withBaseline(url = 'https://example.com/a') {
+    const steer = vi.fn();
+    const hooks = hooksWithSteer(steer);
+    await hooks.afterToolCall?.(afterContext('browser_navigate', { url }, false, { url }));
+    return { hooks, steer };
+  }
+
+  it('browser_navigate 从自身结果里静默记录基线，不额外查询 URL', async () => {
     sendMessageSpy.mockClear();
     const steer = vi.fn();
     const hooks = hooksWithSteer(steer);
 
-    await hooks.afterToolCall?.(
+    const result = await hooks.afterToolCall?.(
       afterContext('browser_navigate', { url: 'https://example.com/a' }, false, { url: 'https://example.com/a' }),
     );
 
     expect(sendMessageSpy).not.toHaveBeenCalled();
-    expect(steer).not.toHaveBeenCalled();
+    expect(locationLine(result)).toBeUndefined();
   });
 
-  it('该 tab 还没有基线时，隐式点击只静默记录，不误报"已跳转"', async () => {
+  it('首次写之前在 beforeToolCall 里记下基线，第一次点击就能区分跳没跳', async () => {
+    sendMessageSpy.mockImplementation(async (type: string) =>
+      type === 'GET_TAB_URL' ? { ok: true, data: { url: 'https://example.com/list' } } : { ok: true, data: { isSubmit: false } },
+    );
+    try {
+      const hooks = hooksWithSteer();
+      expect(await hooks.beforeToolCall?.(beforeContext('browser_click', { selector: '#card' }))).toBeUndefined();
+      sendMessageSpy.mockImplementation(async (type: string) =>
+        type === 'GET_TAB_URL' ? { ok: true, data: { url: 'https://example.com/detail' } } : { ok: true, data: {} },
+      );
+      const result = await hooks.afterToolCall?.(afterContext('browser_click', { selector: '#card' }, false));
+      expect(locationLine(result)).toContain('从 "https://example.com/list" 跳转到 "https://example.com/detail"');
+    } finally {
+      sendMessageSpy.mockReset();
+    }
+  });
+
+  it('基线未知时只报当前地址，不声称跳了或没跳', async () => {
     sendMessageSpy.mockResolvedValueOnce({ ok: true, data: { url: 'https://example.com/first' } });
     const steer = vi.fn();
     const hooks = hooksWithSteer(steer);
 
-    await hooks.afterToolCall?.(afterContext('browser_click', { selector: '#a' }, false));
+    const result = await hooks.afterToolCall?.(afterContext('browser_click', { selector: '#a' }, false));
 
+    expect(locationLine(result)).toBe('[页面位置] 当前地址："https://example.com/first"。');
     expect(steer).not.toHaveBeenCalled();
   });
 
-  it('隐式点击导致 URL 变化时，追加一句观察消息并等待页面稳定后才把控制权交还给模型', async () => {
+  it('点击导致 URL 变化时，写进工具结果并等待页面稳定后才把控制权交还给模型', async () => {
     vi.useFakeTimers();
     try {
-      const steer = vi.fn();
-      const hooks = hooksWithSteer(steer);
-      await hooks.afterToolCall?.(
-        afterContext('browser_navigate', { url: 'https://example.com/a' }, false, { url: 'https://example.com/a' }),
-      );
+      const { hooks, steer } = await withBaseline();
       sendMessageSpy.mockResolvedValueOnce({ ok: true, data: { url: 'https://example.com/b' } });
 
       let settled = false;
       const pending = hooks.afterToolCall
         ?.(afterContext('browser_click', { selector: '#a' }, false))
-        .then(() => {
+        .then((result) => {
           settled = true;
+          return result;
         });
 
       await vi.advanceTimersByTimeAsync(0);
       expect(settled).toBe(false);
-      expect(steer).toHaveBeenCalledTimes(1);
-      expect(steer.mock.calls[0][0]).toMatchObject({
-        role: 'user',
-        content: expect.stringContaining('https://example.com/a'),
-      });
-      expect((steer.mock.calls[0][0] as { content: string }).content).toContain('https://example.com/b');
 
       await vi.advanceTimersByTimeAsync(500);
-      await pending;
+      const result = await pending;
       expect(settled).toBe(true);
+      // 原有结果保留在前，位置行追加在后。
+      expect((result as { content: { text: string }[] }).content[0].text).toBe('ok');
+      expect(locationLine(result)).toContain('从 "https://example.com/a" 跳转到 "https://example.com/b"');
+      expect(steer).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it('隐式点击后 URL 未变化则不发观察消息也不等待', async () => {
-    const steer = vi.fn();
-    const hooks = hooksWithSteer(steer);
-    await hooks.afterToolCall?.(
-      afterContext('browser_navigate', { url: 'https://example.com/a' }, false, { url: 'https://example.com/a' }),
-    );
+  it('点击后 URL 未变化：明确说没跳，免得模型再调 browser_get_active_tab，且不等待', async () => {
+    const { hooks } = await withBaseline();
     sendMessageSpy.mockResolvedValueOnce({ ok: true, data: { url: 'https://example.com/a' } });
 
-    await hooks.afterToolCall?.(afterContext('browser_click', { selector: '#a' }, false));
+    const result = await hooks.afterToolCall?.(afterContext('browser_click', { selector: '#a' }, false));
 
-    expect(steer).not.toHaveBeenCalled();
+    expect(locationLine(result)).toContain('地址未变化，仍为 "https://example.com/a"');
+    expect(locationLine(result)).toContain('browser_get_active_tab');
   });
 
-  it('browser_fill_form 与 browser_type 同样纳入隐式导航监听', async () => {
-    const steer = vi.fn();
-    const hooks = hooksWithSteer(steer);
-    await hooks.afterToolCall?.(
-      afterContext('browser_navigate', { url: 'https://example.com/a' }, false, { url: 'https://example.com/a' }),
-    );
+  it('browser_fill_form 与 browser_type 只在地址真的变了时才追加', async () => {
+    const { hooks } = await withBaseline();
+
+    sendMessageSpy.mockResolvedValueOnce({ ok: true, data: { url: 'https://example.com/a' } });
+    const unchanged = await hooks.afterToolCall?.(afterContext('browser_fill_form', { fields: [] }, false));
+    expect(locationLine(unchanged)).toBeUndefined();
 
     sendMessageSpy.mockResolvedValueOnce({ ok: true, data: { url: 'https://example.com/submitted' } });
-    await hooks.afterToolCall?.(afterContext('browser_fill_form', { fields: [] }, false));
-    expect(steer).toHaveBeenCalledTimes(1);
+    const filled = await hooks.afterToolCall?.(afterContext('browser_fill_form', { fields: [] }, false));
+    expect(locationLine(filled)).toContain('https://example.com/submitted');
 
-    steer.mockClear();
     sendMessageSpy.mockResolvedValueOnce({ ok: true, data: { url: 'https://example.com/typed' } });
-    await hooks.afterToolCall?.(afterContext('browser_type', { fieldId: 'f1', text: 'x' }, false));
-    expect(steer).toHaveBeenCalledTimes(1);
+    const typed = await hooks.afterToolCall?.(afterContext('browser_type', { fieldId: 'f1', text: 'x' }, false));
+    expect(locationLine(typed)).toContain('从 "https://example.com/submitted" 跳转到 "https://example.com/typed"');
   });
 
   // browser_press_key 的 Enter 可以像 browser_click 一样触发隐式表单提交，因此必须
-  // 同样纳入 NAVIGATION_WATCH_TOOLS（ref: 最终评审 finding 1）。
-  it('browser_press_key（回车提交）同样纳入隐式导航监听', async () => {
-    const steer = vi.fn();
-    const hooks = hooksWithSteer(steer);
-    await hooks.afterToolCall?.(
-      afterContext('browser_navigate', { url: 'https://example.com/a' }, false, { url: 'https://example.com/a' }),
-    );
+  // 同样纳入 NAVIGATION_WATCH_TOOLS（ref: 最终评审 finding 1），并且没跳也要说。
+  it('browser_press_key（回车提交）与点击同样处理', async () => {
+    const { hooks } = await withBaseline();
 
     sendMessageSpy.mockResolvedValueOnce({ ok: true, data: { url: 'https://example.com/pressed' } });
-    await hooks.afterToolCall?.(afterContext('browser_press_key', { fieldId: 'f1', key: 'Enter' }, false));
-    expect(steer).toHaveBeenCalledTimes(1);
-    expect(steer.mock.calls[0][0]).toMatchObject({
-      role: 'user',
-      content: expect.stringContaining('https://example.com/pressed'),
-    });
+    const pressed = await hooks.afterToolCall?.(afterContext('browser_press_key', { fieldId: 'f1', key: 'Enter' }, false));
+    expect(locationLine(pressed)).toContain('https://example.com/pressed');
+
+    sendMessageSpy.mockResolvedValueOnce({ ok: true, data: { url: 'https://example.com/pressed' } });
+    const again = await hooks.afterToolCall?.(afterContext('browser_press_key', { fieldId: 'f1', key: 'Enter' }, false));
+    expect(locationLine(again)).toContain('地址未变化');
   });
 
-  it('工具执行失败时不查询 URL、也不产生观察消息', async () => {
+  it('工具执行失败时不查询 URL、也不追加位置', async () => {
     sendMessageSpy.mockClear();
-    const steer = vi.fn();
-    const hooks = hooksWithSteer(steer);
+    const hooks = hooksWithSteer();
 
-    await hooks.afterToolCall?.(afterContext('browser_click', { selector: '#a' }, true));
+    const result = await hooks.afterToolCall?.(afterContext('browser_click', { selector: '#a' }, true));
 
     expect(sendMessageSpy).not.toHaveBeenCalled();
-    expect(steer).not.toHaveBeenCalled();
+    expect(locationLine(result)).toBeUndefined();
   });
 });
 
@@ -1463,10 +1480,13 @@ describe('多标签页：session 可选，且遮罩跟随当前操作目标', ()
   });
 
   it('检测到的表单提交每次确认，不受目标 tab 或既有批准影响', async () => {
-    sendMessageSpy
-      .mockResolvedValueOnce({ ok: true, data: { isSubmit: true } })
-      .mockResolvedValueOnce({ ok: true, data: { isSubmit: true } })
-      .mockResolvedValueOnce({ ok: true, data: { isSubmit: true } });
+    // 按消息类型应答：批准后的点击还会查一次 GET_TAB_URL 记基线，按顺序排的 once 值会被它吃掉。
+    sendMessageSpy.mockImplementation(async (type: string) =>
+      type === 'GET_TAB_URL' ? { ok: true, data: { url: 'https://example.com/' } } : { ok: true, data: { isSubmit: true } },
+    );
+    onTestFinished(() => {
+      sendMessageSpy.mockReset();
+    });
     const session = createTabSession(1);
     const onConfirm = vi.fn().mockResolvedValue(true);
     const hooks = createBrowserAgentOptions({

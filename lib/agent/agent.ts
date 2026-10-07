@@ -32,6 +32,7 @@ import { isChildFrameHandle } from './fill-form-request';
 import { createAgentToolPolicy } from './tool-policy';
 import { isPageLocationTool } from './task-trajectory';
 import { describeToolActivity } from './activity-description';
+import { describePageLocation } from './action-result-text';
 import { recordPerfContext } from './perf-trace';
 import {
   CONTEXT_RECUT_TARGET_CHARS,
@@ -66,6 +67,12 @@ export const CONTEXT_RECUT_TARGET = 32;
  * （ref: docs/superpowers/specs/2026-08-31-page-agent-benchmark.md §3.2）。
  */
 const NAVIGATION_WATCH_TOOLS = new Set(['browser_click', 'browser_fill_form', 'browser_type', 'browser_press_key']);
+/**
+ * 这两个工具即使地址没变也要在结果里写明当前地址：点击和按键最常隐式导航，模型拿不到
+ * "没跳"这个信号时会自己再调一次 browser_get_active_tab 去确认（2026-10-07 开端口任务里
+ * 一次运行调了 4 次）。fill_form/type 极少导航，只在真的变了时才提示，省得每次写都多一行。
+ */
+const ALWAYS_REPORT_LOCATION_TOOLS = new Set(['browser_click', 'browser_press_key']);
 const POST_NAVIGATION_SETTLE_MS = 500;
 const IMPLEMENTATION_DOSSIER_TOOL = 'browser_inspect_page_implementation';
 const MAX_POST_DOSSIER_FOLLOW_UPS = 4;
@@ -390,6 +397,12 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
           session.currentTabId,
         );
         overlayTabId = session.currentTabId;
+        // 记下写之前的地址，afterToolCall 才能区分"跳走了"和"没动"。只在还不知道时查一次：
+        // 之后每次写完 afterToolCall 都会刷新它。放在最后，被前面任何一道闸拦下的调用不必多查。
+        if (NAVIGATION_WATCH_TOOLS.has(context.toolCall.name) && !lastKnownUrl.has(session.currentTabId)) {
+          const url = await fetchTabUrl(session.currentTabId);
+          if (url) lastKnownUrl.set(session.currentTabId, url);
+        }
         return undefined;
       }
       return undefined;
@@ -407,10 +420,11 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
       if (!context.isError && HANDLE_PRODUCING_TOOLS.has(toolName)) handleCollectedThisRun = true;
       if (toolName === 'ask_user') askedUserThisRun = true;
 
+      let locationNote: string | undefined;
       if (!context.isError) {
         // browser_go_back 与 browser_navigate 同属"自己就知道退/跳到哪"的一类：结果里
         // 已经带回了落地 URL（NavigateHistoryResult.url），直接记账即可。漏掉它会让后退
-        // 之后的下一次写工具拿旧 URL 去比对，凭空多发一条"页面地址已变化"的 steer
+        // 之后的下一次写工具拿旧 URL 去比对，凭空在结果里多报一次"地址已变化"
         // （ref: 2026-09-05 final review Important #5）。
         if (toolName === 'browser_navigate' || toolName === 'browser_open_tab' || toolName === 'browser_go_back') {
           const url = (context.result.details as { url?: string } | undefined)?.url;
@@ -419,12 +433,10 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
           const newUrl = await fetchTabUrl(session.currentTabId);
           if (newUrl) {
             const previousUrl = lastKnownUrl.get(session.currentTabId);
+            // 写进工具结果本身，而不是另发一条 steer：模型读结果时就能看到落在哪，
+            // 不必再调 browser_get_active_tab 确认。
+            locationNote = describePageLocation(previousUrl, newUrl, ALWAYS_REPORT_LOCATION_TOOLS.has(toolName));
             if (previousUrl !== undefined && previousUrl !== newUrl) {
-              options.steer({
-                role: 'user',
-                content: `[系统观察] 页面地址已变化：从 "${previousUrl}" 跳转到 "${newUrl}"。页面可能仍在加载，原有的元素/表单状态可能已经失效，请视情况重新获取页面信息。`,
-                timestamp: Date.now(),
-              });
               await sleep(POST_NAVIGATION_SETTLE_MS);
             }
             lastKnownUrl.set(session.currentTabId, newUrl);
@@ -471,7 +483,9 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
         // 收尾来得毫无征兆。两个阈值（剩 5 / 剩 2）各触发一次，不是持续刷新的进度条。
         options.onBudgetLow?.(policy.remaining);
       }
-      return undefined;
+      return locationNote
+        ? { content: [...context.result.content, { type: 'text', text: locationNote }] }
+        : undefined;
     },
     prepareNextTurnWithContext: async (context) => {
       const budgetExhausted = policy.exhausted;
