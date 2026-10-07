@@ -272,6 +272,11 @@ export default function App() {
   }
 
   const hasRunningActivityStep = activitySteps.some((step) => step.status === 'running');
+  // 运行中的步骤直接画进最后一条助手消息里，也就是这一轮结束后存档版（"查看 N 步"）所在的位置：
+  // 结束时只是原地折起来，而不是从气泡外的一块列表"跳"进气泡里。确认卡/提问卡挂起时照旧藏起来，
+  // 让人只盯着那张卡。最后一条还不是助手消息（快照尚未带上占位）时退回气泡外单独渲染。
+  const showLiveSteps = activitySteps.length > 0 && !pendingConfirmation && !pendingQuestion;
+  const liveStepsInBubble = showLiveSteps && busy && messages.at(-1)?.role === 'assistant';
 
   // header 常驻状态：优先说正在做的那一步，没有工具在跑（例如还在等首个 token）就说"思考中"。
   // 不用 findLast：目标环境未必有，手写倒序查一次更省事也更明确。
@@ -371,12 +376,11 @@ export default function App() {
                       onSubmitEdit={submitEdit}
                       onRegenerate={handleRegenerate}
                       onSaveTask={handleSaveTask}
+                      liveSteps={liveStepsInBubble && i === messages.length - 1 ? activitySteps : undefined}
                     />
                   ))
                 )}
-                {activitySteps.length > 0 && !pendingConfirmation && !pendingQuestion && (
-                  <ActivityStepList steps={activitySteps} />
-                )}
+                {showLiveSteps && !liveStepsInBubble && <ActivityStepList steps={activitySteps} />}
                 {pendingConfirmation && (
                   <ConfirmationCard
                     confirmation={pendingConfirmation}
@@ -493,6 +497,7 @@ const Message = memo(function Message({
   onSubmitEdit,
   onRegenerate,
   onSaveTask,
+  liveSteps,
 }: {
   message: UIMessage;
   busy: boolean;
@@ -508,6 +513,8 @@ const Message = memo(function Message({
   onSubmitEdit: (id: string, content: string) => void;
   onRegenerate: (id: string) => void;
   onSaveTask: (id: string) => void;
+  /** 本轮运行中的实时步骤；只有正在运行的最后一条助手消息会拿到。 */
+  liveSteps?: ActivityStep[];
 }) {
   const { t } = useTranslation();
   const { role, content } = message;
@@ -586,6 +593,8 @@ const Message = memo(function Message({
   // 非 busy 且无内容时整行都不渲染，避免出现「一个头像 + 一张空卡片」。
   // busy && !content（当前这一轮还没收到首个 token）必须继续走下面的 TypingDots 分支。
   if (!busy && !content) return null;
+  // 有工具正在跑时，步骤列表里闪烁的"进行中"那一行已经是等待反馈，不再叠一个 TypingDots。
+  const liveStepRunning = liveSteps?.some((step) => step.status === 'running') ?? false;
   return (
     <div className="group flex gap-3">
       <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-neutral-900 text-[11px] font-bold text-white dark:bg-neutral-800">
@@ -604,7 +613,7 @@ const Message = memo(function Message({
         )}
         {content ? (
           <MarkdownBlock content={content} />
-        ) : busy && !(isLastMessage && message.reasoning?.length) ? (
+        ) : busy && !liveStepRunning && !(isLastMessage && message.reasoning?.length) ? (
           // 正在流式输出推理时，"思考中…"标题已经是等待反馈，不再叠一个 TypingDots。
           <TypingDots />
         ) : null}
@@ -646,8 +655,14 @@ const Message = memo(function Message({
             <span>{t('chat.contextTruncatedNotice')}</span>
           </div>
         )}
-        {message.activitySteps && message.activitySteps.length > 0 && (
-          <ArchivedActivitySteps steps={message.activitySteps} />
+        {liveSteps && liveSteps.length > 0 ? (
+          <div className={content || message.reasoning?.length ? 'mt-2' : undefined}>
+            <ActivityStepList steps={liveSteps} />
+          </div>
+        ) : (
+          message.activitySteps && message.activitySteps.length > 0 && (
+            <ArchivedActivitySteps steps={message.activitySteps} />
+          )
         )}
         {content && (!busy || !isLastMessage) && (
           <div className="mt-2 flex items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">

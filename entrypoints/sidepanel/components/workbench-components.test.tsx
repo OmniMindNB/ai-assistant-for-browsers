@@ -785,16 +785,43 @@ describe('workbench composer', () => {
     expect(trigger).toHaveAttribute('title', 'Configured provider · model-one');
   });
 
-  // 快捷指令多时横向滚动会把后面的胶囊裁没，用户根本看不到（2026-09-07 反馈）。
-  // 改为整条工具条折行：模型选择器和胶囊挤满第一行后，多出来的胶囊掉到第二行、贴左对齐。
-  it('工具条允许折行，快捷指令不会被裁切', () => {
+  // 快捷指令多时横向滚动会把后面的胶囊裁没（2026-09-07 反馈），整条折行又让输入框随侧栏宽度上下跳。
+  // 现在只占一行，放不下的收进"+N"，点开就是 / 面板。
+  it('胶囊只占一行，放不下的收进 +N，点开是 / 面板', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(Element.prototype, 'clientWidth', 'get').mockImplementation(function (this: Element) {
+      return this.getAttribute('data-testid') === 'composer-shortcuts' ? 254 : 0;
+    });
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.hasAttribute('data-chip') ? 100 : 0;
+    });
+    render(<ComposerHarness shortcuts={emptyStateShortcuts} />);
+
+    const row = screen.getByTestId('composer-shortcuts');
+    expect(row).toHaveClass('flex-nowrap', 'overflow-hidden');
+    expect(row).not.toHaveClass('flex-wrap');
+    // 250 可用：40（+N）+ 2×(100+8) = 256 放不下，只留 1 个，其余 4 个收起。
+    expect(within(row).getByRole('button', { name: emptyStateShortcuts[0].resolved.name })).toBeVisible();
+    expect(within(row).queryByRole('button', { name: emptyStateShortcuts[1].resolved.name })).toBeNull();
+
+    const more = within(row).getByRole('button', { name: '4 more shortcuts' });
+    expect(more).toHaveTextContent('+4');
+    await user.click(more);
+    const menu = screen.getByRole('menu', { name: 'Slash commands' });
+    // 被收起的指令在面板里都找得到。
+    for (const { resolved } of emptyStateShortcuts) {
+      expect(within(menu).getByRole('menuitem', { name: resolved.name })).toBeInTheDocument();
+    }
+    await user.click(more);
+    expect(screen.queryByRole('menu', { name: 'Slash commands' })).not.toBeInTheDocument();
+  });
+
+  it('模型选择器在输入框底栏里，不在胶囊行', () => {
     render(<ComposerHarness providers={[configuredProvider]} selectedProviderId={configuredProvider.id} selectedModel="model-one" />);
 
-    expect(screen.getByTestId('composer-toolbar')).toHaveClass('flex-wrap');
-    // composer-shortcuts 不再单独占一个滚动盒子，胶囊直接是 toolbar 的 flex 子项，
-    // 才能和模型选择器一起参与同一次折行计算。
-    expect(screen.getByTestId('composer-shortcuts')).not.toHaveClass('overflow-x-auto');
-    expect(screen.getByTestId('composer-toolbar')).not.toHaveClass('overflow-x-auto');
+    const trigger = screen.getByRole('button', { name: 'Select provider and model' });
+    expect(screen.getByTestId('composer-drop-zone')).toContainElement(trigger);
+    expect(screen.getByTestId('composer-shortcuts')).not.toContainElement(trigger);
   });
 
   // 曾经只渲染前 4 条，设置页有 5 条时第 5 条在侧边栏里凭空消失，用户只能靠 / 面板找到它
@@ -811,7 +838,10 @@ describe('workbench composer', () => {
     const user = userEvent.setup();
     render(<ComposerHarness providers={[configuredProvider]} selectedProviderId={configuredProvider.id} selectedModel="model-one" />);
     await user.click(screen.getByRole('button', { name: 'Select provider and model' }));
-    expect(screen.getByRole('menu', { name: 'Model selection' })).toHaveClass('left-3', 'right-3', 'w-auto', 'max-w-[calc(100%-1.5rem)]');
+    // 菜单锚在输入框（drop zone）上，左右与它对齐。
+    const menu = screen.getByRole('menu', { name: 'Model selection' });
+    expect(menu).toHaveClass('left-0', 'right-0');
+    expect(screen.getByTestId('composer-drop-zone')).toContainElement(menu);
   });
 
   it('closes an open model menu when focus leaves the composer', async () => {
@@ -849,9 +879,7 @@ describe('workbench composer', () => {
     await waitFor(() => expect(screen.getByRole('menuitem', { name: 'model-one' })).toHaveFocus());
     await user.keyboard('{ArrowDown}');
     await waitFor(() => expect(screen.getByRole('menuitem', { name: 'model-two' })).toHaveFocus());
-    await user.tab();
-    await user.tab();
-    await user.tab();
+    // 菜单是输入框里最后一个可聚焦块，下一次 Tab 就离开 composer。
     await user.tab();
 
     expect(screen.getByRole('button', { name: 'Outside composer' })).toHaveFocus();
@@ -1299,6 +1327,40 @@ describe('activity step list', () => {
     );
 
     expect(screen.queryByLabelText('Generating')).toBeNull();
+  });
+
+  // 运行中的步骤画在最后一条助手消息里，也就是结束后"查看 N 步"所在的位置，收尾时原地折起而不是换位置。
+  it('renders live activity steps inside the running assistant message', () => {
+    (chatStore as any).messages = [
+      { id: 'm1', role: 'user', content: 'Do something', createdAt: 1 },
+      { id: 'm2', role: 'assistant', content: 'Working on it', createdAt: 2 },
+    ];
+    (chatStore as any).busy = true;
+    (chatStore as any).activitySteps = [{ id: 'call-1', description: 'Clicking "button.buy"', status: 'running' }];
+    (chatStore as any).pendingConfirmation = null;
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    const list = screen.getByRole('list', { name: 'Execution steps' });
+    expect(screen.getAllByRole('list', { name: 'Execution steps' })).toHaveLength(1);
+    expect(list.closest('.group')).toHaveTextContent('Working on it');
+  });
+
+  it('falls back to a standalone step list when the last message is not an assistant reply', () => {
+    (chatStore as any).messages = [{ id: 'm1', role: 'user', content: 'Do something', createdAt: 1 }];
+    (chatStore as any).busy = true;
+    (chatStore as any).activitySteps = [{ id: 'call-1', description: 'Clicking "button.buy"', status: 'running' }];
+    (chatStore as any).pendingConfirmation = null;
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    expect(screen.getByRole('list', { name: 'Execution steps' })).toBeVisible();
   });
 
   it('renders a success badge with the reported reason as a tooltip', () => {

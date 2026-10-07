@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type DragEvent,
@@ -10,6 +11,7 @@ import { useTranslation } from '@/lib/i18n';
 import { providerModels, type ProviderConfig } from '@/lib/settings';
 import type { ShortcutConfig, ResolvedShortcut } from '@/lib/shortcuts';
 import { filterShortcutCommands, isUsableShortcutCommand } from '@/lib/workbench/presentation';
+import { fitChipCount } from '@/lib/workbench/chip-overflow';
 import type { PageContextState, TabReference } from '../store';
 import {
   hasBusyAttachments,
@@ -54,6 +56,12 @@ export interface WorkbenchComposerProps {
 }
 
 type Popover = 'commands' | 'models' | 'insert' | 'tabs' | null;
+
+/** "+N" 按钮的固定宽度（w-10）与胶囊间距（gap-2），供 fitChipCount 计算；改样式时同步改这里。 */
+const MORE_CHIP_WIDTH_PX = 40;
+const CHIP_GAP_PX = 8;
+/** 胶囊行的 p-0.5 左右内边距之和：留给焦点环，不能算进可用宽度。 */
+const CHIP_ROW_PADDING_PX = 4;
 
 function startsSlashCommand(input: string): boolean {
   return input.trim().startsWith('/');
@@ -125,6 +133,25 @@ export function WorkbenchComposer({
   // 于是设置页里排第 5 的快捷指令在侧边栏凭空消失，只能靠 / 面板找回来。
   // 录制型指令只进 / 面板：存上十几条，胶囊栏就被挤满了。
   const quickShortcuts = shortcuts.filter((command) => isUsableShortcutCommand(command) && command.config.origin !== 'recorded');
+  const chipsRowRef = useRef<HTMLDivElement>(null);
+  const [visibleChipCount, setVisibleChipCount] = useState(Number.POSITIVE_INFINITY);
+  const chipsKey = quickShortcuts.map(({ config, resolved }) => `${config.id}:${resolved.name}`).join('\n');
+
+  // 量出这一行放得下几个胶囊。在 layout 阶段算，首帧就不会先画满再收起来闪一下；
+  // 侧栏拖宽拖窄时由 ResizeObserver 重算（jsdom 没有它，量出来的宽度也都是 0，此时全部显示）。
+  useLayoutEffect(() => {
+    const row = chipsRowRef.current;
+    if (!row) return;
+    const measure = () => {
+      const widths = Array.from(row.querySelectorAll<HTMLElement>('[data-chip]'), (chip) => chip.offsetWidth);
+      setVisibleChipCount(fitChipCount(widths, row.clientWidth - CHIP_ROW_PADDING_PX, MORE_CHIP_WIDTH_PX, CHIP_GAP_PX));
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, [chipsKey]);
 
   // @ 提及必须按光标定位，不能照抄 / 的整串前缀判断——@ 会出现在句子中间。
   const syncMention = (value: string, caret: number) => {
@@ -294,6 +321,15 @@ export function WorkbenchComposer({
     setHighlightedCommand(0);
     setOpenPopover('commands');
     requestAnimationFrame(() => textareaRef.current?.focus());
+  }
+
+  // 胶囊行尾的"+N"：打开的就是 / 面板，里面列着全部指令（含被收起的那几个）。再点一次关上。
+  function toggleSlashCommands() {
+    if (openPopover === 'commands') {
+      setOpenPopover(null);
+      return;
+    }
+    chooseSlashCommands();
   }
 
   function chooseAttachFile() {
@@ -501,86 +537,57 @@ export function WorkbenchComposer({
             </button>
           </div>
         )}
-        {/* 工具条允许折行：横向滚动虽然能保持输入框位置固定，但把后面的快捷指令胶囊
-            裁没了，用户根本发现不了还有更多（2026-09-07 反馈）。改为整条工具条折行，
-            模型选择器和胶囊挤满第一行后，多出来的胶囊掉到第二行、贴左对齐——
-            代价是侧栏宽度变化时工具条可能在一行/两行间跳动，把输入框顶上顶下，
-            但这比"内容看不见"更可接受。 */}
-        <div data-testid="composer-toolbar" className="mb-2 flex flex-wrap items-center gap-2">
-          {providers.length > 0 && (
-            <div className="shrink-0">
+        {/* 快捷指令只占一行（见 lib/workbench/chip-overflow.ts）：横向滚动会把后面的胶囊裁没
+            （2026-09-07 反馈），整条折行又让输入框随侧栏宽度上下跳。放不下的收进行尾的"+N"，
+            点开就是 / 面板，被收起的数量始终看得见。模型选择器挪进了输入框底栏，不再和胶囊抢这一行。 */}
+        {quickShortcuts.length > 0 && (
+          <div
+            ref={chipsRowRef}
+            data-testid="composer-shortcuts"
+            className="relative mb-1.5 flex min-w-0 flex-nowrap items-center gap-2 overflow-hidden p-0.5"
+          >
+            {quickShortcuts.map(({ config, resolved }, index) => {
+              // 放不下的胶囊不卸载，而是脱离文档流并隐藏：这样下次侧栏变宽时还能量到它的宽度。
+              const overflowed = index >= visibleChipCount;
+              return (
+                <button
+                  key={config.id}
+                  data-chip=""
+                  type="button"
+                  disabled={requestBlocked}
+                  aria-hidden={overflowed || undefined}
+                  tabIndex={overflowed ? -1 : undefined}
+                  onClick={() => {
+                    // 工具条上的普通指令随时可点；点了就不再需要那个挂起的录制任务胶囊了。
+                    setPendingTask(null);
+                    onRunShortcut(config);
+                  }}
+                  aria-label={resolved.name}
+                  title={resolved.name}
+                  className={`inline-flex max-w-40 shrink-0 items-center rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white ${
+                    overflowed ? 'pointer-events-none invisible absolute' : ''
+                  }`}
+                >
+                  <span className="truncate">{resolved.name}</span>
+                </button>
+              );
+            })}
+            {visibleChipCount < quickShortcuts.length && (
               <button
-                ref={modelTriggerRef}
-                type="button"
-                onClick={() => setOpenPopover((open) => (open === 'models' ? null : 'models'))}
-                onKeyDown={handleModelTriggerKeyDown}
-                aria-label={t('chat.selectProviderModelAriaLabel')}
-                aria-haspopup="menu"
-                aria-expanded={openPopover === 'models'}
-                aria-controls={openPopover === 'models' ? 'workbench-model-menu' : undefined}
-                title={modelTriggerTitle}
-                className="inline-flex max-w-[60vw] shrink-0 items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
-              >
-                {/* provider 名不上触发器：下拉里每个分组标题都写着它，重复一遍只是在窄侧栏里吃宽度。 */}
-                <span className="truncate font-medium text-neutral-700 dark:text-neutral-200">{modelLabel}</span>
-                <IconChevronDown className="h-3.5 w-3.5 shrink-0 text-neutral-400 dark:text-neutral-500" />
-              </button>
-              {openPopover === 'models' && (
-                <div id="workbench-model-menu" role="menu" aria-label={t('chat.modelSelectionAriaLabel')} className="absolute bottom-full left-3 right-3 z-20 mb-2 max-h-72 w-auto max-w-[calc(100%-1.5rem)] overflow-auto rounded-xl border border-neutral-200 bg-white p-1 shadow-lg dark:border-neutral-800 dark:bg-neutral-900">
-                  {providers.map((provider) => (
-                    <div key={provider.id} className="py-1">
-                      <div className="px-2 py-1 text-xs font-medium text-neutral-400 dark:text-neutral-500">{provider.name}</div>
-                      {providerModels(provider).map((model) => {
-                        const active = provider.id === selectedProviderId && model === currentModel;
-                        const optionIndex = modelOptions.findIndex((option) => option.provider.id === provider.id && option.model === model);
-                        return (
-                          <button
-                            key={model}
-                            ref={(element) => {
-                              modelItemRefs.current[optionIndex] = element;
-                            }}
-                            type="button"
-                            role="menuitem"
-                            onKeyDown={(event) => handleModelItemKeyDown(event, optionIndex)}
-                            onClick={() => selectModel(optionIndex)}
-                            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-neutral-200 dark:hover:bg-neutral-800"
-                          >
-                            <span className="flex h-4 w-4 shrink-0 items-center justify-center">{active && <IconCheck className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />}</span>
-                            <span className="truncate">{model}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* display:contents：胶囊要作为 composer-toolbar 的直接 flex 子项参与折行，
-              而不是被关在自己的盒子里各自换行——那样第二行会顶着模型选择器的宽度缩进，
-              而不是贴到最左边。这个 div 只用来保留 quickShortcuts.map 的 key 分组和测试用的 testid。 */}
-          <div data-testid="composer-shortcuts" className="contents">
-            {quickShortcuts.map(({ config, resolved }) => (
-              <button
-                key={config.id}
                 type="button"
                 disabled={requestBlocked}
-                onClick={() => {
-                  // 工具条上的普通指令随时可点；点了就不再需要那个挂起的录制任务胶囊了。
-                  setPendingTask(null);
-                  onRunShortcut(config);
-                }}
-                aria-label={resolved.name}
-                title={resolved.name}
-                className="inline-flex max-w-40 shrink-0 items-center rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
+                onClick={toggleSlashCommands}
+                aria-label={t('workbench.moreShortcuts', { count: String(quickShortcuts.length - visibleChipCount) })}
+                title={t('workbench.moreShortcuts', { count: String(quickShortcuts.length - visibleChipCount) })}
+                aria-haspopup="menu"
+                aria-expanded={openPopover === 'commands'}
+                className="inline-flex h-[26px] w-10 shrink-0 items-center justify-center rounded-full border border-neutral-200 bg-white text-xs tabular-nums text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
               >
-                <span className="truncate">{resolved.name}</span>
+                +{quickShortcuts.length - visibleChipCount}
               </button>
-            ))}
+            )}
           </div>
-        </div>
-
+        )}
 
         {quotedSelection && (
           <div
@@ -630,7 +637,7 @@ export function WorkbenchComposer({
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          className={`relative flex items-end gap-2 rounded-2xl border p-2 shadow-sm transition-colors focus-within:ring-2 focus-within:ring-indigo-500/30 ${
+          className={`relative flex flex-col gap-1 rounded-2xl border p-2 shadow-sm transition-colors focus-within:ring-2 focus-within:ring-indigo-500/30 ${
             fileDragActive
               ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-500/30 dark:border-indigo-400 dark:bg-indigo-950/40'
               : 'border-neutral-300 bg-white focus-within:border-indigo-500 dark:border-neutral-700 dark:bg-neutral-900'
@@ -651,47 +658,6 @@ export function WorkbenchComposer({
               event.target.value = '';
             }}
           />
-          <button
-            type="button"
-            disabled={requestBlocked}
-            onClick={toggleInsertMenu}
-            aria-label={t('workbench.insertMenuAriaLabel')}
-            title={t('workbench.insertMenuAriaLabel')}
-            aria-haspopup="menu"
-            aria-expanded={openPopover === 'insert'}
-            aria-controls={openPopover === 'insert' ? 'workbench-insert-menu' : undefined}
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
-          >
-            <IconPlus className="h-5 w-5" />
-          </button>
-          {openPopover === 'insert' && (
-            <div
-              id="workbench-insert-menu"
-              role="menu"
-              aria-label={t('workbench.insertMenuAriaLabel')}
-              className="absolute bottom-full left-0 z-20 mb-2 w-48 overflow-hidden rounded-xl border border-neutral-200 bg-white p-1 shadow-lg dark:border-neutral-800 dark:bg-neutral-900"
-            >
-              <button
-                type="button"
-                role="menuitem"
-                onClick={chooseSlashCommands}
-                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-neutral-200 dark:hover:bg-neutral-800"
-              >
-                <span aria-hidden="true" className="flex h-4 w-4 shrink-0 items-center justify-center text-sm font-semibold text-neutral-500 dark:text-neutral-400">/</span>
-                <span className="truncate">{t('chat.slashCommandMenuAriaLabel')}</span>
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                disabled={busy}
-                onClick={chooseAttachFile}
-                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:text-neutral-200 dark:hover:bg-neutral-800"
-              >
-                <IconPaperclip className="h-4 w-4 shrink-0 text-neutral-500 dark:text-neutral-400" />
-                <span className="truncate">{t('workbench.attachButtonLabel')}</span>
-              </button>
-            </div>
-          )}
           <textarea
             ref={textareaRef}
             value={input}
@@ -715,16 +681,110 @@ export function WorkbenchComposer({
                   ? t('workbench.pendingTaskPlaceholder')
                   : t('workbench.composerPlaceholder')
             }
-            className="max-h-40 min-h-[40px] flex-1 resize-none bg-transparent px-2 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none dark:text-neutral-100 dark:placeholder:text-neutral-600"
+            className="max-h-40 min-h-[36px] w-full resize-none bg-transparent px-2 py-1.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none dark:text-neutral-100 dark:placeholder:text-neutral-600"
           />
-          {busy ? (
-            <button type="button" onClick={onStop} aria-label={t('chat.stopGenerating')} title={t('chat.stopGenerating')} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-neutral-900 text-white transition-colors hover:bg-neutral-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:bg-neutral-700 dark:hover:bg-neutral-600">
-              <IconStop className="h-5 w-5" />
+          {/* 底栏：添加内容 / 模型 / 发送。模型选择器从输入框上方的工具条挪进来（与 Claude、
+              ChatGPT 的输入框一致），省掉一整行，也不再和快捷指令胶囊抢同一行的宽度。 */}
+          <div className="flex min-w-0 items-center gap-1">
+            <button
+              type="button"
+              disabled={requestBlocked}
+              onClick={toggleInsertMenu}
+              aria-label={t('workbench.insertMenuAriaLabel')}
+              title={t('workbench.insertMenuAriaLabel')}
+              aria-haspopup="menu"
+              aria-expanded={openPopover === 'insert'}
+              aria-controls={openPopover === 'insert' ? 'workbench-insert-menu' : undefined}
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
+            >
+              <IconPlus className="h-5 w-5" />
             </button>
-          ) : (
-            <button type="button" onClick={() => void handleSend()} disabled={!canSend} aria-label={t('chat.sendMessage')} title={t('chat.sendMessage')} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white transition-colors hover:bg-indigo-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-400 dark:disabled:bg-neutral-800 dark:disabled:text-neutral-600">
-              <IconSend className="h-5 w-5" />
-            </button>
+            {openPopover === 'insert' && (
+              <div
+                id="workbench-insert-menu"
+                role="menu"
+                aria-label={t('workbench.insertMenuAriaLabel')}
+                className="absolute bottom-full left-0 z-20 mb-2 w-48 overflow-hidden rounded-xl border border-neutral-200 bg-white p-1 shadow-lg dark:border-neutral-800 dark:bg-neutral-900"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={chooseSlashCommands}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                >
+                  <span aria-hidden="true" className="flex h-4 w-4 shrink-0 items-center justify-center text-sm font-semibold text-neutral-500 dark:text-neutral-400">/</span>
+                  <span className="truncate">{t('chat.slashCommandMenuAriaLabel')}</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={busy}
+                  onClick={chooseAttachFile}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                >
+                  <IconPaperclip className="h-4 w-4 shrink-0 text-neutral-500 dark:text-neutral-400" />
+                  <span className="truncate">{t('workbench.attachButtonLabel')}</span>
+                </button>
+              </div>
+            )}
+            {providers.length > 0 && (
+              <button
+                ref={modelTriggerRef}
+                type="button"
+                onClick={() => setOpenPopover((open) => (open === 'models' ? null : 'models'))}
+                onKeyDown={handleModelTriggerKeyDown}
+                aria-label={t('chat.selectProviderModelAriaLabel')}
+                aria-haspopup="menu"
+                aria-expanded={openPopover === 'models'}
+                aria-controls={openPopover === 'models' ? 'workbench-model-menu' : undefined}
+                title={modelTriggerTitle}
+                className="inline-flex min-w-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
+              >
+                {/* provider 名不上触发器：下拉里每个分组标题都写着它，重复一遍只是在窄侧栏里吃宽度。 */}
+                <span className="truncate font-medium">{modelLabel}</span>
+                <IconChevronDown className="h-3.5 w-3.5 shrink-0 text-neutral-400 dark:text-neutral-500" />
+              </button>
+            )}
+            <div className="ml-auto shrink-0">
+              {busy ? (
+                <button type="button" onClick={onStop} aria-label={t('chat.stopGenerating')} title={t('chat.stopGenerating')} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-neutral-900 text-white transition-colors hover:bg-neutral-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:bg-neutral-700 dark:hover:bg-neutral-600">
+                  <IconStop className="h-5 w-5" />
+                </button>
+              ) : (
+                <button type="button" onClick={() => void handleSend()} disabled={!canSend} aria-label={t('chat.sendMessage')} title={t('chat.sendMessage')} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white transition-colors hover:bg-indigo-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-400 dark:disabled:bg-neutral-800 dark:disabled:text-neutral-600">
+                  <IconSend className="h-5 w-5" />
+                </button>
+              )}
+            </div>
+          </div>
+          {openPopover === 'models' && (
+            <div id="workbench-model-menu" role="menu" aria-label={t('chat.modelSelectionAriaLabel')} className="absolute bottom-full left-0 right-0 z-20 mb-2 max-h-72 overflow-auto rounded-xl border border-neutral-200 bg-white p-1 shadow-lg dark:border-neutral-800 dark:bg-neutral-900">
+              {providers.map((provider) => (
+                <div key={provider.id} className="py-1">
+                  <div className="px-2 py-1 text-xs font-medium text-neutral-400 dark:text-neutral-500">{provider.name}</div>
+                  {providerModels(provider).map((model) => {
+                    const active = provider.id === selectedProviderId && model === currentModel;
+                    const optionIndex = modelOptions.findIndex((option) => option.provider.id === provider.id && option.model === model);
+                    return (
+                      <button
+                        key={model}
+                        ref={(element) => {
+                          modelItemRefs.current[optionIndex] = element;
+                        }}
+                        type="button"
+                        role="menuitem"
+                        onKeyDown={(event) => handleModelItemKeyDown(event, optionIndex)}
+                        onClick={() => selectModel(optionIndex)}
+                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                      >
+                        <span className="flex h-4 w-4 shrink-0 items-center justify-center">{active && <IconCheck className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />}</span>
+                        <span className="truncate">{model}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
           )}
 
           {openPopover === 'commands' && (

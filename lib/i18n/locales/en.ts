@@ -127,6 +127,7 @@ export const en: Record<keyof typeof zh, string> = {
   'workbench.clearQuotedSelection': 'Clear quote',
   'workbench.attachButtonLabel': 'Add attachment',
   'workbench.insertMenuAriaLabel': 'Add content',
+  'workbench.moreShortcuts': '{count} more shortcuts',
   'workbench.removeAttachmentLabel': 'Remove attachment',
   'workbench.attachmentTruncatedBadge': 'Truncated (too long)',
   'workbench.attachmentLimitReached': 'Up to {max} attachments',
