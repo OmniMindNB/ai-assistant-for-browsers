@@ -100,7 +100,22 @@ export function collectFormFields(
     });
   });
 
-  const INTERACTIVE_ROLES = new Set(['button', 'link', 'tab', 'menuitem', 'checkbox', 'radio', 'switch']);
+  // option / menuitemradio / menuitemcheckbox：自研下拉、菜单弹层里的选项。它们按 ARIA 惯例是
+  // tabindex="-1"（焦点留在 combobox 上，靠 aria-activedescendant 移动），cursor 也常是 default，
+  // 不靠 role 就一个都采不到——2026-10-07 demoqa 的 react-select 点开后结果里一个选项都不列，
+  // 模型连写 4 个脚本找菜单。原生 <option> 没有 role 属性，不受影响（它随所在 <select> 采集）。
+  const INTERACTIVE_ROLES = new Set([
+    'button',
+    'link',
+    'tab',
+    'menuitem',
+    'menuitemradio',
+    'menuitemcheckbox',
+    'option',
+    'checkbox',
+    'radio',
+    'switch',
+  ]);
 
   const hasInteractiveRole = (element: Element): boolean =>
     INTERACTIVE_ROLES.has((element.getAttribute('role') || '').toLowerCase());

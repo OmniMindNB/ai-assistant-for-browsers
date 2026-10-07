@@ -250,6 +250,27 @@ describe('collectFormFields', () => {
     expect(field?.elementText).toBe('展开菜单');
   });
 
+  // 2026-10-07 demoqa 导出 #25–#39：react-select v5 打开后的选项是 role="option" + tabindex="-1"、
+  // cursor: default，挂在 role="listbox" 里（Chrome 实测）——旧的 role 白名单没有 option，点开下拉的
+  // 结果里一个选项都不列，模型连写 4 个脚本找菜单。listbox 一类弹层的选项本来就是点击目标。
+  it('collects role="option" items of an opened custom listbox even with tabindex="-1"', () => {
+    render(`
+      <div id="state">
+        <input role="combobox" aria-expanded="true" aria-controls="react-select-3-listbox" id="react-select-3-input">
+        <div role="listbox" id="react-select-3-listbox">
+          <div role="option" tabindex="-1" id="react-select-3-option-0">NCR</div>
+          <div role="option" tabindex="-1" id="react-select-3-option-1">Haryana</div>
+        </div>
+      </div>
+      <ul role="menu">
+        <li role="menuitemradio" aria-checked="false">升序</li>
+        <li role="menuitemcheckbox" aria-checked="true">显示隐藏列</li>
+      </ul>
+    `);
+    const texts = collectFormFields(INPUT).raws.filter((raw) => raw.interactive).map((raw) => raw.elementText);
+    expect(texts).toEqual(['NCR', 'Haryana', '升序', '显示隐藏列']);
+  });
+
   it('ignores a div with tabindex="-1" (explicitly not focusable)', () => {
     render(`<div tabindex="-1">仅用于程序聚焦</div>`);
     const field = collectFormFields(INPUT).raws.find((raw) => raw.tag === 'div');
