@@ -152,8 +152,7 @@ describe('describeToolActivity', () => {
   });
 
   it('falls back to the plain tool label for no-arg tools, appending a failure suffix when failed', () => {
-    expect(describeToolActivity('browser_get_active_tab', {}, 'running')).toBe('Get active tab');
-    expect(describeToolActivity('browser_get_active_tab', {}, 'failed')).toBe('Get active tab failed');
+    expect(describeToolActivity('browser_read_page', {}, 'failed')).toBe('Read page failed');
     expect(describeToolActivity('browser_read_page', {}, 'running')).toBe('Read page');
     expect(describeToolActivity('browser_get_page_meta', {}, 'running')).toBe('Get page metadata');
     expect(describeToolActivity('browser_get_scripts', {}, 'running')).toBe('Get scripts');
@@ -198,7 +197,6 @@ describe('describeToolActivity', () => {
   });
 
   it('reuses the plain tool label for done no-arg tools (same as running, no tense change needed)', () => {
-    expect(describeToolActivity('browser_get_active_tab', {}, 'done')).toBe('Get active tab');
     expect(describeToolActivity('browser_read_page', {}, 'done')).toBe('Read page');
     expect(describeToolActivity('browser_scroll', {}, 'done')).toBe('Scroll');
     expect(describeToolActivity('browser_something_new', {}, 'done')).toBe('Browser action');

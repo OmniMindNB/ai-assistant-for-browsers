@@ -122,6 +122,8 @@ describe('describeWaitResult', () => {
     const text = describeWaitResult(appear, { met: false, elapsedMs: 1200, unavailable: true });
     expect(text).not.toContain('超时');
     expect(text).toContain('1200');
-    expect(text).toContain('browser_get_active_tab');
+    // browser_get_active_tab 已退役：read_page 的结果本身就带当前地址。
+    expect(text).toContain('browser_read_page');
+    expect(text).not.toContain('browser_get_active_tab');
   });
 });

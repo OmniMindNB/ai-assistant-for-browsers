@@ -94,8 +94,10 @@ export function createBrowserTools(session: TabSessionController, config: Browse
   // mutable ref，而不是只在 wait 自己身上维护：这样即使中间调用的是别的工具，
   // "上一次活动发生在什么时候"依然准确。
   const activity: ToolActivityTracker = { lastUpdateAt: Date.now() };
+  // 没有 browser_get_active_tab：当前页面的地址和标题在 <runtime_context> 里已经给出，模型照样
+  // 第一轮就调它，白花一轮往返（ref: 2026-10-07 开放服务器端口会话导出）。之后的地址变化由写
+  // 操作结果里的 [页面位置]、browser_read_page 的标题/URL、browser_list_tabs 交代。
   const tools: BrowserAgentTool[] = [
-    browserGetActiveTabTool,
     makeAskUserTool(config.onAskUser),
     makeReportTaskOutcomeTool(config.onTaskOutcome),
     makeWaitTool(activity),
@@ -148,24 +150,6 @@ function withActivityTracking(tool: BrowserAgentTool, activity: ToolActivityTrac
     },
   };
 }
-
-// 例外：不参与"当前操作目标"——它的用途是让模型知道"用户现在焦点在哪"，
-// 这是和"本回合操作目标"正交的问题，见设计文档决策 1。
-const browserGetActiveTabTool: BrowserAgentTool = {
-  name: 'browser_get_active_tab',
-  label: 'Get Active Tab',
-  description: 'Get the active browser tab title and URL. Use this before page-specific analysis when you need page identity.',
-  parameters: Type.Object({}),
-  execute: async () => {
-    const response = (await sendMessage('GET_ACTIVE_TAB')) as MessageResponse<{
-      id?: number;
-      title?: string;
-      url?: string;
-    }>;
-    if (!response.ok || !response.data) throw new Error(response.error ?? '获取活动标签页失败');
-    return textResult(JSON.stringify(response.data, null, 2), response.data);
-  },
-};
 
 // 不带 browser_ 前缀：不触碰页面或浏览器状态，是纯粹的"停下来问用户"能力。
 function makeAskUserTool(onAskUser?: BrowserToolsConfig['onAskUser']): BrowserAgentTool {

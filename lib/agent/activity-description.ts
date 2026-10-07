@@ -79,8 +79,6 @@ export function describeToolActivity(
   const num = (key: string): string => (typeof record[key] === 'number' ? String(record[key]) : '');
 
   switch (toolName) {
-    case 'browser_get_active_tab':
-      return plain(status, 'agentActivity.tool.getActiveTab');
     case 'browser_open_tab':
       return describeNavigation(
         status,

@@ -75,7 +75,7 @@ export const CONTEXT_RECUT_TARGET = 32;
 const NAVIGATION_WATCH_TOOLS = new Set(['browser_click', 'browser_fill_form', 'browser_type', 'browser_press_key']);
 /**
  * 这两个工具即使地址没变也要在结果里写明当前地址：点击和按键最常隐式导航，模型拿不到
- * "没跳"这个信号时会自己再调一次 browser_get_active_tab 去确认（2026-10-07 开端口任务里
+ * "没跳"这个信号时会自己再花一轮去确认（2026-10-07 开端口任务里
  * 一次运行调了 4 次）。fill_form/type 极少导航，只在真的变了时才提示，省得每次写都多一行。
  */
 const ALWAYS_REPORT_LOCATION_TOOLS = new Set(['browser_click', 'browser_press_key']);
@@ -450,7 +450,7 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
           if (newUrl) {
             const previousUrl = lastKnownUrl.get(session.currentTabId);
             // 写进工具结果本身，而不是另发一条 steer：模型读结果时就能看到落在哪，
-            // 不必再调 browser_get_active_tab 确认。
+            // 不必再花一轮去确认。
             locationNote = describePageLocation(previousUrl, newUrl, ALWAYS_REPORT_LOCATION_TOOLS.has(toolName));
             if (previousUrl !== undefined && previousUrl !== newUrl) {
               landingNote = await readLandingPage(session.currentTabId);

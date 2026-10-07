@@ -1125,14 +1125,15 @@ describe('写工具结果里的页面位置', () => {
     }
   });
 
-  it('点击后 URL 未变化：明确说没跳，免得模型再调 browser_get_active_tab，且不等待', async () => {
+  it('点击后 URL 未变化：明确说没跳，免得模型再去确认，且不等待', async () => {
     const { hooks } = await withBaseline();
     sendMessageSpy.mockResolvedValueOnce({ ok: true, data: { url: 'https://example.com/a' } });
 
     const result = await hooks.afterToolCall?.(afterContext('browser_click', { selector: '#a' }, false));
 
     expect(locationLine(result)).toContain('地址未变化，仍为 "https://example.com/a"');
-    expect(locationLine(result)).toContain('browser_get_active_tab');
+    expect(locationLine(result)).toContain('无需再确认');
+    expect(locationLine(result)).not.toContain('browser_get_active_tab');
   });
 
   it('browser_fill_form 与 browser_type 只在地址真的变了时才追加', async () => {

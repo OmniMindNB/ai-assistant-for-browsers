@@ -213,7 +213,7 @@ export function describePressKeyResult(result: PressKeyResult): string {
 /**
  * 写工具执行后的页面位置，追加在工具结果末尾（由 agent.ts 的 afterToolCall 拼上）。
  * 地址变了一律报告；没变时只有 alwaysReport 才报——点击/按键最常隐式导航，模型拿不到
- * "没跳"的信号就会再调一次 browser_get_active_tab 去确认。
+ * "没跳"的信号就会再花一轮去确认。
  * previousUrl 未知时不声称"变了"或"没变"，只报当前地址。
  */
 export function describePageLocation(
@@ -226,5 +226,5 @@ export function describePageLocation(
   }
   if (!alwaysReport) return undefined;
   if (previousUrl === undefined) return `[页面位置] 当前地址："${currentUrl}"。`;
-  return `[页面位置] 地址未变化，仍为 "${currentUrl}"；无需再调用 browser_get_active_tab 确认。单页应用可能只更新了局部内容。`;
+  return `[页面位置] 地址未变化，仍为 "${currentUrl}"；无需再确认。单页应用可能只更新了局部内容。`;
 }

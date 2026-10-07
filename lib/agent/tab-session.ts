@@ -159,7 +159,6 @@ export function createTabSession(panelTabId: number): TabSessionController {
  * browser_close_tab 按参数里的 tabId 寻址，同理不受影响。
  */
 export const TARGET_INDEPENDENT_TOOLS: ReadonlySet<string> = new Set([
-  'browser_get_active_tab',
   'browser_list_tabs',
   'browser_switch_tab',
   'browser_open_tab',

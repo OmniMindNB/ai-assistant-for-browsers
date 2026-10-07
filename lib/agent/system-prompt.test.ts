@@ -115,13 +115,11 @@ describe('buildSystemPrompt tool strategy', () => {
     expect(buildSystemPrompt({ vision: true })).toContain('和截图');
   });
 
-  it('skips the active-tab shortcut when no page was injected', () => {
-    expect(buildSystemPrompt()).not.toContain('不要再调用 browser_get_active_tab');
-  });
-
-  it('tells the model to skip browser_get_active_tab once the page is injected', () => {
+  // browser_get_active_tab 已从工具表移除（见 tool-table.test.ts）；地址只能从注入的分区里拿。
+  it('points the model at <runtime_context> for the current page once the page is injected', () => {
     const prompt = buildSystemPrompt({ page: { tabId: 1, title: 'a', url: 'https://e.com' } });
-    expect(prompt).toContain('不要再调用 browser_get_active_tab');
+    expect(prompt).toContain('当前页面的地址和标题：<runtime_context> 里已经给出');
+    expect(buildSystemPrompt()).not.toContain('当前页面的地址和标题：<runtime_context> 里已经给出');
   });
 
   it('routes plain summaries to read_page and implementation questions to the dossier tool', () => {

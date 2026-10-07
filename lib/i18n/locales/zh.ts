@@ -177,7 +177,6 @@ export const zh = {
   'chat.reasoning.droppedSegments': '更早的 {count} 段已省略',
   'chat.reasoning.droppedSegmentsWithChars': '更早的 {count} 段已省略（约 {chars} 字）',
   'chat.viewStepsToggle': '步骤（{count}）',
-  'agentActivity.tool.getActiveTab': '获取当前标签页',
   'agentActivity.currentTab': '当前操作标签页：《{target}》',
   'agentActivity.budgetLow': '接近本轮步骤上限，还剩 {count} 步，开始收尾',
   'agentActivity.budgetExhausted': '已达本轮步骤上限，正在基于已有结果给出结论',

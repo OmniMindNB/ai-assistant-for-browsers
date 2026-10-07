@@ -70,7 +70,7 @@ export function describeWaitResult(condition: WaitCondition, outcome: WaitOutcom
   if (outcome.unavailable) {
     return [
       `等待未完成：执行环境不可用（页面可能已关闭、正在导航，或被 CSP 拒绝），已等待 ${outcome.elapsedMs}ms。`,
-      '页面在等待过程中就已经发生了变化，不要假设它还是等待前的状态——先用 browser_get_active_tab 或 browser_read_page 重新确认当前页面再决定下一步。',
+      '页面在等待过程中就已经发生了变化，不要假设它还是等待前的状态——先用 browser_read_page 重新确认当前页面（结果里带当前地址和标题）再决定下一步。',
     ].join('\n');
   }
 

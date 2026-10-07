@@ -183,7 +183,6 @@ export const en: Record<keyof typeof zh, string> = {
   'chat.reasoning.droppedSegments': '{count} earlier steps omitted',
   'chat.reasoning.droppedSegmentsWithChars': '{count} earlier steps omitted (about {chars} characters)',
   'chat.viewStepsToggle': 'Steps ({count})',
-  'agentActivity.tool.getActiveTab': 'Get active tab',
   'agentActivity.currentTab': 'Currently operating on "{target}"',
   'agentActivity.budgetLow': 'Nearing the step limit — {count} left, wrapping up',
   'agentActivity.budgetExhausted': 'Step limit reached — answering from what it has',

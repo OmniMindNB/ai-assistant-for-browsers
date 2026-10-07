@@ -197,9 +197,9 @@ function buildToolStrategy(options: SystemPromptOptions): string[] {
     '- 需要批量提取（把几十上百行整理成 JSON）、按条件统计或筛选元素、批量标记/隐藏一类元素，而结构化工具要调很多次才能完成：用 browser_run_script 写一段读写 DOM 的脚本一次完成，用 return 返回结果。它看不到页面自己的 JS 变量，网络请求一律被拦截；填表仍然只用 browser_fill_form。如果它报告脚本能力未启用，改用结构化工具，不要重试。',
   ];
 
-  // 只有真的注入了页面信息，才让模型跳过 browser_get_active_tab——否则这条会指向一个不存在的分区。
+  // 只有真的注入了页面信息才写这条——否则它会指向一个不存在的分区。
   if (options.page) {
-    lines.push('- 当前页面的地址和标题：<runtime_context> 里已经给出，不要再调用 browser_get_active_tab。');
+    lines.push('- 当前页面的地址和标题：<runtime_context> 里已经给出，直接用；之后页面是否跳转、跳到了哪里，看写操作结果末尾的 [页面位置]。');
   }
 
   lines.push(
