@@ -122,6 +122,17 @@ describe('buildSystemPrompt tool strategy', () => {
     expect(buildSystemPrompt()).not.toContain('当前页面的地址和标题：<runtime_context> 里已经给出');
   });
 
+  // 2026-10-07 开端口会话：任务是「开启服务器端口」，模型先 browser_read_page 读正文，再 browser_get_form
+  // 拿按钮——正文提取会剥掉全部可交互元素，那一轮白读。模型从上往下匹配，这条必须排在
+  // 「总结页面用 read_page」之前，否则会被截胡（同零工具分支排第一的理由）。
+  it('sends page-operation tasks straight to get_form, ahead of the read_page summary rule', () => {
+    const operate = SYSTEM_PROMPT.indexOf('- 要在页面上做事');
+    const summarize = SYSTEM_PROMPT.indexOf('- 总结页面');
+    expect(operate).toBeGreaterThan(-1);
+    expect(operate).toBeLessThan(summarize);
+    expect(SYSTEM_PROMPT.slice(operate, summarize)).toContain('第一步就调用 browser_get_form');
+  });
+
   it('routes plain summaries to read_page and implementation questions to the dossier tool', () => {
     expect(SYSTEM_PROMPT).toContain('browser_read_page 读正文');
     expect(SYSTEM_PROMPT).toContain('先调用一次 browser_inspect_page_implementation');
