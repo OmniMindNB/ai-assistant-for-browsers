@@ -75,10 +75,13 @@ describe('Runi active product identity', () => {
     expect(read(path)).not.toMatch(legacyBrandPattern);
   });
 
-  it('uses the Runi monogram for assistant messages', () => {
+  // 消息列表里的助手头像已去掉（侧栏太窄），品牌标记只留在空状态；旧品牌的 "Al" 两处都不能回来。
+  it('uses the Runi monogram as the side panel brand mark', () => {
     const sidePanel = read('entrypoints/sidepanel/App.tsx');
+    const emptyState = read('entrypoints/sidepanel/components/WorkbenchEmptyState.tsx');
     expect(sidePanel).not.toMatch(/>\s*Al\s*</);
-    expect(sidePanel).toMatch(/>\s*R\s*</);
+    expect(emptyState).not.toMatch(/>\s*Al\s*</);
+    expect(emptyState).toMatch(/>\s*R\s*</);
   });
 
   const maintainedDocs = [

@@ -31,8 +31,7 @@ export function WorkbenchEmptyState({ busy, onPickExample }: WorkbenchEmptyState
 
   return (
     <div className="m-auto flex w-full max-w-md flex-col items-center text-center">
-      {/* 跟消息列表里助手头像（App.tsx 的 "R" 方块）用同一个符号，避免用户在
-          "还没开始对话" 和 "已经在对话" 两个相邻状态里看到两套不同的品牌图形。 */}
+      {/* 品牌标记只出现在这里：消息列表里的助手头像已经去掉（侧栏太窄，省下那 40px 给正文）。 */}
       <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-neutral-900 text-xl font-bold text-white dark:bg-neutral-800">
         R
       </div>

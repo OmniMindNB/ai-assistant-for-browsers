@@ -569,7 +569,8 @@ const Message = memo(function Message({
               <IconPencil className="h-3.5 w-3.5" />
             </button>
           )}
-          <div className="min-w-0 whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-neutral-900 px-4 py-2.5 text-sm text-white dark:bg-neutral-700">
+          {/* 浅灰而不是近黑：用户自己的话是已知信息，视觉上不该比助手的回答还重。 */}
+          <div className="min-w-0 whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-neutral-200/80 px-4 py-2.5 text-sm text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100">
             {content}
           </div>
         </div>
@@ -584,10 +585,9 @@ const Message = memo(function Message({
   // 有工具正在跑时，步骤列表里闪烁的"进行中"那一行已经是等待反馈，不再叠一个 TypingDots。
   const liveStepRunning = liveSteps?.some((step) => step.status === 'running') ?? false;
   return (
-    <div className="group flex gap-3">
-      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-neutral-900 text-[11px] font-bold text-white dark:bg-neutral-800">
-        R
-      </div>
+    // 不再画 "R" 头像：只有两方的对话里，左白卡片 / 右灰气泡已经说清了谁在说话，
+    // 头像加间距却要在 360~400px 的侧栏里吃掉约 40px，长表格、代码块因此多折一行。
+    <div className="group flex">
       <div className="min-w-0 flex-1 rounded-2xl rounded-tl-md bg-white px-4 py-3 shadow-sm ring-1 ring-neutral-200/70 dark:bg-neutral-900 dark:ring-neutral-800">
         {message.reasoning && message.reasoning.length > 0 && (
           <ReasoningBlock
