@@ -11,6 +11,11 @@ export const MAX_STEP_ERROR_CHARS = 300;
  * 而且它会随会话历史落进 IndexedDB——历史有意不存页面正文，所以只留一行。
  */
 export const MAX_STEP_RESULT_CHARS = 160;
+/**
+ * 写工具结果第一行之后那部分的上限。要装得下一份落地页清单（最多 MAX_LANDING_FIELDS 个元素）
+ * 才能回答「清单里到底有没有模型要找的那个」，所以比摘要宽得多。
+ */
+export const MAX_STEP_DETAIL_CHARS = 1500;
 /** find_text 摘要里最多带几个可见命中的文字。 */
 const MAX_SUMMARY_MATCHES = 3;
 const MAX_SUMMARY_MATCH_TEXT = 24;
@@ -118,6 +123,20 @@ export function summarizeToolResult(toolName: string, result: unknown, redaction
   }
   if (!summary) return undefined;
   return clipChars(redactText(summary, redaction), MAX_STEP_RESULT_CHARS);
+}
+
+/**
+ * 写工具结果第一行之后的全部内容：新出现元素的清单，以及 afterToolCall 追加的 [页面位置] /
+ * [跳转后页面]（tool_execution_end 带的是 afterToolCall 改写后的结果）。第二份开端口导出里
+ * 模型每次点击后仍自己调 get_form，没有这些就判断不了清单附上没有、列了什么。
+ * 读工具不记（结果是大段转储）。先脱敏再截断。
+ */
+export function summarizeToolResultDetail(toolName: string, result: unknown, redaction: RedactionSettings): string | undefined {
+  if (!WRITE_TOOL_NAMES.has(toolName)) return undefined;
+  const lines = textParts(result).split('\n');
+  const rest = lines.slice(1).join('\n').trim();
+  if (!rest) return undefined;
+  return clipChars(redactText(rest, redaction), MAX_STEP_DETAIL_CHARS);
 }
 
 /**

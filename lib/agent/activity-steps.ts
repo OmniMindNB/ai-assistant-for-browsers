@@ -27,6 +27,18 @@ export interface ActivityStep {
    */
   resultText?: string;
   /**
+   * 写工具结果第一行之后的全部内容（新出现元素的清单、afterToolCall 追加的 [页面位置] /
+   * [跳转后页面]），已脱敏、已截断，见 summarizeToolResultDetail。只供会话导出。
+   */
+  resultDetail?: string;
+  /**
+   * 工具调用的起止时间（epoch ms），只供会话导出拆耗时：起止之间是工具本身加前后钩子
+   * （含权限确认、跳转后的等待），上一步结束到这一步开始之间约等于模型那一轮的耗时。
+   * 合并过重试的行记的是最后一次尝试。
+   */
+  startedAt?: number;
+  endedAt?: number;
+  /**
    * 失败步骤附带的可操作提示。目前只有一种：browser_run_script 因"允许用户脚本"开关未开而失败，
    * 面板在这一行下方给出开启入口（ref: 2026-10-02-run-script-design.md §3.5）。
    */
@@ -39,7 +51,12 @@ export function upsertActivityStep(steps: ActivityStep[], step: ActivityStep): A
     const next = steps.slice();
     // attempt 由合并逻辑维护，不由调用方传——原地替换（tool_execution_update）时必须保住它，
     // 否则一次参数更新就会把"第 2 次尝试"抹回普通行。
-    next[index] = { ...step, attempt: step.attempt ?? steps[index].attempt };
+    next[index] = {
+      ...step,
+      attempt: step.attempt ?? steps[index].attempt,
+      // 同理：参数更新不该把开始时间抹掉，否则这一步的耗时就没了。
+      startedAt: step.startedAt ?? steps[index].startedAt,
+    };
     return next;
   }
 
@@ -54,25 +71,26 @@ export function upsertActivityStep(steps: ActivityStep[], step: ActivityStep): A
   return [...steps, step];
 }
 
+/** finishActivityStep 的可选附加信息；只有传了的字段才落到步骤上。 */
+export interface FinishActivityStepExtra {
+  errorText?: string;
+  hint?: ActivityStep['hint'];
+  resultText?: string;
+  resultDetail?: string;
+  endedAt?: number;
+}
+
 export function finishActivityStep(
   steps: ActivityStep[],
   id: string,
   status: 'done' | 'failed',
   description: string,
-  errorText?: string,
-  hint?: ActivityStep['hint'],
-  resultText?: string,
+  extra: FinishActivityStepExtra = {},
 ): ActivityStep[] {
   const index = steps.findIndex((s) => s.id === id);
   if (index === -1) return steps;
   const next = steps.slice();
-  next[index] = {
-    ...next[index],
-    status,
-    description,
-    ...(errorText !== undefined ? { errorText } : {}),
-    ...(hint !== undefined ? { hint } : {}),
-    ...(resultText !== undefined ? { resultText } : {}),
-  };
+  const defined = Object.fromEntries(Object.entries(extra).filter(([, value]) => value !== undefined));
+  next[index] = { ...next[index], status, description, ...defined };
   return next;
 }

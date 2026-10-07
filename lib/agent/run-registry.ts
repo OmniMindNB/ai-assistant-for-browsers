@@ -15,7 +15,7 @@ import { summarizeToolCallForConfirmation } from './confirm-summary';
 import { describeToolActivity } from './activity-description';
 import { upsertActivityStep, finishActivityStep, type ActivityStep } from './activity-steps';
 import { toolSignature } from './tool-policy';
-import { buildRunDiagnostics, extractToolErrorText, isUnmetWait, summarizeToolResult } from './run-diagnostics';
+import { buildRunDiagnostics, extractToolErrorText, isUnmetWait, summarizeToolResult, summarizeToolResultDetail } from './run-diagnostics';
 import { scriptActivityHint } from './run-script';
 import { appendReasoning, emptyReasoning, reasoningMessageFields, reasoningSegmentTotal, slimLiveReasoning, stripHistoryReasoning, type ReasoningBuffer, type ReasoningFields } from './reasoning';
 import { replaceConversationMessages } from '@/lib/db';
@@ -556,6 +556,7 @@ export async function startRun(request: StartRunRequest): Promise<void> {
         description: describeToolActivity(event.toolName, event.args, 'running'),
         status: 'running',
         tabLabel: currentTabLabel(state),
+        startedAt: Date.now(),
         // 带上签名，让 upsertActivityStep 能把"同一个调用的又一次尝试"并成一行。
         signature: toolSignature(event.toolName, event.args),
       });
@@ -617,9 +618,13 @@ export async function startRun(request: StartRunRequest): Promise<void> {
           // 结果一并交给文案：调用参数只说"打算做什么"，重定向后的落地地址、
           // 部分失败的实际落地字段数只有结果里有（见 activity-description.ts）。
           describeToolActivity(event.toolName, info?.args, finalStatus, event.result),
-          errorText,
-          scriptActivityHint(event.toolName, errorText),
-          resultText,
+          {
+            errorText,
+            hint: scriptActivityHint(event.toolName, errorText),
+            resultText,
+            resultDetail: summarizeToolResultDetail(event.toolName, event.result, errorRedaction),
+            endedAt: Date.now(),
+          },
         );
         pushAndPersist(state);
       }

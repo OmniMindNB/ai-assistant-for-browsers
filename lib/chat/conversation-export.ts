@@ -44,6 +44,11 @@ export interface ExportedStep {
   errorText?: string;
   /** 成功步骤的一行结果摘要（记录时已脱敏、已截断）。 */
   resultText?: string;
+  /** 写工具结果第一行之后的内容（记录时已脱敏、已截断）。 */
+  resultDetail?: string;
+  /** 工具调用起止时间（epoch ms）；早于计时功能的步骤没有。 */
+  startedAt?: number;
+  endedAt?: number;
 }
 
 export interface ExportedMessage {
@@ -177,6 +182,9 @@ function exportStep(step: ActivityStep, redaction: RedactionSettings, t: Transla
   }
   if (step.errorText) out.errorText = step.errorText;
   if (step.resultText) out.resultText = step.resultText;
+  if (step.resultDetail) out.resultDetail = step.resultDetail;
+  if (step.startedAt !== undefined) out.startedAt = step.startedAt;
+  if (step.endedAt !== undefined) out.endedAt = step.endedAt;
   return out;
 }
 
@@ -257,6 +265,56 @@ function escapeCell(text: string): string {
   return text.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>');
 }
 
+function formatSeconds(ms: number): string {
+  return `${(Math.max(0, ms) / 1000).toFixed(1)}s`;
+}
+
+interface StepTiming {
+  modelMs?: number;
+  toolMs?: number;
+}
+
+/**
+ * 把步骤起止时间拆成「模型」和「工具」两段：上一步结束（第一步取运行开始）到这一步开始之间
+ * 约等于模型那一轮的耗时，起止之间是工具加前后钩子。同一条消息里批量发出的几个调用，后面
+ * 几个的模型段自然接近 0。notice 行不是工具调用，不参与；缺时间的旧步骤让链条断开。
+ * 全部步骤都有时间时，再算出最后一轮（最后一步结束到运行结束）和两段合计。
+ */
+function computeStepTimings(steps: ExportedStep[], diagnostics: RunDiagnostics | undefined) {
+  const timings: StepTiming[] = [];
+  let previousEnd = diagnostics?.startedAt;
+  let complete = diagnostics !== undefined;
+  let modelTotal = 0;
+  let toolTotal = 0;
+  for (const step of steps) {
+    if (step.status === 'notice') {
+      timings.push({});
+      continue;
+    }
+    const { startedAt, endedAt } = step;
+    const timing: StepTiming = {};
+    if (startedAt !== undefined && previousEnd !== undefined) timing.modelMs = startedAt - previousEnd;
+    if (startedAt !== undefined && endedAt !== undefined) timing.toolMs = endedAt - startedAt;
+    if (timing.modelMs === undefined || timing.toolMs === undefined) complete = false;
+    modelTotal += timing.modelMs ?? 0;
+    toolTotal += timing.toolMs ?? 0;
+    previousEnd = endedAt;
+    timings.push(timing);
+  }
+  const split = complete && diagnostics && previousEnd !== undefined && steps.length > 0
+    ? (() => {
+        const finalMs = diagnostics.startedAt + diagnostics.durationMs - previousEnd;
+        return { modelMs: modelTotal + finalMs, finalMs, toolMs: toolTotal };
+      })()
+    : undefined;
+  return { timings, split };
+}
+
+function fenceFor(text: string): string {
+  const longestRun = Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length));
+  return '`'.repeat(Math.max(3, longestRun + 1));
+}
+
 const STEP_STATUS_ICON: Record<ExportedStep['status'], string> = { done: '✓', failed: '✗', running: '…', notice: 'ℹ' };
 
 function formatBytes(size: number): string {
@@ -302,16 +360,32 @@ function renderMessage(m: ExportedMessage, t: Translate): string[] {
       '',
     );
   }
+  const { timings, split } = computeStepTimings(m.steps ?? [], m.runDiagnostics);
+  if (split) {
+    lines.push(t('export.timeSplit', { model: formatSeconds(split.modelMs), final: formatSeconds(split.finalMs), tool: formatSeconds(split.toolMs) }), '');
+  }
   if (m.taskOutcome) lines.push(t('export.taskOutcome', { outcome: m.taskOutcome.outcome, reason: m.taskOutcome.reason }), '');
   if (m.steps?.length) {
-    lines.push(t('export.stepsTableHeader'), '|---|---|---|---|---|');
+    lines.push(t('export.stepsTableHeader'), '|---|---|---|---|---|---|');
     m.steps.forEach((step, i) => {
       const status = `${STEP_STATUS_ICON[step.status]}${step.attempt ? ` ×${step.attempt}` : ''}`;
       const description = step.tabLabel ? `${step.description}（${step.tabLabel}）` : step.description;
       const call = step.toolName ? `${step.toolName}${step.args ? ` ${step.args}` : ''}` : '';
-      lines.push(`| ${i + 1} | ${status} | ${escapeCell(description)} | ${escapeCell(call)} | ${escapeCell(step.errorText ?? step.resultText ?? '')} |`);
+      const { modelMs, toolMs } = timings[i] ?? {};
+      const timing = toolMs === undefined
+        ? ''
+        : modelMs === undefined
+          ? formatSeconds(toolMs)
+          : t('export.stepTiming', { model: formatSeconds(modelMs), tool: formatSeconds(toolMs) });
+      lines.push(`| ${i + 1} | ${status} | ${escapeCell(description)} | ${escapeCell(call)} | ${timing} | ${escapeCell(step.errorText ?? step.resultText ?? '')} |`);
     });
     lines.push('');
+    // 第一行之后的内容放在表外：落地页清单动辄上千字，塞进单元格就没法读了。
+    m.steps.forEach((step, i) => {
+      if (!step.resultDetail) return;
+      const fence = fenceFor(step.resultDetail);
+      lines.push(t('export.stepDetail', { n: i + 1, description: step.description }), '', `${fence}text`, step.resultDetail, fence, '');
+    });
   }
   return lines;
 }
@@ -339,8 +413,7 @@ export function renderConversationExportMarkdown(doc: ConversationExport, t: Tra
   });
 
   const json = JSON.stringify(doc, null, 2);
-  const longestRun = Math.max(0, ...(json.match(/`+/g) ?? []).map((run) => run.length));
-  const fence = '`'.repeat(Math.max(3, longestRun + 1));
+  const fence = fenceFor(json);
   lines.push('---', '', `## ${t('export.appendix')}`, '', `${fence}json`, json, fence, '');
   return lines.join('\n');
 }

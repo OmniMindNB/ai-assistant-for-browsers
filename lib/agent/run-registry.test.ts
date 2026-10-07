@@ -591,6 +591,29 @@ describe('run-registry confirm/question/stop/port', () => {
     expect(find?.resultText).toBe('命中 0 个');
   });
 
+  it('records start/end timestamps and the rest of a write result on each step', async () => {
+    mocks.createBrowserAgent.mockReturnValue(
+      makeFakeAgent([
+        { type: 'turn_start' },
+        { type: 'tool_execution_start', toolCallId: 'click-1', toolName: 'browser_click', args: { fieldId: 'f60' } },
+        { type: 'tool_execution_end', toolCallId: 'click-1', toolName: 'browser_click', isError: false, result: { content: [
+          { type: 'text', text: '已点击字段 f60。' },
+          { type: 'text', text: '[跳转后页面] 已重新读取页面，2 个可交互元素：f1「概要」、f2「防火墙」。' },
+        ], details: {} } },
+      ]),
+    );
+
+    await startRun(makeRequest({ tabId: 92 }));
+    await vi.waitFor(() => expect(getRunState(92)).toBeUndefined());
+
+    const lastRecord = mocks.replaceConversationMessages.mock.calls.at(-1)?.[1].at(-1);
+    const click = lastRecord?.activitySteps?.find((step) => step.id === 'click-1');
+    expect(click?.resultText).toBe('已点击字段 f60。');
+    expect(click?.resultDetail).toBe('[跳转后页面] 已重新读取页面，2 个可交互元素：f1「概要」、f2「防火墙」。');
+    expect(typeof click?.startedAt).toBe('number');
+    expect(click!.endedAt!).toBeGreaterThanOrEqual(click!.startedAt!);
+  });
+
   it('attaches runDiagnostics to the final assistant message without the api key', async () => {
     mocks.createBrowserAgent.mockReturnValue(
       makeFakeAgent([

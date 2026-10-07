@@ -296,6 +296,35 @@ describe('renderConversationExportMarkdown', () => {
     return renderConversationExportMarkdown(build(records), t);
   }
 
+  // 2026-10-07 第二份开端口导出：轮数 20→12，总耗时却 42.6s→45.7s，导出里没有任何时间可以拆。
+  // 步骤之间的空档 ≈ 模型那一轮的耗时，步骤自身 ≈ 工具加前后钩子（含跳转后的等待）。
+  it('renders per-step model/tool timing, the time split, and each step\'s full result', () => {
+    const md = render([
+      record({ content: '开端口' }),
+      record({ role: 'assistant', content: '完成', runDiagnostics: { ...runDiagnostics, startedAt: 1000, durationMs: 10000 }, activitySteps: [
+        { id: 's1', description: '获取表单结构', status: 'done', signature: 'browser_get_form:{}', startedAt: 3000, endedAt: 3500, resultText: '65 个可交互元素（可见 65 个）' },
+        { id: 's2', description: '已点击 "f60"', status: 'done', signature: 'browser_click:{"fieldId":"f60"}', startedAt: 5000, endedAt: 7500,
+          resultText: '已点击字段 f60。', resultDetail: '[页面位置] 从 "a" 跳转到 "b"。\n[跳转后页面] 已重新读取页面，65 个可交互元素：f1「控制台」' },
+      ] }),
+    ]);
+    expect(md).toContain('| 1 | ✓ | 获取表单结构 | browser_get_form {} | 模型 2.0s · 工具 0.5s | 65 个可交互元素（可见 65 个） |');
+    expect(md).toContain('| 模型 1.5s · 工具 2.5s |');
+    // 模型 = 2.0 + 1.5 + 最后一轮（1000 + 10000 - 7500 = 3.5）；工具 = 0.5 + 2.5
+    expect(md).toContain('**耗时分布**：模型 7.0s（其中最后一轮回答 3.5s）· 工具 3.0s');
+    expect(md).toContain('**#2 已点击 "f60" 的完整结果**');
+    expect(md).toContain('[跳转后页面] 已重新读取页面，65 个可交互元素：f1「控制台」');
+  });
+
+  it('leaves the timing cell empty for steps recorded before timing existed', () => {
+    const md = render([
+      record({ role: 'assistant', content: 'x', runDiagnostics, activitySteps: [
+        { id: 's1', description: '读取页面', status: 'done', signature: 'browser_read_page:{}' },
+      ] }),
+    ]);
+    expect(md).toContain('| 1 | ✓ | 读取页面 | browser_read_page {} |  |  |');
+    expect(md).not.toContain('**耗时分布**');
+  });
+
   it('renders header, rounds, run info, steps table and a parseable JSON appendix', () => {
     const md = render([
       record({ content: '帮我填表' }),
@@ -312,7 +341,7 @@ describe('renderConversationExportMarkdown', () => {
     expect(md).toContain('DeepSeek · deepseek-v4-pro（openai-completions @ api.deepseek.com）');
     expect(md).toContain('耗时 38.2s');
     expect(md).toContain('**任务结果**：partial —— 卡在第二步');
-    expect(md).toContain('| # | 状态 | 步骤 | 调用 | 结果 / 失败原因 |');
+    expect(md).toContain('| # | 状态 | 步骤 | 调用 | 耗时 | 结果 / 失败原因 |');
     expect(md).toContain('| 12 个可交互元素（可见 9 个） |');
     expect(md).toContain('填写 \\| 3 个字段');
     expect(md).toContain('第一行<br>第二行');

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { defaultRedactionSettings } from '@/lib/redaction';
-import { baseUrlHost, buildRunDiagnostics, extractToolErrorText, isUnmetWait, MAX_STEP_ERROR_CHARS, MAX_STEP_RESULT_CHARS, summarizeToolResult } from './run-diagnostics';
+import { baseUrlHost, buildRunDiagnostics, extractToolErrorText, isUnmetWait, MAX_STEP_DETAIL_CHARS, MAX_STEP_ERROR_CHARS, MAX_STEP_RESULT_CHARS, summarizeToolResult, summarizeToolResultDetail } from './run-diagnostics';
 
 const redaction = defaultRedactionSettings();
 
@@ -129,5 +129,30 @@ describe('isUnmetWait', () => {
     expect(isUnmetWait('browser_wait_for', { content: [], details: { met: true, elapsedMs: 600 } })).toBe(false);
     expect(isUnmetWait('browser_click', { content: [], details: { met: false } })).toBe(false);
     expect(isUnmetWait('browser_wait_for', undefined)).toBe(false);
+  });
+});
+
+// 第一行之后才是要看的东西：新出现元素的清单、[页面位置]、[跳转后页面]——第二份开端口导出里
+// 模型每次点击后仍自己调 get_form，没有这几行就判断不了清单到底附上没有、列了什么。
+describe('summarizeToolResultDetail', () => {
+  const result = (...texts: string[]) => ({ content: texts.map((text) => ({ type: 'text', text })), details: {} });
+
+  it('写工具：第一行之后的全部内容，含 afterToolCall 追加的说明', () => {
+    expect(summarizeToolResultDetail('browser_click', result('已点击 f60。\n页面新出现 2 个可交互元素：f61「概要」。', '[页面位置] 从 "a" 跳转到 "b"。', '[跳转后页面] 已重新读取页面，65 个可交互元素：…'), redaction))
+      .toBe('页面新出现 2 个可交互元素：f61「概要」。\n[页面位置] 从 "a" 跳转到 "b"。\n[跳转后页面] 已重新读取页面，65 个可交互元素：…');
+  });
+
+  it('只有一行时没有附加内容', () => {
+    expect(summarizeToolResultDetail('browser_click', result('已点击 f60。'), redaction)).toBeUndefined();
+  });
+
+  it('读工具不记：结果是大段转储', () => {
+    expect(summarizeToolResultDetail('browser_get_form', result('标题\n大段 JSON'), redaction)).toBeUndefined();
+  });
+
+  it('先脱敏再截断', () => {
+    const detail = summarizeToolResultDetail('browser_click', result(`已点击。\n13812345678 ${'元素'.repeat(2000)}`), redaction)!;
+    expect(detail).not.toContain('13812345678');
+    expect(detail.length).toBeLessThanOrEqual(MAX_STEP_DETAIL_CHARS + 1);
   });
 });

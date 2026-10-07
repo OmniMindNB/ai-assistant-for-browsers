@@ -122,7 +122,7 @@ describe('finishActivityStep', () => {
 describe('finishActivityStep errorText', () => {
   it('records the error text on a failed step', () => {
     const steps: ActivityStep[] = [{ id: 'a', description: 'A', status: 'running', signature: 's' }];
-    const next = finishActivityStep(steps, 'a', 'failed', 'A failed', '字段 f3 写入后读回不一致');
+    const next = finishActivityStep(steps, 'a', 'failed', 'A failed', { errorText: '字段 f3 写入后读回不一致' });
     expect(next[0]).toEqual({ id: 'a', description: 'A failed', status: 'failed', signature: 's', errorText: '字段 f3 写入后读回不一致' });
   });
 
@@ -133,11 +133,11 @@ describe('finishActivityStep errorText', () => {
 
   it('keeps only the last attempt\'s error text across a merged retry', () => {
     let steps: ActivityStep[] = [{ id: 'c1', description: 'x', status: 'running', signature: 'sig' }];
-    steps = finishActivityStep(steps, 'c1', 'failed', 'x', '第一次失败');
+    steps = finishActivityStep(steps, 'c1', 'failed', 'x', { errorText: '第一次失败' });
     steps = upsertActivityStep(steps, { id: 'c2', description: 'x', status: 'running', signature: 'sig' });
     expect(steps).toHaveLength(1);
     expect(steps[0]).not.toHaveProperty('errorText');
-    steps = finishActivityStep(steps, 'c2', 'failed', 'x', '第二次失败');
+    steps = finishActivityStep(steps, 'c2', 'failed', 'x', { errorText: '第二次失败' });
     expect(steps[0]).toMatchObject({ attempt: 2, errorText: '第二次失败' });
   });
 });
@@ -146,12 +146,27 @@ describe('finishActivityStep hint', () => {
   const running: ActivityStep[] = [{ id: 'a', description: 'x', status: 'running' }];
 
   it('stores the hint when given', () => {
-    const [step] = finishActivityStep(running, 'a', 'failed', 'y', 'err', 'enable_user_scripts');
+    const [step] = finishActivityStep(running, 'a', 'failed', 'y', { errorText: 'err', hint: 'enable_user_scripts' });
     expect(step.hint).toBe('enable_user_scripts');
   });
 
   it('omits the key when no hint', () => {
-    const [step] = finishActivityStep(running, 'a', 'failed', 'y', 'err');
+    const [step] = finishActivityStep(running, 'a', 'failed', 'y', { errorText: 'err' });
     expect('hint' in step).toBe(false);
+  });
+});
+
+// 2026-10-07 第二份开端口导出：轮数从 20 降到 12，总耗时却涨了，导出里没有任何时间数据可以拆。
+describe('步骤计时与完整结果', () => {
+  it('finish 记下结束时间和完整结果，保留开始时间', () => {
+    const running: ActivityStep[] = [{ id: 'a', description: 'x', status: 'running', startedAt: 1000 }];
+    const [step] = finishActivityStep(running, 'a', 'done', 'y', { resultText: '已点击 f1。', resultDetail: '[页面位置] …', endedAt: 1800 });
+    expect(step).toMatchObject({ startedAt: 1000, endedAt: 1800, resultText: '已点击 f1。', resultDetail: '[页面位置] …' });
+  });
+
+  it('参数更新（tool_execution_update）原地替换时不丢开始时间', () => {
+    const steps: ActivityStep[] = [{ id: 'a', description: 'x', status: 'running', startedAt: 1000 }];
+    const [step] = upsertActivityStep(steps, { id: 'a', description: 'x2', status: 'running' });
+    expect(step.startedAt).toBe(1000);
   });
 });
