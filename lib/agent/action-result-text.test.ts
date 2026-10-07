@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BatchClickOutcome, ClickElementResult, FormFieldDescriptor, NavigateHistoryResult, NavigateTabResult, ScrollPageResult } from '@/lib/messaging';
-import { describeBatchClickResult, describeClickResult, describeGoBackResult, describeNavigateResult, describeNewFields, describeScrollResult } from './action-result-text';
+import { describeBatchClickResult, describeClickResult, describeGoBackResult, describeLandingFields, describeNavigateResult, describeNewFields, describeScrollResult, MAX_LANDING_FIELDS } from './action-result-text';
 
 function scroll(overrides: Partial<ScrollPageResult> = {}): ScrollPageResult {
   return { x: 0, y: 800, scrolledBy: 800, pixelsAbove: 800, pixelsBelow: 2400, viewportHeight: 1200, ...overrides };
@@ -216,5 +216,48 @@ describe('describeBatchClickResult', () => {
   it('把新标签页警告带出来：当前页不会变化这件事必须点破', () => {
     const text = describeBatchClickResult([outcome({ fieldId: 'f1', opensNewTab: true })]);
     expect(text).toContain('新标签页');
+  });
+});
+
+// 点击/提交跳到新页面后直接附上落地页的元素清单，省掉模型
+// 「wait_for domIdle → find_text → get_form」三轮摸索（ref: 2026-10-07 开放服务器端口会话导出）。
+describe('describeLandingFields', () => {
+  it('lists the visible, enabled elements of the landed page with their ids', () => {
+    const text = describeLandingFields([
+      fieldDescriptor('f1', '概要'),
+      fieldDescriptor('f2', '防火墙', 'link'),
+      fieldDescriptor('f3', '如53,80,443', 'text'),
+    ]);
+    expect(text).toBe(
+      '[跳转后页面] 已重新读取页面，3 个可交互元素：f1「概要」、f2「防火墙」、f3「如53,80,443」（text）。' +
+        '这些 fieldId 现在就能直接用于 browser_click / browser_fill_form；需要选项、必填、周边文字等细节时再调用 browser_get_form。',
+    );
+  });
+
+  // 不可见和禁用的元素点不了，列出来只会诱导模型去点。
+  it('leaves out hidden and disabled elements, but counts them', () => {
+    const text = describeLandingFields([
+      fieldDescriptor('f1', '确定'),
+      { ...fieldDescriptor('f2', '隐藏菜单'), visible: false },
+      { ...fieldDescriptor('f3', '灰按钮'), disabled: true },
+    ]);
+    expect(text).toContain('1 个可交互元素：f1「确定」');
+    expect(text).not.toContain('f2');
+    expect(text).not.toContain('f3');
+    expect(text).toContain('另有 2 个不可见或已禁用');
+  });
+
+  it('caps the enumeration and reports how many were omitted', () => {
+    const fields = Array.from({ length: MAX_LANDING_FIELDS + 5 }, (_, index) => fieldDescriptor(`f${index + 1}`, `项${index + 1}`));
+    const text = describeLandingFields(fields)!;
+    expect(text).toContain(`${MAX_LANDING_FIELDS + 5} 个可交互元素`);
+    expect(text).toContain(`f${MAX_LANDING_FIELDS}「项${MAX_LANDING_FIELDS}」`);
+    expect(text).not.toContain(`f${MAX_LANDING_FIELDS + 1}「`);
+    expect(text).toContain('等，另有 5 个未列出');
+  });
+
+  it('says nothing when the landed page has no usable element', () => {
+    expect(describeLandingFields([])).toBeUndefined();
+    expect(describeLandingFields([{ ...fieldDescriptor('f1', 'x'), visible: false }])).toBeUndefined();
   });
 });

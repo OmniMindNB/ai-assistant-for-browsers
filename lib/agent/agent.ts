@@ -9,13 +9,18 @@ import type { Api, Message, Model } from '@earendil-works/pi-ai';
 import { resolveProviderApi, type ProviderConfig } from '@/lib/settings';
 import {
   sendMessage,
+  type GetFormPayload,
+  type GetFormResult,
   type GetTabUrlResult,
   type MessageResponse,
   type ProbeClickTargetPayload,
   type ProbeClickTargetResult,
   type ProbeKeyTargetPayload,
   type SetAgentOverlayPayload,
+  type WaitForPayload,
+  type WaitForResult,
 } from '@/lib/messaging';
+import { loadRedactionSettings, redactText } from '@/lib/redaction';
 import { browserOpenAIStream } from './openai-stream';
 import { browserAnthropicStream } from './anthropic-stream';
 import { beforeToolCallPermissionGate, READ_ONLY_TOOL_NAMES, WRITE_TOOL_NAMES } from './permissions';
@@ -32,7 +37,7 @@ import { isChildFrameHandle } from './fill-form-request';
 import { createAgentToolPolicy } from './tool-policy';
 import { isPageLocationTool } from './task-trajectory';
 import { describeToolActivity } from './activity-description';
-import { describePageLocation } from './action-result-text';
+import { describeLandingFields, describePageLocation } from './action-result-text';
 import { recordPerfContext } from './perf-trace';
 import {
   CONTEXT_RECUT_TARGET_CHARS,
@@ -74,6 +79,12 @@ const NAVIGATION_WATCH_TOOLS = new Set(['browser_click', 'browser_fill_form', 'b
  */
 const ALWAYS_REPORT_LOCATION_TOOLS = new Set(['browser_click', 'browser_press_key']);
 const POST_NAVIGATION_SETTLE_MS = 500;
+/**
+ * 跳转后等 DOM 稳定的上限。单页应用切路由后常常还要再拉一轮接口才渲染出内容，固定睡
+ * POST_NAVIGATION_SETTLE_MS 太短；但这段等待是模型看不见的，也不能长到像卡住——超时也照样
+ * 读一次，读到多少列多少。
+ */
+const LANDING_SETTLE_TIMEOUT_MS = 2500;
 const IMPLEMENTATION_DOSSIER_TOOL = 'browser_inspect_page_implementation';
 const MAX_POST_DOSSIER_FOLLOW_UPS = 4;
 // read_page 在补查组而不在禁用组：巡检里的正文只截了 textMaxChars，模型误把内容问题当实现问题
@@ -421,6 +432,7 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
       if (toolName === 'ask_user') askedUserThisRun = true;
 
       let locationNote: string | undefined;
+      let landingNote: string | undefined;
       if (!context.isError) {
         // browser_go_back 与 browser_navigate 同属"自己就知道退/跳到哪"的一类：结果里
         // 已经带回了落地 URL（NavigateHistoryResult.url），直接记账即可。漏掉它会让后退
@@ -437,7 +449,7 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
             // 不必再调 browser_get_active_tab 确认。
             locationNote = describePageLocation(previousUrl, newUrl, ALWAYS_REPORT_LOCATION_TOOLS.has(toolName));
             if (previousUrl !== undefined && previousUrl !== newUrl) {
-              await sleep(POST_NAVIGATION_SETTLE_MS);
+              landingNote = await readLandingPage(session.currentTabId);
             }
             lastKnownUrl.set(session.currentTabId, newUrl);
           }
@@ -483,8 +495,9 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
         // 收尾来得毫无征兆。两个阈值（剩 5 / 剩 2）各触发一次，不是持续刷新的进度条。
         options.onBudgetLow?.(policy.remaining);
       }
-      return locationNote
-        ? { content: [...context.result.content, { type: 'text', text: locationNote }] }
+      const notes = [locationNote, landingNote].filter((note): note is string => Boolean(note));
+      return notes.length > 0
+        ? { content: [...context.result.content, ...notes.map((text) => ({ type: 'text' as const, text }))] }
         : undefined;
     },
     prepareNextTurnWithContext: async (context) => {
@@ -622,6 +635,37 @@ async function fetchTabUrl(tabId: number): Promise<string | undefined> {
   } catch {
     return undefined;
   }
+}
+
+/** 内部消息的统一降级：无响应、失败、异常一律当作「拿不到」。 */
+async function requestQuietly<P, R>(type: 'WAIT_FOR' | 'GET_FORM', payload: P, tabId: number): Promise<R | undefined> {
+  try {
+    const response = (await sendMessage<P, R>(type, payload, tabId)) as MessageResponse<R> | undefined;
+    return response?.ok ? response.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 点击/提交/回车把页面带走之后，替模型做它下一步必然要做的事：等页面稳定、重读一次元素
+ * （ref: 2026-10-07 开放服务器端口会话导出，落地后 wait_for → find_text → get_form 花了三轮）。
+ * 走的是和 browser_get_form 同一条 GET_FORM，句柄表随之刷新，清单里的 fieldId 立即可用。
+ * 任何一步失败都退回旧行为（固定等待、不附清单），绝不让这段增益变成写工具的失败。
+ */
+async function readLandingPage(tabId: number): Promise<string | undefined> {
+  const settled = await requestQuietly<WaitForPayload, WaitForResult>(
+    'WAIT_FOR',
+    { kind: 'domIdle', idleMs: POST_NAVIGATION_SETTLE_MS, timeoutMs: LANDING_SETTLE_TIMEOUT_MS },
+    tabId,
+  );
+  if (!settled) await sleep(POST_NAVIGATION_SETTLE_MS);
+
+  const form = await requestQuietly<GetFormPayload, GetFormResult>('GET_FORM', {}, tabId);
+  const listing = describeLandingFields(form?.fields ?? []);
+  if (!listing) return undefined;
+  // 元素文案由页面控制：与 browser_get_form 的渲染同一道脱敏，不能开出第二条未脱敏的通路。
+  return redactText(listing, await loadRedactionSettings());
 }
 
 function sleep(ms: number): Promise<void> {

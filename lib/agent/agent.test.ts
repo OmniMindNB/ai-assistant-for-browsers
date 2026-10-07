@@ -1176,6 +1176,102 @@ describe('写工具结果里的页面位置', () => {
   });
 });
 
+// 点进详情页之后，模型此前要 wait_for domIdle → find_text → get_form 三轮才摸清落地页
+// （ref: 2026-10-07 开放服务器端口会话导出 #5–#7）。跳了就由 afterToolCall 等页面稳定、
+// 重读一次元素，把清单直接附在工具结果里。
+describe('点击跳转后附上落地页的元素清单', () => {
+  function landingLine(result: unknown): string | undefined {
+    const content = (result as { content?: { type: string; text?: string }[] } | undefined)?.content;
+    return content?.find((part) => part.text?.startsWith('[跳转后页面]'))?.text;
+  }
+
+  function field(fieldId: string, label: string, kind = 'button') {
+    return {
+      fieldId, kind, label, required: false, disabled: false, readOnly: false, visible: true,
+      valueState: 'empty', sensitive: false, writable: false, clickable: true, fingerprint: `${kind}|${label}`,
+    };
+  }
+
+  function formResult(fields: unknown[]) {
+    return { forms: [], fields, orphanFieldIds: [], unreachable: { iframes: 0, closedShadowRoots: 0 }, truncated: false, textTruncated: false };
+  }
+
+  /** 按消息类型应答；landedUrl 为 GET_TAB_URL 的返回，getForm 为 GET_FORM 的应答。 */
+  function answer(landedUrl: string, getForm: unknown) {
+    sendMessageSpy.mockImplementation(async (type: string) => {
+      if (type === 'GET_TAB_URL') return { ok: true, data: { url: landedUrl } };
+      if (type === 'WAIT_FOR') return { ok: true, data: { met: true, elapsedMs: 600 } };
+      if (type === 'GET_FORM') return getForm;
+      return { ok: true, data: {} };
+    });
+  }
+
+  async function hooksAt(url: string) {
+    const hooks = createBrowserAgentOptions({
+      provider: baseProvider, tabId: 1, tools: [], readToolCallBudget: 12, writeToolCallBudget: 24, steer: vi.fn(),
+    });
+    await hooks.afterToolCall?.(afterContext('browser_navigate', { url }, false, { url }));
+    return hooks;
+  }
+
+  it('地址变了：等 DOM 稳定、重读元素，并把清单写进工具结果', async () => {
+    const hooks = await hooksAt('https://console.example.com/list');
+    answer('https://console.example.com/detail', { ok: true, data: formResult([field('f1', '概要'), field('f2', '防火墙')]) });
+    try {
+      const result = await hooks.afterToolCall?.(afterContext('browser_click', { fieldId: 'f56' }, false));
+
+      expect(landingLine(result)).toContain('f1「概要」、f2「防火墙」');
+      const types = sendMessageSpy.mock.calls.map((call) => call[0]);
+      expect(types).toEqual(['GET_TAB_URL', 'WAIT_FOR', 'GET_FORM']);
+      expect(sendMessageSpy.mock.calls[1][1]).toMatchObject({ kind: 'domIdle' });
+      // 原结果与位置行都保留，清单排在最后
+      const texts = (result as { content: { text: string }[] }).content.map((part) => part.text);
+      expect(texts[0]).toBe('ok');
+      expect(texts[1]).toMatch(/^\[页面位置\]/);
+      expect(texts[2]).toMatch(/^\[跳转后页面\]/);
+    } finally {
+      sendMessageSpy.mockReset();
+    }
+  });
+
+  it('地址没变：不重读', async () => {
+    const hooks = await hooksAt('https://console.example.com/list');
+    answer('https://console.example.com/list', { ok: true, data: formResult([field('f1', '概要')]) });
+    try {
+      const result = await hooks.afterToolCall?.(afterContext('browser_click', { fieldId: 'f56' }, false));
+      expect(landingLine(result)).toBeUndefined();
+      expect(sendMessageSpy.mock.calls.map((call) => call[0])).toEqual(['GET_TAB_URL']);
+    } finally {
+      sendMessageSpy.mockReset();
+    }
+  });
+
+  it('重读失败时静默降级：只报位置，不抛错', async () => {
+    const hooks = await hooksAt('https://console.example.com/list');
+    answer('https://console.example.com/detail', { ok: false, error: 'Cannot access contents of the page' });
+    try {
+      const result = await hooks.afterToolCall?.(afterContext('browser_click', { fieldId: 'f56' }, false));
+      expect(landingLine(result)).toBeUndefined();
+      expect((result as { content: { text: string }[] }).content[1].text).toMatch(/^\[页面位置\]/);
+    } finally {
+      sendMessageSpy.mockReset();
+    }
+  });
+
+  // 元素文案是页面控制的文本，和 browser_get_form 的渲染一样要先过脱敏。
+  it('清单里的页面文案经过脱敏', async () => {
+    const hooks = await hooksAt('https://console.example.com/list');
+    answer('https://console.example.com/detail', { ok: true, data: formResult([field('f1', '联系 13812345678')]) });
+    try {
+      const result = await hooks.afterToolCall?.(afterContext('browser_click', { fieldId: 'f56' }, false));
+      expect(landingLine(result)).toContain('f1「联系');
+      expect(landingLine(result)).not.toContain('13812345678');
+    } finally {
+      sendMessageSpy.mockReset();
+    }
+  });
+});
+
 function userMessage(text: string): AgentMessage {
   return { role: 'user', content: [{ type: 'text', text }], timestamp: Date.now() } as unknown as AgentMessage;
 }

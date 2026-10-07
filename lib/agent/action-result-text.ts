@@ -140,6 +140,46 @@ export function describeNewFields(appeared: FormFieldDescriptor[]): string | und
   return `页面新出现 ${appeared.length} 个可交互元素：${listed}${tail}。可直接用 browser_click 的 fieldId 参数操作它们。`;
 }
 
+/**
+ * 落地页清单最多列这么多个元素。比 MAX_LISTED_NEW_FIELDS 宽得多：那里是「这一步多出来的」，
+ * 这里是「整个新页面」，列少了模型照样要再调一次 browser_get_form。写工具结果不进上下文压缩
+ * （见 agent.ts 的 compactAgentMessages），所以上限也不能放开——40 个约一两千字符。
+ */
+export const MAX_LANDING_FIELDS = 40;
+
+/** 只有标签说不清「能往里写」的元素才补上类型；按钮、链接的标签本身就够了。 */
+const SELF_EVIDENT_KINDS = new Set<FormFieldDescriptor['kind']>(['button', 'submit', 'link']);
+
+/**
+ * 点击/提交/回车跳到新页面后，由 agent.ts 的 afterToolCall 重读一次元素并附在工具结果里：
+ * 此前模型落地后要 wait_for domIdle → find_text → get_form 三轮才摸清新页面
+ * （ref: 2026-10-07 开放服务器端口会话导出）。这里只给 fieldId + 标签的精简清单，细节
+ * （下拉选项、必填、周边文字）仍归 browser_get_form。label 由页面控制，调用方负责脱敏。
+ */
+export function describeLandingFields(fields: FormFieldDescriptor[]): string | undefined {
+  const usable = fields.filter((field) => field.visible && !field.disabled);
+  if (usable.length === 0) return undefined;
+
+  const listed = usable
+    .slice(0, MAX_LANDING_FIELDS)
+    .map((field) => {
+      if (!field.label) return `${field.fieldId}（${field.kind}）`;
+      return SELF_EVIDENT_KINDS.has(field.kind)
+        ? `${field.fieldId}「${field.label}」`
+        : `${field.fieldId}「${field.label}」（${field.kind}）`;
+    })
+    .join('、');
+  const omitted = usable.length - Math.min(usable.length, MAX_LANDING_FIELDS);
+  const tail = omitted > 0 ? `等，另有 ${omitted} 个未列出` : '';
+  const unusable = fields.length - usable.length;
+  const unusableNote = unusable > 0 ? `另有 ${unusable} 个不可见或已禁用，未列出。` : '';
+
+  return (
+    `[跳转后页面] 已重新读取页面，${usable.length} 个可交互元素：${listed}${tail}。${unusableNote}` +
+    '这些 fieldId 现在就能直接用于 browser_click / browser_fill_form；需要选项、必填、周边文字等细节时再调用 browser_get_form。'
+  );
+}
+
 export function describePressKeyResult(result: PressKeyResult): string {
   const target = result.target ? `在 ${result.target} 上` : '在当前焦点元素上';
   const lines = [`已${target}按下 ${result.key}。`];
