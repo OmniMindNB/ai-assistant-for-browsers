@@ -1,6 +1,7 @@
 import {
   Agent,
   type AgentMessage,
+  type AfterToolCallContext,
   type AgentOptions,
   type BeforeToolCallResult,
   type StreamFn,
@@ -496,9 +497,10 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
         options.onBudgetLow?.(policy.remaining);
       }
       const notes = [locationNote, landingNote].filter((note): note is string => Boolean(note));
-      return notes.length > 0
-        ? { content: [...context.result.content, ...notes.map((text) => ({ type: 'text' as const, text }))] }
-        : undefined;
+      const redactBody = shouldRedactWriteResult(toolName);
+      if (notes.length === 0 && !redactBody) return undefined;
+      const body = redactBody ? await redactResultContent(context.result.content) : context.result.content;
+      return { content: [...body, ...notes.map((text) => ({ type: 'text' as const, text }))] };
     },
     prepareNextTurnWithContext: async (context) => {
       const budgetExhausted = policy.exhausted;
@@ -635,6 +637,24 @@ async function fetchTabUrl(tabId: number): Promise<string | undefined> {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * 写工具的结果文本夹着页面文案——被点元素的 label、新出现元素的标签、fill_form 回读的
+ * 实际值，批量点击全部失败时连错误信息里都有。读工具各自在源头脱敏，写工具此前一条都没有；
+ * 逐个工具去补必然漏，于是在这唯一的出口统一做（抛错的工具也会被 pi-agent-core 包成一条
+ * 结果再经过 afterToolCall）。位置类工具除外：结果主要是网址，模型有时要原样用它，
+ * 与 <runtime_context> 里的地址同样不脱敏。
+ */
+function shouldRedactWriteResult(toolName: string): boolean {
+  return WRITE_TOOL_NAMES.has(toolName) && !isPageLocationTool(toolName);
+}
+
+async function redactResultContent(
+  content: AfterToolCallContext['result']['content'],
+): Promise<AfterToolCallContext['result']['content']> {
+  const settings = await loadRedactionSettings();
+  return content.map((part) => (part.type === 'text' ? { ...part, text: redactText(part.text, settings) } : part));
 }
 
 /** 内部消息的统一降级：无响应、失败、异常一律当作「拿不到」。 */

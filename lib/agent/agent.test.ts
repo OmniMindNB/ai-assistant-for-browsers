@@ -1272,6 +1272,68 @@ describe('点击跳转后附上落地页的元素清单', () => {
   });
 });
 
+// 写工具结果里夹着页面文案：被点元素的 label、新出现元素的标签、fill_form 回读的值，
+// 批量点击失败时连错误信息里都有。读工具都在源头脱敏，写工具此前一条都没有——
+// 统一在 afterToolCall 这一个出口补上，成功和抛错两条路都经过这里。
+describe('写工具结果统一脱敏', () => {
+  function hooks() {
+    return createBrowserAgentOptions({
+      provider: baseProvider, tabId: 1, tools: [], readToolCallBudget: 12, writeToolCallBudget: 24, steer: vi.fn(),
+    });
+  }
+
+  function withText(name: string, args: unknown, text: string, isError = false): AfterToolCallContext {
+    const context = afterContext(name, args, isError);
+    (context.result as { content: { type: string; text: string }[] }).content = [{ type: 'text', text }];
+    return context;
+  }
+
+  function texts(result: unknown): string[] {
+    return ((result as { content?: { text?: string }[] } | undefined)?.content ?? []).map((part) => part.text ?? '');
+  }
+
+  it('点击成功的结果文本里的页面文案被脱敏', async () => {
+    sendMessageSpy.mockReset();
+    const result = await hooks().afterToolCall?.(
+      withText('browser_click', { fieldId: 'f1' }, '已点击 f1（"联系 13812345678"）。\n页面新出现 1 个可交互元素：f2「a@b.com」。'),
+    );
+    expect(texts(result).join('\n')).not.toContain('13812345678');
+    expect(texts(result).join('\n')).not.toContain('a@b.com');
+    expect(texts(result)[0]).toContain('已点击 f1');
+  });
+
+  it('抛错路径（批量点击全部失败时错误信息带标签）同样脱敏', async () => {
+    sendMessageSpy.mockReset();
+    const result = await hooks().afterToolCall?.(
+      withText('browser_click', { fieldIds: ['f1'] }, '- f1（"13812345678"）：失败——mismatch', true),
+    );
+    expect(texts(result)[0]).not.toContain('13812345678');
+    expect(texts(result)[0]).toContain('失败——mismatch');
+  });
+
+  it('fill_form 回读的值同样脱敏', async () => {
+    sendMessageSpy.mockReset();
+    const result = await hooks().afterToolCall?.(
+      withText('browser_fill_form', { fields: [] }, '- f3：ok（实际值 13812345678）'),
+    );
+    expect(texts(result)[0]).not.toContain('13812345678');
+  });
+
+  // 位置类工具的结果主要是网址，模型有时要原样用它；与 <runtime_context> 里的地址一样不脱敏。
+  it('位置类工具的结果不动', async () => {
+    const url = 'https://example.com/u/13812345678';
+    const result = await hooks().afterToolCall?.(
+      withText('browser_navigate', { url }, `已跳转到 "${url}"。`),
+    );
+    expect(result).toBeUndefined();
+  });
+
+  it('读工具在源头已经脱敏，这里不重复处理', async () => {
+    const result = await hooks().afterToolCall?.(withText('browser_get_form', {}, 'f1「13812345678」'));
+    expect(result).toBeUndefined();
+  });
+});
+
 function userMessage(text: string): AgentMessage {
   return { role: 'user', content: [{ type: 'text', text }], timestamp: Date.now() } as unknown as AgentMessage;
 }

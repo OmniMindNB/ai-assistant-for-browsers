@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BatchClickOutcome, ClickElementResult, FormFieldDescriptor, NavigateHistoryResult, NavigateTabResult, ScrollPageResult } from '@/lib/messaging';
-import { describeBatchClickResult, describeClickResult, describeGoBackResult, describeLandingFields, describeNavigateResult, describeNewFields, describeScrollResult, MAX_LANDING_FIELDS } from './action-result-text';
+import { describeBatchClickResult, describeClickResult, describeGoBackResult, describeLandingFields, describeNavigateResult, describeNewFields, describeScrollResult, MAX_LANDING_FIELDS, MAX_LISTED_NEW_FIELDS } from './action-result-text';
 
 function scroll(overrides: Partial<ScrollPageResult> = {}): ScrollPageResult {
   return { x: 0, y: 800, scrolledBy: 800, pixelsAbove: 800, pixelsBelow: 2400, viewportHeight: 1200, ...overrides };
@@ -146,12 +146,26 @@ describe('describeNewFields', () => {
 
   // 一次展开出几十个选项时全列出来会淹没工具结果。
   it('caps the enumeration and reports how many were omitted', () => {
-    const fields = Array.from({ length: 12 }, (_, index) => fieldDescriptor(`f${index}`, `选项${index}`));
+    const total = MAX_LISTED_NEW_FIELDS + 4;
+    const fields = Array.from({ length: total }, (_, index) => fieldDescriptor(`f${index}`, `选项${index}`));
     const result = describeNewFields(fields);
-    expect(result).toContain('页面新出现 12 个可交互元素');
-    expect(result).toContain('f7「选项7」');
-    expect(result).not.toContain('f8「选项8」');
+    expect(result).toContain(`页面新出现 ${total} 个可交互元素`);
+    expect(result).toContain(`f${MAX_LISTED_NEW_FIELDS - 1}「选项${MAX_LISTED_NEW_FIELDS - 1}」`);
+    expect(result).not.toContain(`f${MAX_LISTED_NEW_FIELDS}「`);
     expect(result).toContain('等，另有 4 个未列出');
+  });
+
+  // 2026-10-07 开端口会话：点开「添加规则」弹窗后模型又调了一次 get_form——一个弹窗里的端口、
+  // 协议、来源、备注、确定、取消早就超过旧上限 8，列不全它只能再去读一遍。
+  it('lists a whole typical dialog without truncation', () => {
+    expect(MAX_LISTED_NEW_FIELDS).toBeGreaterThanOrEqual(15);
+  });
+
+  // 只给 placeholder 当标签时（「如53,80,443或80-90」），不标类型看不出它是输入框还是按钮。
+  it('annotates fillable fields with their kind, like the landing-page listing', () => {
+    expect(describeNewFields([fieldDescriptor('f6', '如53,80,443或80-90', 'text'), fieldDescriptor('f9', '确定', 'submit')])).toBe(
+      '页面新出现 2 个可交互元素：f6「如53,80,443或80-90」（text）、f9「确定」。可直接用 browser_click 的 fieldId 参数操作它们。',
+    );
   });
 });
 

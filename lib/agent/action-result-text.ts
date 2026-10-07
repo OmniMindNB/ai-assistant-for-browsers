@@ -6,8 +6,23 @@
 // 这里全部是纯函数，与消息通道解耦，便于单测。
 import type { BatchClickOutcome, ClickElementResult, FormFieldDescriptor, NavigateHistoryResult, NavigateTabResult, PressKeyResult, ScrollPageResult } from '@/lib/messaging';
 
-/** 新元素最多列举这么多个，其余只报个数——一次展开几十个选项时全列出来会淹没工具结果。 */
-const MAX_LISTED_NEW_FIELDS = 8;
+/**
+ * 新元素最多列举这么多个，其余只报个数——一次展开几十个选项时全列出来会淹没工具结果。
+ * 原先是 8：点开一个普通弹窗（端口、协议、来源、备注、确定、取消……）就超了，模型列不全
+ * 只能再调一次 browser_get_form（ref: 2026-10-07 开放服务器端口会话导出 #12）。
+ */
+export const MAX_LISTED_NEW_FIELDS = 20;
+
+/** 只有标签说不清「能往里写」的元素才补上类型；按钮、链接的标签本身就够了。 */
+const SELF_EVIDENT_KINDS = new Set<FormFieldDescriptor['kind']>(['button', 'submit', 'link']);
+
+/** 清单里的一项：f6「如53,80,443」（text）、f9「确定」、f2（checkbox）。 */
+function listFieldEntry(field: FormFieldDescriptor): string {
+  if (!field.label) return `${field.fieldId}（${field.kind}）`;
+  return SELF_EVIDENT_KINDS.has(field.kind)
+    ? `${field.fieldId}「${field.label}」`
+    : `${field.fieldId}「${field.label}」（${field.kind}）`;
+}
 
 /** 「2400px（约 2.0 屏）未查看」；视口高度未知时省略屏数（此时括号不再提供分隔，补一个空格）。 */
 function describeRemaining(pixels: number, viewportHeight: number): string {
@@ -125,14 +140,15 @@ export function describeGoBackResult(result: NavigateHistoryResult): string {
  *
  * 填完输入框弹出的下拉建议、点开的菜单项都是这一类。附在工具结果尾部，省掉模型
  * 「再调一次 browser_get_form 才发现它们」的一轮往返（ref: form-schema.ts 的 findNewFieldIds）。
- * label 由页面控制，已在 collectFormFields 阶段压空白并截断。
+ * label 由页面控制，已在 collectFormFields 阶段压空白并截断；脱敏由 agent.ts 的 afterToolCall
+ * 对整条写工具结果统一做。
  */
 export function describeNewFields(appeared: FormFieldDescriptor[]): string | undefined {
   if (appeared.length === 0) return undefined;
 
   const listed = appeared
     .slice(0, MAX_LISTED_NEW_FIELDS)
-    .map((field) => (field.label ? `${field.fieldId}「${field.label}」` : `${field.fieldId}（${field.kind}）`))
+    .map(listFieldEntry)
     .join('、');
   const omitted = appeared.length - Math.min(appeared.length, MAX_LISTED_NEW_FIELDS);
   const tail = omitted > 0 ? `等，另有 ${omitted} 个未列出` : '';
@@ -141,20 +157,18 @@ export function describeNewFields(appeared: FormFieldDescriptor[]): string | und
 }
 
 /**
- * 落地页清单最多列这么多个元素。比 MAX_LISTED_NEW_FIELDS 宽得多：那里是「这一步多出来的」，
+ * 落地页清单最多列这么多个元素。比 MAX_LISTED_NEW_FIELDS 宽：那里是「这一步多出来的」，
  * 这里是「整个新页面」，列少了模型照样要再调一次 browser_get_form。写工具结果不进上下文压缩
  * （见 agent.ts 的 compactAgentMessages），所以上限也不能放开——40 个约一两千字符。
  */
 export const MAX_LANDING_FIELDS = 40;
 
-/** 只有标签说不清「能往里写」的元素才补上类型；按钮、链接的标签本身就够了。 */
-const SELF_EVIDENT_KINDS = new Set<FormFieldDescriptor['kind']>(['button', 'submit', 'link']);
-
 /**
  * 点击/提交/回车跳到新页面后，由 agent.ts 的 afterToolCall 重读一次元素并附在工具结果里：
  * 此前模型落地后要 wait_for domIdle → find_text → get_form 三轮才摸清新页面
  * （ref: 2026-10-07 开放服务器端口会话导出）。这里只给 fieldId + 标签的精简清单，细节
- * （下拉选项、必填、周边文字）仍归 browser_get_form。label 由页面控制，调用方负责脱敏。
+ * （下拉选项、必填、周边文字）仍归 browser_get_form。label 由页面控制，调用方负责脱敏
+ * （它不是写工具自己的结果文本，afterToolCall 的统一脱敏管不到它）。
  */
 export function describeLandingFields(fields: FormFieldDescriptor[]): string | undefined {
   const usable = fields.filter((field) => field.visible && !field.disabled);
@@ -162,12 +176,7 @@ export function describeLandingFields(fields: FormFieldDescriptor[]): string | u
 
   const listed = usable
     .slice(0, MAX_LANDING_FIELDS)
-    .map((field) => {
-      if (!field.label) return `${field.fieldId}（${field.kind}）`;
-      return SELF_EVIDENT_KINDS.has(field.kind)
-        ? `${field.fieldId}「${field.label}」`
-        : `${field.fieldId}「${field.label}」（${field.kind}）`;
-    })
+    .map(listFieldEntry)
     .join('、');
   const omitted = usable.length - Math.min(usable.length, MAX_LANDING_FIELDS);
   const tail = omitted > 0 ? `等，另有 ${omitted} 个未列出` : '';
