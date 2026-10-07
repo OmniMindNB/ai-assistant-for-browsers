@@ -1,4 +1,5 @@
 import { useTranslation } from '@/lib/i18n';
+import { BrandMark } from './BrandMark';
 
 /**
  * 空状态里展示的写操作示例。
@@ -31,10 +32,8 @@ export function WorkbenchEmptyState({ busy, onPickExample }: WorkbenchEmptyState
 
   return (
     <div className="m-auto flex w-full max-w-md flex-col items-center text-center">
-      {/* 品牌标记只出现在这里：消息列表里的助手头像已经去掉（侧栏太窄，省下那 40px 给正文）。 */}
-      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-neutral-900 text-xl font-bold text-white dark:bg-neutral-800">
-        R
-      </div>
+      {/* 与扩展图标同一张图：用户在工具栏点开的是什么，打开后迎面看到的就是什么。 */}
+      <BrandMark className="mb-4 h-14 w-14 drop-shadow-sm" />
       <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
         {t('workbench.emptyTitle')}
       </h2>

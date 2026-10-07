@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type RefObject } from 'react';
 import { useTranslation } from '@/lib/i18n';
 import { planStatusUpdate } from '@/lib/workbench/status-throttle';
 import { IconGear, IconMenu, IconPlus } from '../icons';
+import { BrandMark } from './BrandMark';
 
 /**
  * header 运行状态。label 是看得见的那句短进度（"执行中 · 第 3 步"），detail 是此刻那一步的完整描述。
@@ -127,7 +128,8 @@ export function WorkbenchHeader({
           </span>
         </div>
       ) : (
-        <div className="flex min-w-0 items-center gap-2 px-1">
+        <div className="flex min-w-0 items-center gap-1.5 px-1">
+          <BrandMark className="h-5 w-5 shrink-0" />
           <span className="truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">Runi</span>
         </div>
       )}
