@@ -1441,6 +1441,48 @@ describe('activity step list', () => {
 
     expect(screen.getByText('Partially completed')).toBeVisible();
     expect(screen.getByText('Task not completed')).toBeVisible();
+    // 没做成时原因直接写出来，不只藏在 title 里。
+    expect(screen.getByText('Filled 2 of 3 fields.', { selector: 'p' })).toBeVisible();
+    expect(screen.getByText('Submit button was never found.', { selector: 'p' })).toBeVisible();
+  });
+
+  it('keeps the success reason in the tooltip only', () => {
+    (chatStore as any).messages = [
+      {
+        id: 'm1',
+        role: 'assistant',
+        content: 'Done',
+        createdAt: 1,
+        taskOutcome: { outcome: 'success', reason: 'Filled and submitted the form.' },
+      },
+    ];
+    (chatStore as any).busy = false;
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    expect(screen.queryByText('Filled and submitted the form.')).toBeNull();
+  });
+
+  it('keeps the action buttons visible on the last reply and hover-only on earlier ones', () => {
+    (chatStore as any).messages = [
+      { id: 'm1', role: 'user', content: 'Q1', createdAt: 1 },
+      { id: 'm2', role: 'assistant', content: 'Earlier answer', createdAt: 2 },
+      { id: 'm3', role: 'user', content: 'Q2', createdAt: 3 },
+      { id: 'm4', role: 'assistant', content: 'Latest answer', createdAt: 4 },
+    ];
+    (chatStore as any).busy = false;
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    const [earlier, latest] = screen.getAllByRole('button', { name: 'Copy message' }).map((button) => button.parentElement!);
+    expect(earlier).toHaveClass('opacity-0');
+    expect(latest).not.toHaveClass('opacity-0');
   });
 
   it('copies an assistant message to the clipboard and shows transient "Copied" feedback', async () => {

@@ -627,24 +627,36 @@ const Message = memo(function Message({
           </div>
         )}
         {message.taskOutcome && (
-          <div
-            className={`mt-2 inline-flex items-center gap-1.5 text-xs font-medium ${
-              message.taskOutcome.outcome === 'success'
-                ? 'text-emerald-700 dark:text-emerald-400'
-                : message.taskOutcome.outcome === 'partial'
-                  ? 'text-amber-700 dark:text-amber-400'
-                  : 'text-red-700 dark:text-red-400'
-            }`}
-            title={message.taskOutcome.reason}
-          >
-            {message.taskOutcome.outcome === 'success' ? (
-              <IconCheck className="h-3.5 w-3.5" />
-            ) : message.taskOutcome.outcome === 'partial' ? (
-              <IconAlertTriangle className="h-3.5 w-3.5" />
-            ) : (
-              <IconClose className="h-3.5 w-3.5" />
+          <div className="mt-2">
+            <div
+              className={`inline-flex items-center gap-1.5 text-xs font-medium ${
+                message.taskOutcome.outcome === 'success'
+                  ? 'text-emerald-700 dark:text-emerald-400'
+                  : message.taskOutcome.outcome === 'partial'
+                    ? 'text-amber-700 dark:text-amber-400'
+                    : 'text-red-700 dark:text-red-400'
+              }`}
+              title={message.taskOutcome.reason}
+            >
+              {message.taskOutcome.outcome === 'success' ? (
+                <IconCheck className="h-3.5 w-3.5" />
+              ) : message.taskOutcome.outcome === 'partial' ? (
+                <IconAlertTriangle className="h-3.5 w-3.5" />
+              ) : (
+                <IconClose className="h-3.5 w-3.5" />
+              )}
+              <span>{t(`chat.taskOutcome.${message.taskOutcome.outcome}`)}</span>
+            </div>
+            {/* 没做成时"为什么"才是用户最需要的那句，不能只藏在悬停提示里（侧栏里也常常没有鼠标悬停）。
+                成功时原因多半是复述回答，照旧只放 title，不再多占一行。 */}
+            {message.taskOutcome.outcome !== 'success' && message.taskOutcome.reason && (
+              <p
+                title={message.taskOutcome.reason}
+                className="mt-0.5 line-clamp-3 pl-5 text-xs text-neutral-600 dark:text-neutral-300"
+              >
+                {message.taskOutcome.reason}
+              </p>
             )}
-            <span>{t(`chat.taskOutcome.${message.taskOutcome.outcome}`)}</span>
           </div>
         )}
         {message.stopped && (
@@ -669,7 +681,13 @@ const Message = memo(function Message({
           )
         )}
         {content && (!busy || !isLastMessage) && (
-          <div className="mt-2 flex items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+          // 最后一条回复的操作常驻可见：复制、重新生成、保存为指令几乎都发生在刚收到的这条上，
+          // 只靠悬停才出现等于让人先猜到"这里有按钮"。更早的消息保持悬停/聚焦才显示，免得满屏图标。
+          <div
+            className={`mt-2 flex items-center gap-1 transition-opacity ${
+              isLastMessage ? '' : 'opacity-0 focus-within:opacity-100 group-hover:opacity-100'
+            }`}
+          >
             <CopyMessageButton content={content} />
             {isLastMessage && !requestBlocked && canRegenerate && (
               <button
