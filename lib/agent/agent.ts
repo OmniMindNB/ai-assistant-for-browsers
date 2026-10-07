@@ -247,6 +247,9 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
   let writeToolRanThisRun = false;
   let outcomeReported = false;
   let outcomeForceAttempted = false;
+  // 补调汇报是在模型已经用纯文本答完之后发起的：汇报一到就该结束，答复不必再给一遍。
+  // 只由非预算分支置位——预算收尾轮里模型可能还没答复，那一轮的收尾交给 policy。
+  let outcomeSolicitedAfterAnswer = false;
   // "拿到句柄却未动手"补一轮的输入：拿过句柄、尝试过写（含失败和被闸门拦下）、问过用户。
   let handleCollectedThisRun = false;
   let writeToolAttemptedThisRun = false;
@@ -547,6 +550,7 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
       const hasToolCalls = context.message?.content?.some((part) => part.type === 'toolCall') ?? false;
       if (writeToolRanThisRun && !outcomeReported && !outcomeForceAttempted && !hasToolCalls && reportTaskOutcomeTool) {
         outcomeForceAttempted = true; // 保证最多补调一次，绝不循环
+        outcomeSolicitedAfterAnswer = true;
         options.steer({
           role: 'user',
           content:
@@ -572,7 +576,8 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
       }
       return undefined;
     },
-    shouldStopAfterTurn: async () => policy.shouldStopAfterTurn(),
+    shouldStopAfterTurn: async (context) =>
+      policy.shouldStopAfterTurn() || isClosingReportTurn(context, outcomeSolicitedAfterAnswer),
     transformContext: async (messages) => {
       const compacted = compactAgentMessages(messages, contextWindow);
       if (contextWindow.start > 0) options.onContextTruncated?.();
@@ -655,6 +660,27 @@ async function redactResultContent(
 ): Promise<AfterToolCallContext['result']['content']> {
   const settings = await loadRedactionSettings();
   return content.map((part) => (part.type === 'text' ? { ...part, text: redactText(part.text, settings) } : part));
+}
+
+/**
+ * 这一轮是不是「汇报完就该收工」的一轮：本轮的工具调用只有 report_task_outcome 且都成功，
+ * 并且答复已经给过——要么就写在同一条消息里，要么是答完之后被补调的汇报。
+ *
+ * 不收工的话循环会再跑一轮，模型只会把结论再说一遍（ref: 2026-10-07 开放服务器端口会话导出，
+ * 导出正文里「端口已开放」前后出现两次）。和别的工具同批时不算：模型还得看那个工具的结果。
+ * 只有汇报、没有文字时也不算：用户还没拿到答复。
+ */
+function isClosingReportTurn(
+  context: { message?: { content?: { type: string; name?: string; text?: string }[] }; toolResults?: { isError?: boolean }[] } | undefined,
+  solicitedAfterAnswer: boolean,
+): boolean {
+  const content = context?.message?.content ?? [];
+  const calls = content.filter((part) => part.type === 'toolCall');
+  if (calls.length === 0 || !calls.every((call) => call.name === REPORT_TASK_OUTCOME_TOOL_NAME)) return false;
+  const results = context?.toolResults ?? [];
+  if (results.length === 0 || results.some((result) => result.isError)) return false;
+  const answered = content.some((part) => part.type === 'text' && (part.text ?? '').trim().length > 0);
+  return answered || solicitedAfterAnswer;
 }
 
 /** 内部消息的统一降级：无响应、失败、异常一律当作「拿不到」。 */

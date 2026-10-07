@@ -194,7 +194,8 @@ function makeReportTaskOutcomeTool(onTaskOutcome?: BrowserToolsConfig['onTaskOut
     label: 'Report Task Outcome',
     description:
       '当你刚刚完成了一个涉及修改页面或与页面交互的任务并准备结束这一轮时，调用它显式声明这次任务的结果。' +
-      '不要在纯问答、没有实际操作页面的轮次里调用它。',
+      '不要在纯问答、没有实际操作页面的轮次里调用它。' +
+      '把最终答复写在调用它的同一条消息里：汇报成功后运行即结束，不会再有下一轮。',
     parameters: Type.Object({
       outcome: Type.Union(
         [Type.Literal('success'), Type.Literal('partial'), Type.Literal('failure')],

@@ -1334,6 +1334,90 @@ describe('写工具结果统一脱敏', () => {
   });
 });
 
+// 2026-10-07 开端口会话：模型把完整答复和 report_task_outcome 放在同一条消息里，循环却又
+// 跑了一轮，让它把「任务已完成」再说一遍——多一次往返，导出的正文里结论也重复了两遍。
+describe('汇报结果之后不再多跑一轮', () => {
+  const reportTool = { name: 'report_task_outcome' } as unknown as BrowserAgentTool;
+
+  function hooks() {
+    return createBrowserAgentOptions({
+      provider: baseProvider, tabId: 1, tools: [reportTool], readToolCallBudget: 12, writeToolCallBudget: 24, steer: vi.fn(),
+    });
+  }
+
+  function toolCall(name: string) {
+    return { type: 'toolCall', id: `${name}-id`, name, arguments: {} };
+  }
+
+  function toolResult(name: string, isError = false) {
+    return { role: 'toolResult', toolCallId: `${name}-id`, toolName: name, content: [{ type: 'text', text: 'ok' }], isError };
+  }
+
+  function turn(content: unknown[], results: unknown[]) {
+    return { message: { role: 'assistant', content }, toolResults: results, context: {}, newMessages: [] } as never;
+  }
+
+  async function afterWriteAndReport(h: ReturnType<typeof hooks>, reportFailed = false) {
+    sendMessageSpy.mockReset();
+    await h.afterToolCall?.(afterContext('browser_click', { fieldId: 'f1' }, false));
+    await h.afterToolCall?.(afterContext('report_task_outcome', { outcome: 'success', reason: 'ok' }, reportFailed));
+  }
+
+  it('答复与汇报在同一条消息里：汇报成功即结束', async () => {
+    const h = hooks();
+    await afterWriteAndReport(h);
+    const stop = await h.shouldStopAfterTurn?.(
+      turn([{ type: 'text', text: '✅ 端口6000已成功开放。' }, toolCall('report_task_outcome')], [toolResult('report_task_outcome')]),
+    );
+    expect(stop).toBe(true);
+  });
+
+  it('只有汇报、没有答复文字：还要再跑一轮给出答复', async () => {
+    const h = hooks();
+    await afterWriteAndReport(h);
+    const stop = await h.shouldStopAfterTurn?.(
+      turn([{ type: 'text', text: '  ' }, toolCall('report_task_outcome')], [toolResult('report_task_outcome')]),
+    );
+    expect(stop).toBe(false);
+  });
+
+  it('汇报和别的工具同一批：模型还得看那个工具的结果，不结束', async () => {
+    const h = hooks();
+    await afterWriteAndReport(h);
+    const stop = await h.shouldStopAfterTurn?.(
+      turn(
+        [{ type: 'text', text: '点一下再汇报。' }, toolCall('browser_click'), toolCall('report_task_outcome')],
+        [toolResult('browser_click'), toolResult('report_task_outcome')],
+      ),
+    );
+    expect(stop).toBe(false);
+  });
+
+  it('汇报调用失败：不结束', async () => {
+    const h = hooks();
+    await afterWriteAndReport(h, true);
+    const stop = await h.shouldStopAfterTurn?.(
+      turn([{ type: 'text', text: '完成。' }, toolCall('report_task_outcome')], [toolResult('report_task_outcome', true)]),
+    );
+    expect(stop).toBe(false);
+  });
+
+  // 模型已经用纯文本答完、被强制补调汇报：答复早就给过了，汇报完直接结束，不让它再总结一遍。
+  it('被强制补调的汇报：即使没有文字也结束', async () => {
+    const h = hooks();
+    sendMessageSpy.mockReset();
+    await h.afterToolCall?.(afterContext('browser_click', { fieldId: 'f1' }, false));
+    await h.prepareNextTurnWithContext?.({
+      message: textOnlyMessage('端口已开放。'),
+      context: { messages: [], tools: [reportTool] },
+    } as unknown as PrepareNextTurnContext);
+    await h.afterToolCall?.(afterContext('report_task_outcome', { outcome: 'success', reason: 'ok' }, false));
+
+    const stop = await h.shouldStopAfterTurn?.(turn([toolCall('report_task_outcome')], [toolResult('report_task_outcome')]));
+    expect(stop).toBe(true);
+  });
+});
+
 function userMessage(text: string): AgentMessage {
   return { role: 'user', content: [{ type: 'text', text }], timestamp: Date.now() } as unknown as AgentMessage;
 }
