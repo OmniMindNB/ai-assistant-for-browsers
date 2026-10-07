@@ -301,7 +301,11 @@ export default function App() {
         onPick={pickConversation}
         onRemove={removeConversation}
         onClearAll={clearAllConversations}
-        onExport={(id) => void exportConversation(id)}
+        onExport={(id) => {
+          void exportConversation(id).then((failure) => {
+            if (failure) showToast('error', failure);
+          });
+        }}
         returnFocusRef={historyTriggerRef}
       />
 
@@ -831,27 +835,28 @@ function ConfirmationCard({
         {confirmation.summary}
       </p>
       {confirmation.codePreview && (
-        <pre className="mb-2 max-h-40 overflow-auto rounded-lg bg-neutral-900/90 p-2 text-[11px] text-neutral-100">
+        <pre className="mb-2 max-h-40 overflow-auto rounded-lg bg-neutral-900/90 p-2 text-xs text-neutral-100">
           {confirmation.codePreview}
         </pre>
       )}
       {/* 提交表单不可撤销，不能画成绿色的「安全放行」。改用与卡片同源的琥珀色（警示语义），
-          并让「拒绝」保持同等尺寸和实心描边——两个选项等重，而不是一主一次。 */}
+          并让「拒绝」保持同等尺寸和实心描边——两个选项等重，而不是一主一次。
+          这是全流程唯一要人拍板的地方，按钮给足 36px 高、14px 字，各占一半宽度，不让人点偏。 */}
       <div className="flex gap-2">
         <button
           onClick={onApprove}
-          className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-700"
+          className="h-9 flex-1 rounded-lg bg-amber-600 px-4 text-sm font-medium text-white transition-colors hover:bg-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-700"
         >
           {t(takeover ? 'confirm.takeoverResume' : 'confirm.approve')}
         </button>
         <button
           onClick={onDeny}
-          className="rounded-lg border border-neutral-400 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-700 dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
+          className="h-9 flex-1 rounded-lg border border-neutral-400 bg-white px-4 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-700 dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
         >
           {t(takeover ? 'confirm.takeoverStop' : 'confirm.deny')}
         </button>
       </div>
-      <p className="mt-2 text-[11px] text-amber-800 dark:text-amber-300/80">
+      <p className="mt-2 text-xs text-amber-800 dark:text-amber-300/80">
         {t(takeover ? 'confirm.takeoverHint' : 'confirm.approveHint')}
       </p>
     </div>
@@ -891,12 +896,12 @@ function QuestionCard({
             if (e.key === 'Enter') submit();
           }}
           placeholder={t('askUser.placeholder')}
-          className="min-w-0 flex-1 rounded-lg border border-indigo-200 bg-white px-2.5 py-1.5 text-xs text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-indigo-800 dark:bg-neutral-900 dark:text-neutral-100"
+          className="h-9 min-w-0 flex-1 rounded-lg border border-indigo-200 bg-white px-3 text-sm text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-indigo-800 dark:bg-neutral-900 dark:text-neutral-100"
         />
         <button
           onClick={submit}
           disabled={!answer.trim()}
-          className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          className="h-9 shrink-0 rounded-lg bg-indigo-600 px-4 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
           {t('askUser.submit')}
         </button>

@@ -177,6 +177,7 @@ beforeEach(() => {
     pendingAttachments: [],
     referencedTabs: [],
     shortcuts: [],
+    conversations: [],
     pageContext: {
       status: 'available' as const,
       tabId: 1,
@@ -1670,8 +1671,11 @@ describe('confirmation card', () => {
     expect(approve.className).not.toContain('emerald');
     expect(approve.className).toContain('amber');
     // 两颗按钮同权重：拒绝不是一个需要费劲才找得到的次要选项。
-    expect(deny.className).toContain('px-3');
-    expect(approve.className).toContain('px-3');
+    // 又是全流程唯一要人拍板的地方，所以都给足 36px 高、14px 字，并平分宽度。
+    for (const button of [approve, deny]) {
+      expect(button).toHaveClass('h-9', 'flex-1', 'text-sm');
+      expect(button).not.toHaveClass('text-xs');
+    }
   });
 
   // 接管暂停复用同一条应答通道，但问的是完全不同的问题：不是"这次提交放不放行"，
@@ -2151,6 +2155,32 @@ describe('workbench history', () => {
     expect(alert.compareDocumentPosition(screen.getByRole('main')) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
     await user.click(within(alert).getByRole('button', { name: 'Close' }));
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  // 导出失败是一次性反馈：弹轻提示，不写进对话里的运行错误位。
+  it('shows an export failure as a toast instead of a conversation error', async () => {
+    const user = userEvent.setup();
+    (globalThis as any).browser.storage.onChanged = {
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+    };
+    window.matchMedia = vi.fn().mockReturnValue({ addEventListener: vi.fn(), removeEventListener: vi.fn(), matches: false });
+    HTMLElement.prototype.scrollTo = vi.fn();
+    (chatStore as any).conversations = records;
+    (chatStore.exportConversation as any).mockResolvedValueOnce('Export failed: disk full');
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Conversation history' }));
+    await user.click(screen.getByRole('button', { name: 'Export conversation Google page summary' }));
+
+    expect(chatStore.exportConversation).toHaveBeenCalledWith('google');
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Export failed: disk full');
+    expect(within(alert).getByRole('button', { name: 'Close' })).toBeVisible();
   });
 });
 

@@ -157,8 +157,12 @@ interface ChatState {
   openConversation: (id: string) => Promise<boolean>;
   removeConversation: (id: string) => Promise<void>;
   clearAllConversations: () => Promise<void>;
-  /** 把一个会话导出成排查问题用的 .md（ref: 2026-09-24-conversation-export-design.md §5）。统一读 IndexedDB，不读面板内存。 */
-  exportConversation: (id: string) => Promise<void>;
+  /**
+   * 把一个会话导出成排查问题用的 .md（ref: 2026-09-24-conversation-export-design.md §5）。统一读 IndexedDB，不读面板内存。
+   * 失败时返回给用户看的错误文案，成功返回 null。不写进 store 的 error：那是运行错误的位置
+   * （消息流里、带重试），导出失败是一次性反馈，由面板弹成轻提示。
+   */
+  exportConversation: (id: string) => Promise<string | null>;
   respondToConfirmation: (approved: boolean) => void;
   respondToQuestion: (answer: string) => void;
   restoreTabConversation: () => Promise<void>;
@@ -1116,8 +1120,9 @@ export const useChat = create<ChatState>((set, get) => ({
         t,
       });
       downloadTextFile(exportFileName(doc.conversation.title, doc.exportedAt), renderConversationExportMarkdown(doc, t));
+      return null;
     } catch (error) {
-      set({ error: t('export.failed', { error: errMsg(error) }) });
+      return t('export.failed', { error: errMsg(error) });
     }
   },
 }));

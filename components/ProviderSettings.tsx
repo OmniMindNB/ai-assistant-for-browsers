@@ -344,7 +344,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
                       <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-medium text-neutral-900 dark:text-neutral-100">
                         <span className="truncate" title={p.name}>{p.name}</span>
                         {active && (
-                          <span className="rounded bg-green-100 px-1.5 py-0.5 text-[10px] text-green-700 dark:bg-green-900/40 dark:text-green-300">
+                          <span className="shrink-0 rounded bg-green-100 px-1.5 py-0.5 text-xs text-green-700 dark:bg-green-900/40 dark:text-green-300">
                             {t('provider.activeBadge')}
                           </span>
                         )}
@@ -476,7 +476,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
             <legend className="text-xs text-neutral-500 dark:text-neutral-400">
               {t('provider.visionModels')}
             </legend>
-            <p className="mt-1 text-[11px] leading-relaxed text-neutral-400 dark:text-neutral-500">
+            <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
               {t('provider.visionModelsHint')}
             </p>
             {visionCandidates.length === 0 ? (
