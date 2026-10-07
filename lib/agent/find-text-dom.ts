@@ -39,21 +39,24 @@ export interface FindTextOutput {
   truncated: boolean;
 }
 
-/**
- * 单帧最多收集这么多条命中，避免一个巨型页面把整段 executeScript 响应撑爆——请求的
- * limit（上限 20）由 background.ts 在合并多帧结果之后再做一次更贴近调用方意图的截断，
- * 这里只是安全阀。
- */
-const FIND_TEXT_FRAME_SAFETY_CAP = 50;
-/** 单条匹配文本的安全阀：极端情况下唯一命中落在较靠上层的容器（查询词由分散在多个
- *  子节点里的文本拼成，没有更小的元素单独包含它），它的 textContent 可能有数万字符。
- *  背景同 form-dom.ts 的 RAW_TEXT_SAFETY_CAP。 */
-const RAW_TEXT_SAFETY_CAP = 2000;
-/** "最深匹配"过滤是候选数的平方级开销；候选本身通常远小于全部命中元素数，但一个
- *  近乎无处不在的词需要硬上限兜底，避免卡住页面。 */
-const MAX_CANDIDATES_BEFORE_DEEPEST_FILTER = 500;
-
 export const findTextInPage = (mainInput: FindTextInput, childInput: FindTextInput): FindTextOutput => {
+  // ⚠️ 这三个上限必须定义在函数体内：本函数被序列化注入页面，模块顶层的常量在页面里不存在。
+  // 它们曾经放在模块顶层，打包后在页面里一执行就 ReferenceError，executeInAllFrames 把出错的帧
+  // 静默过滤掉——browser_find_text 在生产构建里因此一直返回 0 个命中（ref: 2026-10-07 开端口
+  // 会话导出；injected-functions.dom.test.ts 守着这条约束）。
+
+  // 单帧最多收集这么多条命中，避免一个巨型页面把整段 executeScript 响应撑爆——请求的
+  // limit（上限 20）由 background.ts 在合并多帧结果之后再做一次更贴近调用方意图的截断，
+  // 这里只是安全阀。
+  const FIND_TEXT_FRAME_SAFETY_CAP = 50;
+  // 单条匹配文本的安全阀：极端情况下唯一命中落在较靠上层的容器（查询词由分散在多个
+  // 子节点里的文本拼成，没有更小的元素单独包含它），它的 textContent 可能有数万字符。
+  // 背景同 form-dom.ts 的 RAW_TEXT_SAFETY_CAP。
+  const RAW_TEXT_SAFETY_CAP = 2000;
+  // "最深匹配"过滤是候选数的平方级开销；候选本身通常远小于全部命中元素数，但一个
+  // 近乎无处不在的词需要硬上限兜底，避免卡住页面。
+  const MAX_CANDIDATES_BEFORE_DEEPEST_FILTER = 500;
+
   const input = window.top === window ? mainInput : childInput;
   const queryNormalized = (input?.text ?? '').replace(/\s+/g, ' ').trim();
   const mode = input?.mode === 'exact' ? 'exact' : 'contains';

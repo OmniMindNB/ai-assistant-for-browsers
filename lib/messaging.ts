@@ -171,6 +171,11 @@ export interface FindTextResult {
   matches: FindTextMatch[];
   /** 命中数超过 limit，或某一帧内部触发了它自己的安全上限。 */
   truncated: boolean;
+  /**
+   * 主页面没有返回结果（注入被拒绝，或脚本在页面里出错）：matches 只来自 iframe，0 个命中不代表
+   * 页面上没有这段文字。executeInAllFrames 会把出错的帧静默丢掉，没有这个标记就无从分辨。
+   */
+  mainFrameUnavailable?: true;
 }
 
 export interface GetHtmlPayload {

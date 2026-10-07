@@ -734,7 +734,7 @@ async function findText(payload: FindTextPayload, tabId: number): Promise<FindTe
     frameOrigin: entry.frameId === 0 ? undefined : entry.frameOrigin,
   }));
 
-  return { matches, truncated };
+  return main ? { matches, truncated } : { matches, truncated, mainFrameUnavailable: true };
 }
 
 const MAX_FORM_FIELDS = 120;

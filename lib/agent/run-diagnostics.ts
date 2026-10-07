@@ -111,6 +111,7 @@ export function summarizeToolResult(toolName: string, result: unknown, redaction
       summary = matches.length === 0
         ? '命中 0 个'
         : `命中 ${matches.length} 个（可见 ${visible.length} 个）${listed ? `：${listed}` : ''}`;
+      if (detailsOf(result)?.mainFrameUnavailable === true) summary += '（主页面未返回结果）';
     }
   } else if (toolName === 'browser_get_form') {
     const fields = detailsOf(result)?.fields;

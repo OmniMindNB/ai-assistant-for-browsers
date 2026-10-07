@@ -104,6 +104,9 @@ describe('summarizeToolResult', () => {
     expect(summarizeToolResult('browser_find_text', text('{...}', details), redaction))
       .toBe('命中 3 个（可见 2 个）：t2「6000」、t3「开放6000端口」');
     expect(summarizeToolResult('browser_find_text', text('{...}', { matches: [], truncated: false }), redaction)).toBe('命中 0 个');
+    // 主页面没返回结果的「0 命中」和真的没找到是两回事，导出里得分得清。
+    expect(summarizeToolResult('browser_find_text', text('{...}', { matches: [], truncated: false, mainFrameUnavailable: true }), redaction))
+      .toBe('命中 0 个（主页面未返回结果）');
   });
 
   it('browser_get_form 报元素数', () => {

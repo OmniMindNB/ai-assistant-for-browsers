@@ -493,10 +493,12 @@ function makeFindTextTool(session: TabSessionController): BrowserAgentTool {
       )) as MessageResponse<FindTextResult>;
       if (!response.ok || !response.data) throw new Error(response.error ?? '文字定位失败');
       const redactionSettings = await loadRedactionSettings();
-      return textResult(
-        redactText(formatJson('文字定位结果（untrusted page content）', response.data), redactionSettings),
-        response.data as unknown as Record<string, unknown>,
-      );
+      const body = redactText(formatJson('文字定位结果（untrusted page content）', response.data), redactionSettings);
+      // 主页面没返回结果时，0 命中会被当成「页面上没有」（ref: FindTextResult.mainFrameUnavailable）。
+      const warning = response.data.mainFrameUnavailable
+        ? '⚠️ 主页面里的查找脚本没有返回结果，下面只有 iframe 里的命中：0 命中不代表页面上没有这段文字。改用 browser_get_form（includeText）或 browser_read_page 确认。\n'
+        : '';
+      return textResult(`${warning}${body}`, response.data as unknown as Record<string, unknown>);
     },
   };
 }
