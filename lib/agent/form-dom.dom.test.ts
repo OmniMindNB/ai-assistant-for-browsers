@@ -173,6 +173,45 @@ describe('collectFormFields', () => {
     expect(output.truncated).toBe(true);
   });
 
+  // 2026-10-07 腾讯云「添加规则」弹窗：页面上可见的非原生可交互元素 99 个，通用配额 60；弹窗挂在
+  // <body> 末尾，「应用类型 / 协议 / 策略」三个自研下拉框排在第 96–98 位，全被截掉，模型只好另用
+  // selector 只读弹窗。弹窗打开时背后的页面被遮罩盖住、根本点不到——和视口外一样该让位。
+  it('lets elements in an open dialog displace the ones its mask covers', () => {
+    const background = Array.from({ length: 8 }, (_, index) => `<a href="/nav/${index}">导航${index}</a>`).join('');
+    render(
+      `<nav>${background}</nav>` +
+        '<div class="mask"></div>' +
+        '<div class="dialog"><div tabindex="0" class="dropdown">TCP</div><div tabindex="0" class="dropdown">允许</div></div>',
+    );
+    const mask = document.querySelector('.mask')!;
+    const [tcp, allow] = Array.from(document.querySelectorAll('.dropdown'));
+    const at = (top: number) => ({ ...NON_ZERO_RECT, top, y: top, bottom: top + 20 }) as DOMRect;
+    Object.defineProperty(tcp, 'getBoundingClientRect', { value: () => at(300), configurable: true });
+    Object.defineProperty(allow, 'getBoundingClientRect', { value: () => at(340), configurable: true });
+    const original = document.elementFromPoint;
+    // 弹窗里的元素点得到它自己，其余的点都落在遮罩上
+    (document as unknown as { elementFromPoint: (x: number, y: number) => Element | null }).elementFromPoint = (_x, y) =>
+      y >= 300 && y < 320 ? tcp : y >= 340 && y < 360 ? allow : mask;
+    try {
+      // maxFields 10 → 通用配额 5，背景导航就有 8 个
+      const output = collectFormFields({ ...INPUT, maxFields: 10 });
+      const texts = output.raws.map((raw) => raw.elementText);
+      expect(texts).toContain('TCP');
+      expect(texts).toContain('允许');
+      expect(output.truncated).toBe(true);
+    } finally {
+      (document as unknown as { elementFromPoint: typeof original }).elementFromPoint = original;
+    }
+  });
+
+  it('does not demote anything when hit-testing gives no answer (elementFromPoint returns null)', () => {
+    const background = Array.from({ length: 8 }, (_, index) => `<a href="/nav/${index}">导航${index}</a>`).join('');
+    render(`<nav>${background}</nav><div class="dialog"><div tabindex="0">TCP</div></div>`);
+    // 测试环境默认的 elementFromPoint 恒为 null：既有的先到先得 + 视口规则保持不变
+    const output = collectFormFields({ ...INPUT, maxFields: 10 });
+    expect(output.raws.map((raw) => raw.elementText)).not.toContain('TCP');
+  });
+
   it('still collects off-screen clickables while the generic quota has room', () => {
     render(`<nav><a href="/l">页脚链接</a></nav>`);
     document.querySelectorAll('a').forEach(offscreen);

@@ -343,12 +343,26 @@ export function collectFormFields(
   // 一个都采不到。视口内的元素可以顶掉一个视口外的：agent 正在看的那一屏就是它要操作
   // 的地方（ref: docs/superpowers/specs/2026-09-08-field-handle-stability-design.md §2.3）。
   // 标准表单字段不受此规则约束，它们本来就不占通用配额。
+  //
+  // 「看得见」不只是在视口内，还得没被盖住：弹窗打开时背后的页面被遮罩盖着，根本点不到，
+  // 和视口外一样该让位。2026-10-07 腾讯云「添加规则」弹窗挂在 <body> 末尾，页面上非原生可交互
+  // 元素 99 个、配额 60，弹窗里「应用类型 / 协议 / 策略」三个下拉框排在第 96–98 位，全被截掉，
+  // 模型只好另用 selector 只读弹窗。中心点做一次命中测试：命中自己或后代才算点得到。
   const genericEntries: { rawIndex: number; inViewport: boolean }[] = [];
   const isInViewport = (element: Element): boolean => {
     const view = element.ownerDocument.defaultView;
     if (!view) return false;
     const rect = element.getBoundingClientRect();
-    return rect.bottom > 0 && rect.top < view.innerHeight && rect.right > 0 && rect.left < view.innerWidth;
+    if (!(rect.bottom > 0 && rect.top < view.innerHeight && rect.right > 0 && rect.left < view.innerWidth)) return false;
+    // shadow DOM 里的元素要用它所在的 shadow root 做命中测试，document 只会返回宿主。
+    const rootNode = element.getRootNode() as Document | ShadowRoot;
+    const probe = typeof rootNode.elementFromPoint === 'function' ? rootNode : element.ownerDocument;
+    if (typeof probe.elementFromPoint !== 'function') return true;
+    const hit = probe.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    // 测不出来（中心点在视口外、命中测试不可用）就不降级——宁可当作没被盖住，维持原有行为。
+    // 我们自己的执行遮罩和高亮框都是 pointer-events: none，命中测试会穿过它们。
+    if (!hit) return true;
+    return hit === element || element.contains(hit);
   };
   /**
    * 移走第 entryIndex 个通用元素，给一个视口内的元素腾位置。
@@ -417,7 +431,7 @@ export function collectFormFields(
 
       const isGeneric = !isStandardFieldTag(element);
       const inViewport = isGeneric ? isInViewport(element) : false;
-      // 配额已满时，视口内的元素可以顶掉一个视口外的；两边都在视口外就照旧丢弃。
+      // 配额已满时，看得见的元素（视口内且没被盖住）可以顶掉一个看不见的；两边都看不见就照旧丢弃。
       let evictIndex = -1;
       if (isGeneric && genericCollected >= genericFieldQuota) {
         evictIndex = inViewport ? genericEntries.findIndex((entry) => !entry.inViewport) : -1;
