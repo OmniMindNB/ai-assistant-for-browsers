@@ -110,6 +110,7 @@ import {
   groupItemsByFrame,
   isChildFrameHandle,
   mergeFillOutcomes,
+  planClickRetry,
   planFieldClick,
   planFieldClicks,
   planFieldScroll,
@@ -1459,6 +1460,8 @@ async function clickElementByFieldId(fieldId: string, tabId: number): Promise<Cl
 
   const submitted = applied.submitted;
   if (!submitted || submitted.status === 'not_found' || submitted.status === 'mismatch') {
+    const relocated = await retryClickAfterRelocation(fieldId, handle, tabId);
+    if (relocated) return relocated;
     return {
       selector: '',
       matched: 0,
@@ -1480,6 +1483,61 @@ async function clickElementByFieldId(fieldId: string, tabId: number): Promise<Cl
     opensNewTab: submitted.opensNewTab,
     newFields: submitted.status === 'ok' ? await collectNewFieldsAfterWrite(tabId) : undefined,
   };
+}
+
+/**
+ * 原位置点不中之后的一次自愈（ref: fill-form-request.ts 的 planClickRetry）：重采一次句柄表，
+ * 同一个 fieldId 被按身份认回同一个元素、且全页唯一时，按新位置再点一次。任何一步不满足都
+ * 返回 undefined，调用方照旧报失败。
+ *
+ * ⚠️ 确认闸门（beforeToolCall 的提交探测）是按旧位置做的判断：旧位置点不中时探测多半也落空，
+ * 被当成「不是提交」放行。新位置若是表单提交，重试就等于绕过了确认，所以先按新位置再探测
+ * 一次，是提交就不重试——让模型重新发起这次点击，由确认闸门正常拦下。
+ */
+async function retryClickAfterRelocation(
+  fieldId: string,
+  staleHandle: FormFieldHandle | undefined,
+  tabId: number,
+): Promise<ClickElementResult | undefined> {
+  if (!staleHandle?.identity) return undefined;
+  try {
+    // keepTextHandles：这次重采模型不知情，和写操作后的内部重采一样保留它手里的 t*。
+    await snapshotFields(tabId, {}, true);
+    const refreshed = await getFormFieldsForTab(tabId);
+    const plan = planClickRetry(fieldId, staleHandle, refreshed);
+    if (!plan.ok || !plan.submit || !refreshed) return undefined;
+
+    const probe = await probeSubmitIntent({ submitFieldId: fieldId }, tabId);
+    if (probe.isSubmit) return undefined;
+
+    const applied = await executeInTab(
+      tabId,
+      {
+        url: refreshed.url,
+        documentId: refreshed.documentId,
+        items: [],
+        submit: plan.submit,
+        expectOrigin: plan.expectOrigin,
+        isChildFrame: isChildFrameHandle(refreshed.fields[fieldId]),
+      },
+      applyFormFill,
+      { frameId: plan.frameId },
+    );
+    const submitted = applied.submitted;
+    if (applied.fieldsTableStale || submitted?.status !== 'ok') return undefined;
+    return {
+      selector: '',
+      matched: 1,
+      clickedIndex: 0,
+      status: 'ok',
+      label: submitted.label,
+      opensNewTab: submitted.opensNewTab,
+      relocated: true,
+      newFields: await collectNewFieldsAfterWrite(tabId),
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 /** 查表失败的原因翻成模型能读的一句话；与单目标分支的文案保持一致。 */

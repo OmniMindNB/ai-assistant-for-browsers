@@ -9,7 +9,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { allocateFieldIds, composeFieldTable } from './field-id-allocation';
 import { keepFindTextHandles, mergeFindTextHandles } from './find-text';
-import { planFieldClicks } from './fill-form-request';
+import { planClickRetry, planFieldClicks } from './fill-form-request';
 import { applyFormFill, collectFormFields } from './form-dom';
 import { fieldExpectation, toFieldDescriptor } from './form-schema';
 import type { FormFieldHandle, FormFieldTable } from './tab-form-fields';
@@ -445,5 +445,58 @@ describe('带 selector 的读取不覆盖句柄表', () => {
     const issuedBefore = new Set(Object.keys(before.fields));
     const importRule = idOf(after, '导入规则')!;
     expect(issuedBefore.has(importRule)).toBe(false);
+  });
+});
+
+// 2026-10-07 第三份开端口导出 #7→#10：抽屉打开途中采到的「添加规则」，抽屉随后重建 DOM，
+// 原路径解析不到同一个元素。按 background.ts clickElementByFieldId 的接线：失败 → 内部重采 →
+// planClickRetry → 按新位置再点一次。
+describe('结构变了的点击：按身份重新定位后重试', () => {
+  function snapshotFull(previous: FormFieldTable | undefined): FormFieldTable {
+    const collected = collectFormFields(INPUT);
+    const { fieldIds, identities, issuedThrough } = allocateFieldIds(collected.raws, previous, collected.url, collected.documentId);
+    const handles: Record<string, FormFieldHandle> = {};
+    collected.raws.forEach((raw, index) => {
+      handles[fieldIds[index]] = {
+        path: raw.path,
+        expect: fieldExpectation(raw),
+        sensitive: false,
+        kind: toFieldDescriptor(raw, fieldIds[index]).kind,
+        identity: identities[index],
+      };
+    });
+    return composeFieldTable({
+      previous, page: { url: collected.url, documentId: collected.documentId },
+      handles, fingerprints: [], issuedThrough, scoped: false,
+    });
+  }
+
+  const click = (table: FormFieldTable, fieldId: string) =>
+    applyFormFill({
+      url: table.url, documentId: table.documentId, items: [],
+      submit: { fieldId, path: table.fields[fieldId].path, expect: table.fields[fieldId].expect },
+    });
+
+  it('抽屉重建后旧路径点不中，重采后按新位置点中同一个按钮', async () => {
+    document.body.innerHTML = '<div class="drawer"><button>关闭</button><button>添加规则</button></div>';
+    const read = snapshotFull(undefined);
+    const addRule = Object.keys(read.fields).find((id) => read.fields[id].expect.text === '添加规则')!;
+
+    // 抽屉打开动画结束后整块重新渲染：多了一层工具栏，按钮的路径变了
+    document.querySelector('.drawer')!.innerHTML =
+      '<button>关闭</button><div class="toolbar"><button>添加规则</button><button>导入规则</button></div>';
+    let clicked = false;
+    document.querySelector('.toolbar button')!.addEventListener('click', () => { clicked = true; });
+
+    const first = await click(read, addRule);
+    expect(first.submitted?.status).not.toBe('ok');
+    expect(clicked).toBe(false);
+
+    const refreshed = snapshotFull(read);
+    const plan = planClickRetry(addRule, read.fields[addRule], refreshed);
+    expect(plan.ok).toBe(true);
+    const retried = await applyFormFill({ url: refreshed.url, documentId: refreshed.documentId, items: [], submit: plan.submit });
+    expect(retried.submitted?.status).toBe('ok');
+    expect(clicked).toBe(true);
   });
 });

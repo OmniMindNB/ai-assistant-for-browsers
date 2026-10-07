@@ -233,6 +233,52 @@ export function planFieldClick(fieldId: string, table: FormFieldTable | undefine
   return { ok: true, submit: { fieldId, path: handle.path, expect: handle.expect } };
 }
 
+export interface ClickRetryPlan {
+  ok: boolean;
+  reason?: 'no_identity' | 'gone' | 'ambiguous' | 'unchanged';
+  submit?: { fieldId: string; path: FormFieldHandle['path']; expect: FormFieldHandle['expect'] };
+  frameId?: number;
+  expectOrigin?: string;
+}
+
+/**
+ * browser_click(fieldId) 因页面结构变化（mismatch / not_found）失败、background 重采之后，
+ * 能不能照重采后的位置再点一次。
+ *
+ * 2026-10-07 第三份开端口导出 #7→#10：「添加规则」是抽屉打开途中采到的，抽屉随后重建了 DOM，
+ * 点它时路径已对不上；模型为此又花了两轮重新读表。重采时 allocateFieldIds 按身份把同一个元素
+ * 认回同一个 fieldId，所以「同一个号、同一个身份」就是同一个元素换了位置。
+ *
+ * 只在毫无歧义时重试：身份在重采后的整张表里唯一（一排「删除」共用一个身份，靠发号次序对齐，
+ * 重试可能点到另一个）、仍在原来的帧、且位置或结构确实变了（没变就只会原样再失败一次）。
+ * 没有身份的句柄（find_text 的 t*、升级前的旧表）不重试。是不是表单提交由调用方另行探测——
+ * 确认闸门是按旧位置做的判断，这里不能替它放行。
+ */
+export function planClickRetry(
+  fieldId: string,
+  staleHandle: FormFieldHandle | undefined,
+  refreshed: FormFieldTable | undefined,
+): ClickRetryPlan {
+  if (!staleHandle?.identity) return { ok: false, reason: 'no_identity' };
+  const current = refreshed?.fields[fieldId];
+  if (!current || current.identity !== staleHandle.identity || current.kind === 'scrollable') {
+    return { ok: false, reason: 'gone' };
+  }
+  if ((current.frameId ?? 0) !== (staleHandle.frameId ?? 0)) return { ok: false, reason: 'gone' };
+  const sameIdentity = Object.values(refreshed!.fields).filter((handle) => handle.identity === staleHandle.identity).length;
+  if (sameIdentity !== 1) return { ok: false, reason: 'ambiguous' };
+  const unchanged =
+    JSON.stringify(current.path) === JSON.stringify(staleHandle.path) &&
+    JSON.stringify(current.expect) === JSON.stringify(staleHandle.expect);
+  if (unchanged) return { ok: false, reason: 'unchanged' };
+  return {
+    ok: true,
+    submit: { fieldId, path: current.path, expect: current.expect },
+    frameId: current.frameId,
+    expectOrigin: resolveExpectOrigin(current),
+  };
+}
+
 export interface BatchFieldClickPlan {
   fieldId: string;
   ok: boolean;

@@ -5,6 +5,7 @@ import {
   groupItemsByFrame,
   isChildFrameHandle,
   mergeFillOutcomes,
+  planClickRetry,
   planFieldClick,
   planFieldClicks,
   planFieldScroll,
@@ -506,5 +507,49 @@ describe('planFieldClicks', () => {
 
   it('整张表都没有时逐个报 no_table，而不是抛错', () => {
     expect(planFieldClicks(['f1', 'f2'], undefined).map((plan) => plan.reason)).toEqual(['no_table', 'no_table']);
+  });
+});
+
+// 2026-10-07 第三份开端口导出 #7→#10：点「管理防火墙规则」后报出 f102「添加规则」，抽屉还在打开，
+// DOM 随后被重建；点 f102 时路径已对不上，报 mismatch，模型又花两轮重新读表。同一个元素换了位置，
+// 重采时按身份认回来的还是 f102——此时可以照新位置重试一次。
+describe('planClickRetry', () => {
+  const addRule = (path: string, overrides: Partial<FormFieldHandle> = {}) =>
+    handle({
+      path: [{ kind: 'selector', selector: path, index: 0 }],
+      expect: { tag: 'button', text: '添加规则' },
+      kind: 'button',
+      identity: 'button||||||添加规则|',
+      ...overrides,
+    });
+
+  it('同一身份、全页唯一、只是换了位置：按新位置重试', () => {
+    const plan = planClickRetry('f102', addRule('div'), table({ f102: addRule('section'), f103: handle({ identity: 'other' }) }));
+    expect(plan).toEqual({ ok: true, submit: { fieldId: 'f102', path: [{ kind: 'selector', selector: 'section', index: 0 }], expect: { tag: 'button', text: '添加规则' } }, frameId: undefined, expectOrigin: undefined });
+  });
+
+  it('同一身份在页面上有不止一个（一排「删除」）：不重试，免得点到另一个', () => {
+    const del = (path: string) => addRule(path, { identity: 'button||||||删除|', expect: { tag: 'button', text: '删除' } });
+    const plan = planClickRetry('f5', del('div'), table({ f5: del('section'), f6: del('aside') }));
+    expect(plan).toMatchObject({ ok: false, reason: 'ambiguous' });
+  });
+
+  it('重采后这个号不在了，或者认回来的已不是同一身份：不重试', () => {
+    expect(planClickRetry('f102', addRule('div'), table({}))).toMatchObject({ ok: false, reason: 'gone' });
+    expect(planClickRetry('f102', addRule('div'), table({ f102: addRule('section', { identity: 'button||||||导入规则|' }) })))
+      .toMatchObject({ ok: false, reason: 'gone' });
+  });
+
+  it('位置和结构都没变：重试只会原样再失败一次', () => {
+    expect(planClickRetry('f102', addRule('div'), table({ f102: addRule('div') }))).toMatchObject({ ok: false, reason: 'unchanged' });
+  });
+
+  it('没有身份的句柄（find_text 的 t*、升级前的旧表）不重试', () => {
+    expect(planClickRetry('t1', addRule('div', { identity: undefined }), table({ t1: addRule('section') }))).toMatchObject({ ok: false, reason: 'no_identity' });
+  });
+
+  it('换了帧不重试：帧号可能已被分给别的文档', () => {
+    const plan = planClickRetry('f102', addRule('div', { frameId: 0 }), table({ f102: addRule('section', { frameId: 3 }) }));
+    expect(plan).toMatchObject({ ok: false, reason: 'gone' });
   });
 });

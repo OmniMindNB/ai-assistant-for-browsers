@@ -77,7 +77,8 @@ export function describeClickResult(result: ClickElementResult, fieldId: string 
   const newTab = result.opensNewTab
     ? '⚠️ 该链接在新标签页打开，当前标签页内容不会变化，你也无法操作新标签页。'
     : '';
-  return `已点击${target}${label}。${newTab}`;
+  const relocated = result.relocated ? '页面结构在读取之后变了，已按同一元素的新位置重新定位后点中。' : '';
+  return `已点击${target}${label}。${relocated}${newTab}`;
 }
 
 /**

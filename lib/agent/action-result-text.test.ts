@@ -80,6 +80,13 @@ describe('describeClickResult', () => {
     expect(describeClickResult(click(), 'f12')).toBe('已点击字段 f12。');
   });
 
+  // 模型得知道这次点击中间失败过一次：页面结构刚变过，它手里别的句柄也可能需要重新确认。
+  it('says when the click landed only after relocating the element', () => {
+    expect(describeClickResult(click({ label: '添加规则', relocated: true }), 'f102')).toBe(
+      '已点击字段 f102（"添加规则"）。页面结构在读取之后变了，已按同一元素的新位置重新定位后点中。',
+    );
+  });
+
   it('includes the element label so the model can tell what it hit', () => {
     expect(describeClickResult(click({ label: '提交订单' }), 'f12')).toBe('已点击字段 f12（"提交订单"）。');
   });

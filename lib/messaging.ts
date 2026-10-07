@@ -353,6 +353,8 @@ export interface ClickElementResult {
   opensNewTab?: boolean;
   /** 本次点击之后页面新出现的可交互元素（下拉建议、展开的菜单项等）。句柄表已同步刷新。 */
   newFields?: FormFieldDescriptor[];
+  /** 原位置点不中，重采后按同一元素的新位置重试才点中（ref: fill-form-request.ts 的 planClickRetry）。 */
+  relocated?: boolean;
   /** 仅批量点击（payload.fieldIds）时有值：逐个目标的结果，顺序与请求一致。 */
   outcomes?: BatchClickOutcome[];
 }
