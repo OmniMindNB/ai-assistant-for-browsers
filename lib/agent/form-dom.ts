@@ -215,6 +215,11 @@ export function collectFormFields(
 
   // 为元素生成一条从 root 出发、可重放的路径。同一层用 tagName + 序号定位，
   // 进入 open shadowRoot 时压入一个 shadow 步进。
+  //
+  // ⚠️ 同层兄弟必须从 scope.children 里筛，不能用 `scope.querySelectorAll(':scope > tag')`：
+  // scope 是 Document 或 ShadowRoot 时，Chrome 把 :scope 解析成 <html>（或什么都不匹配），
+  // `document.querySelectorAll(':scope > html')` 恒为 0——每条 path 的第一步都解析不到，
+  // 所有 fieldId 点击/填写一律 not_found。下方各处 resolve 同理。
   const buildPath = (element: Element): FormFieldPathStep[] => {
     const steps: FormFieldPathStep[] = [];
     let current: Element | null = element;
@@ -223,7 +228,7 @@ export function collectFormFields(
       const isShadowBoundary = parent instanceof ShadowRoot;
       const scope: ParentNode | null = isShadowBoundary ? parent : (current.parentElement ?? current.ownerDocument);
       const tag = current.tagName.toLowerCase();
-      const siblings = scope ? Array.from(scope.querySelectorAll(`:scope > ${tag}`)) : [];
+      const siblings = scope ? Array.from(scope.children).filter((child) => child.tagName.toLowerCase() === tag) : [];
       const index = Math.max(0, siblings.indexOf(current));
       steps.unshift({ kind: 'selector', selector: tag, index });
       if (isShadowBoundary) {
@@ -639,7 +644,7 @@ export async function applyFormFill(input: ApplyFillInput): Promise<ApplyFillOut
         continue;
       }
       if (!scope) return null;
-      const matches: Element[] = Array.from(scope.querySelectorAll(`:scope > ${step.selector}`));
+      const matches: Element[] = Array.from(scope.children).filter((child) => child.matches(step.selector));
       element = matches[step.index] ?? null;
       if (!element) return null;
       scope = element;
@@ -1005,7 +1010,7 @@ export function probeClickTarget(input: ProbeClickInput): ProbeClickOutput {
         continue;
       }
       if (!scope) { element = null; break; }
-      element = Array.from(scope.querySelectorAll(`:scope > ${step.selector}`))[step.index] ?? null;
+      element = Array.from(scope.children).filter((child) => child.matches(step.selector))[step.index] ?? null;
       if (!element) break;
       scope = element;
     }
@@ -1064,7 +1069,7 @@ export function probeKeyTarget(input: ProbeKeyInput): ProbeKeyOutput {
         continue;
       }
       if (!scope) { element = null; break; }
-      element = Array.from(scope.querySelectorAll(`:scope > ${step.selector}`))[step.index] ?? null;
+      element = Array.from(scope.children).filter((child) => child.matches(step.selector))[step.index] ?? null;
       if (!element) break;
       scope = element;
     }
@@ -1148,7 +1153,7 @@ export function pressKeyInPage(input: PressKeyInput): PressKeyOutput {
         continue;
       }
       if (!scope) { element = null; break; }
-      element = Array.from(scope.querySelectorAll(`:scope > ${step.selector}`))[step.index] ?? null;
+      element = Array.from(scope.children).filter((child) => child.matches(step.selector))[step.index] ?? null;
       if (!element) break;
       scope = element;
     }
@@ -1321,7 +1326,7 @@ export function scrollContainerInPage(input: ScrollContainerInput): ScrollContai
         continue;
       }
       if (!scope) return null;
-      const matches: Element[] = Array.from(scope.querySelectorAll(`:scope > ${step.selector}`));
+      const matches: Element[] = Array.from(scope.children).filter((child) => child.matches(step.selector));
       element = matches[step.index] ?? null;
       if (!element) return null;
       scope = element;

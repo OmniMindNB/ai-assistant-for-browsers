@@ -34,19 +34,6 @@ Element.prototype.getBoundingClientRect = () => NON_ZERO_RECT;
 // 做遮挡检测，这里没有被遮挡的用例，恒返回"上面没别的东西"即可。同 form-dom.dom.test.ts。
 (document as unknown as { elementFromPoint: () => Element | null }).elementFromPoint = () => null;
 
-// 与 form-dom.dom.test.ts 同一处 jsdom 缺陷的同一个补丁：这个选择器引擎把 Document 的
-// :scope 解析成 documentElement 而不是 document 本身，于是 `document.querySelectorAll(
-// ':scope > html')` 恒为空，尽管 <html> 确实是 document 唯一的子元素。resolve() 的第一步
-// 正好是这个形状，不补就等于在测试环境里人为制造出本次要修的那个 bug。只补 "html" 这一
-// 种情形，其它 `:scope > tag` 一律走原实现。
-const originalDocumentQuerySelectorAll = Document.prototype.querySelectorAll;
-Document.prototype.querySelectorAll = function (this: Document, selectors: string) {
-  if (/^:scope\s*>\s*html$/.exec(selectors.trim())) {
-    return Array.from(this.children).filter((el) => el.tagName.toLowerCase() === 'html') as unknown as NodeListOf<Element>;
-  }
-  return originalDocumentQuerySelectorAll.call(this, selectors);
-} as typeof originalDocumentQuerySelectorAll;
-
 /** 完整跑一遍 find_text → 句柄表 → planFieldClick，返回第 index 条命中的点击计划。 */
 function findThenPlanClick(text: string, index = 0) {
   const input = { text, mode: 'contains' as const };

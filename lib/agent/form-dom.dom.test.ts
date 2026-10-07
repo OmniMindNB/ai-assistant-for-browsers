@@ -440,53 +440,11 @@ describe('collectFormFields — includeScrollable', () => {
   });
 });
 
-// jsdom's selector engine (@asamuzakjp/dom-selector, as used by jsdom 30) fails to
-// resolve `:scope` when the query root is a ShadowRoot: `shadowRoot.querySelectorAll(
-// ':scope > x')` and even `shadowRoot.querySelectorAll(':scope x')` always return an
-// empty list, even though the shadow root genuinely has a matching direct child
-// (verified directly: `sr.children.length` is 1 while `sr.querySelectorAll(':scope > *')`
-// is 0, and this reproduces with a bare DocumentFragment too — it is not specific to
-// shadow DOM semantics, just this engine's `:scope` root resolution). This is a jsdom
-// limitation, not a spec behavior: real browsers resolve `:scope` on a ShadowRoot to
-// the shadow root itself. applyFormFill's resolve() relies on `:scope > tag` to walk
-// into shadow roots, so without a fix every field behind a shadow root would spuriously
-// resolve to not_found in this test environment. Patch just the `:scope > tag` shape
-// resolve() actually issues, scoped to ShadowRoot, so the test exercises the real
-// resolve() traversal/index logic instead of stubbing around it.
-const originalShadowRootQuerySelectorAll = ShadowRoot.prototype.querySelectorAll;
-ShadowRoot.prototype.querySelectorAll = function (this: ShadowRoot, selectors: string) {
-  const match = /^:scope\s*>\s*(.+)$/.exec(selectors.trim());
-  if (match) {
-    const tag = match[1];
-    return Array.from(this.children).filter((el) => el.matches(tag)) as unknown as NodeListOf<Element>;
-  }
-  return originalShadowRootQuerySelectorAll.call(this, selectors);
-} as typeof originalShadowRootQuerySelectorAll;
-
-// Same jsdom `:scope` root-resolution bug as above, but for Document, and narrower:
-// this engine resolves a Document's `:scope` to its documentElement (<html>) rather
-// than the document itself (`document.querySelectorAll(':scope > *')` returns HEAD/BODY,
-// not HTML — verified directly). buildPath's walk to the real page root always ends in
-// a step matching "html" against `document` (every path collectFormFields produces
-// starts with an {selector:'html'} step), so `document.querySelectorAll(':scope > html')`
-// spuriously returns empty even though `<html>` genuinely is `document`'s only child.
-// Patch *only* that exact "html" case for Document — every other `:scope > tag` query
-// on Document (notably `:scope > body`, which this file's hand-built `item()` paths
-// start from, and which happens to already resolve correctly under this engine's
-// documentElement-as-scope quirk) must keep going through the original, unpatched
-// behavior, or the many existing hand-built-path tests below would break.
-const originalDocumentQuerySelectorAll = Document.prototype.querySelectorAll;
-Document.prototype.querySelectorAll = function (this: Document, selectors: string) {
-  if (/^:scope\s*>\s*html$/.exec(selectors.trim())) {
-    return Array.from(this.children).filter((el) => el.tagName.toLowerCase() === 'html') as unknown as NodeListOf<Element>;
-  }
-  return originalDocumentQuerySelectorAll.call(this, selectors);
-} as typeof originalDocumentQuerySelectorAll;
-
 function item(overrides: Partial<ApplyFillItem> = {}): ApplyFillItem {
   return {
     fieldId: 'f1',
     path: [
+      { kind: 'selector', selector: 'html', index: 0 },
       { kind: 'selector', selector: 'body', index: 0 },
       { kind: 'selector', selector: 'form', index: 0 },
       { kind: 'selector', selector: 'input', index: 0 },
@@ -500,6 +458,39 @@ function item(overrides: Partial<ApplyFillItem> = {}): ApplyFillItem {
 describe('applyFormFill', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
+  });
+
+  // 回归：路径曾用 `scope.querySelectorAll(':scope > tag')` 逐层定位，而 scope 为 Document /
+  // ShadowRoot 时 Chrome 与 jsdom 都匹配不到任何东西——采集出的每个句柄写入时都是 not_found。
+  // 测试里曾用猴补丁把这个当成 jsdom 缺陷盖掉，线上 fieldId 点击/填写因此全部失效。
+  // 这里不打任何补丁，完整走一遍 collect → apply，并覆盖 shadow root 顶层的同名兄弟
+  // （旧 buildPath 在那里一律记 index 0，第二个输入框会写到第一个上）。
+  it('round-trips collected paths through the document root and shadow-root siblings', async () => {
+    render(`<form><input type="text" name="light" /></form><div id="host"></div>`);
+    document.getElementById('host')!.attachShadow({ mode: 'open' }).innerHTML =
+      `<input type="text" name="first" /><input type="text" name="second" />`;
+    const raws = collectFormFields(INPUT).raws;
+    const toItem = (name: string, value: string): ApplyFillItem => {
+      const raw = raws.find((candidate) => candidate.name === name)!;
+      return {
+        fieldId: name,
+        path: raw.path,
+        expect: { tag: raw.tag, type: raw.type, name: raw.name, label: name },
+        kind: 'text',
+        value,
+      };
+    };
+
+    const output = await applyFormFill({
+      url: location.href,
+      items: [toItem('light', 'L'), toItem('second', 'S')],
+    });
+
+    expect(output.outcomes.map((outcome) => outcome.status)).toEqual(['ok', 'ok']);
+    const shadow = document.getElementById('host')!.shadowRoot!;
+    expect((document.querySelector('input[name=light]') as HTMLInputElement).value).toBe('L');
+    expect((shadow.querySelector('input[name=first]') as HTMLInputElement).value).toBe('');
+    expect((shadow.querySelector('input[name=second]') as HTMLInputElement).value).toBe('S');
   });
 
   it('writes a text input and dispatches input/change so frameworks observe it', async () => {
@@ -568,6 +559,7 @@ describe('applyFormFill', () => {
     const base = item({
       kind: 'select',
       path: [
+        { kind: 'selector', selector: 'html', index: 0 },
         { kind: 'selector', selector: 'body', index: 0 },
         { kind: 'selector', selector: 'form', index: 0 },
         { kind: 'selector', selector: 'select', index: 0 },
@@ -591,6 +583,7 @@ describe('applyFormFill', () => {
         item({
           kind: 'select',
           path: [
+            { kind: 'selector', selector: 'html', index: 0 },
             { kind: 'selector', selector: 'body', index: 0 },
             { kind: 'selector', selector: 'form', index: 0 },
             { kind: 'selector', selector: 'select', index: 0 },
@@ -624,6 +617,7 @@ describe('applyFormFill', () => {
         item({
           fieldId: 'f2',
           path: [
+            { kind: 'selector', selector: 'html', index: 0 },
             { kind: 'selector', selector: 'body', index: 0 },
             { kind: 'selector', selector: 'form', index: 0 },
             { kind: 'selector', selector: 'input', index: 1 },
@@ -646,6 +640,7 @@ describe('applyFormFill', () => {
       items: [
         item({
           path: [
+            { kind: 'selector', selector: 'html', index: 0 },
             { kind: 'selector', selector: 'body', index: 0 },
             { kind: 'selector', selector: 'div', index: 0 },
             { kind: 'shadow' },
@@ -680,6 +675,7 @@ describe('applyFormFill', () => {
         item({
           fieldId: 'f2',
           path: [
+            { kind: 'selector', selector: 'html', index: 0 },
             { kind: 'selector', selector: 'body', index: 0 },
             { kind: 'selector', selector: 'form', index: 0 },
             { kind: 'selector', selector: 'input', index: 1 },
@@ -709,6 +705,7 @@ describe('applyFormFill', () => {
         item({
           kind: 'contenteditable',
           path: [
+            { kind: 'selector', selector: 'html', index: 0 },
             { kind: 'selector', selector: 'body', index: 0 },
             { kind: 'selector', selector: 'div', index: 0 },
           ],
@@ -756,6 +753,7 @@ describe('applyFormFill', () => {
   const CONTENTEDITABLE_ITEM = {
     kind: 'contenteditable' as const,
     path: [
+      { kind: 'selector' as const, selector: 'html', index: 0 },
       { kind: 'selector' as const, selector: 'body', index: 0 },
       { kind: 'selector' as const, selector: 'div', index: 0 },
     ],
@@ -1060,6 +1058,7 @@ describe('scrollContainerInPage', () => {
   }
 
   const PATH = [
+    { kind: 'selector' as const, selector: 'html', index: 0 },
     { kind: 'selector' as const, selector: 'body', index: 0 },
     { kind: 'selector' as const, selector: 'div', index: 0 },
   ];
@@ -1108,6 +1107,7 @@ describe('scrollContainerInPage', () => {
     const output = scrollContainerInPage({
       url: location.href,
       path: [
+        { kind: 'selector', selector: 'html', index: 0 },
         { kind: 'selector', selector: 'body', index: 0 },
         { kind: 'selector', selector: 'span', index: 0 },
       ],
@@ -1529,6 +1529,7 @@ describe('applyFormFill 逐字段扫光', () => {
           fieldId: 'f2',
           value: '北京',
           path: [
+            { kind: 'selector', selector: 'html', index: 0 },
             { kind: 'selector', selector: 'body', index: 0 },
             { kind: 'selector', selector: 'form', index: 0 },
             { kind: 'selector', selector: 'input', index: 1 },
@@ -1578,6 +1579,7 @@ describe('applyFormFill origin guard', () => {
         fieldId: 'f1',
         value: '4111111111111111',
         path: [
+          { kind: 'selector', selector: 'html', index: 0 },
           { kind: 'selector', selector: 'body', index: 0 },
           { kind: 'selector', selector: 'input', index: 0 },
         ],
@@ -1680,6 +1682,7 @@ describe('pressKeyInPage origin guard', () => {
 
     const result = pressKeyInPage({
       path: [
+        { kind: 'selector', selector: 'html', index: 0 },
         { kind: 'selector', selector: 'body', index: 0 },
         { kind: 'selector', selector: 'form', index: 0 },
         { kind: 'selector', selector: 'input', index: 0 },
@@ -1718,6 +1721,7 @@ describe('pressKeyInPage origin guard', () => {
 
     const result = pressKeyInPage({
       path: [
+        { kind: 'selector', selector: 'html', index: 0 },
         { kind: 'selector', selector: 'body', index: 0 },
         { kind: 'selector', selector: 'form', index: 0 },
         { kind: 'selector', selector: 'input', index: 0 },
@@ -1759,6 +1763,7 @@ describe('scrollContainerInPage origin guard', () => {
     const result = scrollContainerInPage({
       url: location.href,
       path: [
+        { kind: 'selector', selector: 'html', index: 0 },
         { kind: 'selector', selector: 'body', index: 0 },
         { kind: 'selector', selector: 'div', index: 0 },
       ],
@@ -1784,6 +1789,7 @@ describe('scrollContainerInPage origin guard', () => {
     const result = scrollContainerInPage({
       url: location.href,
       path: [
+        { kind: 'selector', selector: 'html', index: 0 },
         { kind: 'selector', selector: 'body', index: 0 },
         { kind: 'selector', selector: 'div', index: 0 },
       ],

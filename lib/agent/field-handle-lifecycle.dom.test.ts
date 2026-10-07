@@ -27,19 +27,6 @@ const NON_ZERO_RECT = {
 Element.prototype.getBoundingClientRect = () => NON_ZERO_RECT;
 (document as unknown as { elementFromPoint: () => Element | null }).elementFromPoint = () => null;
 
-// jsdom 把 Document 的 :scope 解析成 documentElement 而非 document 自身，导致
-// `document.querySelectorAll(':scope > html')` 恒为空，而 collectFormFields 产出的每条
-// path 都以这一步开头。同款补丁与完整理由见 form-dom.dom.test.ts。
-const originalDocumentQuerySelectorAll = Document.prototype.querySelectorAll;
-Document.prototype.querySelectorAll = function (this: Document, selectors: string) {
-  if (/^:scope\s*>\s*html$/.exec(selectors.trim())) {
-    return Array.from(this.children).filter(
-      (element) => element.tagName.toLowerCase() === 'html',
-    ) as unknown as NodeListOf<Element>;
-  }
-  return originalDocumentQuerySelectorAll.call(this, selectors);
-} as typeof originalDocumentQuerySelectorAll;
-
 /** 按 background.ts snapshotFields 的接线顺序重建一张句柄表。 */
 function snapshot(previous: FormFieldTable | undefined, keepTextHandles: boolean): FormFieldTable {
   const collected = collectFormFields(INPUT);
