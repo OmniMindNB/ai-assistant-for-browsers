@@ -128,6 +128,11 @@ describe('describeToolActivity', () => {
     expect(describeToolActivity('browser_wait_for', { kind: 'textContains', text: '已完成' }, 'running')).toBe('Waiting for "已完成"');
   });
 
+  // 导出里曾显示成「已等待 "body"」：等的是文本 6000，body 只是查找范围。
+  it('describes browser_wait_for textContains by its text even when a selector scopes it', () => {
+    expect(describeToolActivity('browser_wait_for', { kind: 'textContains', selector: 'body', text: '6000' }, 'done')).toBe('Waited for "6000"');
+  });
+
   it('falls back to the literal kind for browser_wait_for domIdle, which has neither selector nor text', () => {
     expect(describeToolActivity('browser_wait_for', { kind: 'domIdle' }, 'running')).toBe('Waiting for "domIdle"');
     expect(describeToolActivity('browser_wait_for', { kind: 'domIdle' }, 'done')).toBe('Waited for "domIdle"');

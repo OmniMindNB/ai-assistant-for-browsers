@@ -220,6 +220,15 @@ describe('buildConversationExport', () => {
     expect(step.args).not.toContain('110101199001011234');
   });
 
+  it('carries the one-line result summary of a successful step into the JSON', () => {
+    const doc = build([
+      record({ role: 'assistant', content: '好', activitySteps: [
+        { id: 's1', description: '已查找文字 "6000"', status: 'done', signature: 'browser_find_text:{"text":"6000"}', resultText: '命中 0 个' },
+      ] }),
+    ]);
+    expect(doc.messages[0].steps![0]).toMatchObject({ toolName: 'browser_find_text', resultText: '命中 0 个' });
+  });
+
   // Review Focus #3
   it('never exports a raw signature that is not valid JSON', () => {
     const doc = build([
@@ -291,7 +300,7 @@ describe('renderConversationExportMarkdown', () => {
     const md = render([
       record({ content: '帮我填表' }),
       record({ role: 'assistant', content: '已完成', runDiagnostics, taskOutcome: { outcome: 'partial', reason: '卡在第二步' }, activitySteps: [
-        { id: 's1', description: '读取页面表单', status: 'done', signature: 'browser_get_form:{}' },
+        { id: 's1', description: '读取页面表单', status: 'done', signature: 'browser_get_form:{}', resultText: '12 个可交互元素（可见 9 个）' },
         { id: 's2', description: '填写 | 3 个字段', status: 'failed', attempt: 2, signature: 'browser_fill_form:{"fields":[{"fieldId":"f3","value":"abc"}]}', errorText: '第一行\n第二行' },
       ] }),
       record({ content: '再来一次' }),
@@ -303,7 +312,8 @@ describe('renderConversationExportMarkdown', () => {
     expect(md).toContain('DeepSeek · deepseek-v4-pro（openai-completions @ api.deepseek.com）');
     expect(md).toContain('耗时 38.2s');
     expect(md).toContain('**任务结果**：partial —— 卡在第二步');
-    expect(md).toContain('| # | 状态 | 步骤 | 调用 | 失败原因 |');
+    expect(md).toContain('| # | 状态 | 步骤 | 调用 | 结果 / 失败原因 |');
+    expect(md).toContain('| 12 个可交互元素（可见 9 个） |');
     expect(md).toContain('填写 \\| 3 个字段');
     expect(md).toContain('第一行<br>第二行');
     expect(md).toContain('✗ ×2');

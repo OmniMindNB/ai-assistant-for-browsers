@@ -15,7 +15,7 @@ import { summarizeToolCallForConfirmation } from './confirm-summary';
 import { describeToolActivity } from './activity-description';
 import { upsertActivityStep, finishActivityStep, type ActivityStep } from './activity-steps';
 import { toolSignature } from './tool-policy';
-import { buildRunDiagnostics, extractToolErrorText } from './run-diagnostics';
+import { buildRunDiagnostics, extractToolErrorText, isUnmetWait, summarizeToolResult } from './run-diagnostics';
 import { scriptActivityHint } from './run-script';
 import { appendReasoning, emptyReasoning, reasoningMessageFields, reasoningSegmentTotal, slimLiveReasoning, stripHistoryReasoning, type ReasoningBuffer, type ReasoningFields } from './reasoning';
 import { replaceConversationMessages } from '@/lib/db';
@@ -598,8 +598,18 @@ export async function startRun(request: StartRunRequest): Promise<void> {
           .catch(() => undefined);
       }
       if (!state.terminatedToolCallIds.has(event.toolCallId)) {
-        const finalStatus = event.isError ? 'failed' : 'done';
-        const errorText = event.isError ? extractToolErrorText(event.result, errorRedaction) : undefined;
+        // 等到超时的 browser_wait_for 对模型是正常结果，对看步骤的人是「没等到」：按 ✗ 记，
+        // 超时那句话进 errorText（ref: 2026-10-07 开端口会话导出里两次 ✓「已等待」真假难辨）。
+        const unmetWait = !event.isError && isUnmetWait(event.toolName, event.result);
+        const finalStatus = event.isError || unmetWait ? 'failed' : 'done';
+        const errorText = event.isError
+          ? extractToolErrorText(event.result, errorRedaction)
+          : unmetWait
+            ? summarizeToolResult(event.toolName, event.result, errorRedaction)
+            : undefined;
+        const resultText = finalStatus === 'done'
+          ? summarizeToolResult(event.toolName, event.result, errorRedaction)
+          : undefined;
         state.activitySteps = finishActivityStep(
           state.activitySteps,
           event.toolCallId,
@@ -609,6 +619,7 @@ export async function startRun(request: StartRunRequest): Promise<void> {
           describeToolActivity(event.toolName, info?.args, finalStatus, event.result),
           errorText,
           scriptActivityHint(event.toolName, errorText),
+          resultText,
         );
         pushAndPersist(state);
       }

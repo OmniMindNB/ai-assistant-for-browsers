@@ -107,7 +107,8 @@ export function describeToolActivity(
     }
     case 'browser_wait_for': {
       const kind = str('kind');
-      const target = str('selector') || str('text') || kind;
+      // textContains 的 selector 只是查找范围（常见是 body），等的是文本本身。
+      const target = (kind === 'textContains' ? str('text') : '') || str('selector') || str('text') || kind;
       return withTarget(
         status,
         'agentActivity.now.waitFor',

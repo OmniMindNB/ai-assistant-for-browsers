@@ -500,7 +500,7 @@ export const en: Record<keyof typeof zh, string> = {
   'export.yes': 'yes',
   'export.no': 'no',
   'export.taskOutcome': '**Task outcome**: {outcome} — {reason}',
-  'export.stepsTableHeader': '| # | Status | Step | Call | Failure |',
+  'export.stepsTableHeader': '| # | Status | Step | Call | Result / Failure |',
   'export.appendix': 'Appendix: structured data',
   'export.maskedValue': '‹{count} chars omitted›',
   'export.exportConversationAriaLabel': 'Export conversation {title}',

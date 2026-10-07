@@ -566,6 +566,31 @@ describe('run-registry confirm/question/stop/port', () => {
     expect(bad?.errorText).not.toContain('13812345678');
   });
 
+  // 2026-10-07 开端口会话导出：两次 browser_wait_for 都是 ✓「已等待」，事后分不清是等到了还是超时了。
+  it('marks an unmet browser_wait_for as failed and keeps a result summary on successful steps', async () => {
+    mocks.createBrowserAgent.mockReturnValue(
+      makeFakeAgent([
+        { type: 'turn_start' },
+        { type: 'tool_execution_start', toolCallId: 'wait-1', toolName: 'browser_wait_for', args: { kind: 'textContains', text: '6000' } },
+        { type: 'tool_execution_end', toolCallId: 'wait-1', toolName: 'browser_wait_for', isError: false, result: { content: [{ type: 'text', text: '等待超时：8000ms 内未满足条件（页面出现文本 "6000"），实际等待 8003ms。\n不要原样重试' }], details: { met: false, elapsedMs: 8003 } } },
+        { type: 'tool_execution_start', toolCallId: 'find-1', toolName: 'browser_find_text', args: { text: '6000' } },
+        { type: 'tool_execution_end', toolCallId: 'find-1', toolName: 'browser_find_text', isError: false, result: { content: [{ type: 'text', text: '{}' }], details: { matches: [], truncated: false } } },
+      ]),
+    );
+
+    await startRun(makeRequest({ tabId: 91 }));
+    await vi.waitFor(() => expect(getRunState(91)).toBeUndefined());
+
+    const lastRecord = mocks.replaceConversationMessages.mock.calls.at(-1)?.[1].at(-1);
+    const wait = lastRecord?.activitySteps?.find((step) => step.id === 'wait-1');
+    const find = lastRecord?.activitySteps?.find((step) => step.id === 'find-1');
+    expect(wait?.status).toBe('failed');
+    expect(wait?.errorText).toBe('等待超时：8000ms 内未满足条件（页面出现文本 "6000"），实际等待 8003ms。');
+    expect(wait).not.toHaveProperty('resultText');
+    expect(find?.status).toBe('done');
+    expect(find?.resultText).toBe('命中 0 个');
+  });
+
   it('attaches runDiagnostics to the final assistant message without the api key', async () => {
     mocks.createBrowserAgent.mockReturnValue(
       makeFakeAgent([

@@ -22,6 +22,11 @@ export interface ActivityStep {
    */
   errorText?: string;
   /**
+   * 成功步骤的一行结果摘要（已 redactText、已截断，见 run-diagnostics.ts 的 summarizeToolResult）。
+   * 与 errorText 互补：一个说失败在哪，一个说成功拿到了什么；同样只供会话导出排查。
+   */
+  resultText?: string;
+  /**
    * 失败步骤附带的可操作提示。目前只有一种：browser_run_script 因"允许用户脚本"开关未开而失败，
    * 面板在这一行下方给出开启入口（ref: 2026-10-02-run-script-design.md §3.5）。
    */
@@ -56,6 +61,7 @@ export function finishActivityStep(
   description: string,
   errorText?: string,
   hint?: ActivityStep['hint'],
+  resultText?: string,
 ): ActivityStep[] {
   const index = steps.findIndex((s) => s.id === id);
   if (index === -1) return steps;
@@ -66,6 +72,7 @@ export function finishActivityStep(
     description,
     ...(errorText !== undefined ? { errorText } : {}),
     ...(hint !== undefined ? { hint } : {}),
+    ...(resultText !== undefined ? { resultText } : {}),
   };
   return next;
 }

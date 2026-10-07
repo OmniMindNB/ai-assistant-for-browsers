@@ -496,7 +496,7 @@ export const zh = {
   'export.yes': '是',
   'export.no': '否',
   'export.taskOutcome': '**任务结果**：{outcome} —— {reason}',
-  'export.stepsTableHeader': '| # | 状态 | 步骤 | 调用 | 失败原因 |',
+  'export.stepsTableHeader': '| # | 状态 | 步骤 | 调用 | 结果 / 失败原因 |',
   'export.appendix': '附录：结构化数据',
   'export.maskedValue': '‹已省略 {count} 字›',
   'export.exportConversationAriaLabel': '导出会话 {title}',

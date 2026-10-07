@@ -42,6 +42,8 @@ export interface ExportedStep {
   /** 已屏蔽写入值、已脱敏、已截断的参数 JSON。 */
   args?: string;
   errorText?: string;
+  /** 成功步骤的一行结果摘要（记录时已脱敏、已截断）。 */
+  resultText?: string;
 }
 
 export interface ExportedMessage {
@@ -174,6 +176,7 @@ function exportStep(step: ActivityStep, redaction: RedactionSettings, t: Transla
     }
   }
   if (step.errorText) out.errorText = step.errorText;
+  if (step.resultText) out.resultText = step.resultText;
   return out;
 }
 
@@ -306,7 +309,7 @@ function renderMessage(m: ExportedMessage, t: Translate): string[] {
       const status = `${STEP_STATUS_ICON[step.status]}${step.attempt ? ` ×${step.attempt}` : ''}`;
       const description = step.tabLabel ? `${step.description}（${step.tabLabel}）` : step.description;
       const call = step.toolName ? `${step.toolName}${step.args ? ` ${step.args}` : ''}` : '';
-      lines.push(`| ${i + 1} | ${status} | ${escapeCell(description)} | ${escapeCell(call)} | ${escapeCell(step.errorText ?? '')} |`);
+      lines.push(`| ${i + 1} | ${status} | ${escapeCell(description)} | ${escapeCell(call)} | ${escapeCell(step.errorText ?? step.resultText ?? '')} |`);
     });
     lines.push('');
   }
