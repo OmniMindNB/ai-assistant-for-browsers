@@ -144,6 +144,7 @@ import {
 import { findTextInPage, type RawTextMatch } from '@/lib/agent/find-text-dom';
 import { fieldExpectation, findNewFieldIds, sanitizeFieldText, toFieldDescriptor, toScrollableContainerDescriptor, type FormFieldPathStep } from '@/lib/agent/form-schema';
 import { getFormFieldsForTab, setFormFieldsForTab, type FormFieldHandle } from '@/lib/agent/tab-form-fields';
+import { isSamePage } from '@/lib/agent/page-identity';
 import { mergeFrameCollections, mergeReadResultsByFrame, type MergedCollection } from '@/lib/agent/frame-merge';
 import { decideEnterSubmitIntent, decideSubmitIntent } from '@/lib/agent/form-submit';
 import { resolveKeyDescriptor } from '@/lib/agent/key-dispatch';
@@ -703,6 +704,8 @@ async function findText(payload: FindTextPayload, tabId: number): Promise<FindTe
   // 同一条兜底链：空串会让 mergeFindTextHandles 发出一张 url 为空的句柄表，接着任何
   // 写入都因 url 不符判为 stale（ref: 2026-09-05 final review Minor #6）。
   const currentUrl = main?.output.url ?? frames[0]?.output.url ?? '';
+  // documentId 只取主框架的：退到子帧 URL 时不带它，只比 url（ref: page-identity.ts）。
+  const currentDocumentId = main?.output.documentId;
   const existingTable = await getFormFieldsForTab(tabId);
   const table = mergeFindTextHandles(
     existingTable,
@@ -716,6 +719,7 @@ async function findText(payload: FindTextPayload, tabId: number): Promise<FindTe
       frameId: entry.frameId,
       frameOrigin: entry.frameOrigin,
     })),
+    currentDocumentId,
   );
   await setFormFieldsForTab(tabId, table);
 
@@ -791,7 +795,7 @@ async function snapshotFields(
   // browser_find_text 发的 t* 原样留着：本函数在每次成功写操作后都会被重跑，而那次重采
   // 模型并不知情，把它上一轮拿到的文字句柄一并抹掉等于凭空作废（ref: keepFindTextHandles）。
   const handles: Record<string, FormFieldHandle> = keepTextHandles
-    ? keepFindTextHandles(previous, collected.url)
+    ? keepFindTextHandles(previous, collected.url, collected.documentId)
     : {};
   const orphanFieldIds: string[] = [];
   let textTruncated = false;
@@ -799,7 +803,12 @@ async function snapshotFields(
   // 号码按身份继承上一张表，不按文档序重编（ref: field-id-allocation.ts 顶部注释）：
   // 本函数在每次成功写操作后都会被 collectNewFieldsAfterWrite 重跑一遍，位置编号会让
   // 模型手里那批写操作之前拿到的 fieldId 集体指向邻居。
-  const { fieldIds, identities } = allocateFieldIds(collected.raws, previous, collected.url);
+  const { fieldIds, identities } = allocateFieldIds(
+    collected.raws,
+    previous,
+    collected.url,
+    collected.documentId,
+  );
 
   collected.raws.forEach((raw, index) => {
     const fieldId = fieldIds[index];
@@ -845,8 +854,9 @@ async function snapshotFields(
   const trailingSanitized = sanitizeFieldText(collected.trailingText);
   if (trailingSanitized.truncated) textTruncated = true;
 
-  // 换了地址就不比对：跨页面「全都是新的」没有信息量，只会淹没真正的变化。
-  const comparable = previous && previous.url === collected.url ? previous.fingerprints : undefined;
+  // 换了页面就不比对：跨页面「全都是新的」没有信息量，只会淹没真正的变化。单页应用同一文档内
+  // 改地址不算换页面（ref: page-identity.ts）——那正是最需要报告新元素的时候。
+  const comparable = previous && isSamePage(previous, collected) ? previous.fingerprints : undefined;
   const newFieldIds = findNewFieldIds(fields, comparable);
   for (const field of fields) {
     if (newFieldIds.has(field.fieldId)) field.isNew = true;
@@ -854,6 +864,7 @@ async function snapshotFields(
 
   await setFormFieldsForTab(tabId, {
     url: collected.url,
+    documentId: collected.documentId,
     fields: handles,
     fingerprints: fields.map((field) => field.fingerprint),
   });
@@ -913,6 +924,7 @@ async function fillForm(payload: FillFormPayload, tabId: number): Promise<FillFo
       tabId,
       {
         url: table.url,
+        documentId: table.documentId,
         items: group.items,
         submit: group.submit,
         expectOrigin: group.frameOrigin,
@@ -1417,6 +1429,7 @@ async function clickElementByFieldId(fieldId: string, tabId: number): Promise<Cl
     tabId,
     {
       url: table!.url,
+      documentId: table!.documentId,
       items: [],
       submit: plan.submit,
       expectOrigin: resolveExpectOrigin(handle),
@@ -1521,6 +1534,7 @@ async function clickElementsByFieldIds(fieldIds: string[], tabId: number): Promi
       tabId,
       {
         url: table!.url,
+        documentId: table!.documentId,
         items: [],
         submit: plan.submit,
         expectOrigin: plan.expectOrigin,
@@ -1613,6 +1627,7 @@ async function pressKey(payload: PressKeyPayload, tabId: number): Promise<PressK
 
   let path: FormFieldPathStep[] | undefined;
   let url: string | undefined;
+  let documentId: string | undefined;
   let expect: { tag: string; type?: string; name?: string } | undefined;
   let handle: FormFieldHandle | undefined;
   if (payload?.fieldId) {
@@ -1633,6 +1648,7 @@ async function pressKey(payload: PressKeyPayload, tabId: number): Promise<PressK
     }
     path = plan.submit.path;
     url = table?.url;
+    documentId = table?.documentId;
     expect = plan.submit.expect;
     handle = table?.fields[payload.fieldId];
   }
@@ -1664,6 +1680,7 @@ async function pressKey(payload: PressKeyPayload, tabId: number): Promise<PressK
       descriptor: resolved.descriptor,
       submitOnEnter,
       url,
+      documentId,
       expect,
       expectOrigin: resolveExpectOrigin(handle),
     },
@@ -1713,6 +1730,7 @@ async function scrollContainerByFieldId(payload: ScrollPagePayload, tabId: numbe
     tabId,
     {
       url: table!.url,
+      documentId: table!.documentId,
       path: plan.target.path,
       expect: plan.target.expect,
       x: payload.x,

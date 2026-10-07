@@ -11,6 +11,7 @@
 // 复用等于把「指向邻居」换个形式再犯一遍。代价是长会话里号码会变稀疏（f5、f9、f14），
 // 这是有意的取舍。
 import { pickFieldLabel, resolveFieldKind, type RawFormField } from './form-schema';
+import { isSamePage } from './page-identity';
 import type { FormFieldTable } from './tab-form-fields';
 
 /**
@@ -57,12 +58,14 @@ export function allocateFieldIds(
   raws: RawFormField[],
   previous: FormFieldTable | undefined,
   currentUrl: string,
+  /** 本次采集时的 documentId；单页应用同一文档内改了地址仍继承号码（ref: page-identity.ts）。 */
+  currentDocumentId?: string,
 ): FieldIdAllocation {
   const identities = raws.map(fieldIdentity);
   const inherited = new Map<string, string[]>();
   let maxIssued = 0;
 
-  if (previous && previous.url === currentUrl) {
+  if (previous && isSamePage(previous, { url: currentUrl, documentId: currentDocumentId })) {
     for (const [fieldId, handle] of Object.entries(previous.fields)) {
       if (fieldNumber(fieldId) === 0) continue;
       // identity 缺失 = 这张表是本次改动之前存下的，无从继承，只能整体退回文档序编号。

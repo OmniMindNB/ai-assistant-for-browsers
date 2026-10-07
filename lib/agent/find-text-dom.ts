@@ -32,6 +32,8 @@ export interface RawTextMatch {
 export interface FindTextOutput {
   origin: string;
   url: string;
+  /** String(performance.timeOrigin)，同 CollectFormOutput.documentId。 */
+  documentId: string;
   matches: RawTextMatch[];
   /** 命中数超过本帧安全上限时为 true；background.ts 按 limit 做的截断是另一层，见该常量注释。 */
   truncated: boolean;
@@ -147,5 +149,5 @@ export const findTextInPage = (mainInput: FindTextInput, childInput: FindTextInp
     };
   });
 
-  return { origin: location.origin, url: location.href, matches: rawMatches, truncated };
+  return { origin: location.origin, url: location.href, documentId: String(performance.timeOrigin), matches: rawMatches, truncated };
 };

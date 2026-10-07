@@ -37,6 +37,8 @@ export interface CollectedFormInfo {
 
 export interface CollectFormOutput {
   url: string;
+  /** String(performance.timeOrigin)：同一文档内 pushState 不变，导航必变（ref: page-identity.ts）。 */
+  documentId: string;
   /** 本帧的 location.origin，写入前比对 frameId 是否被复用（ref: 设计文档 §3.3）。 */
   origin: string;
   raws: RawFormField[];
@@ -534,6 +536,7 @@ export function collectFormFields(
 
   return {
     url: location.href,
+    documentId: String(performance.timeOrigin),
     origin: location.origin,
     raws,
     forms,
@@ -577,8 +580,10 @@ export interface ApplyFillOutcome {
 }
 
 export interface ApplyFillInput {
-  /** 发放句柄时的页面 URL；与当前不符即认为句柄表过期。 */
+  /** 发放句柄时的页面 URL；与当前不符、且 documentId 也对不上，即认为句柄表过期。 */
   url: string;
+  /** 发放句柄时的 String(performance.timeOrigin)；单页应用同一文档内改地址不算过期。 */
+  documentId?: string;
   items: ApplyFillItem[];
   submit?: { fieldId: string; path: FormFieldPathStep[]; expect: ApplyFillItem['expect'] };
   /** 发放句柄时目标帧的 origin；与当前帧不符说明 frameId 已被复用，整批拒绝写入。 */
@@ -629,7 +634,13 @@ export async function applyFormFill(input: ApplyFillInput): Promise<ApplyFillOut
   // 子帧场景（input.expectOrigin 存在）已经由上面的 origin 比对 + 下面逐字段的
   // matchesExpect 结构指纹校验兜底，不需要、也不能再套用主帧的 url 判定
   // （ref: 设计文档 §3.3）。
-  if (!input.expectOrigin && input.url && input.url !== location.href) {
+  if (
+    !input.expectOrigin &&
+    input.url &&
+    input.url !== location.href &&
+    // 同一文档内被单页应用改了地址不算过期——与 page-identity.ts 的 isSamePage 同义（注入函数不能 import，故内联）
+    input.documentId !== String(performance.timeOrigin)
+  ) {
     return { outcomes: [], fieldsTableStale: true };
   }
 
@@ -1122,8 +1133,10 @@ export interface PressKeyInput {
   descriptor: KeyDescriptor;
   /** 由 background 依据探测 + 确认结果决定；页面侧不自行判断要不要提交。 */
   submitOnEnter: boolean;
-  /** 发放句柄时的页面 URL；仅 fieldId 路径（有 path 时）传入，与当前不符即认为句柄表过期。 */
+  /** 发放句柄时的页面 URL；仅 fieldId 路径（有 path 时）传入，与当前不符、且 documentId 也对不上，即认为句柄表过期。 */
   url?: string;
+  /** 同 ApplyFillInput.documentId。 */
+  documentId?: string;
   /** fieldId 路径的结构指纹；仅 path 存在时传入，用于核对目标元素与发放句柄时是否一致。 */
   expect?: { tag: string; type?: string; name?: string };
   /** 发放句柄时目标帧的 origin；与当前帧不符说明 frameId 已被复用，拒绝按键。 */
@@ -1189,7 +1202,13 @@ export function pressKeyInPage(input: PressKeyInput): PressKeyOutput {
   // table.url 是主帧 URL：子帧场景下 location.href 恒不等于它，这条检查只对主帧场景
   // （expectOrigin 未传）有意义——子帧场景已经由上面的 origin 比对兜底（同 applyFormFill，
   // ref: 设计文档 §3.3）。
-  if (!input.expectOrigin && input.url && input.url !== location.href) {
+  if (
+    !input.expectOrigin &&
+    input.url &&
+    input.url !== location.href &&
+    // 同一文档内被单页应用改了地址不算过期——与 page-identity.ts 的 isSamePage 同义（注入函数不能 import，故内联）
+    input.documentId !== String(performance.timeOrigin)
+  ) {
     return { status: 'not_found', defaultPrevented: false, submitted: false, fieldsTableStale: true };
   }
   if (input.expect) {
@@ -1269,8 +1288,10 @@ export function pressKeyInPage(input: PressKeyInput): PressKeyOutput {
 }
 
 export interface ScrollContainerInput {
-  /** 发放句柄时的页面 URL；与当前不符即认为句柄表过期。 */
+  /** 发放句柄时的页面 URL；与当前不符、且 documentId 也对不上，即认为句柄表过期。 */
   url: string;
+  /** 同 ApplyFillInput.documentId。 */
+  documentId?: string;
   path: FormFieldPathStep[];
   expect: { tag: string };
   x?: number;
@@ -1311,7 +1332,13 @@ export function scrollContainerInPage(input: ScrollContainerInput): ScrollContai
   // （expectOrigin 未传）有意义——子帧场景已经由上面的 origin 比对兜底（同 applyFormFill，
   // ref: 设计文档 §3.3）。目前可滚动容器只在主帧采集（见 background.ts 注释），此分支
   // 尚不会在生产中被子帧命中，但保持三处判定逻辑一致。
-  if (!input.expectOrigin && input.url && input.url !== location.href) {
+  if (
+    !input.expectOrigin &&
+    input.url &&
+    input.url !== location.href &&
+    // 同一文档内被单页应用改了地址不算过期——与 page-identity.ts 的 isSamePage 同义（注入函数不能 import，故内联）
+    input.documentId !== String(performance.timeOrigin)
+  ) {
     return { ...empty, status: 'not_found', fieldsTableStale: true };
   }
 

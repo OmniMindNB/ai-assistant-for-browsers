@@ -22,6 +22,8 @@ export type MergedRawField = RawFormField & { frameId: number; frameOrigin: stri
 
 export interface MergedCollection {
   url: string;
+  /** 主框架的 documentId；主框架缺席时缺省——退回只比 url，宁可多判一次过期（ref: page-identity.ts）。 */
+  documentId?: string;
   raws: MergedRawField[];
   forms: CollectedFormInfo[];
   unreachable: { iframes: number; closedShadowRoots: number };
@@ -58,6 +60,7 @@ export function mergeFrameCollections(collections: FrameCollection[]): MergedCol
 
   return {
     url: main?.output.url ?? collections[0]?.output.url ?? '',
+    documentId: main?.output.documentId,
     raws,
     forms: main?.output.forms ?? [],
     unreachable: {

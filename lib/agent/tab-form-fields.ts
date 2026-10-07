@@ -29,6 +29,11 @@ export interface FormFieldTable {
   /** 发放句柄时页面的 URL，写入时比对，用于识别「表已过期」。 */
   url: string;
   /**
+   * 发放句柄时页面的 String(performance.timeOrigin)。单页应用在同一文档内改地址时靠它认出
+   * 「还是同一个页面」（ref: page-identity.ts）；旧版本存下的表没有它，退回只比 url。
+   */
+  documentId?: string;
+  /**
    * fieldId → 句柄。三种前缀共存于同一张表：browser_get_form 发放 f*（表单字段/通用可点击
    * 元素）与 s*（可滚动容器），browser_find_text 发放 t*（按可见文字定位的内容节点，见
    * lib/agent/find-text.ts 的 mergeFindTextHandles）。

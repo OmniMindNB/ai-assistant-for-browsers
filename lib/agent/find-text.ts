@@ -4,6 +4,7 @@
 // 运行时调用这里的任何函数，只能各自内联同款归一化/匹配逻辑——这里的 normalizeFindText/
 // matchesFindText 是给 background.ts 和这份测试用的规范定义，不是给注入函数复用的。
 import type { FormFieldPathStep } from './form-schema';
+import { isSamePage } from './page-identity';
 import type { FormFieldHandle, FormFieldTable } from './tab-form-fields';
 
 export type FindTextMode = 'contains' | 'exact';
@@ -70,8 +71,9 @@ export interface FindTextHandleInput {
 export function keepFindTextHandles(
   previous: FormFieldTable | undefined,
   currentUrl: string,
+  currentDocumentId?: string,
 ): Record<string, FormFieldHandle> {
-  if (!previous || previous.url !== currentUrl) return {};
+  if (!previous || !isSamePage(previous, { url: currentUrl, documentId: currentDocumentId })) return {};
   const kept: Record<string, FormFieldHandle> = {};
   for (const [fieldId, handle] of Object.entries(previous.fields)) {
     if (fieldId.startsWith('t')) kept[fieldId] = handle;
@@ -89,8 +91,9 @@ export function mergeFindTextHandles(
   existing: FormFieldTable | undefined,
   currentUrl: string,
   hits: FindTextHandleInput[],
+  currentDocumentId?: string,
 ): FormFieldTable {
-  const keepExisting = existing !== undefined && existing.url === currentUrl;
+  const keepExisting = isSamePage(existing, { url: currentUrl, documentId: currentDocumentId });
   const fields: Record<string, FormFieldHandle> = {};
 
   if (keepExisting) {
@@ -122,6 +125,7 @@ export function mergeFindTextHandles(
 
   return {
     url: currentUrl,
+    documentId: currentDocumentId,
     fields,
     fingerprints: keepExisting ? existing!.fingerprints : undefined,
   };

@@ -28,6 +28,8 @@ function output(names: string[], url: string): CollectFormOutput {
     // Task 2 给 CollectFormOutput 加了必填的 origin 字段；测试用的 url 都形如
     // `${origin}/page`，直接用 URL 解析拿回 origin，不用额外传参。
     origin: new URL(url).origin,
+    // 每帧一个可区分的值，断言 merged.documentId 取的是哪一帧
+    documentId: `doc:${url}`,
     raws: names.map((name) => raw(name)),
     forms: [],
     unreachable: { iframes: 0, closedShadowRoots: 0 },
@@ -52,6 +54,7 @@ describe('mergeFrameCollections', () => {
     expect(merged.raws.map((item) => item.frameId)).toEqual([0, 0, 7]);
     expect(merged.raws[2].frameOrigin).toBe('https://pay.example.com');
     expect(merged.url).toBe('https://shop.example.com/page');
+    expect(merged.documentId).toBe('doc:https://shop.example.com/page');
   });
 
   // 会让这个用例失败的 production 改动：把 slice 上限去掉，或者丢弃时不计数——
@@ -78,6 +81,8 @@ describe('mergeFrameCollections', () => {
     const merged = mergeFrameCollections([frame(4, 'https://widget.example.com', ['q'])]);
     expect(merged.raws).toHaveLength(1);
     expect(merged.url).toBe('https://widget.example.com/page');
+    // 退到子帧的 url 时不能带子帧的 documentId，否则会拿子帧文档冒充主框架页面身份
+    expect(merged.documentId).toBeUndefined();
   });
 });
 

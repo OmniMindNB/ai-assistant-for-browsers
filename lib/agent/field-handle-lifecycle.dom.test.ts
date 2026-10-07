@@ -292,3 +292,89 @@ describe('批量点击：一次点完多选题的若干选项', () => {
     expect(clicked).toEqual(['A. 甲']);
   });
 });
+
+// 2026-10-07 腾讯云轻量服务器「开放端口」会话导出：点「防火墙」标签之后，后台立刻重采并把
+// 「添加规则」发成 f101；控制台的前端路由随后才 pushState 把地址改成 ?tab=firewall，
+// 模型拿 f101 去点，就因为 table.url ≠ location.href 被判「字段表已失效」，白白多花两轮。
+// 文档没换（同一个 performance.timeOrigin）就仍是同一个页面，句柄照常可用。
+describe('单页应用改地址：同一文档内 pushState 不让句柄表失效', () => {
+  const originalUrl = location.href;
+
+  /** 按 snapshotFields 的真实接线：url 与 documentId 都取自这一次采集。 */
+  function snapshotLive(previous: FormFieldTable | undefined): FormFieldTable {
+    const collected = collectFormFields(INPUT);
+    const { fieldIds, identities } = allocateFieldIds(
+      collected.raws,
+      previous,
+      collected.url,
+      collected.documentId,
+    );
+    const fields: Record<string, FormFieldHandle> = keepFindTextHandles(
+      previous,
+      collected.url,
+      collected.documentId,
+    );
+    collected.raws.forEach((raw, index) => {
+      fields[fieldIds[index]] = {
+        path: raw.path,
+        expect: fieldExpectation(raw),
+        sensitive: false,
+        kind: toFieldDescriptor(raw, fieldIds[index]).kind,
+        identity: identities[index],
+      };
+    });
+    return { url: collected.url, documentId: collected.documentId, fields };
+  }
+
+  function clickLive(table: FormFieldTable, fieldId: string) {
+    const handle = table.fields[fieldId];
+    return applyFormFill({
+      url: table.url,
+      documentId: table.documentId,
+      items: [],
+      submit: { fieldId, path: handle.path, expect: handle.expect },
+    });
+  }
+
+  beforeEach(() => {
+    history.replaceState(null, '', originalUrl);
+    document.body.innerHTML = `
+      <div class="tabs"><button>概要</button><button>防火墙</button></div>
+      <div class="panel"><button>添加规则</button></div>`;
+  });
+
+  it('重采之后地址才变：拿着重采发的 fieldId 照样点得中', async () => {
+    const table = snapshotLive(undefined);
+    const addRule = Object.keys(table.fields).find((id) => table.fields[id].expect.text === '添加规则')!;
+    let clicked = false;
+    document.querySelector('.panel button')!.addEventListener('click', () => { clicked = true; });
+
+    history.pushState(null, '', '?tab=firewall');
+    const result = await clickLive(table, addRule);
+
+    expect(result.fieldsTableStale).toBeUndefined();
+    expect(result.submitted?.status).toBe('ok');
+    expect(clicked).toBe(true);
+  });
+
+  it('地址变了之后再重采：号码继续沿用，不从头重排', () => {
+    const before = snapshotLive(undefined);
+    history.pushState(null, '', '?tab=firewall');
+    // 防火墙面板顶部冒出一个新按钮：按文档序重排的话，后面每个号码都会后移一位
+    document.querySelector('.tabs')!.insertAdjacentHTML('afterbegin', '<button>刷新</button>');
+    const after = snapshotLive(before);
+
+    for (const id of Object.keys(before.fields)) {
+      expect(after.fields[id].expect.text).toBe(before.fields[id].expect.text);
+    }
+  });
+
+  it('文档换了（documentId 不符）且地址也不同：照旧判失效', async () => {
+    const table = snapshotLive(undefined);
+    const addRule = Object.keys(table.fields).find((id) => table.fields[id].expect.text === '添加规则')!;
+    history.pushState(null, '', '?tab=firewall');
+
+    const result = await clickLive({ ...table, documentId: 'another-document' }, addRule);
+    expect(result.fieldsTableStale).toBe(true);
+  });
+});
