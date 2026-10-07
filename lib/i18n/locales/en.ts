@@ -165,6 +165,7 @@ export const en: Record<keyof typeof zh, string> = {
   'chat.saveAsTaskAriaLabel': 'Save as task',
   'chat.generatingAriaLabel': 'Generating',
   'chat.headerThinking': 'Thinking…',
+  'chat.headerRunningStep': 'Working · step {count}',
   'chat.toolCallsLabel': 'Agent tool calls',
   'chat.toolCallsRunningSuffix': ' ({count} running)',
   'chat.taskOutcome.success': 'Task completed',

@@ -1349,6 +1349,31 @@ describe('activity step list', () => {
     expect(list.closest('.group')).toHaveTextContent('Working on it');
   });
 
+  it('shows step progress in the header instead of repeating the step description', () => {
+    (chatStore as any).messages = [
+      { id: 'm1', role: 'user', content: 'Do something', createdAt: 1 },
+      { id: 'm2', role: 'assistant', content: 'Working on it', createdAt: 2 },
+    ];
+    (chatStore as any).busy = true;
+    (chatStore as any).activitySteps = [
+      { id: 'call-1', description: 'Reading page', status: 'done', signature: 'a' },
+      { id: 'call-2', description: 'Clicking "button.buy"', status: 'running', signature: 'b' },
+    ];
+    (chatStore as any).pendingConfirmation = null;
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    const status = screen.getByRole('status');
+    expect(within(status).getByText('Working · step 2')).toBeVisible();
+    // 看得见的完整描述只有步骤列表里那一行。
+    const visible = screen.getAllByText('Clicking "button.buy"').filter((el) => !el.classList.contains('sr-only'));
+    expect(visible).toHaveLength(1);
+    expect(screen.getByRole('list', { name: 'Execution steps' })).toContainElement(visible[0]);
+  });
+
   it('falls back to a standalone step list when the last message is not an assistant reply', () => {
     (chatStore as any).messages = [{ id: 'm1', role: 'user', content: 'Do something', createdAt: 1 }];
     (chatStore as any).busy = true;
@@ -1988,34 +2013,35 @@ describe('workbench history', () => {
       expect(screen.queryByRole('button', { name: 'Stop generating' })).not.toBeInTheDocument();
     });
 
-    it('运行时状态行取代品牌名，并给出停止按钮', () => {
-      renderHeader({ runStatus: 'Clicking "#pay"', onStop: vi.fn() });
-      expect(screen.getByRole('status')).toHaveTextContent('Clicking "#pay"');
+    // 输入区不在滚动区里，它的停止按钮始终可见；header 再放一个只是重复。
+    it('运行时状态行取代品牌名，不再有第二个停止按钮', () => {
+      renderHeader({ runStatus: { label: 'Thinking…', detail: 'Thinking…' } });
+      expect(screen.getByRole('status')).toHaveTextContent('Thinking…');
       expect(screen.queryByText('Runi')).not.toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Stop generating' })).toBeVisible();
+      expect(screen.queryByRole('button', { name: 'Stop generating' })).not.toBeInTheDocument();
     });
 
-    it('停止按钮转发 onStop', async () => {
-      const user = userEvent.setup();
-      const onStop = vi.fn();
-      renderHeader({ runStatus: 'Reading page', onStop });
-
-      await user.click(screen.getByRole('button', { name: 'Stop generating' }));
-      expect(onStop).toHaveBeenCalledOnce();
+    // 完整描述已经写在步骤列表里，header 只给进度；描述退到 title 和读屏播报。
+    it('看得见的是进度，完整描述留给 title 和读屏', () => {
+      renderHeader({ runStatus: { label: 'Working · step 3', detail: 'Clicking "#pay"' } });
+      const status = screen.getByRole('status');
+      expect(status).toHaveAttribute('title', 'Clicking "#pay"');
+      expect(within(status).getByText('Working · step 3')).toHaveAttribute('aria-hidden', 'true');
+      expect(within(status).getByText('Clicking "#pay"')).toHaveClass('sr-only');
     });
 
     // 状态文案跟着工具调用走，一次调用至少两次变化；不节流的话快工具连成一串时会一路抖动。
     it('最小驻留时间内不换字，之后补上最新的一句', async () => {
       vi.useFakeTimers();
       try {
-        const { rerender } = renderHeader({ runStatus: '第一步' });
+        const { rerender } = renderHeader({ runStatus: { label: '第一步', detail: '第一步' } });
         expect(screen.getByRole('status')).toHaveTextContent('第一步');
 
         rerender(
           <LocaleProvider>
             <WorkbenchHeader
               historyOpen={false}
-              runStatus="第二步"
+              runStatus={{ label: '第二步', detail: '第二步' }}
               onToggleHistory={vi.fn()}
               onNewChat={vi.fn()}
               onOpenSettings={vi.fn()}

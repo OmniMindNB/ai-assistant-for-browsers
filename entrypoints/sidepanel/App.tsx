@@ -16,7 +16,8 @@ import MessageEditor from './MessageEditor';
 import { HistoryDrawer } from './components/HistoryDrawer';
 import { SaveTaskDrawer } from './components/SaveTaskDrawer';
 import { WorkbenchEmptyState } from './components/WorkbenchEmptyState';
-import { WorkbenchHeader } from './components/WorkbenchHeader';
+import { WorkbenchHeader, type RunStatus } from './components/WorkbenchHeader';
+import { findRunningStep } from '@/lib/workbench/run-status';
 import { ActivityStepList } from './components/ActivityStepList';
 import { WorkbenchComposer } from './components/WorkbenchComposer';
 import { AttachmentChip } from './components/AttachmentChip';
@@ -278,15 +279,19 @@ export default function App() {
   const showLiveSteps = activitySteps.length > 0 && !pendingConfirmation && !pendingQuestion;
   const liveStepsInBubble = showLiveSteps && busy && messages.at(-1)?.role === 'assistant';
 
-  // header 常驻状态：优先说正在做的那一步，没有工具在跑（例如还在等首个 token）就说"思考中"。
-  // 不用 findLast：目标环境未必有，手写倒序查一次更省事也更明确。
-  const runningStep = (() => {
-    for (let i = activitySteps.length - 1; i >= 0; i -= 1) {
-      if (activitySteps[i].status === 'running') return activitySteps[i];
-    }
-    return undefined;
-  })();
-  const headerRunStatus = busy ? (runningStep?.description ?? t('chat.headerThinking')) : null;
+  // header 常驻状态：有工具在跑时只给进度（"执行中 · 第 N 步"），完整描述已经写在消息里的
+  // 步骤列表上，header 再抄一遍就是两句一模一样的话；没有工具在跑（例如还在等首个 token）就说"思考中"。
+  const running = findRunningStep(activitySteps);
+  const headerRunStatus: RunStatus | null = !busy
+    ? null
+    : running
+      ? {
+          label: running.ordinal !== undefined
+            ? t('chat.headerRunningStep', { count: String(running.ordinal) })
+            : running.step.description,
+          detail: running.step.description,
+        }
+      : { label: t('chat.headerThinking'), detail: t('chat.headerThinking') };
 
   return (
     <div className="flex h-screen overflow-hidden bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
@@ -320,7 +325,6 @@ export default function App() {
           <WorkbenchHeader
             historyOpen={historyOpen}
             runStatus={headerRunStatus}
-            onStop={stop}
             onToggleHistory={toggleHistory}
             onNewChat={newChat}
             onOpenSettings={openSettings}

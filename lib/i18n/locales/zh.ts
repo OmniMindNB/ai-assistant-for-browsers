@@ -159,6 +159,7 @@ export const zh = {
   'chat.saveAsTaskAriaLabel': '保存为指令',
   'chat.generatingAriaLabel': '正在生成',
   'chat.headerThinking': '正在思考…',
+  'chat.headerRunningStep': '执行中 · 第 {count} 步',
   'chat.toolCallsLabel': 'Agent 工具调用',
   'chat.toolCallsRunningSuffix': '（{count} 运行中）',
   'chat.taskOutcome.success': '已完成',
