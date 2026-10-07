@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type RefObject } from 'react';
 import { useTranslation } from '@/lib/i18n';
 import { planStatusUpdate } from '@/lib/workbench/status-throttle';
 import { IconGear, IconMenu, IconPlus } from '../icons';
-import { BrandMark } from './BrandMark';
 
 /**
  * header 运行状态。label 是看得见的那句短进度（"执行中 · 第 3 步"），detail 是此刻那一步的完整描述。
@@ -18,7 +17,7 @@ export interface RunStatus {
 
 export interface WorkbenchHeaderProps {
   historyOpen: boolean;
-  /** 运行中的状态；null 表示空闲。有值时它取代品牌名占住 header 的中间。 */
+  /** 运行中的状态；null 表示空闲。有值时占住 header 的中间，空闲时中间留空。 */
   runStatus?: RunStatus | null;
   onToggleHistory(): void;
   onNewChat(): void;
@@ -100,7 +99,7 @@ export function WorkbenchHeader({
       >
         <IconMenu className="h-5 w-5" />
       </button>
-      {/* 运行期间状态取代品牌名占住中间：用户往上翻历史时，页面上的遮罩看不见、
+      {/* 运行期间状态占住中间：用户往上翻历史时，页面上的遮罩看不见、
           消息里的步骤列表被滚走，header 得能告诉他"还在跑、跑到第几步"。
           停止按钮不放这里：输入区不在滚动区里，它的停止按钮始终可见，两个停止按钮只是重复。 */}
       {status ? (
@@ -127,12 +126,8 @@ export function WorkbenchHeader({
             )}
           </span>
         </div>
-      ) : (
-        <div className="flex min-w-0 items-center gap-1.5 px-1">
-          <BrandMark className="h-5 w-5 shrink-0" />
-          <span className="truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">Runi</span>
-        </div>
-      )}
+      ) : null}
+      {/* 空闲时中间留空，不写 "Runi"：Chrome 侧边栏自带的标题栏紧挨在上面，已经是图标 + 名称。 */}
       <div className="ml-auto flex items-center gap-1">
         <button
           type="button"

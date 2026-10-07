@@ -75,18 +75,14 @@ describe('Runi active product identity', () => {
     expect(read(path)).not.toMatch(legacyBrandPattern);
   });
 
-  // 侧边栏的品牌标记必须就是扩展图标那张图（BrandMark 内联了 icon-source.svg），
+  // 侧边栏空状态的品牌标记必须就是扩展图标那张图（BrandMark 内联了 icon-source.svg），
   // 改了一边忘了另一边，工具栏和面板里就又是两套图形；旧品牌的 "Al" 也不能回来。
   it('uses the official Runi icon as the side panel brand mark', () => {
     const iconPath = read('docs/store-assets/icon-source.svg').match(/<path d="([^"]+)"/)?.[1];
     expect(iconPath).toBeTruthy();
     expect(read('entrypoints/sidepanel/components/BrandMark.tsx')).toContain(`d="${iconPath}"`);
-    for (const file of [
-      'entrypoints/sidepanel/components/WorkbenchEmptyState.tsx',
-      'entrypoints/sidepanel/components/WorkbenchHeader.tsx',
-    ]) {
-      expect(read(file)).toContain('<BrandMark');
-    }
+    // header 不放品牌：Chrome 侧边栏自带的标题栏已经是图标 + 名称。
+    expect(read('entrypoints/sidepanel/components/WorkbenchEmptyState.tsx')).toContain('<BrandMark');
     for (const file of ['entrypoints/sidepanel/App.tsx', 'entrypoints/sidepanel/components/WorkbenchEmptyState.tsx']) {
       expect(read(file)).not.toMatch(/>\s*Al\s*</);
     }

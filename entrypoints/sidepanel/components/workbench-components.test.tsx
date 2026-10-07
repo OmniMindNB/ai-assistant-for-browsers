@@ -2053,9 +2053,10 @@ describe('workbench history', () => {
       );
     }
 
-    it('空闲时显示品牌名，没有状态行也没有停止按钮', () => {
+    // Chrome 侧边栏自带标题栏已经写着图标 + "Runi"，header 不再重复一遍。
+    it('空闲时不显示品牌名，没有状态行也没有停止按钮', () => {
       renderHeader();
-      expect(screen.getByText('Runi')).toBeVisible();
+      expect(screen.queryByText('Runi')).not.toBeInTheDocument();
       expect(screen.queryByRole('status')).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'Stop generating' })).not.toBeInTheDocument();
     });
