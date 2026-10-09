@@ -32,7 +32,9 @@ export default defineConfig({
   }),
   manifest: {
     default_locale: 'zh_CN',
+    // name 同时是商店标题，带了搜索关键词；工具栏提示等空间有限的位置用 short_name 显示纯品牌名
     name: '__MSG_extName__',
+    short_name: 'Runi',
     description: '__MSG_extDescription__',
     permissions: ['sidePanel', 'storage', 'scripting', 'activeTab', 'tabs', 'alarms', 'userScripts'],
     host_permissions: ['<all_urls>'],

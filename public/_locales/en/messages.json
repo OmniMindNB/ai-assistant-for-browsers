@@ -1,10 +1,10 @@
 {
   "extName": {
-    "message": "Runi",
-    "description": "Extension name"
+    "message": "Runi - AI Browser Agent: Autofill Forms, Automate Pages, Summarize",
+    "description": "Extension name; also the Chrome Web Store title, so it carries search keywords. Space-constrained surfaces use the manifest short_name (Runi)."
   },
   "extDescription": {
-    "message": "AI sidebar agent to understand, transform, and automate the current page",
+    "message": "AI side panel agent: autofill forms, click through web pages, summarize and translate, replay saved tasks. Works with your own key.",
     "description": "Extension description shown in the Chrome Web Store"
   },
   "commandOpenPanel": {

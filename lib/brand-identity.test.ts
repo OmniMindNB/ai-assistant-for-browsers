@@ -58,8 +58,26 @@ describe('Runi active product identity', () => {
       name: 'runi',
       description: expect.stringContaining('Runi'),
     });
-    expect(JSON.parse(read('public/_locales/en/messages.json')).extName.message).toBe('Runi');
-    expect(JSON.parse(read('public/_locales/zh_CN/messages.json')).extName.message).toBe('Runi');
+    // extName 是商店标题，带搜索关键词，但必须以品牌名开头；纯品牌名由 short_name 承担。
+    for (const locale of ['en', 'zh_CN']) {
+      const messages = JSON.parse(read(`public/_locales/${locale}/messages.json`));
+      expect(messages.extName.message).toMatch(/^Runi - /);
+      // Chrome Web Store 限制：name ≤ 75、description ≤ 132 字符
+      expect(messages.extName.message.length).toBeLessThanOrEqual(75);
+      expect(messages.extDescription.message.length).toBeLessThanOrEqual(132);
+    }
+    expect(read('wxt.config.ts')).toContain("short_name: 'Runi'");
+  });
+
+  // 商店标题取自 manifest，listing 文档里的名称和简短说明必须与 manifest 文案逐字一致。
+  it.each([
+    ['en', 'docs/chrome-store-listing.en.md'],
+    ['zh_CN', 'docs/chrome-store-listing.zh-CN.md'],
+  ])('%s listing name and short description match the manifest', (locale, listing) => {
+    const messages = JSON.parse(read(`public/_locales/${locale}/messages.json`));
+    const blocks = [...read(listing).matchAll(/```text\r?\n([\s\S]*?)\r?\n```/g)].map((m) => m[1]);
+    expect(blocks[0]).toBe(messages.extName.message);
+    expect(blocks[1]).toBe(messages.extDescription.message);
   });
 
   it.each([

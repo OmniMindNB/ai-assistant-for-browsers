@@ -1,10 +1,10 @@
 {
   "extName": {
-    "message": "Runi",
-    "description": "Extension name"
+    "message": "Runi - AI 网页助手：自动填表、网页自动化、总结翻译",
+    "description": "Extension name; also the Chrome Web Store title, so it carries search keywords. Space-constrained surfaces use the manifest short_name (Runi)."
   },
   "extDescription": {
-    "message": "可控的网页 AI 助手：理解、改造与自动化当前页面",
+    "message": "侧边栏 AI 助手：一句话自动填表、点击和操作网页、总结翻译当前页面，做过的任务可保存后一键重放。支持 DeepSeek、OpenAI、Claude 等模型。",
     "description": "Extension description shown in the Chrome Web Store"
   },
   "commandOpenPanel": {
