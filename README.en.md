@@ -4,130 +4,50 @@
 
 [🚀 Install Runi from the Chrome Web Store](https://chromewebstore.google.com/detail/dhdgahnfefoojenfojbcdaohbbdoabcd)
 
-> A trustworthy browser page agent — known page actions run automatically, with confirmation only for detected form submissions; answers are grounded in page evidence, not generic guesses. Bring your own model and API key. Persistent conversation history stays local; after you initiate a request, the current prompt, recent conversation context, and relevant page-derived results may be sent directly to your configured provider.
-
-> Your page, your way.
+> An AI assistant in your browser side panel: autofill forms, automate web pages, and summarize or translate the current page in one sentence. Known page actions run automatically; only detected form submissions ask for confirmation each time. Conversation history stays local; after you initiate a request, the current prompt, recent conversation context, and relevant page results are sent directly to your configured provider.
 
 ## Before first use
 
-Runi does not include a hosted model. Before your first conversation, configure your own AI provider and API key. Using DeepSeek as an example:
+Runi does not include a hosted model; you use your own AI provider and API key. Using DeepSeek as an example:
 
-1. Open the [DeepSeek Platform API Keys page](https://platform.deepseek.com/api_keys), sign in, then create and copy an API key. API usage may incur charges, so also check your balance and DeepSeek's current pricing.
-2. Open the Runi side panel. If no provider is configured, use the banner's **Settings** link; you can also open **Settings** from the top-right menu.
-3. On **Model providers**, select **Add provider**, then choose `DeepSeek` under **Quick preset**.
-4. The preset fills in `OpenAI Chat Completions`, Base URL `https://api.deepseek.com`, and default model `deepseek-v4-pro`. You normally do not need to change them. Do not append `/chat/completions` to the Base URL.
-5. Paste the key into **API Key** and select **Add**. Never put a real API key in an issue, screenshot, or repository commit.
-6. Return to the side panel, confirm that the composer shows `DeepSeek / deepseek-v4-pro`, and send a message. You can switch providers or models from the same control later.
+1. Create and copy an API key on the [DeepSeek Platform](https://platform.deepseek.com/api_keys) (API usage is billed).
+2. Open the Runi side panel and use the **Settings** link in the setup banner, or open **Settings** from the top-right menu.
+3. Under **Model providers**, select **Add provider** and choose `DeepSeek` under **Quick preset** — the Base URL and model are filled in for you.
+4. Paste the key, select **Add**, and return to the side panel to start a conversation.
 
-See the [Provider setup guide](docs/provider-setup.en.md) for more detail and troubleshooting. Refer to the [official DeepSeek API documentation](https://api-docs.deepseek.com/) for its currently available models and endpoints.
+See the [Provider setup guide](docs/provider-setup.en.md) for more detail and troubleshooting.
 
-## Core features
+## Features
 
-- 🔒 **Confirm submissions only**: a Deny-First permission model automatically executes all known page actions. Only detected form submissions ask for confirmation each time; unknown tools are always denied. `browser_navigate` is restricted to http(s) independently in both the permission layer and the background worker, and page-resource fetches reject loopback, private, link-local, and IPv4-mapped IPv6 targets
-- 🔍 **Evidence-driven analysis**: reads page text / DOM / HTML / scripts / stylesheets / computed styles / localStorage / screenshots. It can also locate elements by their visible text and wait on a real page condition (an element appearing or disappearing, text showing up, the DOM going quiet) instead of guessing a fixed number of seconds. `browser_inspect_page_implementation` gathers all of that in a single call plus a keyword-matched `evidenceSummary`, so "how is this implemented" gets an answer citing specific code instead of a generic description. The screenshot tool only appears in the tool table once you have marked the model as accepting image input
-- 🖐️ **Page actions**: Runi can set styles, modify the DOM, click, type, press functional keys (Enter / Tab / Esc / arrows and other named keys), pick from selects, scroll, navigate, go back, and write storage — plus open new tabs, switch between them, close them, and track the current operating target across a multi-tab task. Form fields and clickable elements are addressed through stable `fieldId` handles that pierce open shadow roots and iframes; every write is fingerprinted and read back before and after, so a write that does not land reports a failure instead of a success, and password and payment fields are neither read nor written. While a write action executes, a non-blocking overlay appears on the page so the operation stays visible. These known actions run automatically; only detected form submissions pause for approval. Tool calls are budgeted (20 read/analysis calls by default, plus another 40 granted on top of what has already been spent once writing starts; pure waits and the first few failed calls are not counted), switchable between a standard and a generous tier under "Task budget" in settings; when the budget runs out the model gets exactly one more turn to produce a final answer
-- 🔑 **Bring your own model**: supports both OpenAI-compatible Chat Completions and the Anthropic Messages protocol, with presets for DeepSeek / OpenAI and a fully custom endpoint option. Configure multiple providers and models, and switch between them straight from the composer
-- 🗂️ **Local-first**: conversation history lives in local IndexedDB, provider configs and UI preferences in `chrome.storage.local` — never synced to any cloud. There is no developer backend and no analytics or ad SDK
-- 🛡️ **Redaction before sending**: page content passes through redaction rules before it can enter the model context — four built-in rules (phone, email, national ID, bank card) plus any custom rules you add in settings. A match is replaced by a whole placeholder rather than partially masked, so not one original character leaks through. Screenshots are pixels with no text to match, so they deliberately bypass this layer — a known and documented gap
-- 📎 **Local file context**: attach up to 5 files per message — text (up to 30,000 characters), images (≤ 5 MB), and PDFs (≤ 20 MB, up to 60,000 characters extracted locally, no OCR). PDFs are parsed locally in a Worker with progress feedback and drag-and-drop support; extracted PDF text is used for one turn only, and history keeps just the file metadata
-- ⚡ **Shortcuts**: five built-ins — "Summarize page / Translate selection / Fill this form / Polish selection / Focus mode" — each editable, deletable, and restorable to defaults, plus your own custom entries. Every shortcut declares its context scope (current page / selected text / no page context), and that scope also decides whether it may touch the page at all. Type `/` in the composer to bring them up. Page-scope shortcuts carry the article text along with the first turn, skipping an extra read round trip. Any reply that changed the page can be saved as a task: Runi keeps the steps that worked (redacted, sensitive fields never recorded), and later you pick it from the `/` palette, optionally add a note about what's different this time, and the agent follows the same path, adapting where the page has changed
-- 🖱️ **Ask about a selection**: select text on a page and an in-place button appears — one click opens the side panel with the selection quoted
-- 🪟 **Per-tab conversations**: the side panel is enabled and bound per tab, so switching back to a tab restores that tab's own conversation. The agent runs in the service worker rather than the panel document, so closing or reopening the side panel neither interrupts nor restarts a running task
-- 🔗 **Cross-tab context**: Type `@` in the composer to pick other tabs in the current window and bring their content into the conversation. Referenced tabs are **read-only** — the model can read them and investigate further, but any write operations (clicking, filling forms, navigating, closing) are refused. The agent still cannot enumerate your tabs on its own; only the tabs you pick enter the conversation
-- 🌓 **Interface preferences**: three-state language switch (Follow browser / 中文 / English) and theme (light / dark / follow system); messages can be edited and resent, past conversations browsed, opened, and deleted from a history drawer, and tool calls surface as a live step timeline
+- **Autofill forms and automate pages**: click, type, select, scroll, navigate, and open or switch tabs. Every write is verified before and after, and a write that didn't land is reported as a failure; password and payment fields are never read or filled.
+- **Save a task, replay it in one step**: save a successful run as a task, then type `/` and pick it to do the same on a similar page.
+- **Summarize and ask**: answers grounded in the page itself; attach text files, images, and PDFs (text extracted locally), or type `@` to reference other tabs (read-only).
+- **Ask about selections and shortcuts**: select text and click **Ask Runi**; built-in Summarize page, Translate selection, Fill this form, Polish selection, and Focus mode, plus your own.
+- **Understand how a page is built**: reads DOM, HTML, scripts, styles, and computed styles to explain how an effect is implemented.
+- **You stay in control**: a Deny-First permission model refuses unknown tools and allows only http(s) navigation; Runi pauses and asks when you touch the mouse or keyboard mid-task; tool calls have a budget.
+- **Redaction before sending**: phone numbers, emails, ID numbers, bank card numbers, and your own rules are replaced with a placeholder in full (screenshots are not covered).
+- **Local-first**: conversation history and settings stay in your browser; no developer backend, no analytics SDK.
+- **Bring your own model**: OpenAI-compatible and Anthropic Messages protocols; configure multiple providers and switch below the composer.
 
-## Tech stack
+## Permissions
 
-| Aspect | Choice |
-|------|------|
-| Extension framework | [WXT](https://wxt.dev/) (Manifest V3, `minimum_chrome_version: 138`) |
-| UI | React 19 + TypeScript + Tailwind CSS v4 |
-| Agent | [`@earendil-works/pi-agent-core`](https://www.npmjs.com/package/@earendil-works/pi-agent-core) (tool-call loop; OpenAI-compatible Chat Completions + Anthropic Messages) |
-| State | Zustand |
-| Storage | Dexie (IndexedDB) + `chrome.storage.local` |
-| Page parsing | `@mozilla/readability` (article extraction), `pdfjs-dist` (local PDF text extraction) |
-| Rendering | react-markdown + remark-gfm + highlight.js |
-| Testing | Three Vitest projects: `unit` (node environment, `lib/**/*.test.ts`), `ui` (jsdom, component tests), and `dom` (jsdom, `lib/**/*.dom.test.ts`, covering the DOM functions injected into pages) |
-| Package manager | pnpm |
+`sidePanel`, `storage`, `scripting`, `activeTab`, `tabs`, `alarms` (only keeps the service worker alive while a task you started is running), `userScripts` (lets the Agent run scripts in an environment isolated from the page; takes effect only after you turn on "Allow User Scripts" on the extension details page), plus the `<all_urls>` host permission.
 
-Requested permissions: `sidePanel`, `storage`, `scripting`, `activeTab`, `tabs`, `alarms` (used only to keep the service worker alive while a task you started is running, and cleared when it ends — never to schedule background work), plus the `<all_urls>` host permission. `userScripts` is not requested, and there is no path for executing model-generated scripts.
-
-## Quick start
+## Development
 
 ```bash
-# Install dependencies (postinstall runs wxt prepare)
-pnpm install
-
-# Start dev (auto-loads the extension with hot reload)
-pnpm dev
-
-# Production build, output in .output/chrome-mv3
-pnpm build
-
-# Package an uploadable zip
-pnpm zip
-
-# Type check
-pnpm compile
-
-# Run tests
-pnpm test
-
-# Verify the emitted PDF.js static assets
-pnpm verify:pdfjs-assets
+pnpm install   # postinstall runs wxt prepare
+pnpm dev       # dev mode with hot reload
+pnpm build     # production build -> .output/chrome-mv3
+pnpm zip       # package a zip for store upload
+pnpm compile   # type check
+pnpm test      # run tests
 ```
 
-Firefox targets use `pnpm dev:firefox` / `pnpm build:firefox` / `pnpm zip:firefox` (Chromium remains the primary target).
+For Firefox use `pnpm dev:firefox` / `pnpm build:firefox` / `pnpm zip:firefox`. To load the unpacked extension: `chrome://extensions` → enable Developer mode → Load unpacked → select `.output/chrome-mv3`.
 
-Load the unpacked extension: in your browser go to `Extensions` → enable `Developer mode` → `Load unpacked` → select `.output/chrome-mv3`.
-
-To talk to a real model during development, fill in a key in [lib/dev-config.ts](lib/dev-config.ts) and set `DEV_PROVIDER.enabled = true` — a provider is then auto-registered on load. **Never commit a real key.**
-
-## Project structure
-
-```
-entrypoints/        # Extension entry points
-  background.ts     # Service worker: message router, the only context with tabs/scripting permissions
-  content.ts        # Content script: article extraction (Readability) / selection / ask-selection bubble
-  sidepanel/        # Side panel React app
-    store.ts        # Zustand: conversation state, attachments, agent driving
-    App.tsx         # Message stream, confirmation card, activity steps
-    components/     # Composer, shortcuts, history drawer, attachment chips, …
-  options/          # Settings page (provider / appearance / language / shortcuts / redaction / task budget)
-components/         # Shared settings components (reused by the compact in-panel settings)
-lib/                # Shared libraries
-  messaging.ts      # Unified messaging protocol across the three contexts
-  agent/            # Agent loop and tool calls
-    agent.ts        # Agent wiring (model / tools / lifecycle hooks / context compaction)
-    tools.ts        # browser_* tool definitions (16 read-only + 13 write/interactive) + ask_user / wait / report_task_outcome
-    permissions.ts  # Deny-First tiers (always_allow / auto_allow / confirm_always / deny)
-    confirm-gate.ts # Detected form submissions prompt every time
-    tool-policy.ts  # Tool-call budgets, repeated-failure circuit breaker, forced convergence
-    run-registry.ts         # The agent runs in the service worker: one run state per tab, snapshots pushed to the panel
-    context-budget.ts       # Text budget for what may enter the context (per-read cap and overall watermarks)
-    form-schema.ts          # Field collection and sensitive-field detection (pure logic, separate from the injected form-dom.ts)
-    system-prompt.ts        # System prompt (the write-tool list is derived from the permission tables)
-    stream-shared.ts        # Protocol-agnostic streaming helpers
-    openai-stream.ts        # OpenAI-compatible Chat Completions streamFn
-    anthropic-stream.ts     # Anthropic Messages streamFn
-    activity-steps.ts       # Per-turn tool-call step timeline
-    tab-conversation.ts     # Tab <-> conversation binding
-    tab-session.ts          # Multi-tab orchestration: tracks agent-opened tabs and the current operating target
-    agent-overlay.ts        # On-page overlay shown while a write action executes (visual signal, never blocks input)
-  chat/             # Attachments (text/image/PDF), local PDF extraction and parse queue, page-text prefetch
-  workbench/        # Side-panel pure logic: history grouped by day, status-line dwell throttling
-  i18n/             # zh / en dictionaries and useTranslation()
-  shortcuts.ts      # Shortcut storage and validation (built-in + custom)
-  redaction.ts      # Page-content redaction rules (phone / email / national ID / bank card + custom)
-  page-outline.ts   # h1-h3 heading outline (lets the model navigate a windowed prefetch of a long page)
-  tab-panel-scope.ts        # Record of which tabs the side panel is enabled on
-  theme.ts          # Light / dark / follow system
-  db.ts             # IndexedDB (Dexie) conversation persistence
-  settings.ts       # Provider configuration and presets
-  page-resource-fetch.ts    # SSRF protection for page-resource fetches
-docs/               # Documentation (docs-driven development)
-```
+Stack: [WXT](https://wxt.dev/) (Manifest V3, Chrome 138+), React 19, TypeScript, Tailwind CSS v4, [`@earendil-works/pi-agent-core`](https://www.npmjs.com/package/@earendil-works/pi-agent-core), Zustand, Dexie, Vitest. Architecture notes are in [CLAUDE.md](CLAUDE.md); design docs are under [docs/](docs/README.md).
 
 ## License
 
-This project is open source under the [MIT License](LICENSE).
+Released under the [MIT License](LICENSE).
