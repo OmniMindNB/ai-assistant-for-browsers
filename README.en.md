@@ -4,7 +4,7 @@
 
 [🚀 Install Runi from the Chrome Web Store](https://chromewebstore.google.com/detail/dhdgahnfefoojenfojbcdaohbbdoabcd)
 
-> An AI assistant in your browser side panel: autofill forms, automate web pages, and summarize or translate the current page in one sentence. Known page actions run automatically; only detected form submissions ask for confirmation each time. Conversation history stays local; after you initiate a request, the current prompt, recent conversation context, and relevant page results are sent directly to your configured provider.
+> An AI assistant in your browser side panel: autofill forms, automate web pages, and summarize or translate the current page in one sentence — known page actions run automatically; only detected form submissions ask for confirmation each time. Conversation history stays local; after you initiate a request, the current prompt, recent conversation context, and relevant page results are sent directly to your configured provider.
 
 ## Before first use
 
