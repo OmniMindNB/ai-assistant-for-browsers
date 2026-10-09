@@ -29,6 +29,12 @@ pnpm test          # vitest run (single run, not watch)
 - `node scripts/generate-store-assets.mjs` re-renders the five Chrome Web Store screenshots and the promo tile in `docs/store-assets/` (both locales) from hand-built SVG scenes rendered with `@resvg/resvg-js` — no extension or LLM involved. Each scene draws its own brand-free `example.com` page; UI copy in the scenes mirrors the real `lib/i18n` strings, and the script throws if any hand-wrapped line is estimated to overflow its container. `lib/store-showcase.test.ts` pins the screenshot order (autofill first) — see "Repo-wide guard tests" below.
 - `.github/workflows/deploy-pages.yml` runs `pnpm compile`, `pnpm test`, `pnpm build` and `pnpm verify:pdfjs-assets` on every push to `main`, and only then builds `docs/` with Jekyll and deploys the privacy policies to GitHub Pages. So a type error, failing test, or broken extension build blocks the Pages deploy; and the workflow additionally greps the built output for the policy routes and effective dates, which means editing `docs/privacy-policy*.md` can break CI in a step that is not a test.
 
+### Releasing to the Chrome Web Store
+
+- Bump `version` in `package.json`, then `pnpm zip` → `.output/runi-<version>-chrome.zip`; upload it on the existing item's Package page (never through a "new item" flow).
+- The store title and short description come from the manifest (`extName` / `extDescription`), so they change only with a new package upload. The detailed description, screenshots, and promo tile are edited in the Dashboard and can change without a release.
+- Paste-ready listing copy lives in `docs/chrome-store-listing.{zh-CN,en}.md` (Simplified Chinese is the default store language); the full step-by-step checklist is `docs/chrome-store-submission-guide.md`.
+
 ## Git
 
 Commit directly on `main`. Do not create a branch for a change, and do not offer to — this repository's whole history is linear on `main`, and a one-commit side branch only adds a merge step. This overrides the assistant's default "branch first when on the default branch" behaviour.
@@ -135,7 +141,7 @@ When adding a new write tool: register it in `tools.ts` and explicitly add it to
 
 Six files under `lib/` don't test a module — they read repo files and assert facts about the whole repository. This is why editing config, docs, or assets can fail a test in a file that looks unrelated:
 
-- `brand-identity.test.ts` — the retired brand name must not appear anywhere outside four named Chrome Web Store docs, and the legal/Pages URLs plus the bilingual upgrade-notice copy must match exactly.
+- `brand-identity.test.ts` — the retired brand name must not appear anywhere outside four named Chrome Web Store docs, and the legal/Pages URLs plus the bilingual upgrade-notice copy must match exactly. It also pins the manifest store metadata: `extName` starts with `Runi - ` and fits 75 chars, `extDescription` fits 132, `short_name` stays `Runi`, and the name/short-description blocks in `docs/chrome-store-listing.*.md` match the locale files verbatim.
 - `brand-namespace.test.ts` — every storage key lives under the `runi:` namespace, and nothing reads the old brand's keys (settings, conversations, theme, locale, shortcuts).
 - `legal-pages.test.ts` — the Jekyll front matter and effective dates of `docs/privacy-policy*.md`, alongside the same assertions the Pages workflow greps for.
 - `final-review.test.ts` — the manifest requests `userScripts`, AI-generated scripts run only through `userScripts.execute` in the `USER_SCRIPT` world with a network-blocking CSP (no `browser_inject_script` / `browser_eval_raw`), no non-test source under `lib/`, `entrypoints/`, `components/` uses `eval`/`new Function`, the privacy-policy effective dates match, and specific privacy strings in both locales say what they say.
@@ -145,6 +151,7 @@ Six files under `lib/` don't test a module — they read repo files and assert f
 ### Manifest and build config (`wxt.config.ts`)
 
 - Manifest-level strings (`__MSG_extName__`, `__MSG_extDescription__`, `__MSG_commandOpenPanel__`) come from `public/_locales/{en,zh_CN}/messages.json` with `default_locale: zh_CN`. This is **a separate mechanism from `lib/i18n/`** — a new manifest string needs both locale files edited by hand, and `lib/i18n/` cannot supply it.
+- `extName` doubles as the Chrome Web Store title, so it deliberately carries search keywords (`Runi - AI 网页助手：…`); the manifest's literal `short_name: 'Runi'` covers space-constrained surfaces. Changing either locale's `extName`/`extDescription` means updating the matching listing doc too (see `brand-identity.test.ts` above).
 - `minimum_chrome_version: 138`; permissions are `sidePanel`, `storage`, `scripting`, `activeTab`, `tabs`, `alarms`, `userScripts`, plus `<all_urls>` host permissions. `userScripts` only takes effect once the user turns on "Allow User Scripts" on the extension details page (Chrome 138+); `browser_run_script` reports itself unavailable until then.
 - `commands._execute_action` (Ctrl+Shift+Y) deliberately has **no** `commands.onCommand` listener: `_execute_action` is a reserved command name that fires the existing `action.onClicked` path, which keeps `sidePanel.open()` inside the same user-gesture tick it requires.
 - The three vite tweaks each fix a specific extension-only symptom and should not be tidied away: `modulePreload: false` (cross-world extension resource partitioning makes Chrome log a "resource mismatch" warning, and extension pages bundle everything locally so there is no network round trip to save), the `node:fs`/`node:os`/`node:path` externals (pi-ai's runtime-guarded dynamic import for Node/Bun CLI use, which never executes in a browser), and the raised `chunkSizeWarningLimit` (pi-ai's model catalogue is dead code here).
