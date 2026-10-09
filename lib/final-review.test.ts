@@ -157,7 +157,6 @@ describe('maintained release capability contract', () => {
     'docs/chrome-store-listing.zh-CN.md',
     'docs/chrome-store-permission-justifications.md',
     'docs/chrome-store-submission-guide.md',
-    'demo/store-assets-frame.html',
     'demo/trust-demo.html',
   ];
   const removedPageRestorationPattern = new RegExp(
@@ -187,7 +186,6 @@ describe('maintained release capability contract', () => {
   it.each([
     'README.en.md',
     'README.md',
-    'demo/store-assets-frame.html',
   ])('%s makes no per-change confirmation claim', (file) => {
     expect(readRepoFile(file)).not.toMatch(perChangeConfirmationPattern);
   });
@@ -212,19 +210,21 @@ describe('maintained release capability contract', () => {
     }
   });
 
-  it('names the attachment screenshot consistently across release surfaces', () => {
-    expect(readRepoFile('docs/chrome-store-submission-guide.md')).toContain(
-      'screenshot-04-attachments.png',
-    );
-    expect(readRepoFile('demo/store-assets-frame.html')).toContain(
-      'screenshot-04-attachments.png',
-    );
-    expect(readRepoFile('docs/chrome-store-listing.en.md')).toContain(
-      'Ask across pages and files',
-    );
-    expect(readRepoFile('docs/chrome-store-listing.zh-CN.md')).toContain(
-      '结合网页与文件提问',
-    );
+  it('names the store screenshots consistently across release surfaces', () => {
+    const guide = readRepoFile('docs/chrome-store-submission-guide.md');
+    const generator = readRepoFile('scripts/generate-store-assets.mjs');
+    for (const file of [
+      'screenshot-01-autofill.png',
+      'screenshot-02-automation.png',
+      'screenshot-03-replay.png',
+      'screenshot-04-confirm.png',
+      'screenshot-05-summary.png',
+    ]) {
+      expect(guide).toContain(file);
+      expect(generator).toContain(file);
+    }
+    expect(readRepoFile('docs/chrome-store-listing.en.md')).toContain('Autofill forms in one sentence');
+    expect(readRepoFile('docs/chrome-store-listing.zh-CN.md')).toContain('一句话自动填表');
   });
 
   it('describes only structured page writes and per-tab session state', () => {

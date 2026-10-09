@@ -78,10 +78,11 @@ GOOD TO KNOW
 
 ## Screenshot captions
 
-1. `Understand any page — Summaries and answers grounded in the current page.`
-2. `See the evidence — Inspect DOM, styles, scripts, and computed behavior.`
-3. `You stay in control — Detected form submissions always pause for your approval.`
-4. `Ask across pages and files — Attach text, images, and PDFs to the current request.`
+1. `Autofill forms in one sentence — Finds the fields, fills them, and reads every value back, dropdowns too.`
+2. `Multi-step web tasks, done for you — Switch tabs, filter, select, and click; describe it once and Runi runs it through.`
+3. `Do it once, replay it anytime — Save a successful run as a task, then run it again with /.`
+4. `You stay in control — Form submissions always wait for your approval, and you can take over anytime.`
+5. `Summarize, translate, ask across tabs — Answers grounded in the page; attach PDFs and images, or reference other tabs.`
 
 ## Currently deployed privacy-policy URL
 

@@ -118,7 +118,6 @@ describe('Runi active product identity', () => {
     'docs/chrome-store-permission-justifications.md',
     'docs/chrome-store-submission-guide.md',
     'demo/trust-demo.html',
-    'demo/store-assets-frame.html',
   ];
 
   it.each(maintainedDocs)('%s uses Runi product wording', (path) => {

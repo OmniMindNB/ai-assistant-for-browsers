@@ -3,7 +3,6 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const demoPath = resolve(process.cwd(), 'demo/store-showcase.html');
-const assetFramePath = resolve(process.cwd(), 'demo/store-assets-frame.html');
 const assetGeneratorPath = resolve(process.cwd(), 'scripts/generate-store-assets.mjs');
 const gitignorePath = resolve(process.cwd(), '.gitignore');
 
@@ -30,15 +29,16 @@ describe('controlled bilingual store showcase', () => {
     expect(source).toContain('!docs/store-assets/**/*.png');
   });
 
-  it.each([assetFramePath, assetGeneratorPath])(
-    'keeps the fourth store screenshot focused on attachments without a stale version badge: %s',
-    (path) => {
-      const source = readFileSync(path, 'utf8');
+  // 第一张截图承担大部分转化，必须是差异化最强的自动填表，而不是人人都有的总结问答。
+  it('leads the store screenshots with autofill and keeps the generated set brand-free', () => {
+    const source = readFileSync(assetGeneratorPath, 'utf8');
 
-      expect(source).toContain('Ask across pages and files');
-      expect(source).toContain('结合网页与文件提问');
-      expect(source).toContain('screenshot-04-attachments.png');
-      expect(source).not.toContain('V1.1');
-    },
-  );
+    expect(source).toMatch(/const SCENES = \[\s*\['autofill', 'screenshot-01-autofill\.png'\]/);
+    expect(source).toContain("headline: 'Autofill forms in one sentence'");
+    expect(source).toContain("headline: '一句话自动填表'");
+    expect(source).not.toContain('V1.1');
+    // 只查场景文案；字体栈里的 "Microsoft YaHei" 是字体名，不是画面上的品牌。
+    const copy = source.slice(source.indexOf('const locales = {'), source.indexOf('const esc ='));
+    expect(copy).not.toMatch(/Acme|Google|Microsoft|OpenAI|Anthropic|DeepSeek/i);
+  });
 });

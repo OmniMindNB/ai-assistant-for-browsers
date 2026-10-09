@@ -40,11 +40,12 @@ pnpm zip
 2. 类别选择 `Productivity`。
 3. 上传简体中文素材目录 `docs/store-assets/zh-CN/` 中的文件：
    - `promo-small-440x280.png`
-   - `screenshot-01-summary.png`
-   - `screenshot-02-evidence.png`
-   - `screenshot-03-confirm.png`
-   - `screenshot-04-attachments.png`
-4. 按中文 listing 文档中的顺序填写四条截图说明。
+   - `screenshot-01-autofill.png`
+   - `screenshot-02-automation.png`
+   - `screenshot-03-replay.png`
+   - `screenshot-04-confirm.png`
+   - `screenshot-05-summary.png`
+4. 按中文 listing 文档中的顺序填写五条截图说明。
 5. 隐私政策默认路由使用当前已部署的 `https://omnimindnb.github.io/ai-assistant-for-browsers/privacy-policy/zh-CN/`。
 6. 支持邮箱使用 `liudong.ucas@gmail.com`。
 
@@ -57,11 +58,12 @@ pnpm zip
    - 确认详细说明仍包含首次使用前配置 Provider/API Key 的步骤，以及 DeepSeek 预设示例。
 3. 上传英文素材目录 `docs/store-assets/en/` 中的文件：
    - `promo-small-440x280.png`
-   - `screenshot-01-summary.png`
-   - `screenshot-02-evidence.png`
-   - `screenshot-03-confirm.png`
-   - `screenshot-04-attachments.png`
-4. 按英文 listing 文档中的顺序填写四条截图说明。
+   - `screenshot-01-autofill.png`
+   - `screenshot-02-automation.png`
+   - `screenshot-03-replay.png`
+   - `screenshot-04-confirm.png`
+   - `screenshot-05-summary.png`
+4. 按英文 listing 文档中的顺序填写五条截图说明。
 5. 如果 Dashboard 的隐私政策 URL 按语言分别填写，`en` 本地化填当前已部署的 `https://omnimindnb.github.io/ai-assistant-for-browsers/privacy-policy/`；如果该字段是商品级的单一字段，保持第 3 节填入的中文路由不变——两条路由的页面都带语言切换。
 
 如果 `docs/store-assets/en/` 尚未生成或图片尺寸不正确，停止；先完成本发布计划的本地化素材任务。
@@ -114,7 +116,7 @@ pnpm zip
 - 中文默认 listing 与 `en` listing 都已保存。
 - 两种 listing 的详细说明均包含 Provider/API Key 首次配置步骤，且字段名与当前设置页一致。
 - 两套本地化素材均来自对应目录，尺寸和语言正确。
-- 四条截图说明与图片顺序一致。
+- 五条截图说明与图片顺序一致。
 - 截图不含 API Key、邮箱、浏览器个人资料、无关标签页或第三方受保护内容。
 - Privacy practices 的 `Website content` 披露已保存。
 - 已按实时定义复核并披露当前页面 URL 与资源 URL 对应的 `Web history` 或 web browsing activity 类别。
