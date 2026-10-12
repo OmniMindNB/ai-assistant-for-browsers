@@ -77,6 +77,40 @@
   padding: 0;
   font-size: 0.85em;
 }
+/* 代码块复制按钮（Markdown.tsx 的 MarkdownPre）。外边距挪到包装层上，
+   这样 .md-body > :first-child / :last-child 的去边距规则仍然作用于代码块。
+   按钮平时半隐，悬停代码块或键盘聚焦时完全显示；触屏没有 hover，所以不做成完全隐藏。 */
+.md-body .md-pre-wrap {
+  position: relative;
+  margin: 0.6em 0;
+}
+.md-body .md-pre-wrap > pre {
+  margin: 0;
+}
+.md-body .md-copy-code {
+  position: absolute;
+  top: 0.35em;
+  right: 0.35em;
+  display: inline-flex;
+  padding: 0.3em;
+  border-radius: 4px;
+  color: #6b7280;
+  background: rgba(246, 248, 250, 0.9);
+  opacity: 0.4;
+  transition: opacity 0.15s;
+}
+.md-body .md-pre-wrap:hover .md-copy-code,
+.md-body .md-copy-code:focus-visible {
+  opacity: 1;
+}
+/* 回答里的图片不自动加载（防数据外泄，见 Markdown.tsx 的 MarkdownImage），以占位链接显示 */
+.md-body .md-image-placeholder {
+  font-size: 0.9em;
+  color: #6b7280;
+}
+.md-body a.md-image-placeholder {
+  text-decoration: underline dotted;
+}
 .md-body blockquote {
   border-left: 3px solid #d1d5db;
   padding-left: 0.8em;
@@ -124,6 +158,85 @@
 .dark .md-body pre {
   background: #0f172a;
   border-color: #1e293b;
+}
+.dark .md-body .md-copy-code {
+  color: #94a3b8;
+  background: rgba(15, 23, 42, 0.9);
+}
+.dark .md-body .md-image-placeholder {
+  color: #94a3b8;
+}
+/* 代码高亮的暗色配色：Markdown.tsx 只引入了浅色的 github.css，暗色模式下 pre 背景变深，
+   但正文仍是 github 的 #24292e，几乎看不见。这里按 highlight.js 的 github-dark 主题覆盖，
+   选择器多带 .dark .md-body 前缀，优先级高于 github.css。 */
+.dark .md-body .hljs {
+  color: #c9d1d9;
+}
+.dark .md-body .hljs-doctag,
+.dark .md-body .hljs-keyword,
+.dark .md-body .hljs-meta .hljs-keyword,
+.dark .md-body .hljs-template-tag,
+.dark .md-body .hljs-template-variable,
+.dark .md-body .hljs-type,
+.dark .md-body .hljs-variable.language_ {
+  color: #ff7b72;
+}
+.dark .md-body .hljs-title,
+.dark .md-body .hljs-title.class_,
+.dark .md-body .hljs-title.class_.inherited__,
+.dark .md-body .hljs-title.function_ {
+  color: #d2a8ff;
+}
+.dark .md-body .hljs-attr,
+.dark .md-body .hljs-attribute,
+.dark .md-body .hljs-literal,
+.dark .md-body .hljs-meta,
+.dark .md-body .hljs-number,
+.dark .md-body .hljs-operator,
+.dark .md-body .hljs-variable,
+.dark .md-body .hljs-selector-attr,
+.dark .md-body .hljs-selector-class,
+.dark .md-body .hljs-selector-id {
+  color: #79c0ff;
+}
+.dark .md-body .hljs-regexp,
+.dark .md-body .hljs-string,
+.dark .md-body .hljs-meta .hljs-string {
+  color: #a5d6ff;
+}
+.dark .md-body .hljs-built_in,
+.dark .md-body .hljs-symbol {
+  color: #ffa657;
+}
+.dark .md-body .hljs-comment,
+.dark .md-body .hljs-code,
+.dark .md-body .hljs-formula {
+  color: #8b949e;
+}
+.dark .md-body .hljs-name,
+.dark .md-body .hljs-quote,
+.dark .md-body .hljs-selector-tag,
+.dark .md-body .hljs-selector-pseudo {
+  color: #7ee787;
+}
+.dark .md-body .hljs-subst,
+.dark .md-body .hljs-emphasis,
+.dark .md-body .hljs-strong {
+  color: #c9d1d9;
+}
+.dark .md-body .hljs-section {
+  color: #1f6feb;
+}
+.dark .md-body .hljs-bullet {
+  color: #f2cc60;
+}
+.dark .md-body .hljs-addition {
+  color: #aff5b4;
+  background-color: #033a16;
+}
+.dark .md-body .hljs-deletion {
+  color: #ffdcd7;
+  background-color: #67060c;
 }
 .dark .md-body blockquote {
   border-left-color: #475569;

