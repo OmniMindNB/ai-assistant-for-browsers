@@ -1,6 +1,20 @@
 import { defineConfig } from 'wxt';
 import tailwindcss from '@tailwindcss/vite';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
+import { stripNonWoff2FontSources } from './lib/katex-font-trim';
+
+// KaTeX 字体只保留 woff2（见 lib/katex-font-trim.ts）。enforce: 'pre' 让改写发生在
+// Vite 的 CSS 插件解析 url() 之前，否则被删的字体文件已经进了打包产物。
+function katexWoff2Only() {
+  return {
+    name: 'runi:katex-woff2-only',
+    enforce: 'pre' as const,
+    transform(code: string, id: string) {
+      if (!/[\\/]katex[\\/]dist[\\/]katex(\.min)?\.css$/.test(id.split('?')[0])) return;
+      return { code: stripNonWoff2FontSources(code), map: null };
+    },
+  };
+}
 
 // See https://wxt.dev/api/config.html
 export default defineConfig({
@@ -9,6 +23,7 @@ export default defineConfig({
   vite: () => ({
     plugins: [
       tailwindcss(),
+      katexWoff2Only(),
       viteStaticCopy({
         targets: [
           { src: 'node_modules/pdfjs-dist/cmaps/*', dest: 'pdfjs/cmaps', rename: { stripBase: true } },
