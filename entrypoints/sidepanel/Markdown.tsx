@@ -1,9 +1,13 @@
 import { memo, type ComponentPropsWithoutRef } from 'react';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { type Options } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
+import remarkMath from 'remark-math';
 import rehypeHighlight from 'rehype-highlight';
+import rehypeKatex from 'rehype-katex';
 import 'highlight.js/styles/github.css';
+import 'katex/dist/katex.min.css';
+import { normalizeMathDelimiters } from '@/lib/chat/math-delimiters';
 
 import bash from 'highlight.js/lib/languages/bash';
 import css from 'highlight.js/lib/languages/css';
@@ -44,8 +48,11 @@ export const HIGHLIGHT_LANGUAGES = {
 // remarkBreaks：CommonMark 把段内单个换行当空格处理，划词翻译/润色等场景里
 // 选中文本常是单换行分隔的多行/多段（浏览器 selection.toString() 不会插入空行），
 // 模型照原文换行结构回传后，不加这个插件会被渲染成挤在一起的一段话。
-const REMARK_PLUGINS = [remarkGfm, remarkBreaks];
-const REHYPE_PLUGINS: [typeof rehypeHighlight, { languages: typeof HIGHLIGHT_LANGUAGES }][] = [
+// remarkMath + rehypeKatex：渲染 $…$ / $$…$$ 公式；\(…\)、\[…\] 和价格里的 $ 由
+// normalizeMathDelimiters 先行处理。KaTeX 解析失败（如流式中公式还没写完）时原文标红显示，不抛错。
+const REMARK_PLUGINS = [remarkGfm, remarkBreaks, remarkMath];
+const REHYPE_PLUGINS: NonNullable<Options['rehypePlugins']> = [
+  rehypeKatex,
   [rehypeHighlight, { languages: HIGHLIGHT_LANGUAGES }],
 ];
 const MARKDOWN_COMPONENTS = {
@@ -75,7 +82,7 @@ function Markdown({ content }: { content: string }) {
         rehypePlugins={REHYPE_PLUGINS}
         components={MARKDOWN_COMPONENTS}
       >
-        {content}
+        {normalizeMathDelimiters(content)}
       </ReactMarkdown>
     </div>
   );

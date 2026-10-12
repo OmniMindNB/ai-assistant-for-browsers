@@ -42,7 +42,7 @@ export const HIGHLIGHTABLE_LANGUAGE_TAGS = [
 
 /**
  * 排版规范。约束来自真实的渲染环境，不是一般性的写作偏好：
- * 侧边栏只有三四百像素宽；正文经 entrypoints/sidepanel/Markdown.tsx 渲染，启用了 remark-gfm，
+ * 侧边栏只有三四百像素宽；正文经 entrypoints/sidepanel/Markdown.tsx 渲染，启用了 remark-gfm 和 KaTeX 公式，
  * 代码高亮只注册了 HIGHLIGHT_LANGUAGES 里那几种语言；assets/tailwind.css 给 pre 加了
  * overflow-x 而 table 没有，所以宽表格会撑破容器。改这几处时要回来同步这段。
  */
@@ -57,6 +57,7 @@ const RESPONSE_FORMAT = [
   '- 贴代码只贴关键的几行，并说明它来自哪个脚本或样式表；不要整段复制页面正文或源码。',
   `- 代码块要写语言标记，可高亮的语言有 ${HIGHLIGHTABLE_LANGUAGE_TAGS.join('、')}。`,
   '- 表格最多两三列，再宽在侧边栏里放不下；放不下就改用段落或列表。',
+  '- 数学公式用 LaTeX：行内写 $…$，独立公式写成单独成行的 $$…$$。不涉及公式时不要为了排版使用公式语法。',
 ].join('\n');
 
 /**

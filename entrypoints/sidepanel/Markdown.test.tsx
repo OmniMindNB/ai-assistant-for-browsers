@@ -40,6 +40,25 @@ describe('Markdown link rendering', () => {
   });
 });
 
+describe('Markdown math rendering', () => {
+  it('renders inline and display formulas with KaTeX', () => {
+    const { container } = render(<Markdown content={'质能方程 $E=mc^2$\n\n$$\n\\frac{a}{b}\n$$'} />);
+    expect(container.querySelectorAll('.katex')).toHaveLength(2);
+    expect(container.querySelectorAll('.katex-display')).toHaveLength(1);
+  });
+
+  it('renders LaTeX-style \\( \\) delimiters', () => {
+    const { container } = render(<Markdown content={'其中 \\(x^2\\) 为平方'} />);
+    expect(container.querySelector('.katex')).not.toBeNull();
+  });
+
+  it('keeps currency amounts as plain text', () => {
+    const { container } = render(<Markdown content={'价格从 $5 到 $10 不等'} />);
+    expect(container.querySelector('.katex')).toBeNull();
+    expect(container.textContent).toBe('价格从 $5 到 $10 不等');
+  });
+});
+
 describe('Markdown soft line break rendering', () => {
   // 划词翻译/润色场景：选中文本常是单换行分隔的多行/多段（selection.toString()
   // 不会插入空行），CommonMark 默认把段内单换行当空格处理，不加 remark-breaks

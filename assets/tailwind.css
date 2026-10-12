@@ -90,6 +90,14 @@
   overflow-x: auto;
   margin: 0.6em 0;
 }
+/* 独立公式同理：长公式在窄侧边栏里横向滚动；overflow-y 必须显式 hidden，
+   否则 overflow-x:auto 会连带出现竖向滚动条（KaTeX 的上下标略超出行盒）。 */
+.md-body .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: 0.6em 0;
+  padding: 0.2em 0;
+}
 .md-body table {
   border-collapse: collapse;
   font-size: 0.9em;
