@@ -104,6 +104,8 @@ export interface PageSelection {
 /** ASK_SELECTION：content script 主动上报"用户点击了划词提问气泡"，携带选中的文本。 */
 export interface AskSelectionPayload {
   text: string;
+  /** 选区所在段落的原文窗口（未脱敏，background 落盘前脱敏）。 */
+  context?: string;
 }
 
 /**

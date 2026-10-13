@@ -1049,6 +1049,7 @@ describe('chat store page context', () => {
       await useChat.getState().restoreTabConversation();
 
       expect(useChat.getState().quotedSelection).toBe('selected text');
+      expect(useChat.getState().quotedContext).toBeNull();
       expect(useChat.getState().pendingFocusToken).toBeGreaterThan(0);
       expect((globalThis as any).browser.storage.session.remove).toHaveBeenCalledWith(key);
     });
@@ -1138,7 +1139,23 @@ describe('chat store page context', () => {
     beforeEach(async () => {
       mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
       await connectPort();
-      useChat.setState({ quotedSelection: null });
+      useChat.setState({ quotedSelection: null, quotedContext: null });
+    });
+
+    it('adds the passage around the selection to the prompt, but never to the displayed or stored message', async () => {
+      useChat.setState({ quotedSelection: 'E2B / Cube', quotedContext: '技能在会话级持久的 Docker / E2B / Cube 沙箱中运行' });
+
+      await useChat.getState().send('这是什么');
+
+      const startRun = lastStartRunCall();
+      expect(startRun.agentUserContent).toContain('技能在会话级持久的 Docker / E2B / Cube 沙箱中运行');
+      expect(startRun.agentUserContent).toContain('这是什么');
+
+      const userMessage = useChat.getState().messages.find((m) => m.role === 'user')!;
+      expect(userMessage.content).toBe('这是什么');
+      expect(userMessage.quotedText).toBe('E2B / Cube');
+      expect(JSON.stringify(userMessage)).not.toContain('沙箱中运行');
+      expect(useChat.getState().quotedContext).toBeNull();
     });
 
     it('sends the quote-formatted template plus the question to background, but stores only the question as the displayed message', async () => {

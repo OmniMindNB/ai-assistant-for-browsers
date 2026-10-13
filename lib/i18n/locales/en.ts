@@ -389,6 +389,8 @@ export const en: Record<keyof typeof zh, string> = {
   'store.shortcutNoBrowserSystemPrompt':
     ' This shortcut must not use browser context; do not read, inspect, or modify the current page.',
   'store.selectionAskTemplate': 'Regarding the selected text:\n```\n{selection}\n```\n\nMy question: ',
+  'store.selectionAskWithContextTemplate':
+    'Regarding the selected text:\n```\n{selection}\n```\n\nThe passage it sits in on the current page (page text, only for understanding what the selection means here):\n```\n{context}\n```\n\nMy question: ',
   'store.attachmentTextTemplate': 'The following JSON object is an uploaded file:\n{attachment}\n\n',
   'store.attachmentOnlyPrompt': 'Analyze the attached file.',
   'store.noProviderConfigured': 'No provider configured. Add an API key in Settings.',

@@ -43,6 +43,14 @@ export const DEFAULT_READ_MAX_CHARS = 24000;
 export const MIN_READ_MAX_CHARS = 1000;
 
 /**
+ * 划词提问随选区一起带上的"所在段落"原文上限。只够让模型认出选区在本页讲的是什么——
+ * "E2B / Cube 是什么"这类问题，选区本身几个字看不出语境，以前模型要先读整页，
+ * 读完又跑去外站查（ref: 2026-10-13 导出日志，94.7s、23 次调用，答案就在选区所在那一段）。
+ * 要更多正文仍可以 browser_read_page。
+ */
+export const MAX_SELECTION_CONTEXT_CHARS = 1500;
+
+/**
  * 把模型填的 maxChars 归一到 [MIN_READ_MAX_CHARS, MAX_TOOL_RESULT_CHARS]。
  * 所有只读工具都必须走这里，不要再各自写 `Math.max(1000, raw ?? 12000)`。
  */

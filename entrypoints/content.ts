@@ -28,6 +28,7 @@ import { SELECTION_ASK_BUBBLE_LABEL } from '@/lib/i18n/locales/selection-ask-bub
 import {
   SELECTION_ASK_ENABLED_KEY,
   clampBubblePosition,
+  clipSelectionContext,
   loadSelectionAskEnabled,
 } from '@/lib/selection-ask';
 
@@ -136,6 +137,8 @@ function getSelection(): PageSelection {
 let bubbleLabel = 'Ask Runi';
 let bubbleHost: HTMLElement | null = null;
 let bubbleSelectionText = '';
+// 点气泡时选区可能已经被点击清掉，所以在 mouseup 时克隆一份 Range，点击时再取所在段落。
+let bubbleSelectionRange: Range | null = null;
 let selectionAskEnabled = false;
 
 const BUBBLE_SIZE = { width: 88, height: 32 };
@@ -190,6 +193,7 @@ function handleMouseUp(event: MouseEvent): void {
   const rect = selection.getRangeAt(0).getBoundingClientRect();
   if (rect.width === 0 && rect.height === 0) return;
   bubbleSelectionText = text;
+  bubbleSelectionRange = selection.getRangeAt(0).cloneRange();
   showBubble(rect);
 }
 
@@ -219,10 +223,12 @@ function showBubble(rect: DOMRect): void {
 
 function handleBubbleClick(): void {
   const text = bubbleSelectionText;
+  const range = bubbleSelectionRange;
   removeBubble();
   if (!text) return;
+  const context = range ? selectionContextOf(range, text) : undefined;
   // addEventListener 不会接住回调返回的 Promise，所以这里必须自己收尾。
-  void sendMessage('ASK_SELECTION', { text } satisfies AskSelectionPayload).catch(
+  void sendMessage('ASK_SELECTION', { text, context } satisfies AskSelectionPayload).catch(
     handleAsyncFailure,
   );
 }
@@ -258,6 +264,33 @@ function removeBubble(): void {
   bubbleHost?.remove();
   bubbleHost = null;
   bubbleSelectionText = '';
+  bubbleSelectionRange = null;
+}
+
+/** 往上找几层就够了：再往上通常是整栏、整页，开窗后也只剩选区附近那一截。 */
+const MAX_CONTEXT_ANCESTOR_DEPTH = 8;
+
+/**
+ * 选区所在段落：从选区的公共祖先往上找第一个文字比选区多出一截的块级元素，取它的可见文字，
+ * 再交给 clipSelectionContext 开窗。取不到（或段落就是选区本身）时返回 undefined，
+ * 划词提问照常只带选区。
+ */
+function selectionContextOf(range: Range, selection: string): string | undefined {
+  try {
+    const ancestor = range.commonAncestorContainer;
+    let element: Element | null = ancestor instanceof Element ? ancestor : ancestor.parentElement;
+    for (let depth = 0; element && element !== document.documentElement && depth < MAX_CONTEXT_ANCESTOR_DEPTH; depth += 1) {
+      const display = getComputedStyle(element).display;
+      if (element instanceof HTMLElement && !display.startsWith('inline') && display !== 'contents') {
+        const context = clipSelectionContext(element.innerText, selection);
+        if (context) return context;
+      }
+      element = element.parentElement;
+    }
+  } catch {
+    // 取上下文只是锦上添花，任何异常都退回只带选区。
+  }
+  return undefined;
 }
 
 // ---- 模拟光标的跨 world 桥 ----

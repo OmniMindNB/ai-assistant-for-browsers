@@ -112,6 +112,8 @@ interface ChatState {
   pendingFocusToken: number;
   /** 划词提问消费到的待引用文字（裁剪后）；作为独立卡片显示在输入框上方，不混入 input。 */
   quotedSelection: string | null;
+  /** 与 quotedSelection 成对：选区在页面上所在的段落（已脱敏），只拼进发给模型的提问，不显示、不落库。 */
+  quotedContext: string | null;
   /** 待发送附件的瞬态生命周期；只有 ready 元数据会进入历史。 */
   pendingAttachments: PendingAttachment[];
   /** 用户在 @ 选择器里点选的只读引用标签页；随每轮 startRun 全量同步给 background。 */
@@ -584,7 +586,11 @@ async function consumePendingAskForTab(tabId: number): Promise<void> {
   const pendingAsk = await getPendingAskForTab(tabId);
   if (!pendingAsk) return;
   await clearPendingAskForTab(tabId);
-  useChat.setState({ quotedSelection: truncateSelectionText(pendingAsk), pendingFocusToken: Date.now() });
+  useChat.setState({
+    quotedSelection: truncateSelectionText(pendingAsk.text),
+    quotedContext: pendingAsk.context ?? null,
+    pendingFocusToken: Date.now(),
+  });
 }
 
 function genConversationId(): string {
@@ -616,6 +622,7 @@ export const useChat = create<ChatState>((set, get) => ({
   activitySteps: [],
   pendingFocusToken: 0,
   quotedSelection: null,
+  quotedContext: null,
   pendingAttachments: [],
   referencedTabs: [],
   busy: false,
@@ -633,7 +640,7 @@ export const useChat = create<ChatState>((set, get) => ({
   shortcutErrors: [],
   pageContext: { status: 'loading' },
 
-  clearQuotedSelection: () => set({ quotedSelection: null }),
+  clearQuotedSelection: () => set({ quotedSelection: null, quotedContext: null }),
 
   addAttachmentFiles: async (files) => {
     const list = Array.from(files);
@@ -822,6 +829,7 @@ export const useChat = create<ChatState>((set, get) => ({
     if (!question && ready.length === 0) return false;
     const displayText = question || t('store.attachmentOnlyPrompt');
     const quoted = get().quotedSelection;
+    const quotedContext = get().quotedContext;
     return runAgent(
       set,
       get,
@@ -834,6 +842,7 @@ export const useChat = create<ChatState>((set, get) => ({
         attachmentSubmission: {
           question,
           quoted,
+          quotedContext,
           attachmentIds: ready.map((item) => item.id),
         },
         retry: () => { void get().send(text, options); },
@@ -1196,6 +1205,7 @@ interface RunAgentOptions {
   attachmentSubmission?: {
     question: string;
     quoted: string | null;
+    quotedContext?: string | null;
     attachmentIds: string[];
   };
 }
@@ -1407,7 +1417,7 @@ async function runAgent(
   let committedAgentUserContent = agentUserContent;
   let committedImages = options.images;
   if (options.attachmentSubmission) {
-    const { question, quoted, attachmentIds } = options.attachmentSubmission;
+    const { question, quoted, quotedContext, attachmentIds } = options.attachmentSubmission;
     const allowedIds = new Set(attachmentIds);
     const ready = get().pendingAttachments.filter(
       (item) => allowedIds.has(item.id) && isAttachmentReady(item),
@@ -1428,7 +1438,7 @@ async function runAgent(
       attachments: storedAttachments.length ? storedAttachments : undefined,
     };
     committedAgentUserContent =
-      (quoted ? buildSelectionAskTemplate(quoted, t) : '') + attachmentText + displayText;
+      (quoted ? buildSelectionAskTemplate(quoted, t, quotedContext ?? undefined) : '') + attachmentText + displayText;
     const images = ready
       .map(toPendingImageContent)
       .filter((item): item is ImageContent => item !== null);
@@ -1500,7 +1510,7 @@ async function runAgent(
   set({
     messages: [...history, committedDisplay, makeMessage('assistant', '')],
     activitySteps: [],
-    ...(options.clearQuotedSelection ? { quotedSelection: null } : {}),
+    ...(options.clearQuotedSelection ? { quotedSelection: null, quotedContext: null } : {}),
     ...(options.clearAttachments ? { pendingAttachments: [] } : {}),
     busy: true,
     error: null,

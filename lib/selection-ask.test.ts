@@ -5,6 +5,7 @@ import {
   SELECTION_ASK_ENABLED_KEY,
   buildSelectionAskTemplate,
   clampBubblePosition,
+  clipSelectionContext,
   loadSelectionAskEnabled,
   saveSelectionAskEnabled,
   truncateSelectionText,
@@ -27,6 +28,46 @@ describe('buildSelectionAskTemplate', () => {
     const result = buildSelectionAskTemplate(long, t);
     expect(result).toContain('x'.repeat(4000));
     expect(result).not.toContain('x'.repeat(4001));
+  });
+});
+
+describe('buildSelectionAskTemplate with context', () => {
+  it('adds the surrounding passage between the selection and the question', () => {
+    expect(buildSelectionAskTemplate('E2B', t, 'runs in a Docker / E2B / Cube sandbox')).toBe(
+      'Regarding the selected text:\n```\nE2B\n```\n\nThe passage it sits in on the current page (page text, only for understanding what the selection means here):\n```\nruns in a Docker / E2B / Cube sandbox\n```\n\nMy question: ',
+    );
+  });
+});
+
+describe('clipSelectionContext', () => {
+  it('returns the whole passage when it fits, with whitespace collapsed', () => {
+    expect(clipSelectionContext('Agent 的工具箱。  技能在\n\n  Docker / E2B / Cube 沙箱中运行，对话旁可打开终端。', 'E2B / Cube')).toBe(
+      'Agent 的工具箱。 技能在\nDocker / E2B / Cube 沙箱中运行，对话旁可打开终端。',
+    );
+  });
+
+  it('returns undefined when the passage is barely more than the selection', () => {
+    expect(clipSelectionContext('E2B / Cube', 'E2B / Cube')).toBeUndefined();
+    expect(clipSelectionContext('see E2B / Cube.', 'E2B / Cube')).toBeUndefined();
+  });
+
+  it('returns undefined when the selection is already long enough to carry its own context', () => {
+    const selection = 'x'.repeat(60);
+    expect(clipSelectionContext(`${'a'.repeat(200)}${selection}`, selection, 100)).toBeUndefined();
+  });
+
+  it('windows a long passage around the selection and marks both cut ends', () => {
+    const block = `${'a'.repeat(500)}TARGET${'b'.repeat(500)}`;
+    const clipped = clipSelectionContext(block, 'TARGET', 100)!;
+    expect(clipped.startsWith('…')).toBe(true);
+    expect(clipped.endsWith('…')).toBe(true);
+    expect(clipped).toContain('TARGET');
+    expect(clipped.length).toBe(102);
+  });
+
+  it('falls back to the head of the passage when the selection cannot be located in it', () => {
+    const clipped = clipSelectionContext(`${'a'.repeat(300)}`, 'missing', 100)!;
+    expect(clipped).toBe(`${'a'.repeat(100)}…`);
   });
 });
 

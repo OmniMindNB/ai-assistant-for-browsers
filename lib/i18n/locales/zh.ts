@@ -386,6 +386,8 @@ export const zh = {
   'store.shortcutNoBrowserSystemPrompt':
     ' 当前快捷方式被限定为不使用浏览器上下文；不要读取、检查或操作当前页面。',
   'store.selectionAskTemplate': '引用选中内容：\n```\n{selection}\n```\n\n我的问题：',
+  'store.selectionAskWithContextTemplate':
+    '引用选中内容：\n```\n{selection}\n```\n\n选中内容在当前页面上所在的段落（页面原文，只用来理解选区在本页的含义）：\n```\n{context}\n```\n\n我的问题：',
   // 同上：JSON 边界负责隔离文件名和内容，防注入规则由系统提示词承担。
   'store.attachmentTextTemplate': '以下 JSON 对象是用户上传的文件：\n{attachment}\n\n',
   'store.attachmentOnlyPrompt': '请分析所附文件。',

@@ -3,21 +3,30 @@
 // 重新加载，模块级变量活不过这次重建，只有 storage.session 能跨文档重建存活（同时不落盘，
 // 浏览器重启后自动清空）。写法仿 lib/agent/tab-conversation.ts。
 
+export interface PendingAsk {
+  text: string;
+  /** 选区所在段落，已在 background 脱敏；页面上取不到时缺省。 */
+  context?: string;
+}
+
 /** 导出给侧边栏：它要在 storage.onChanged 里比对"这次变化是不是自己这个 tab 的 pending ask"。 */
 export function pendingAskStorageKey(tabId: number): string {
   return `runi:tab-pending-ask:${tabId}`;
 }
 
-export async function getPendingAskForTab(tabId: number): Promise<string | undefined> {
+export async function getPendingAskForTab(tabId: number): Promise<PendingAsk | undefined> {
   const key = pendingAskStorageKey(tabId);
   const result = await browser.storage.session.get(key);
-  return result[key] as string | undefined;
+  const value = result[key] as PendingAsk | string | undefined;
+  // 升级前写入的是裸字符串；storage.session 跨扩展重载仍可能留着一条。
+  if (typeof value === 'string') return value ? { text: value } : undefined;
+  return value?.text ? value : undefined;
 }
 
 /** 写入失败（如配额超限）时静默降级：不抛出、不阻塞调用方，只是这次不会被记住。 */
-export async function setPendingAskForTab(tabId: number, text: string): Promise<void> {
+export async function setPendingAskForTab(tabId: number, ask: PendingAsk): Promise<void> {
   try {
-    await browser.storage.session.set({ [pendingAskStorageKey(tabId)]: text });
+    await browser.storage.session.set({ [pendingAskStorageKey(tabId)]: ask });
   } catch {
     // 静默降级，见上方注释
   }

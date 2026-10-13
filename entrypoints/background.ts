@@ -72,6 +72,7 @@ import {
 } from '@/lib/messaging';
 import { selectReferencableTabs } from '@/lib/chat/tab-reference';
 import { loadRedactionSettings, redactText } from '@/lib/redaction';
+import { MAX_SELECTION_CONTEXT_CHARS } from '@/lib/agent/context-budget';
 import { MAX_OUTLINE_TITLE_CHARS } from '@/lib/page-outline';
 import { fetchPageResourceText } from '@/lib/page-resource-fetch';
 import { resolveTargetTab } from '@/lib/agent/tab-target';
@@ -439,7 +440,13 @@ async function handleAskSelection(sender: MessageSender | undefined, payload: As
   if (outcome.opened) await markPanelOpenedForTab(tabId);
 
   // 待提问的选中文本无论如何都留下：即使这次没打开成功，用户手动点开面板时仍能接上。
-  await setPendingAskForTab(tabId, text);
+  // 选区是用户自己挑的、要发出去的内容；所在段落则是顺带的页面原文，和读工具一样先脱敏。
+  const rawContext = payload?.context?.trim();
+  // 先脱敏再截断（截断可能把敏感串切成正则认不出的半截）；内容脚本已按上限开窗，这里只兜底长度。
+  const context = rawContext
+    ? redactText(rawContext, await loadRedactionSettings()).slice(0, MAX_SELECTION_CONTEXT_CHARS + 2)
+    : undefined;
+  await setPendingAskForTab(tabId, context ? { text, context } : { text });
 }
 
 /**

@@ -2,6 +2,7 @@
 // content script（气泡 UI）、侧边栏 store（消费 pending ask）、设置页（开关）三处共用。
 import type { Translate } from './i18n';
 import { MAX_SHORTCUT_SELECTION_CHARS } from './chat/shortcut-prompts';
+import { MAX_SELECTION_CONTEXT_CHARS } from './agent/context-budget';
 
 export const SELECTION_ASK_ENABLED_KEY = 'runi:selection-ask-enabled';
 
@@ -19,9 +20,45 @@ export function truncateSelectionText(text: string): string {
   return text.trim().slice(0, MAX_SHORTCUT_SELECTION_CHARS);
 }
 
-/** 把裁剪后的选区文字拼成发给 agent 的引用模板；不含用户问题本身，调用方负责拼接。 */
-export function buildSelectionAskTemplate(text: string, translate: Translate): string {
-  return translate('store.selectionAskTemplate', { selection: truncateSelectionText(text) });
+/**
+ * 把裁剪后的选区文字拼成发给 agent 的引用模板；不含用户问题本身，调用方负责拼接。
+ * context 是选区所在段落（clipSelectionContext 的结果），有就一起带上。
+ */
+export function buildSelectionAskTemplate(text: string, translate: Translate, context?: string): string {
+  const selection = truncateSelectionText(text);
+  return context
+    ? translate('store.selectionAskWithContextTemplate', { selection, context })
+    : translate('store.selectionAskTemplate', { selection });
+}
+
+function collapseWhitespace(text: string): string {
+  return text.replace(/[ \t ]+/g, ' ').replace(/\s*\n\s*/g, '\n').trim();
+}
+
+/** 段落比选区至少多出这么多字才值得带上；少于这个数，"上下文"不过是选区本身。 */
+const MIN_EXTRA_CONTEXT_CHARS = 20;
+
+/**
+ * 从选区所在块元素的文字里截出给模型的上下文：放得下就整段，放不下就以选区为中心开窗，
+ * 两端截断处加省略号。选区本身已经很长（够自带语境）或段落没比选区多出什么时返回 undefined。
+ */
+export function clipSelectionContext(
+  blockText: string,
+  selection: string,
+  maxChars: number = MAX_SELECTION_CONTEXT_CHARS,
+): string | undefined {
+  const block = collapseWhitespace(blockText);
+  const selected = collapseWhitespace(selection);
+  if (!block || !selected || selected.length * 2 >= maxChars) return undefined;
+  if (block.length < selected.length + MIN_EXTRA_CONTEXT_CHARS) return undefined;
+  if (block.length <= maxChars) return block;
+
+  const index = block.indexOf(selected);
+  // 选区跨了好几个块、在合并后的文字里对不上时，退回段首。
+  const center = index >= 0 ? index + Math.floor(selected.length / 2) : 0;
+  const end = Math.min(block.length, Math.max(0, center - Math.floor(maxChars / 2)) + maxChars);
+  const start = Math.max(0, end - maxChars);
+  return `${start > 0 ? '…' : ''}${block.slice(start, end)}${end < block.length ? '…' : ''}`;
 }
 
 export interface BubbleRect {
