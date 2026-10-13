@@ -458,7 +458,7 @@ describe('多标签页编排工具：browser_open_tab / browser_switch_tab / bro
     expect(sendMessage).not.toHaveBeenCalled();
   });
 
-  it('browser_switch_tab: 切到已追踪的 tab 成功，且从不发送任何消息（纯内存操作）', async () => {
+  it('browser_switch_tab: 切到已追踪的 tab 成功，只发只读的 GET_TAB_URL（列表要现查标题/状态），不改任何页面', async () => {
     const session = createTabSession(1);
     session.openAndSwitch({ id: 2 });
     const tool = toolFor(session, 'browser_switch_tab');
@@ -467,10 +467,10 @@ describe('多标签页编排工具：browser_open_tab / browser_switch_tab / bro
     await tool.execute('call-1', { tabId: 1 });
 
     expect(session.currentTabId).toBe(1);
-    expect(sendMessage).not.toHaveBeenCalled();
+    expect(sendMessage.mock.calls.map((call) => call[0])).toEqual(['GET_TAB_URL', 'GET_TAB_URL']);
   });
 
-  it('browser_list_tabs：只读返回 tracked 列表快照', async () => {
+  it('browser_list_tabs：只读返回 tracked 列表，只发只读的 GET_TAB_URL', async () => {
     const session = createTabSession(1);
     session.openAndSwitch({ id: 2, title: 'B' });
     const tool = toolFor(session, 'browser_list_tabs');
@@ -481,7 +481,7 @@ describe('多标签页编排工具：browser_open_tab / browser_switch_tab / bro
     const text = (output.content[0] as { text: string }).text;
     expect(text).toContain('2');
     expect(text).toContain('B');
-    expect(sendMessage).not.toHaveBeenCalled();
+    expect(sendMessage.mock.calls.map((call) => call[0])).toEqual(['GET_TAB_URL', 'GET_TAB_URL']);
   });
 });
 

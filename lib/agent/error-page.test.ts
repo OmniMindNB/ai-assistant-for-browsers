@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isErrorPageError, normalizeTabError, TAB_SHOWS_ERROR_PAGE_ERROR } from './error-page';
+import { createErrorPageGuard, describeNavigateErrorPage, describeOpenTabErrorPage, isErrorPageError, normalizeTabError, TAB_SHOWS_ERROR_PAGE_ERROR } from './error-page';
 
 describe('normalizeTabError', () => {
   it('replaces Chrome\'s raw error-page failure with an actionable explanation', () => {
@@ -18,5 +18,24 @@ describe('normalizeTabError', () => {
   it('leaves unrelated errors untouched', () => {
     const other = new Error('Cannot access a chrome:// URL');
     expect(normalizeTabError(other)).toBe(other);
+  });
+});
+
+describe('createErrorPageGuard', () => {
+  it('marks the tab on a navigate that landed on an error page, not on open_tab failures', () => {
+    const guard = createErrorPageGuard();
+    // open_tab 失败时新标签页已关掉，当前目标没变：target-independent，不记。
+    guard.record(1, true, true, describeOpenTabErrorPage('https://a.test', 'http://a.test:1/'));
+    expect(guard.preflight('browser_read_page', 1, false)).toBeUndefined();
+
+    guard.record(1, false, true, describeNavigateErrorPage('https://a.test', 'https://a.test/'));
+    expect(guard.preflight('browser_read_page', 1, false)).toContain('标签页 1');
+    expect(guard.preflight('browser_go_back', 1, false)).toBeUndefined();
+  });
+
+  it('ignores ordinary failures', () => {
+    const guard = createErrorPageGuard();
+    guard.record(1, false, true, '未找到元素 #ok');
+    expect(guard.preflight('browser_click', 1, false)).toBeUndefined();
   });
 });

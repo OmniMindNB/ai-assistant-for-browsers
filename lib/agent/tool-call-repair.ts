@@ -64,6 +64,23 @@ export function repairToolArguments(raw: string): Record<string, unknown> {
   return isPlainObject(parsed) ? parsed : {};
 }
 
+const BROWSER_TOOL_PREFIX = 'browser_';
+
+/**
+ * 修复工具名的 browser_ 前缀错位。工具名几乎都带 browser_ 前缀，唯独 wait / ask_user /
+ * report_task_outcome 不带，弱模型会照着规律编出 browser_wait（ref: 2026-10-13 导出日志里
+ * "Tool browser_wait not found" 白白烧掉一轮）；反过来也有把 browser_click 写成 click 的。
+ * 只在改名后的结果确实是现有工具时才改，否则原样返回，让框架照常报"工具不存在"。
+ */
+export function repairToolName(name: string, toolNames: readonly string[]): string {
+  const known = new Set(toolNames);
+  if (known.has(name)) return name;
+  const candidate = name.startsWith(BROWSER_TOOL_PREFIX)
+    ? name.slice(BROWSER_TOOL_PREFIX.length)
+    : `${BROWSER_TOOL_PREFIX}${name}`;
+  return known.has(candidate) ? candidate : name;
+}
+
 function normalizeArguments(value: unknown): Record<string, unknown> {
   if (typeof value === 'string') return repairToolArguments(value);
   return isPlainObject(value) ? value : {};

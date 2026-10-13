@@ -41,6 +41,7 @@ import {
 import { browserOpenAIStream } from './openai-stream';
 import { browserAnthropicStream } from './anthropic-stream';
 import { createTabSession, type TabSessionController } from './tab-session';
+import { TAB_SHOWS_ERROR_PAGE_ERROR } from './error-page';
 import { describeToolActivity } from './activity-description';
 import type { BrowserAgentTool } from './tools';
 
@@ -2395,5 +2396,59 @@ describe('createBrowserAgentOptions closed operating target', () => {
     const { hooks, session } = hooksWithTarget(async () => true);
     expect(await hooks.beforeToolCall?.(beforeContext('browser_read_page', {}))).toBeUndefined();
     expect(session.currentTabId).toBe(7);
+  });
+});
+
+// 2026-10-13 导出日志：同一个错误页上 read_page 换 maxChars、find_text 换查找词，绕过"相同调用失败两次"。
+describe('createBrowserAgentOptions error-page target', () => {
+  function hooksOnTab7() {
+    const session = createTabSession(1);
+    session.openAndSwitch({ id: 7, url: 'http://a.test:26345/docs/' });
+    const hooks = createBrowserAgentOptions({
+      provider: baseProvider,
+      tabId: 1,
+      tools: [],
+      session,
+      steer: vi.fn(),
+      tabExists: async () => true,
+    });
+    return { hooks, session };
+  }
+
+  function errorPageFailure(name: string, args: unknown): AfterToolCallContext {
+    const context = afterContext(name, args, true);
+    (context.result as { content: unknown }).content = [{ type: 'text', text: TAB_SHOWS_ERROR_PAGE_ERROR }];
+    return context;
+  }
+
+  it('blocks any further page call on a tab known to show an error page, whatever the args', async () => {
+    const { hooks } = hooksOnTab7();
+    await hooks.beforeToolCall?.(beforeContext('browser_read_page', { maxChars: 40000 }));
+    await hooks.afterToolCall?.(errorPageFailure('browser_read_page', { maxChars: 40000 }));
+
+    for (const [name, args] of [['browser_read_page', { maxChars: 20000 }], ['browser_find_text', { text: '沙箱' }]] as const) {
+      expect(await hooks.beforeToolCall?.(beforeContext(name, args))).toMatchObject({
+        block: true,
+        reason: expect.stringContaining('停在浏览器加载失败页上'),
+      });
+    }
+  });
+
+  it('still lets the model leave the error page, and lifts the block once a call on the tab succeeds', async () => {
+    const { hooks } = hooksOnTab7();
+    await hooks.afterToolCall?.(errorPageFailure('browser_find_text', { text: 'E2B' }));
+
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_list_tabs', {}))).toBeUndefined();
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_navigate', { url: 'https://a.test/docs/' }))).toBeUndefined();
+    await hooks.afterToolCall?.(afterContext('browser_navigate', { url: 'https://a.test/docs/' }, false));
+
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_read_page', {}))).toBeUndefined();
+  });
+
+  it('only tracks the tab that failed: switching to another tab is unaffected', async () => {
+    const { hooks, session } = hooksOnTab7();
+    await hooks.afterToolCall?.(errorPageFailure('browser_read_page', {}));
+    session.switchTo(1);
+    expect(await hooks.beforeToolCall?.(beforeContext('browser_read_page', {}))).toBeUndefined();
   });
 });

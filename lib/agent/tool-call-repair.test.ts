@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { repairToolArguments, salvageToolCallFromText } from './tool-call-repair';
+import { repairToolArguments, repairToolName, salvageToolCallFromText } from './tool-call-repair';
 
 describe('repairToolArguments', () => {
   it('parses well-formed arguments unchanged', () => {
@@ -98,5 +98,24 @@ describe('salvageToolCallFromText', () => {
 
   it('returns undefined when no tools are available', () => {
     expect(salvageToolCallFromText('{"name":"browser_click","arguments":{}}', [])).toBeUndefined();
+  });
+});
+
+describe('repairToolName', () => {
+  const tools = ['wait', 'ask_user', 'browser_click', 'browser_read_page'];
+
+  it('drops a spurious browser_ prefix (browser_wait -> wait)', () => {
+    expect(repairToolName('browser_wait', tools)).toBe('wait');
+    expect(repairToolName('browser_ask_user', tools)).toBe('ask_user');
+  });
+
+  it('adds a missing browser_ prefix (click -> browser_click)', () => {
+    expect(repairToolName('click', tools)).toBe('browser_click');
+  });
+
+  it('keeps known names and unrecoverable names unchanged', () => {
+    expect(repairToolName('browser_click', tools)).toBe('browser_click');
+    expect(repairToolName('browser_teleport', tools)).toBe('browser_teleport');
+    expect(repairToolName('browser_wait', [])).toBe('browser_wait');
   });
 });

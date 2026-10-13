@@ -111,6 +111,28 @@ describe('formatTabList', () => {
     expect(text).toContain('当前操作目标');
   });
 
+  // 导出日志里面板 tab 一行是 "| 1401825304 |  |  | 面板 |"，跳转后的标题也停在打开那一刻。
+  it('prefers live title/url and marks loading or error-page tabs', () => {
+    const session = createTabSession(1);
+    session.openAndSwitch({ id: 2, title: '旧标题', url: 'https://a.test/old' });
+    session.openAndSwitch({ id: 3, title: 'b', url: 'https://b.test/' });
+    const live = new Map([
+      [1, { title: '面板页', url: 'https://panel.test/', loading: false, errorPage: false }],
+      [2, { title: '快速上手', url: 'https://a.test/new', loading: true }],
+      [3, { title: 'b.test', url: 'http://b.test:26345/', loading: false, errorPage: true }],
+    ]);
+    const rows = formatTabList(session, live).split('\n');
+    expect(rows.find((line) => line.startsWith('| 1 |'))).toBe('| 1 | 面板页 | https://panel.test/ | 面板 |');
+    expect(rows.find((line) => line.startsWith('| 2 |'))).toBe('| 2 | 快速上手 | https://a.test/new | 加载中 |');
+    expect(rows.find((line) => line.startsWith('| 3 |'))).toBe('| 3 | b.test | http://b.test:26345/ | 当前操作目标、加载失败页（无内容） |');
+  });
+
+  it('falls back to the tracked snapshot for tabs without live info', () => {
+    const session = createTabSession(1);
+    session.openAndSwitch({ id: 2, title: 'Example', url: 'https://example.com' });
+    expect(formatTabList(session, new Map())).toContain('| 2 | Example | https://example.com | 当前操作目标 |');
+  });
+
   it('marks referenced tabs as read-only in the model-facing table', () => {
     const session = createTabSession(1);
     session.reference([{ id: 7, title: 'Docs', url: 'https://docs.example.com' }]);

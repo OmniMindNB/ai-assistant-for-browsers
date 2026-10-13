@@ -181,18 +181,32 @@ export function describeClosedTargetFallback(closedTabId: number, session: TabSe
   );
 }
 
-/** 供 browser_open_tab/switch_tab/close_tab/list_tabs 的工具返回值使用，让模型看到最新状态。 */
-export function formatTabList(session: TabSessionController): string {
+/** 渲染标签页列表时现查的实时状态；title 须已按页面文本净化。 */
+export interface LiveTabInfo {
+  title?: string;
+  url?: string;
+  loading?: boolean;
+  errorPage?: boolean;
+}
+
+/**
+ * 供 browser_open_tab/switch_tab/close_tab/list_tabs 的工具返回值使用，让模型看到最新状态。
+ * trackedTabs 里的 title/url 是纳入跟踪那一刻的快照（面板 tab 压根没有），跳转后就过时了；
+ * 有 live 时优先用实时值。以前模型拿不到"页面在加载/打不开"，只能反复调 list_tabs 碰运气。
+ */
+export function formatTabList(session: TabSessionController, live?: ReadonlyMap<number, LiveTabInfo>): string {
   const rows = session.trackedTabs.map((tab) => {
+    const now = live?.get(tab.id);
     const marks = [
       tab.id === session.panelTabId ? '面板' : '',
       tab.id === session.currentTabId ? '当前操作目标' : '',
       // 不标出来的话，模型会对引用页反复尝试写操作、被拒、再重试，白烧预算。
       tabAccessOf(tab) === 'read' ? '用户引用（只读）' : '',
+      now?.errorPage ? '加载失败页（无内容）' : now?.loading ? '加载中' : '',
     ]
       .filter(Boolean)
       .join('、');
-    return `| ${tab.id} | ${tab.title ?? ''} | ${tab.url ?? ''} | ${marks} |`;
+    return `| ${tab.id} | ${now?.title ?? tab.title ?? ''} | ${now?.url || tab.url || ''} | ${marks} |`;
   });
   return ['| tabId | 标题 | URL | 备注 |', '|---|---|---|---|', ...rows].join('\n');
 }

@@ -730,9 +730,18 @@ export interface PressKeyResult {
  * URL，供 agent.ts 探测 browser_click/browser_fill_form/browser_type 之类隐式触发的导航
  * （ref: docs/superpowers/specs/2026-08-31-page-agent-benchmark.md §3.2）。
  */
+export interface GetTabUrlPayload {
+  /** 额外探测主框架是否停在浏览器加载失败页（多一次 executeScript，只给标签页列表用）。 */
+  probeErrorPage?: boolean;
+}
+
 export interface GetTabUrlResult {
   url: string;
   title?: string;
+  /** tabs.Tab.status：'loading' | 'complete'。 */
+  status?: string;
+  /** 仅在请求了 probeErrorPage 时出现。 */
+  errorPage?: boolean;
 }
 
 /** 生成唯一消息 ID */

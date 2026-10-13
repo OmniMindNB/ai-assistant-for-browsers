@@ -32,6 +32,7 @@ import { getTakeoverForTab } from './tab-takeover';
 import { createBrowserTools, type BrowserAgentTool } from './tools';
 import { supportsVision } from './vision';
 import { createTabSession, describeClosedTargetFallback, TARGET_INDEPENDENT_TOOLS, type TabSessionController } from './tab-session';
+import { createErrorPageGuard } from './error-page';
 import { decideTabAccess, resolveToolTargetTabId } from './tab-access';
 import { getFormFieldsForTab } from './tab-form-fields';
 import { isChildFrameHandle } from './fill-form-request';
@@ -265,6 +266,7 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
   // tabId -> 最后一次已知的 URL，用于识别 browser_click/fill_form/type 隐式触发的导航。
   const lastKnownUrl = new Map<number, string>();
   const TAB_SESSION_MUTATING_TOOLS = new Set(['browser_open_tab', 'browser_switch_tab', 'browser_close_tab']);
+  const errorPageGuard = createErrorPageGuard();
   const recordPreExecutionBlock = (block: BeforeToolCallResult): BeforeToolCallResult => {
     policy.recordPreExecutionBlock();
     return block;
@@ -296,6 +298,12 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
         options.onSessionChange?.(session);
         return recordPreExecutionBlock({ block: true, reason: describeClosedTargetFallback(closedTargetId, session) });
       }
+      const errorPageBlock = errorPageGuard.preflight(
+        context.toolCall.name,
+        session.currentTabId,
+        TARGET_INDEPENDENT_TOOLS.has(context.toolCall.name),
+      );
+      if (errorPageBlock) return recordPreExecutionBlock({ block: true, reason: errorPageBlock });
       // 在任何闸门之前记下"尝试过写"：被拦下的调用不经过 afterToolCall，放到后面就漏记了。
       // 模型尝试写却失败/被拒之后停下，它的文字是在解释原因，不是早停。
       // 换页面、开关标签页不算：它们不是在改页面，算进来会让一次 browser_open_tab 就解除巡检后的
@@ -428,6 +436,12 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
       if (toolName !== REPORT_TASK_OUTCOME_TOOL_NAME) {
         policy.recordExecution(toolName, context.args, context.isError);
       }
+      errorPageGuard.record(
+        session.currentTabId,
+        TARGET_INDEPENDENT_TOOLS.has(toolName),
+        Boolean(context.isError),
+        resultTextOf(context.result.content),
+      );
       toolCallCounts.set(toolName, (toolCallCounts.get(toolName) ?? 0) + 1);
 
       if (!context.isError && WRITE_TOOL_NAMES.has(toolName)) writeToolRanThisRun = true;
@@ -658,6 +672,10 @@ async function fetchTabUrl(tabId: number): Promise<string | undefined> {
  */
 function shouldRedactWriteResult(toolName: string): boolean {
   return WRITE_TOOL_NAMES.has(toolName) && !isPageLocationTool(toolName);
+}
+
+function resultTextOf(content: AfterToolCallContext['result']['content']): string {
+  return content.map((part) => (part.type === 'text' ? part.text : '')).join('\n');
 }
 
 async function redactResultContent(

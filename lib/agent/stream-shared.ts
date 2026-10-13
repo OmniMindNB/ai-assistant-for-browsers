@@ -1,7 +1,7 @@
 // lib/agent/stream-shared.ts
 // 协议无关的流式响应内部状态与事件构建工具，供 openai-stream.ts / anthropic-stream.ts 共用。
 import type { AssistantMessage, AssistantMessageEvent, Api, ImageContent, Model, ToolCall, Usage } from '@earendil-works/pi-ai';
-import { repairToolArguments, salvageToolCallFromText } from './tool-call-repair';
+import { repairToolArguments, repairToolName, salvageToolCallFromText } from './tool-call-repair';
 
 export interface ToolCallAccumulator {
   id: string;
@@ -121,6 +121,10 @@ export function finishStream(
         [0, { id: `salvaged-${timestamp}`, name: salvaged.name, argumentsText: JSON.stringify(salvaged.arguments) }],
       ]);
     }
+  }
+
+  if (toolNames.length > 0) {
+    for (const call of finalCalls.values()) call.name = repairToolName(call.name, toolNames);
   }
 
   const reason = finalCalls.size > 0 ? 'toolUse' : fallbackReason;

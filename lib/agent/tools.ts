@@ -4,7 +4,8 @@ import { describeBatchClickResult, describeClickResult, describeGoBackResult, de
 import { renderFormResultForModel } from './form-render';
 import { loadRedactionSettings, redactText } from '@/lib/redaction';
 import { REPORT_TASK_OUTCOME_TOOL_NAME, type TaskOutcome, type TaskOutcomeValue } from './task-outcome';
-import { formatTabList, type TabSessionController } from './tab-session';
+import { formatTabList, type LiveTabInfo, type TabSessionController } from './tab-session';
+import { sanitizePageText } from './form-schema';
 import { resolveKeyDescriptor } from './key-dispatch';
 import { DEFAULT_STORAGE_MAX_CHARS, buildStorageView, renderStorageView } from './storage-read';
 import { describeWaitResult, parseWaitCondition } from './wait-condition';
@@ -71,6 +72,8 @@ import {
   type TypeTextResult,
   type WaitForPayload,
   type WaitForResult,
+  type GetTabUrlPayload,
+  type GetTabUrlResult,
 } from '@/lib/messaging';
 
 export type BrowserAgentTool = AgentTool<any, Record<string, unknown>>;
@@ -1163,6 +1166,30 @@ function makeGetStorageTool(session: TabSessionController): BrowserAgentTool {
   };
 }
 
+const MAX_TAB_TITLE_CHARS = 120;
+
+/** 现查每个被跟踪标签页的标题、地址、加载状态和是否停在错误页；查不到的保留快照值。 */
+async function formatLiveTabList(session: TabSessionController): Promise<string> {
+  const live = new Map<number, LiveTabInfo>();
+  await Promise.all(session.trackedTabs.map(async (tab) => {
+    try {
+      const response = (await sendMessage<GetTabUrlPayload, GetTabUrlResult>('GET_TAB_URL', { probeErrorPage: true }, tab.id)) as MessageResponse<GetTabUrlResult>;
+      if (!response?.ok || !response.data) return;
+      const { title, url, status, errorPage } = response.data;
+      live.set(tab.id, {
+        // 标题由网页控制，属于不可信数据，按纯文本净化并截断。
+        title: title ? sanitizePageText(title, MAX_TAB_TITLE_CHARS) : undefined,
+        url,
+        loading: status === 'loading',
+        errorPage,
+      });
+    } catch {
+      // 查不到就用快照值，列表本身不能因此失败。
+    }
+  }));
+  return formatTabList(session, live);
+}
+
 function makeOpenTabTool(session: TabSessionController): BrowserAgentTool {
   return {
     name: 'browser_open_tab',
@@ -1178,7 +1205,7 @@ function makeOpenTabTool(session: TabSessionController): BrowserAgentTool {
       if (!response.ok || !response.data) throw new Error(response.error ?? '打开新标签页失败');
       session.openAndSwitch({ id: response.data.id, title: response.data.title, url: response.data.url });
       return textResult(
-        `已打开新标签页并切换为当前操作目标。\n${formatTabList(session)}`,
+        `已打开新标签页并切换为当前操作目标。\n${await formatLiveTabList(session)}`,
         response.data as unknown as Record<string, unknown>,
       );
     },
@@ -1202,7 +1229,7 @@ function makeSwitchTabTool(session: TabSessionController): BrowserAgentTool {
       const { tabId } = params as { tabId: number };
       const result = session.switchTo(tabId);
       if (!result.ok) throw new Error(result.error);
-      return textResult(`已切换当前操作目标。\n${formatTabList(session)}`, { tabId, ...session.snapshot() });
+      return textResult(`已切换当前操作目标。\n${await formatLiveTabList(session)}`, { tabId, ...session.snapshot() });
     },
   };
 }
@@ -1225,7 +1252,7 @@ function makeCloseTabTool(session: TabSessionController): BrowserAgentTool {
       const response = (await sendMessage<undefined, CloseTabResult>('CLOSE_TAB', undefined, tabId)) as MessageResponse<CloseTabResult>;
       if (!response.ok) throw new Error(response.error ?? '关闭标签页失败');
       const fallbackNote = result.fellBackToPanelTab ? '已自动切回原标签页。' : '';
-      return textResult(`已关闭标签页 ${tabId}。${fallbackNote}\n${formatTabList(session)}`, { tabId, ...session.snapshot() });
+      return textResult(`已关闭标签页 ${tabId}。${fallbackNote}\n${await formatLiveTabList(session)}`, { tabId, ...session.snapshot() });
     },
   };
 }
@@ -1241,7 +1268,7 @@ function makeListTabsTool(session: TabSessionController): BrowserAgentTool {
       + 'To modify a page, use browser_open_tab to open your own copy instead.',
     parameters: Type.Object({}),
     execute: async () => {
-      return textResult(formatTabList(session), session.snapshot() as unknown as Record<string, unknown>);
+      return textResult(await formatLiveTabList(session), session.snapshot() as unknown as Record<string, unknown>);
     },
   };
 }

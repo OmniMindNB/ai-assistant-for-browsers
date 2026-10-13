@@ -217,6 +217,20 @@ describe('browserOpenAIStream', () => {
     expect(content).toEqual([{ type: 'toolCall', id: 'call_1', name: 'browser_click', arguments: { selector: '#ok' } }]);
   });
 
+  it('maps a hallucinated browser_wait to the real wait tool', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        sseResponse([
+          { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_w', function: { name: 'browser_wait', arguments: '{"seconds":3}' } }] }, finish_reason: 'tool_calls' }] },
+        ]),
+      ),
+    );
+
+    const content = await finalMessage(contextWithTools(['wait', 'browser_click']));
+    expect(content).toEqual([{ type: 'toolCall', id: 'call_w', name: 'wait', arguments: { seconds: 3 } }]);
+  });
+
   it('salvages a tool call the model wrote into the message text, keeping the prose', async () => {
     vi.stubGlobal(
       'fetch',
