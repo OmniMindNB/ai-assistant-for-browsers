@@ -77,6 +77,7 @@ import { resolveTargetTab } from '@/lib/agent/tab-target';
 import { performGoBack, waitForTabLoadComplete, NAVIGATE_HISTORY_SETTLE_TIMEOUT_MS } from '@/lib/agent/history-nav';
 import { performOpenTab } from '@/lib/agent/open-tab';
 import { performNavigate } from '@/lib/agent/navigate-tab';
+import { isErrorPageError, normalizeTabError } from '@/lib/agent/error-page';
 import { sendToContentScript } from '@/lib/agent/content-script-messaging';
 import { clearOverlayForTab, getOverlayForTab, setOverlayForTab } from '@/lib/agent/tab-overlay-state';
 import { clearConversationIdForTab } from '@/lib/agent/tab-conversation';
@@ -205,7 +206,7 @@ export default defineBackground(() => {
   // browser_* 工具调用的 sendMessage() 因此变成了"自己给自己发运行时消息"——按 WebExtensions
   // 规范，runtime.onMessage 不会派发给发消息的那个 frame 自己，继续走消息总线会让这些调用
   // 全部等不到响应。这里注册本地直连出口，让 sendMessage() 绕开总线直接调用 handleMessage。
-  registerLocalDispatcher((message) => handleMessage(message, undefined));
+  registerLocalDispatcher((message) => dispatchMessage(message, undefined));
 
   // 每次 Service Worker 启动都重新确立"面板按 tab 绑定"这条约束（见 lib/tab-panel-scope.ts）。
   // 不能只挂在 runtime.onInstalled 上：那只在安装/更新时触发一次，浏览器重启、扩展重新启用
@@ -332,7 +333,7 @@ export default defineBackground(() => {
 
   browser.runtime.onMessage.addListener(
     (message: Message, sender, sendResponse: (r: MessageResponse) => void) => {
-      handleMessage(message, sender)
+      dispatchMessage(message, sender)
         .then((data) => sendResponse({ id: message.id, ok: true, data }))
         .catch((error: unknown) =>
           sendResponse({
@@ -449,6 +450,28 @@ async function handleAgentTakeover(sender: MessageSender | undefined): Promise<A
   if (typeof tabId !== 'number') return { recorded: false };
   await setTakeoverForTab(tabId, Date.now());
   return { recorded: true };
+}
+
+/**
+ * 两个消息出口（本地直连、runtime.onMessage）共用的包装：在一处把底层报错翻译成模型
+ * 看得懂的说明——目前只有"标签页停在浏览器错误页"这一类（见 lib/agent/error-page.ts）。
+ */
+async function dispatchMessage(message: Message, sender?: MessageSender): Promise<unknown> {
+  try {
+    return await handleMessage(message, sender);
+  } catch (error) {
+    throw normalizeTabError(error);
+  }
+}
+
+/** 主框架是否停在 chrome-error:// 加载失败页上：往里注入一个空函数，看 Chrome 是否以错误页拒绝。 */
+async function isShowingErrorPage(tabId: number): Promise<boolean> {
+  try {
+    await browser.scripting.executeScript({ target: { tabId, frameIds: [0] }, func: () => true });
+    return false;
+  } catch (error) {
+    return isErrorPageError(error);
+  }
 }
 
 async function handleMessage(message: Message, sender?: MessageSender): Promise<unknown> {
@@ -1917,6 +1940,7 @@ async function navigateTab(payload: NavigateTabPayload, tabId: number): Promise<
       await browser.tabs.update(tab.id, { url });
     },
     onceLoadComplete: () => waitForTabLoad(tab.id),
+    isShowingErrorPage: () => isShowingErrorPage(tab.id),
   });
 }
 
@@ -1948,6 +1972,8 @@ async function openNewTab(payload: OpenNewTabPayload, panelTabId: number): Promi
     createTab: (url) => browser.tabs.create({ windowId: panelTab.windowId, url, active: false }),
     onceLoadComplete: waitForTabLoad,
     getTab: (id) => browser.tabs.get(id).catch(() => undefined),
+    isShowingErrorPage,
+    closeTab: (id) => browser.tabs.remove(id).catch(() => undefined),
   });
 }
 

@@ -375,6 +375,30 @@ describe('run-registry startRun', () => {
     expect(persisted.at(-1)?.reasoning).toEqual(['先想', '再想']);
   });
 
+  // 导出日志里出现过 "避免凭空解释。## 结论"：调工具前的引导语和最后一轮的标题首尾相接，标题渲染不出来。
+  it('separates text from different LLM turns with a blank line so Markdown headings still render', async () => {
+    const agent = makeFakeAgent([
+      { type: 'turn_start' },
+      { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '我先看看文档。' } },
+      { type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: '我先看看文档。' }] } },
+      { type: 'turn_start' },
+      { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '## 结论' } },
+      { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '\n正文' } },
+      { type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: '## 结论\n正文' }] } },
+      { type: 'turn_start' },
+      { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '\n\n补充' } },
+      { type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: '\n\n补充' }] } },
+    ]);
+    mocks.createBrowserAgent.mockReturnValue(agent);
+    const posted: unknown[] = [];
+    attachPort(23, { postMessage: (m) => posted.push(m) });
+
+    await startRun(makeRequest({ tabId: 23 }));
+    await vi.waitFor(() => expect(lastSnapshot(posted)?.busy).toBe(false));
+
+    expect(lastSnapshot(posted).messages.at(-1)?.content).toBe('我先看看文档。\n\n## 结论\n正文\n\n补充');
+  });
+
   // Review Focus #1：思考到一半点停止，没有正文、也没等到 message_end。
   it('keeps reasoning streamed before the user stopped the run', async () => {
     const agent = makeFakeAgent([]);

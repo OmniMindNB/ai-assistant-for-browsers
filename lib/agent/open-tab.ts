@@ -1,6 +1,7 @@
 // browser_open_tab 的等待编排：entrypoints/background.ts 只做原始 I/O
 // （browser.tabs.create / browser.tabs.get），"开出来的到底是不是一个还活着的网页"这层判断
 // 放在这里，沿用 history-nav.ts 的依赖注入做法，好让它能用普通 mock 测。
+import { describeOpenTabErrorPage } from './error-page';
 import { sanitizePageText } from './form-schema';
 import type { OpenNewTabResult } from '@/lib/messaging';
 
@@ -24,6 +25,10 @@ export interface OpenTabDeps {
   onceLoadComplete: (tabId: number) => Promise<void>;
   /** 读取标签页当前状态；标签页已关闭时解析为 undefined，不抛异常。 */
   getTab: (tabId: number) => Promise<{ url?: string; title?: string } | undefined>;
+  /** 主框架是否停在浏览器加载失败页上；探测本身出错时解析为 false，不抛异常。 */
+  isShowingErrorPage: (tabId: number) => Promise<boolean>;
+  /** 关掉标签页；失败也不抛异常。 */
+  closeTab: (tabId: number) => Promise<void>;
 }
 
 export async function performOpenTab(url: string, deps: OpenTabDeps): Promise<OpenNewTabResult> {
@@ -36,6 +41,14 @@ export async function performOpenTab(url: string, deps: OpenTabDeps): Promise<Op
   // 之后每个工具调用都会撞上"目标标签页已关闭"。
   const settled = await deps.getTab(created.id);
   if (!settled) throw new Error(TAB_CLOSED_WHILE_OPENING_ERROR);
+
+  // 地址打不开时 Chrome 照样留下一个"加载完成"的标签页，只是显示错误页。报成"已打开"的话
+  // 它会成为操作目标，之后每个读工具都撞 "showing error page"，模型换着参数白烧十几步。
+  // 失败的标签页不会被纳入跟踪，留着只是一个谁也用不到的孤儿，所以顺手关掉。
+  if (await deps.isShowingErrorPage(created.id)) {
+    await deps.closeTab(created.id);
+    throw new Error(describeOpenTabErrorPage(url, settled.url ?? ''));
+  }
 
   return {
     id: created.id,

@@ -288,6 +288,17 @@ function replaceLastAssistant(
   state.messages = [...state.messages.slice(0, -1), { ...last, content, ...extra }];
 }
 
+/**
+ * 一次运行里各轮 LLM 的正文拼成同一条回答。新一轮的首段文字前要补足一个空行：
+ * 否则上一轮调工具前的引导语（"我先看看文档。"）会和下一轮的 "## 结论" 首尾相接，
+ * 标题、列表等行首 Markdown 全部渲染不出来。
+ */
+function joinTurnText(acc: string, delta: string): string {
+  const trailing = acc.length - acc.replace(/\n+$/, '').length;
+  const leading = delta.length - delta.replace(/^\n+/, '').length;
+  return acc + '\n'.repeat(Math.max(0, 2 - trailing - leading)) + delta;
+}
+
 function keepaliveAlarmName(tabId: number): string {
   return `runi:agent-keepalive:${tabId}`;
 }
@@ -525,6 +536,8 @@ export async function startRun(request: StartRunRequest): Promise<void> {
   let toolCallCount = 0;
 
   let acc = '';
+  // acc 最近一次追加正文时所在的 LLM 轮次，用来判断这段 delta 是不是新一轮的开头。
+  let textTurn = llmTurns;
   // 推理与 acc 平行累积：同一个 48ms flush 一起写到占位 assistant 消息上（ref: 设计稿 §3.2）。
   let reasoning: ReasoningBuffer = emptyReasoning();
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -537,7 +550,10 @@ export async function startRun(request: StartRunRequest): Promise<void> {
   const unsubscribe = agent.subscribe((event: AgentEvent) => {
     if (event.type === 'turn_start') llmTurns += 1;
     if (event.type === 'message_update' && event.assistantMessageEvent.type === 'text_delta') {
-      acc += event.assistantMessageEvent.delta;
+      const delta = event.assistantMessageEvent.delta;
+      if (acc && delta && textTurn !== llmTurns) acc = joinTurnText(acc, delta);
+      else acc += delta;
+      if (delta) textTurn = llmTurns;
       if (flushTimer === null) flushTimer = setTimeout(flush, STREAM_FLUSH_INTERVAL_MS);
     }
     if (event.type === 'message_update' && event.assistantMessageEvent.type === 'thinking_delta') {

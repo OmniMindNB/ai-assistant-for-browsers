@@ -10,6 +10,7 @@ function deps(before: string, after: { url?: string; title?: string } | undefine
     }),
     update: vi.fn().mockResolvedValue(undefined),
     onceLoadComplete: vi.fn().mockResolvedValue(undefined),
+    isShowingErrorPage: vi.fn().mockResolvedValue(false),
   };
 }
 
@@ -39,5 +40,10 @@ describe('performNavigate', () => {
 
   it('fails when the tab disappeared during navigation', async () => {
     await expect(performNavigate('https://a.test/docs', deps('https://a.test/', undefined))).rejects.toThrow('目标标签页已关闭');
+  });
+
+  it('fails when the target URL could not load and the tab shows a browser error page', async () => {
+    const d = { ...deps('https://a.test/', { url: 'https://down.test/', title: 'down.test' }), isShowingErrorPage: vi.fn().mockResolvedValue(true) };
+    await expect(performNavigate('https://down.test/', d)).rejects.toThrow('跳转失败：https://down.test/ 加载后浏览器显示的是错误页');
   });
 });

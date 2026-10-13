@@ -6,6 +6,8 @@ function deps(overrides: Partial<OpenTabDeps> = {}): OpenTabDeps {
     createTab: vi.fn().mockResolvedValue({ id: 42 }),
     onceLoadComplete: vi.fn().mockResolvedValue(undefined),
     getTab: vi.fn().mockResolvedValue({ url: 'https://a.test/docs', title: '文档' }),
+    isShowingErrorPage: vi.fn().mockResolvedValue(false),
+    closeTab: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -28,5 +30,19 @@ describe('performOpenTab', () => {
     await expect(
       performOpenTab('https://a.test/install.sh', deps({ getTab: vi.fn().mockResolvedValue(undefined) })),
     ).rejects.toThrow(TAB_CLOSED_WHILE_OPENING_ERROR);
+  });
+
+  // https://weknora.weixin.qq.com/docs 被重定向到一个不可达的 :26345 端口，Chrome 显示错误页。
+  // 以前照样报"已打开"，后面十几个读工具全撞 "Frame with ID 0 is showing error page"。
+  it('fails and closes the tab when it landed on a browser error page', async () => {
+    const d = deps({
+      getTab: vi.fn().mockResolvedValue({ url: 'http://a.test:26345/docs/', title: 'a.test' }),
+      isShowingErrorPage: vi.fn().mockResolvedValue(true),
+    });
+    const failure = performOpenTab('https://a.test/docs', d);
+    await expect(failure).rejects.toThrow('浏览器显示的是错误页');
+    await expect(failure).rejects.toThrow('https://a.test/docs（经重定向到 http://a.test:26345/docs/）');
+    expect(d.isShowingErrorPage).toHaveBeenCalledWith(42);
+    expect(d.closeTab).toHaveBeenCalledWith(42);
   });
 });

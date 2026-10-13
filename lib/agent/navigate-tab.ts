@@ -1,6 +1,7 @@
 // browser_navigate 的等待编排：entrypoints/background.ts 只做原始 I/O
 // （browser.tabs.update / browser.tabs.get），"到底跳没跳走、报什么"放在这里，
 // 沿用 history-nav.ts / open-tab.ts 的依赖注入做法。
+import { describeNavigateErrorPage } from './error-page';
 import { sanitizePageText } from './form-schema';
 import type { NavigateTabResult } from '@/lib/messaging';
 
@@ -23,6 +24,8 @@ export interface NavigateDeps {
   update: (url: string) => Promise<void>;
   /** 等到页面加载完成、标签页被关闭或超时；恒 resolve，不抛异常。 */
   onceLoadComplete: () => Promise<void>;
+  /** 主框架是否停在浏览器加载失败页上；探测本身出错时解析为 false，不抛异常。 */
+  isShowingErrorPage: () => Promise<boolean>;
 }
 
 /** 按浏览器的方式规范化（补尾部斜杠、小写主机名），解析失败时原样比较。 */
@@ -51,6 +54,8 @@ export async function performNavigate(requestedUrl: string, deps: NavigateDeps):
   if (beforeUrl !== undefined && normalizeUrl(landed) === beforeUrl && normalizeUrl(requestedUrl) !== beforeUrl) {
     throw new Error(NAVIGATION_STAYED_ERROR);
   }
+  // 错误页上 tab.url 仍是那个打不开的地址，只看 URL 会被报成"已跳转"。
+  if (await deps.isShowingErrorPage()) throw new Error(describeNavigateErrorPage(requestedUrl, landed));
 
   return {
     url: landed,
