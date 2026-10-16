@@ -120,7 +120,7 @@ export function WorkbenchComposer({
   const requestBlocked = busy || attachmentBusy;
   const hasReadyAttachment = attachments.some(isAttachmentReady);
   const canSend = !requestBlocked
-    && (pendingTask !== null || input.trim().length > 0 || hasReadyAttachment);
+    && (pendingTask !== null || input.trim().length > 0 || hasReadyAttachment || quotedSelection !== null);
   const selectedProvider = providers.find((provider) => provider.id === selectedProviderId);
   const currentModel = selectedModel || selectedProvider?.model || '';
   const modelLabel = currentModel || t('chat.noModelSelected');

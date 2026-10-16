@@ -391,6 +391,7 @@ export const zh = {
   // 同上：JSON 边界负责隔离文件名和内容，防注入规则由系统提示词承担。
   'store.attachmentTextTemplate': '以下 JSON 对象是用户上传的文件：\n{attachment}\n\n',
   'store.attachmentOnlyPrompt': '请分析所附文件。',
+  'store.quoteOnlyPrompt': '请回答或处理选中内容；如果其中没有问题，就解释这段内容。',
   'store.noProviderConfigured': '未配置 Provider，请在「设置」中添加 API Key。',
   'store.missingApiKey': '当前 Provider 未填写 API Key，请在「设置」中补全。',
   'store.messageNotFound': '这条消息已不在当前对话中。',

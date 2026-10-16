@@ -393,6 +393,7 @@ export const en: Record<keyof typeof zh, string> = {
     'Regarding the selected text:\n```\n{selection}\n```\n\nThe passage it sits in on the current page (page text, only for understanding what the selection means here):\n```\n{context}\n```\n\nMy question: ',
   'store.attachmentTextTemplate': 'The following JSON object is an uploaded file:\n{attachment}\n\n',
   'store.attachmentOnlyPrompt': 'Analyze the attached file.',
+  'store.quoteOnlyPrompt': 'Answer or act on the selected text. If it contains no question, explain it.',
   'store.noProviderConfigured': 'No provider configured. Add an API key in Settings.',
   'store.missingApiKey': 'The current provider has no API key set. Add one in Settings.',
   'store.messageNotFound': 'This message is no longer in the current conversation.',

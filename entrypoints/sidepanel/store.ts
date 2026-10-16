@@ -211,6 +211,11 @@ const HELLO_REPLY_TIMEOUT_MS = 300;
  * 变成一个紧凑的重连热循环。 */
 const RECONNECT_DELAY_MS = 250;
 
+/** 用户没输入问题时代替问题的默认提示：有引用就让模型就引用作答，否则是只有附件。 */
+function emptyQuestionPrompt(quoted: string | null): string {
+  return quoted ? t('store.quoteOnlyPrompt') : t('store.attachmentOnlyPrompt');
+}
+
 function flushPendingPortMessages(): void {
   if (!runPort) return;
   while (pendingPortMessages.length > 0) {
@@ -826,10 +831,11 @@ export const useChat = create<ChatState>((set, get) => ({
     if (hasBusyAttachments(pending) || get().busy) return false;
     const ready = pending.filter(isAttachmentReady);
     const question = text.trim();
-    if (!question && ready.length === 0) return false;
-    const displayText = question || t('store.attachmentOnlyPrompt');
     const quoted = get().quotedSelection;
     const quotedContext = get().quotedContext;
+    // 选中内容本身常常就是问题，只引用不补充也允许发送。
+    if (!question && ready.length === 0 && !quoted) return false;
+    const displayText = question || emptyQuestionPrompt(quoted);
     return runAgent(
       set,
       get,
@@ -1422,11 +1428,11 @@ async function runAgent(
     const ready = get().pendingAttachments.filter(
       (item) => allowedIds.has(item.id) && isAttachmentReady(item),
     );
-    if (!question && ready.length === 0) {
+    if (!question && ready.length === 0 && !quoted) {
       settleRun(run);
       return false;
     }
-    const displayText = question || t('store.attachmentOnlyPrompt');
+    const displayText = question || emptyQuestionPrompt(quoted);
     const storedAttachments = ready
       .map(toMessageAttachment)
       .filter((item): item is MessageAttachment => item !== null);

@@ -27,6 +27,7 @@ const contextWorkbenchKeys = [
 const attachmentKeys = [
   'store.attachmentTextTemplate',
   'store.attachmentOnlyPrompt',
+  'store.quoteOnlyPrompt',
   'workbench.attachButtonLabel',
   'workbench.removeAttachmentLabel',
   'workbench.attachmentTruncatedBadge',

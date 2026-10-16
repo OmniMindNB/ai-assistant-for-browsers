@@ -96,6 +96,7 @@ vi.mock('@/lib/chat/pdfjs-runtime', () => ({
   extractPdfAttachment: mocks.extractPdfAttachment,
 }));
 
+import { t } from '@/lib/i18n';
 import { TOOL_BUDGET_PROFILES, TOOL_BUDGET_STORAGE_KEY } from '@/lib/agent/budget-profile';
 import { useChat } from './store';
 
@@ -1170,6 +1171,21 @@ describe('chat store page context', () => {
       const userMessage = useChat.getState().messages.find((m) => m.role === 'user')!;
       expect(userMessage.content).toBe('what does this mean?');
       expect(userMessage.quotedText).toBe('the selected text');
+    });
+
+    it('sends a quote with no typed question, using a default prompt in place of the question', async () => {
+      useChat.setState({ quotedSelection: 'why is the sky blue?' });
+
+      const started = await useChat.getState().send('   ');
+
+      expect(started).toBe(true);
+      const startRun = lastStartRunCall();
+      expect(startRun.agentUserContent).toContain('why is the sky blue?');
+      expect(startRun.agentUserContent).toContain(t('store.quoteOnlyPrompt'));
+
+      const userMessage = useChat.getState().messages.find((m) => m.role === 'user')!;
+      expect(userMessage.content).toBe(t('store.quoteOnlyPrompt'));
+      expect(userMessage.quotedText).toBe('why is the sky blue?');
     });
 
     it('clears quotedSelection once the message is committed', async () => {

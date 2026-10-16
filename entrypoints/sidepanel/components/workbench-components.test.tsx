@@ -616,6 +616,21 @@ describe('workbench composer', () => {
     expect(onClearQuotedSelection).toHaveBeenCalledOnce();
   });
 
+  it('sends on Enter with an empty input when a quoted selection is pending', async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn().mockResolvedValue(true);
+    render(
+      <LocaleProvider>
+        <WorkbenchComposer {...composerProps} quotedSelection="the selected text" onSend={onSend} />
+      </LocaleProvider>,
+    );
+
+    await user.click(screen.getByRole('textbox'));
+    await user.keyboard('{Enter}');
+
+    expect(onSend).toHaveBeenCalledWith('');
+  });
+
   it('opens slash commands, filters, and runs the selected command', async () => {
     const user = userEvent.setup();
     const onRunShortcut = vi.fn();
