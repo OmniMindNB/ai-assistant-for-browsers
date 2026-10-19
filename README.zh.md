@@ -1,37 +1,58 @@
-# Runi
+# Runi — AI 浏览器助手（侧边栏 Agent）
 
 [English](README.md) | **中文**
 
-[🚀 从 Chrome Web Store 安装 Runi](https://chromewebstore.google.com/detail/dhdgahnfefoojenfojbcdaohbbdoabcd)
+[![Chrome Web Store](https://img.shields.io/chrome-web-store/v/dhdgahnfefoojenfojbcdaohbbdoabcd?label=Chrome%20Web%20Store)](https://chromewebstore.google.com/detail/dhdgahnfefoojenfojbcdaohbbdoabcd)
+[![Users](https://img.shields.io/chrome-web-store/users/dhdgahnfefoojenfojbcdaohbbdoabcd)](https://chromewebstore.google.com/detail/dhdgahnfefoojenfojbcdaohbbdoabcd)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-> 浏览器侧边栏里的 AI 助手：一句话自动填表、操作网页、总结翻译当前页面。已知页面操作自动执行，只有检测到的表单提交会逐次请求确认。对话历史只保存在本地；你发起请求后，当前提示词、近期对话上下文和相关页面结果会直接发送到你配置的 AI Provider。
+### [🚀 从 Chrome Web Store 安装 Runi](https://chromewebstore.google.com/detail/dhdgahnfefoojenfojbcdaohbbdoabcd)
 
-## 使用前配置
+![Runi 正在自动填表](docs/store-assets/zh-CN/screenshot-01-autofill.png)
 
-Runi 不提供内置模型，需要使用你自己的 AI Provider 和 API Key。以 DeepSeek 为例：
+> 浏览器侧边栏里的 AI 助手：一句话让它自动填表、操作网页，或者总结、翻译你正在看的页面。已知的页面操作它会自己执行，只有检测到真正的表单提交时才逐次请求确认。对话历史从不离开你的浏览器——提示词直接发送到**你自己**配置的 AI 服务商。
 
-1. 在 [DeepSeek 开放平台](https://platform.deepseek.com/api_keys) 创建并复制 API Key（API 调用会产生费用）。
-2. 打开 Runi 侧边栏，点击顶部提示中的“设置”，或从右上角菜单进入“设置”。
-3. 在“模型 Provider”中点击“添加 Provider”，快速预设选择 `DeepSeek`，Base URL 和模型会自动填好。
-4. 粘贴 API Key，点击“添加”，回到侧边栏即可开始对话。
+和那些订阅制的 AI 侧边栏不同，Runi 是**自带 Key（BYOK）**：接 OpenAI、Anthropic、DeepSeek，或任意 OpenAI 兼容接口。没有 Runi 账号、没有 Runi 后端、没有分析 SDK、没有订阅费。
 
-详细说明和常见问题见 [Provider 配置指南](docs/provider-setup.md)。
+## 为什么用 Runi
+
+- **它真的会操作页面，不只是陪聊**——点击、输入、选择、滚动、跳转、打开和切换标签页。每次写入前后都会校验；没生效就如实说没生效，不装作做完了。
+- **安全机制看得见摸得着**——Deny-First 权限模型（未知工具一律拒绝）、跳转只允许 http(s)、检测到的表单提交必先询问。密码和支付字段既不读取也不写入。
+- **发送前先脱敏**——提示词里的手机号、邮箱、身份证号、银行卡号会被替换为占位符（规则可自定义；截图不经过这一层）。
+- **本地优先**——历史和设置只存在浏览器本地存储里，中间没有任何开发者服务器。
 
 ## 功能
 
-- **自动填表与网页操作**：点击、输入、选择、滚动、跳转，以及打开和切换标签页。每次写入前后都会校验，没写进去会如实报告失败；密码和支付字段既不读取也不写入。
-- **保存任务，一键重放**：成功的操作可以“保存为指令”，之后在输入框输入 `/` 选中它，就能在相似页面再做一遍。
-- **总结与问答**：回答基于页面原文；可附加文本、图片和 PDF（在本地提取文本），也可以输入 `@` 引用其他标签页（只读）。
-- **划词提问与快捷指令**：选中文字后点击“问 Runi”；内置总结本页、翻译划词、帮我填表、润色改写、专注阅读，也可自定义。
-- **页面实现分析**：读取 DOM、HTML、脚本、样式和计算样式，回答“这个效果是怎么实现的”。
-- **始终由你掌控**：Deny-First 权限模型，未知工具一律拒绝，跳转只允许 http(s)；执行中你一动鼠标或键盘就会暂停询问；工具调用有预算上限。
-- **发送前脱敏**：手机号、邮箱、身份证号、银行卡号等命中内容会整体替换为占位符，规则可自定义（截图不经过这一层）。
-- **本地优先**：对话历史和配置只保存在浏览器本地，没有开发者后端，也不接入分析 SDK。
-- **自带模型**：支持 OpenAI 兼容和 Anthropic Messages 两种协议，可配置多个 Provider，在输入框下方切换。
+- **自动填表与网页自动化**——一句话描述任务，Runi 填表、操作页面，然后校验结果。
+- **任务存下来，用 `/` 重放**——把一次成功执行存成指令，之后在相似页面一键重放。
+- **基于页面原文的问答**——回答有页面实际内容作依据；可附加文本、图片、PDF（在本地提取文本），也可以用 `@` 引用其他标签页（只读）。
+- **划词提问与快捷指令**——选中文字点“问 Runi”；内置总结本页、翻译划词、帮我填表、润色改写、专注阅读，也能加你自己的自定义动作。
+- **“这个页面是怎么做的？”**——Runi 能读 DOM、HTML、脚本、样式和计算样式，讲解页面效果的实现方式。
+- **拴着绳的 Agent**——任务执行中你一动鼠标或键盘，它就暂停询问；工具调用有预算上限。
+- **模型随你选**——支持 OpenAI 兼容和 Anthropic Messages 两种协议，可配置多个服务商，在输入框下方直接切换。
+- **LaTeX 公式渲染**——回答里的公式正常显示（KaTeX），看论文和文档很方便。
+
+## 截图
+
+![网页自动化](docs/store-assets/zh-CN/screenshot-02-automation.png)
+![重放已保存的任务](docs/store-assets/zh-CN/screenshot-03-replay.png)
+![提交前确认](docs/store-assets/zh-CN/screenshot-04-confirm.png)
+![总结当前页面](docs/store-assets/zh-CN/screenshot-05-summary.png)
+
+## 快速开始
+
+Runi 不带内置模型，需要你自备服务商的 API Key。以 DeepSeek 为例：
+
+1. 在 [DeepSeek 开放平台](https://platform.deepseek.com/api_keys) 创建 API Key（API 用量由服务商计费）。
+2. 打开 Runi 侧边栏，点顶部横幅或右上角菜单里的**设置**。
+3. 在**模型 Provider**里点**添加 Provider**，选 `DeepSeek` 预设——Base URL 和模型会自动填好。
+4. 粘贴 API Key，点**添加**，就能开始对话了。
+
+完整图文步骤和常见问题见 [Provider 配置指南](docs/provider-setup.md)。
 
 ## 权限
 
-`sidePanel`、`storage`、`scripting`、`activeTab`、`tabs`、`alarms`（仅在你发起的任务执行期间保持 Service Worker 存活）、`userScripts`（Agent 在与页面隔离的环境中运行脚本，需在扩展详情页手动开启“允许用户脚本”才生效），以及 `<all_urls>` 主机权限。
+`sidePanel`、`storage`、`scripting`、`activeTab`、`tabs`、`alarms`（仅在你发起的任务运行期间保持 Service Worker 存活）、`userScripts`（Agent 在隔离环境中运行页面脚本，需在扩展详情页开启“允许用户脚本”），以及 `<all_urls>` 主机权限。
 
 ## 开发
 
@@ -44,10 +65,14 @@ pnpm compile   # 类型检查
 pnpm test      # 运行测试
 ```
 
-Firefox 目标使用 `pnpm dev:firefox` / `pnpm build:firefox` / `pnpm zip:firefox`。加载未打包扩展：`chrome://extensions` → 开启开发者模式 → 加载已解压的扩展程序 → 选择 `.output/chrome-mv3`。
+Firefox 目标：`pnpm dev:firefox` / `pnpm build:firefox` / `pnpm zip:firefox`。加载未打包扩展：`chrome://extensions` → 开启开发者模式 → 加载已解压的扩展程序 → 选择 `.output/chrome-mv3`。
 
 技术栈：[WXT](https://wxt.dev/)（Manifest V3，Chrome 138+）、React 19、TypeScript、Tailwind CSS v4、[`@earendil-works/pi-agent-core`](https://www.npmjs.com/package/@earendil-works/pi-agent-core)、Zustand、Dexie、Vitest。架构说明见 [CLAUDE.md](CLAUDE.md)，设计文档见 [docs/](docs/README.md)。
 
+## 参与贡献
+
+欢迎提 Issue 和 PR——尤其是 bug 报告、新功能想法和 Provider 预设。如果 Runi 帮你省了时间，点个 ⭐ 能让更多人发现它。
+
 ## 许可证
 
-本项目基于 [MIT License](LICENSE) 开源。
+[MIT License](LICENSE)
