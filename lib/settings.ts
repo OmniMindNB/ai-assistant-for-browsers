@@ -61,6 +61,17 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     model: 'gpt-5.6-sol',
     models: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'],
   },
+  {
+    // 走 Anthropic Messages 原生协议：baseURL 按 Anthropic 生态约定不带版本段，
+    // anthropic-stream.ts 的 anthropicMessagesUrl 会补 `/v1/messages`。
+    // 默认取 Opus（Anthropic 官方推荐的默认档）；Fable 5.1 虽更强，但价格高一档且要求
+    // 30 天数据保留，不适合作为一键预设的默认值。三档均为 1M 窗口（2026-10 核对）。
+    name: 'Claude',
+    baseURL: 'https://api.anthropic.com',
+    model: 'claude-opus-5-5',
+    models: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'],
+    api: 'anthropic-messages',
+  },
 ];
 
 /**
@@ -225,9 +236,13 @@ export function applyPresetToDraft(
   isEditing: boolean,
 ): { draft: ProviderConfig; extrasText: string } {
   const presetName = preset.name;
+  // 协议跟着 baseURL 走：baseURL 取自预设时协议也必须取自预设，否则 Anthropic 地址配上
+  // OpenAI 协议会请求到不存在的路径。预设未声明协议时一律按 OpenAI 兼容；
+  // 「自定义」空预设不代表任何厂商，不改动用户已选的协议。
+  const presetApi = preset === CUSTOM_PRESET ? draft.api : (preset.api ?? 'openai-completions');
   if (!isEditing) {
     return {
-      draft: { ...draft, name: presetName, baseURL: preset.baseURL, model: preset.model },
+      draft: { ...draft, name: presetName, baseURL: preset.baseURL, model: preset.model, api: presetApi },
       extrasText,
     };
   }
@@ -236,6 +251,7 @@ export function applyPresetToDraft(
     name: draft.name || presetName,
     baseURL: draft.baseURL || preset.baseURL,
     model: draft.model || preset.model,
+    api: draft.baseURL ? draft.api : presetApi,
   };
   return { draft: nextDraft, extrasText };
 }

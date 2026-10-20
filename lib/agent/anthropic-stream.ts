@@ -19,6 +19,14 @@ export function anthropicMessagesUrl(baseUrl: string): string {
   return /\/v\d+$/.test(base) ? `${base}/messages` : `${base}/v1/messages`;
 }
 
+// Anthropic 官方的当前模型（Opus 4.7 起、Sonnet 5.5、Haiku 5.5 等）对 temperature 等采样参数
+// 直接返回 400，而且官方模型默认值本就合适，所以 `claude-` 开头的模型一律不发。其他走 Anthropic
+// 协议的兼容端点（如火山方舟上的第三方模型）仍沿用原来的 0.7 默认值，不改变既有行为。
+export function anthropicSamplingParams(modelId: string, temperature: number | undefined): { temperature?: number } {
+  if (/^claude-/i.test(modelId)) return {};
+  return { temperature: temperature ?? 0.7 };
+}
+
 interface AnthropicSseEvent {
   type: string;
   index?: number;
@@ -101,7 +109,7 @@ async function runAnthropicStream(
           input_schema: tool.parameters,
         })),
         max_tokens: options?.maxTokens ?? model.maxTokens,
-        temperature: options?.temperature ?? 0.7,
+        ...anthropicSamplingParams(model.id, options?.temperature),
         stream: true,
       }),
       signal: options?.signal,

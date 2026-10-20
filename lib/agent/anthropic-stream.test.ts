@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AssistantMessageEvent, AssistantMessageEventStream, Api, Context, Model } from '@earendil-works/pi-ai';
 import { PERF_TRACE_FLAG, currentPerfUsage, resetPerfTrace } from './perf-trace';
-import { anthropicMessagesUrl, browserAnthropicStream, buildAnthropicSystem, convertMessagesForAnthropic } from './anthropic-stream';
+import { anthropicMessagesUrl, anthropicSamplingParams, browserAnthropicStream, buildAnthropicSystem, convertMessagesForAnthropic } from './anthropic-stream';
 import { LLM_RETRY_DELAYS_MS } from './stream-shared';
 
 function makeModel(): Model<Api> {
@@ -70,6 +70,19 @@ describe('anthropicMessagesUrl', () => {
       'https://ark.cn-beijing.volces.com/api/coding/v1/messages',
     );
     expect(anthropicMessagesUrl('https://api.anthropic.com/v1//')).toBe('https://api.anthropic.com/v1/messages');
+  });
+});
+
+describe('anthropicSamplingParams', () => {
+  // 当前 Claude 模型对 temperature 一律 400，发了就整轮失败。
+  it('omits temperature for official Claude models', () => {
+    expect(anthropicSamplingParams('claude-opus-5-5', undefined)).toEqual({});
+    expect(anthropicSamplingParams('claude-haiku-5-5', 0.2)).toEqual({});
+  });
+
+  it('keeps the 0.7 default for other Anthropic-compatible models', () => {
+    expect(anthropicSamplingParams('kimi-k2', undefined)).toEqual({ temperature: 0.7 });
+    expect(anthropicSamplingParams('glm-5', 0.2)).toEqual({ temperature: 0.2 });
   });
 });
 

@@ -132,6 +132,39 @@ describe('applyPresetToDraft', () => {
       const result = applyPresetToDraft(draft, '', preset, false);
       expect(result.draft.name).toBe('DeepSeek');
     });
+
+    it('switches the protocol along with the preset (Claude → anthropic, then back to OpenAI-compatible)', () => {
+      const claude = resolvePresetSelection('Claude')!;
+      const afterClaude = applyPresetToDraft(baseDraft, '', claude, false);
+      expect(afterClaude.draft.api).toBe('anthropic-messages');
+      const afterDeepSeek = applyPresetToDraft(afterClaude.draft, '', preset, false);
+      expect(afterDeepSeek.draft.api).toBe('openai-completions');
+    });
+  });
+
+  it('when editing, takes the preset protocol only if baseURL also comes from the preset', () => {
+    const claude = resolvePresetSelection('Claude')!;
+    const empty = applyPresetToDraft({ ...baseDraft, api: 'openai-completions' }, '', claude, true);
+    expect(empty.draft.api).toBe('anthropic-messages');
+    const kept = applyPresetToDraft(
+      { ...baseDraft, baseURL: 'https://my-proxy.example.com/v1', api: 'openai-completions' },
+      '',
+      claude,
+      true,
+    );
+    expect(kept.draft.api).toBe('openai-completions');
+  });
+});
+
+describe('Claude preset', () => {
+  it('uses the native Anthropic Messages protocol with an unversioned official baseURL', () => {
+    expect(resolvePresetSelection('Claude')).toEqual({
+      name: 'Claude',
+      baseURL: 'https://api.anthropic.com',
+      model: 'claude-opus-5-5',
+      models: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'],
+      api: 'anthropic-messages',
+    });
   });
 });
 
