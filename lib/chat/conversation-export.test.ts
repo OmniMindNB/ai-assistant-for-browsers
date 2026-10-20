@@ -188,6 +188,12 @@ describe('buildConversationExport', () => {
     expect(doc.messages[0].quotedText).not.toContain('13812345678');
   });
 
+  it('keeps the quote source of a follow-up on a reply, and labels it in Markdown', () => {
+    const doc = build([record({ content: '为什么？', quotedText: '沙箱里运行', quoteSource: 'reply' })]);
+    expect(doc.messages[0].quoteSource).toBe('reply');
+    expect(renderConversationExportMarkdown(doc, t)).toContain(`> ${zh['export.quoteReply']}沙箱里运行`);
+  });
+
   it('exports attachment metadata only', () => {
     const doc = build([
       record({

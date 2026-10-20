@@ -6,6 +6,7 @@ import type { ShortcutRerun } from './chat/shortcut-rerun';
 import type { TabReferenceMeta } from './chat/tab-reference';
 import type { TrajectoryStep } from './agent/task-trajectory';
 import type { RunDiagnostics } from './agent/run-diagnostics';
+import type { QuoteSource } from './selection-ask';
 
 // 本地持久化（ref: technical-plan.md §2.4）
 // 对话历史 / Skill 定义存 IndexedDB；API Key 等配置走 chrome.storage（见 settings.ts）。
@@ -26,6 +27,8 @@ export interface ChatMessageRecord {
    * 不建索引，同上无需 Dexie 版本迁移；存量记录无此字段即视为没有引用。
    */
   quotedText?: string;
+  /** quotedText 的来源（'reply' = 追问侧边栏回复）；同上无需迁移，存量记录无此字段即视为网页划词。 */
+  quoteSource?: QuoteSource;
   /**
    * 已就绪附件（文本/图片/PDF 元数据），仅用户消息有意义，随该轮一起落库供历史回看渲染；
    * PDF 提取文本和全部进行中状态不在此类型中，因而不能进入 IndexedDB。

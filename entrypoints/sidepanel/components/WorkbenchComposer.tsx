@@ -8,6 +8,7 @@ import {
   type KeyboardEvent,
 } from 'react';
 import { useTranslation } from '@/lib/i18n';
+import type { QuoteSource } from '@/lib/selection-ask';
 import { providerModels, type ProviderConfig } from '@/lib/settings';
 import type { ShortcutConfig, ResolvedShortcut } from '@/lib/shortcuts';
 import { filterShortcutCommands, isUsableShortcutCommand } from '@/lib/workbench/presentation';
@@ -34,6 +35,8 @@ export interface WorkbenchComposerProps {
   pendingFocusToken: number;
   /** 划词提问消费到的待引用文字（裁剪后）；渲染成独立卡片，null 时不显示。 */
   quotedSelection: string | null;
+  /** 引用来源，只影响引用卡片的无障碍名称；缺省为网页划词。 */
+  quotedSource?: QuoteSource;
   /** 外部要求把 text 填进输入框（不发送）；token 变为新的非零值时生效，0 表示从未发生。 */
   draftSeed?: { text: string; token: number };
   /** 待发送附件的完整生命周期；历史附件由消息列表单独只读渲染。 */
@@ -76,6 +79,7 @@ export function WorkbenchComposer({
   shortcuts,
   pendingFocusToken,
   quotedSelection,
+  quotedSource = 'page',
   draftSeed,
   attachments,
   onSend,
@@ -592,7 +596,7 @@ export function WorkbenchComposer({
         {quotedSelection && (
           <div
             role="note"
-            aria-label={t('workbench.quotedSelectionLabel')}
+            aria-label={t(quotedSource === 'reply' ? 'workbench.quotedReplyLabel' : 'workbench.quotedSelectionLabel')}
             className="mb-2 flex items-start gap-2 rounded-xl border-l-2 border-indigo-400 bg-neutral-100 py-1.5 pl-3 pr-2 dark:border-indigo-500 dark:bg-neutral-900"
           >
             <p className="line-clamp-3 min-w-0 flex-1 text-xs text-neutral-500 dark:text-neutral-400">

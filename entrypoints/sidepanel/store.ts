@@ -47,7 +47,12 @@ import { clearTabSession, loadTabSession, saveTabSession } from '@/lib/agent/tab
 import { createTabSession, MAX_REFERENCED_TABS } from '@/lib/agent/tab-session';
 import { supportsVision } from '@/lib/agent/vision';
 import { clearPendingAskForTab, getPendingAskForTab, pendingAskStorageKey } from '@/lib/agent/tab-pending-ask';
-import { buildSelectionAskTemplate, truncateSelectionText } from '@/lib/selection-ask';
+import {
+  buildReplyQuoteTemplate,
+  buildSelectionAskTemplate,
+  truncateSelectionText,
+  type QuoteSource,
+} from '@/lib/selection-ask';
 import {
   MAX_ATTACHMENTS_PER_MESSAGE,
   buildPendingAttachmentText,
@@ -114,6 +119,8 @@ interface ChatState {
   quotedSelection: string | null;
   /** 与 quotedSelection 成对：选区在页面上所在的段落（已脱敏），只拼进发给模型的提问，不显示、不落库。 */
   quotedContext: string | null;
+  /** quotedSelection 的来源：网页划词是 page，在侧边栏里选中助手回复追问是 reply；决定提示词模板。 */
+  quotedSource: QuoteSource;
   /** 待发送附件的瞬态生命周期；只有 ready 元数据会进入历史。 */
   pendingAttachments: PendingAttachment[];
   /** 用户在 @ 选择器里点选的只读引用标签页；随每轮 startRun 全量同步给 background。 */
@@ -137,6 +144,8 @@ interface ChatState {
   shortcutErrors: string[];
   pageContext: PageContextState;
   clearQuotedSelection: () => void;
+  /** 把侧边栏里选中的一段助手回复设为待发送引用（追问），并让输入框获得焦点。 */
+  quoteReply: (text: string) => void;
   addAttachmentFiles: (files: FileList | File[]) => Promise<void>;
   removeAttachment: (id: string) => void;
   retryAttachment: (id: string) => Promise<void>;
@@ -212,8 +221,16 @@ const HELLO_REPLY_TIMEOUT_MS = 300;
 const RECONNECT_DELAY_MS = 250;
 
 /** 用户没输入问题时代替问题的默认提示：有引用就让模型就引用作答，否则是只有附件。 */
-function emptyQuestionPrompt(quoted: string | null): string {
-  return quoted ? t('store.quoteOnlyPrompt') : t('store.attachmentOnlyPrompt');
+function emptyQuestionPrompt(quoted: string | null, source: QuoteSource = 'page'): string {
+  if (!quoted) return t('store.attachmentOnlyPrompt');
+  return source === 'reply' ? t('store.replyQuoteOnlyPrompt') : t('store.quoteOnlyPrompt');
+}
+
+/** 按引用来源拼引用模板：网页划词可带所在段落，追问回复不带（整条回复已在历史里）。 */
+function buildQuoteTemplate(quoted: string, source: QuoteSource, context?: string | null): string {
+  return source === 'reply'
+    ? buildReplyQuoteTemplate(quoted, t)
+    : buildSelectionAskTemplate(quoted, t, context ?? undefined);
 }
 
 function flushPendingPortMessages(): void {
@@ -594,6 +611,7 @@ async function consumePendingAskForTab(tabId: number): Promise<void> {
   useChat.setState({
     quotedSelection: truncateSelectionText(pendingAsk.text),
     quotedContext: pendingAsk.context ?? null,
+    quotedSource: 'page',
     pendingFocusToken: Date.now(),
   });
 }
@@ -628,6 +646,7 @@ export const useChat = create<ChatState>((set, get) => ({
   pendingFocusToken: 0,
   quotedSelection: null,
   quotedContext: null,
+  quotedSource: 'page',
   pendingAttachments: [],
   referencedTabs: [],
   busy: false,
@@ -645,7 +664,13 @@ export const useChat = create<ChatState>((set, get) => ({
   shortcutErrors: [],
   pageContext: { status: 'loading' },
 
-  clearQuotedSelection: () => set({ quotedSelection: null, quotedContext: null }),
+  clearQuotedSelection: () => set({ quotedSelection: null, quotedContext: null, quotedSource: 'page' }),
+
+  quoteReply: (text) => {
+    const quoted = truncateSelectionText(text);
+    if (!quoted) return;
+    set({ quotedSelection: quoted, quotedContext: null, quotedSource: 'reply', pendingFocusToken: Date.now() });
+  },
 
   addAttachmentFiles: async (files) => {
     const list = Array.from(files);
@@ -833,9 +858,10 @@ export const useChat = create<ChatState>((set, get) => ({
     const question = text.trim();
     const quoted = get().quotedSelection;
     const quotedContext = get().quotedContext;
+    const quoteSource = get().quotedSource;
     // 选中内容本身常常就是问题，只引用不补充也允许发送。
     if (!question && ready.length === 0 && !quoted) return false;
-    const displayText = question || emptyQuestionPrompt(quoted);
+    const displayText = question || emptyQuestionPrompt(quoted, quoteSource);
     return runAgent(
       set,
       get,
@@ -849,6 +875,7 @@ export const useChat = create<ChatState>((set, get) => ({
           question,
           quoted,
           quotedContext,
+          quoteSource,
           attachmentIds: ready.map((item) => item.id),
         },
         retry: () => { void get().send(text, options); },
@@ -864,8 +891,13 @@ export const useChat = create<ChatState>((set, get) => ({
     if (index < 0 || !isEditableMessage(messages[index])) return false;
     // 传给 runAgent 的是 id 而不是这里算出的下标：runAgent 内部要等待若干 await 之后
     // 才会真正截断，届时会用 id 重新解析下标，避免下标跨 await 失效（见 runAgent 内注释）。
+    // 引用要跟着重发："这句什么意思？"离开引用就没法回答。所在段落当初没落库，重发时不再有。
+    const { quotedText, quoteSource } = messages[index];
     return runAgent(set, get, makeMessage('user', trimmed, 'input'), trimmed, {
       truncateToId: id,
+      ...(quotedText
+        ? { attachmentSubmission: { question: trimmed, quoted: quotedText, quoteSource: quoteSource ?? 'page', attachmentIds: [] } }
+        : {}),
       retry: () => { void get().editMessage(id, newContent); },
     });
   },
@@ -976,6 +1008,7 @@ export const useChat = create<ChatState>((set, get) => ({
         createdAt: r.createdAt,
         kind: r.kind,
         quotedText: r.quotedText,
+        quoteSource: r.quoteSource,
         attachments: r.attachments,
         tabReferences: r.tabReferences,
         taskOutcome: r.taskOutcome,
@@ -1212,6 +1245,8 @@ interface RunAgentOptions {
     question: string;
     quoted: string | null;
     quotedContext?: string | null;
+    /** 缺省为 page。 */
+    quoteSource?: QuoteSource;
     attachmentIds: string[];
   };
 }
@@ -1424,6 +1459,7 @@ async function runAgent(
   let committedImages = options.images;
   if (options.attachmentSubmission) {
     const { question, quoted, quotedContext, attachmentIds } = options.attachmentSubmission;
+    const quoteSource = options.attachmentSubmission.quoteSource ?? 'page';
     const allowedIds = new Set(attachmentIds);
     const ready = get().pendingAttachments.filter(
       (item) => allowedIds.has(item.id) && isAttachmentReady(item),
@@ -1432,7 +1468,7 @@ async function runAgent(
       settleRun(run);
       return false;
     }
-    const displayText = question || emptyQuestionPrompt(quoted);
+    const displayText = question || emptyQuestionPrompt(quoted, quoteSource);
     const storedAttachments = ready
       .map(toMessageAttachment)
       .filter((item): item is MessageAttachment => item !== null);
@@ -1441,10 +1477,11 @@ async function runAgent(
       ...display,
       content: displayText,
       quotedText: quoted ?? undefined,
+      quoteSource: quoted && quoteSource === 'reply' ? 'reply' : undefined,
       attachments: storedAttachments.length ? storedAttachments : undefined,
     };
     committedAgentUserContent =
-      (quoted ? buildSelectionAskTemplate(quoted, t, quotedContext ?? undefined) : '') + attachmentText + displayText;
+      (quoted ? buildQuoteTemplate(quoted, quoteSource, quotedContext) : '') + attachmentText + displayText;
     const images = ready
       .map(toPendingImageContent)
       .filter((item): item is ImageContent => item !== null);
@@ -1516,7 +1553,7 @@ async function runAgent(
   set({
     messages: [...history, committedDisplay, makeMessage('assistant', '')],
     activitySteps: [],
-    ...(options.clearQuotedSelection ? { quotedSelection: null, quotedContext: null } : {}),
+    ...(options.clearQuotedSelection ? { quotedSelection: null, quotedContext: null, quotedSource: 'page' as const } : {}),
     ...(options.clearAttachments ? { pendingAttachments: [] } : {}),
     busy: true,
     error: null,

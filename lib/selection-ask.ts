@@ -4,6 +4,12 @@ import type { Translate } from './i18n';
 import { MAX_SHORTCUT_SELECTION_CHARS } from './chat/shortcut-prompts';
 import { MAX_SELECTION_CONTEXT_CHARS } from './agent/context-budget';
 
+/**
+ * 引用的来源：page = 网页划词（content script 的气泡），reply = 侧边栏里选中的助手回复（追问）。
+ * 两者的提示词模板不同——回复是模型自己说过的话，不能被描述成"页面原文"。
+ */
+export type QuoteSource = 'page' | 'reply';
+
 export const SELECTION_ASK_ENABLED_KEY = 'runi:selection-ask-enabled';
 
 export async function loadSelectionAskEnabled(): Promise<boolean> {
@@ -29,6 +35,14 @@ export function buildSelectionAskTemplate(text: string, translate: Translate, co
   return context
     ? translate('store.selectionAskWithContextTemplate', { selection, context })
     : translate('store.selectionAskTemplate', { selection });
+}
+
+/**
+ * 追问侧边栏回复时的引用模板；不带上下文段落——整条回复本来就在对话历史里。
+ * 不脱敏、不加"不可信页面内容"标记：引用的是模型自己的输出，不是页面数据。
+ */
+export function buildReplyQuoteTemplate(text: string, translate: Translate): string {
+  return translate('store.replyQuoteTemplate', { selection: truncateSelectionText(text) });
 }
 
 function collapseWhitespace(text: string): string {

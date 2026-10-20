@@ -11,6 +11,7 @@ import type { RunDiagnostics } from '@/lib/agent/run-diagnostics';
 import type { TaskOutcome } from '@/lib/agent/task-outcome';
 import type { TrajectoryStep } from '@/lib/agent/task-trajectory';
 import type { ResolvedLocale, Translate } from '@/lib/i18n';
+import type { QuoteSource } from '@/lib/selection-ask';
 
 export const EXPORT_SCHEMA = 'runi-conversation-export/1';
 const MAX_ARG_STRING_CHARS = 120;
@@ -57,6 +58,7 @@ export interface ExportedMessage {
   kind?: 'input' | 'action';
   content: string;
   quotedText?: string;
+  quoteSource?: QuoteSource;
   attachments?: ExportedAttachment[];
   tabReferences?: { title: string; url?: string }[];
   shortcut?: { id: string; name: string; scope: string };
@@ -196,6 +198,7 @@ function exportMessage(record: ChatMessageRecord & { role: 'user' | 'assistant' 
   };
   if (record.kind) out.kind = record.kind;
   if (record.quotedText) out.quotedText = redactText(record.quotedText, redaction);
+  if (record.quotedText && record.quoteSource) out.quoteSource = record.quoteSource;
   if (record.attachments?.length) {
     out.attachments = record.attachments.map((a) => ({
       kind: a.kind,
@@ -331,7 +334,7 @@ function renderMessage(m: ExportedMessage, t: Translate): string[] {
   lines.push(`### ${[role, formatDateTime(m.createdAt), ...flags].join(' · ')}`, '');
   if (m.shortcut) lines.push(t('export.shortcut', { name: m.shortcut.name }), '');
   if (m.quotedText) {
-    lines.push(...m.quotedText.split('\n').map((line, i) => `> ${i === 0 ? t('export.quote') : ''}${line}`), '');
+    lines.push(...m.quotedText.split('\n').map((line, i) => `> ${i === 0 ? t(m.quoteSource === 'reply' ? 'export.quoteReply' : 'export.quote') : ''}${line}`), '');
   }
   if (m.content) lines.push(closeOpenFences(m.content), '');
   if (m.attachments?.length) {

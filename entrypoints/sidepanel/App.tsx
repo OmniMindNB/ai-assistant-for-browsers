@@ -23,6 +23,7 @@ import { WorkbenchComposer } from './components/WorkbenchComposer';
 import { AttachmentChip } from './components/AttachmentChip';
 import { MarkdownBlock } from './components/MarkdownBlock';
 import { ReasoningBlock } from './components/ReasoningBlock';
+import { ReplyQuoteBubble } from './components/ReplyQuoteBubble';
 import { Toast, type ToastMessage } from './components/Toast';
 import type { PendingConfirmation, PendingQuestion, UIMessage } from './store';
 import type { ActivityStep } from '@/lib/agent/activity-steps';
@@ -46,6 +47,7 @@ export default function App() {
     activitySteps,
     pendingFocusToken,
     quotedSelection,
+    quotedSource,
     pendingAttachments,
     referencedTabs,
     busy,
@@ -62,6 +64,7 @@ export default function App() {
     shortcutErrors,
     pageContext,
     clearQuotedSelection,
+    quoteReply,
     addAttachmentFiles,
     removeAttachment,
     retryAttachment,
@@ -405,6 +408,7 @@ export default function App() {
                 )}
               </div>
             </main>
+            <ReplyQuoteBubble containerRef={scrollRef} onQuote={quoteReply} />
             {/* 浮在输入区正上方的一列：一次性提示和"回到底部"共用这个位置，各占一行而不是互相压住。
                 容器本身不吃点击（pointer-events-none），否则这一整条会挡住下面消息里的按钮。 */}
             <div className="pointer-events-none absolute inset-x-0 bottom-3 flex flex-col items-center gap-2 px-4">
@@ -430,6 +434,7 @@ export default function App() {
             selectedModel={selectedModel}
             pendingFocusToken={pendingFocusToken}
             quotedSelection={quotedSelection}
+            quotedSource={quotedSource}
             draftSeed={draftSeed}
             attachments={pendingAttachments}
             onSend={submitMessage}
@@ -532,7 +537,7 @@ const Message = memo(function Message({
         {message.quotedText && (
           <div
             role="note"
-            aria-label={t('workbench.quotedSelectionLabel')}
+            aria-label={t(message.quoteSource === 'reply' ? 'workbench.quotedReplyLabel' : 'workbench.quotedSelectionLabel')}
             className="max-w-[85%] rounded-xl border-l-2 border-indigo-400 bg-neutral-100 px-3 py-1.5 dark:border-indigo-500 dark:bg-neutral-900"
           >
             <p className="line-clamp-3 text-xs text-neutral-500 dark:text-neutral-400">{message.quotedText}</p>
@@ -604,7 +609,10 @@ const Message = memo(function Message({
           />
         )}
         {content ? (
-          <MarkdownBlock content={content} />
+          // data-reply-body 是 ReplyQuoteBubble 认定"选中的是回复正文"的唯一标记（思考过程、步骤列表不挂）。
+          <div data-reply-body="">
+            <MarkdownBlock content={content} />
+          </div>
         ) : busy && !liveStepRunning && !(isLastMessage && message.reasoning?.length) ? (
           // 正在流式输出推理时，"思考中…"标题已经是等待反馈，不再叠一个 TypingDots。
           <TypingDots />

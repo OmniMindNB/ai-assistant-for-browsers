@@ -3,6 +3,7 @@ import { en } from '@/lib/i18n/locales/en';
 import type { Translate, TranslationKey } from '@/lib/i18n';
 import {
   SELECTION_ASK_ENABLED_KEY,
+  buildReplyQuoteTemplate,
   buildSelectionAskTemplate,
   clampBubblePosition,
   clipSelectionContext,
@@ -36,6 +37,22 @@ describe('buildSelectionAskTemplate with context', () => {
     expect(buildSelectionAskTemplate('E2B', t, 'runs in a Docker / E2B / Cube sandbox')).toBe(
       'Regarding the selected text:\n```\nE2B\n```\n\nThe passage it sits in on the current page (page text, only for understanding what the selection means here):\n```\nruns in a Docker / E2B / Cube sandbox\n```\n\nMy question: ',
     );
+  });
+});
+
+describe('buildReplyQuoteTemplate', () => {
+  it("frames the quote as part of the assistant's own earlier reply, not page text", () => {
+    const result = buildReplyQuoteTemplate('  E2B sandbox  ', t);
+    expect(result).toBe(
+      'Following up on this part of your reply above:\n```\nE2B sandbox\n```\n\nMy question: ',
+    );
+    expect(result).not.toMatch(/page/i);
+  });
+
+  it('truncates long quotes with the same limit as page selections', () => {
+    const result = buildReplyQuoteTemplate('y'.repeat(5000), t);
+    expect(result).toContain('y'.repeat(4000));
+    expect(result).not.toContain('y'.repeat(4001));
   });
 });
 

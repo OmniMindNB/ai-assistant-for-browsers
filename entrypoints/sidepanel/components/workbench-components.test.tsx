@@ -41,11 +41,13 @@ const chatStore = {
     url: 'https://example.com/article',
   } as PageContextState,
   quotedSelection: null,
+  quotedSource: 'page' as const,
   // 必须和 store.ts 的初值一致：非 0 会让 composer 以为收到了划词提问，在挂载时抢走焦点。
   pendingFocusToken: 0,
   pendingAttachments: [],
   referencedTabs: [],
   clearQuotedSelection: vi.fn(),
+  quoteReply: vi.fn(),
   addAttachmentFiles: vi.fn(),
   removeAttachment: vi.fn(),
   retryAttachment: vi.fn(),
@@ -586,6 +588,16 @@ describe('workbench composer', () => {
 
     expect(screen.getByText('the selected text')).toBeInTheDocument();
     expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('');
+  });
+
+  it('labels the quote card by its source, so a quoted reply is not announced as a page selection', () => {
+    render(
+      <LocaleProvider>
+        <WorkbenchComposer {...composerProps} quotedSelection="part of the answer" quotedSource="reply" />
+      </LocaleProvider>,
+    );
+
+    expect(screen.getByRole('note', { name: en['workbench.quotedReplyLabel'] })).toHaveTextContent('part of the answer');
   });
 
   it('does not render a quote card when there is no quoted selection', () => {
@@ -1310,6 +1322,31 @@ describe('activity step list', () => {
     expect(screen.getByText(/Confirm form submission/)).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Submit form' }));
     expect(chatStore.respondToConfirmation).toHaveBeenCalledWith(true);
+  });
+
+  it('quotes a selected passage of an assistant reply as a follow-up, and labels a quoted reply in history', async () => {
+    (chatStore as any).messages = [
+      { id: 'm1', role: 'user', content: 'Why?', createdAt: 1, quotedText: 'earlier part', quoteSource: 'reply' },
+      { id: 'm2', role: 'assistant', content: 'It runs in a sandbox.', createdAt: 2 },
+    ];
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    expect(screen.getByRole('note', { name: en['workbench.quotedReplyLabel'] })).toHaveTextContent('earlier part');
+
+    const text = screen.getByText('It runs in a sandbox.').firstChild!;
+    const range = document.createRange();
+    range.setStart(text, 13);
+    range.setEnd(text, 20);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+    document.dispatchEvent(new Event('selectionchange'));
+
+    fireEvent.click(await screen.findByRole('button', { name: en['workbench.quoteReplyButton'] }));
+    expect(chatStore.quoteReply).toHaveBeenCalledWith('sandbox');
   });
 
   it('shows a trailing thinking indicator on the last message while busy with no running step', () => {

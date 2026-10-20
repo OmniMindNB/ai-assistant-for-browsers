@@ -1206,6 +1206,53 @@ describe('chat store page context', () => {
       expect(userMessage.quotedText).toBeUndefined();
     });
 
+    it('quoteReply stages a reply quote with no page context and asks the composer to focus', () => {
+      useChat.setState({ quotedContext: 'stale page passage', pendingFocusToken: 0 });
+
+      useChat.getState().quoteReply('  part of the answer  ');
+
+      expect(useChat.getState().quotedSelection).toBe('part of the answer');
+      expect(useChat.getState().quotedSource).toBe('reply');
+      expect(useChat.getState().quotedContext).toBeNull();
+      expect(useChat.getState().pendingFocusToken).toBeGreaterThan(0);
+    });
+
+    it('sends a reply quote with the follow-up template and records its source on the message', async () => {
+      useChat.getState().quoteReply('the sandbox part');
+
+      await useChat.getState().send('why that one?');
+
+      const startRun = lastStartRunCall();
+      expect(startRun.agentUserContent).toBe(
+        t('store.replyQuoteTemplate', { selection: 'the sandbox part' }) + 'why that one?',
+      );
+      const userMessage = useChat.getState().messages.find((m) => m.role === 'user')!;
+      expect(userMessage.content).toBe('why that one?');
+      expect(userMessage.quotedText).toBe('the sandbox part');
+      expect(userMessage.quoteSource).toBe('reply');
+      expect(useChat.getState().quotedSelection).toBeNull();
+      expect(useChat.getState().quotedSource).toBe('page');
+    });
+
+    it('uses the reply-specific default prompt when a reply quote is sent with no question', async () => {
+      useChat.getState().quoteReply('the sandbox part');
+
+      await useChat.getState().send('');
+
+      expect(lastStartRunCall().agentUserContent).toContain(t('store.replyQuoteOnlyPrompt'));
+      const userMessage = useChat.getState().messages.find((m) => m.role === 'user')!;
+      expect(userMessage.content).toBe(t('store.replyQuoteOnlyPrompt'));
+    });
+
+    it('does not tag page quotes with a quoteSource', async () => {
+      useChat.setState({ quotedSelection: 'page text' });
+
+      await useChat.getState().send('q');
+
+      const userMessage = useChat.getState().messages.find((m) => m.role === 'user')!;
+      expect(userMessage.quoteSource).toBeUndefined();
+    });
+
     it('clearQuotedSelection clears the pending quote without sending anything', () => {
       useChat.setState({ quotedSelection: 'the selected text' });
 
@@ -1470,6 +1517,50 @@ describe('chat store page context', () => {
     await expect(useChat.getState().regenerate('a1')).resolves.toBe(true);
 
     expect(lastStartRunCall().agentUserContent).toBe('original question');
+  });
+
+  // 追问的问题常常离不开引用（"这句什么意思？"），重新生成和编辑都必须把引用一起重发。
+  it("regenerates a quoted message with its quote, using the template of the quote's source", async () => {
+    await connectPort();
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    useChat.setState({
+      messages: [
+        { id: 'u1', role: 'user', content: 'what does it mean?', createdAt: 1, kind: 'input', quotedText: 'the sandbox part', quoteSource: 'reply' },
+        { id: 'a1', role: 'assistant', content: 'first answer', createdAt: 2 },
+      ],
+    });
+
+    await expect(useChat.getState().regenerate('a1')).resolves.toBe(true);
+
+    expect(lastStartRunCall().agentUserContent).toBe(
+      t('store.replyQuoteTemplate', { selection: 'the sandbox part' }) + 'what does it mean?',
+    );
+    const userMessage = useChat.getState().messages.find((m) => m.role === 'user')!;
+    expect(userMessage.quotedText).toBe('the sandbox part');
+    expect(userMessage.quoteSource).toBe('reply');
+  });
+
+  it('keeps a page quote when editing the quoted message, without touching the composer quote', async () => {
+    await connectPort();
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } });
+    useChat.setState({
+      quotedSelection: 'composer quote',
+      messages: [
+        { id: 'u1', role: 'user', content: 'old question', createdAt: 1, kind: 'input', quotedText: 'page text' },
+        { id: 'a1', role: 'assistant', content: 'answer', createdAt: 2 },
+      ],
+    });
+
+    await expect(useChat.getState().editMessage('u1', 'new question')).resolves.toBe(true);
+
+    expect(lastStartRunCall().agentUserContent).toBe(
+      t('store.selectionAskTemplate', { selection: 'page text' }) + 'new question',
+    );
+    const userMessage = useChat.getState().messages.find((m) => m.role === 'user')!;
+    expect(userMessage.content).toBe('new question');
+    expect(userMessage.quotedText).toBe('page text');
+    expect(userMessage.quoteSource).toBeUndefined();
+    expect(useChat.getState().quotedSelection).toBe('composer quote');
   });
 
   // 快捷操作消息存的是标签，不能原样重发；带上重放配方就能按当时的定义重跑一遍。

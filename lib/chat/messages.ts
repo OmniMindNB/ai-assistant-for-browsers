@@ -6,6 +6,7 @@ import type { ShortcutRerun } from './shortcut-rerun';
 import type { TabReferenceMeta } from './tab-reference';
 import type { TrajectoryStep } from '@/lib/agent/task-trajectory';
 import type { RunDiagnostics } from '@/lib/agent/run-diagnostics';
+import type { QuoteSource } from '@/lib/selection-ask';
 
 // 侧边栏消息的形状与派生规则（ref: docs/superpowers/specs/2026-07-26-edit-history-message-design.md §3）。
 // 本功能的全部可测逻辑集中在这里：vitest 只覆盖 lib/**，entrypoints/ 没有测试基建。
@@ -20,6 +21,8 @@ export interface ChatMessage {
   kind?: 'input' | 'action';
   /** 划词提问时被引用的选区原文（裁剪后）；存在时渲染成独立的引用卡片而不是拼进 content。 */
   quotedText?: string;
+  /** quotedText 的来源；只在追问侧边栏回复时写 'reply'，缺省即网页划词。 */
+  quoteSource?: QuoteSource;
   /**
    * 已就绪附件的历史安全投影（文本/图片/PDF 元数据）。图片会按
    * lib/agent/turn-context.ts 的规则在后续轮次里回放（仅限最近一条带图片的用户消息）；
@@ -138,6 +141,7 @@ export function toMessageRecords(
     createdAt: message.createdAt,
     kind: message.kind,
     quotedText: message.quotedText,
+    quoteSource: message.quoteSource,
     attachments: message.attachments,
     tabReferences: message.tabReferences,
     taskOutcome: message.taskOutcome,
