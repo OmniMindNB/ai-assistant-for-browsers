@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { completeOnce } from './one-shot-completion';
+import { completeOnce, MIN_RESPONSES_OUTPUT_TOKENS } from './one-shot-completion';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -7,6 +7,7 @@ afterEach(() => {
 
 const openai = { baseURL: 'https://llm.test/v1', apiKey: 'sk-test', model: 'm1', api: 'openai-completions' as const };
 const anthropic = { baseURL: 'https://api.anthropic.com', apiKey: 'sk-ant', model: 'claude-x', api: 'anthropic-messages' as const };
+const responses = { baseURL: 'https://api.openai.com/v1', apiKey: 'sk-oa', model: 'gpt-6-astra', api: 'openai-responses' as const };
 
 describe('completeOnce', () => {
   it('sends a non-streaming OpenAI-compatible request with system and user messages and returns the reply text', async () => {
@@ -61,6 +62,57 @@ describe('completeOnce', () => {
       system: 'sys',
       messages: [{ role: 'user', content: 'hi' }],
     });
+  });
+
+  it('sends a non-streaming Responses request (instructions, store:false) and reads output_text from message items', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: null,
+          incomplete_details: null,
+          output: [
+            { type: 'reasoning', id: 'rs_1', summary: [] },
+            { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'a' }, { type: 'output_text', text: 'b' }] },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await completeOnce(responses, { system: 'sys', user: 'hi', maxTokens: 50 });
+
+    expect(result).toEqual({ ok: true, text: 'ab', truncated: false });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://api.openai.com/v1/responses');
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer sk-oa');
+    expect(JSON.parse(init.body as string)).toEqual({
+      model: 'gpt-6-astra',
+      max_output_tokens: 50,
+      instructions: 'sys',
+      input: [{ role: 'user', content: 'hi' }],
+      store: false,
+    });
+  });
+
+  it('raises max_output_tokens to the Responses minimum for the 1-token connection probe', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await completeOnce(responses, { user: 'ping', maxTokens: 1 });
+    const body = JSON.parse((fetchMock.mock.calls[0] as [string, RequestInit])[1].body as string);
+    expect(body.max_output_tokens).toBe(MIN_RESPONSES_OUTPUT_TOKENS);
+  });
+
+  it('reports truncated: true for a Responses reply incomplete on max_output_tokens', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' }, output: [] }), {
+          status: 200,
+        }),
+      ),
+    );
+    expect(await completeOnce(responses, { user: 'hi', maxTokens: 50 })).toEqual({ ok: true, text: '', truncated: true });
   });
 
   it('returns an empty text for a 200 response without a recognisable reply', async () => {

@@ -24,6 +24,7 @@ import {
 import { loadRedactionSettings, redactText } from '@/lib/redaction';
 import { browserOpenAIStream } from './openai-stream';
 import { browserAnthropicStream } from './anthropic-stream';
+import { browserOpenAIResponsesStream } from './openai-responses-stream';
 import { beforeToolCallPermissionGate, READ_ONLY_TOOL_NAMES, WRITE_TOOL_NAMES } from './permissions';
 import { REPORT_TASK_OUTCOME_TOOL_NAME, type TaskOutcome } from './task-outcome';
 import { createConfirmGateState, type ConfirmFn } from './confirm-gate';
@@ -641,7 +642,14 @@ export function createModel(provider: ProviderConfig): Model<Api> {
 }
 
 export function selectStreamFn(provider: ProviderConfig): StreamFn {
-  return resolveProviderApi(provider) === 'anthropic-messages' ? browserAnthropicStream : browserOpenAIStream;
+  switch (resolveProviderApi(provider)) {
+    case 'anthropic-messages':
+      return browserAnthropicStream;
+    case 'openai-responses':
+      return browserOpenAIResponsesStream;
+    default:
+      return browserOpenAIStream;
+  }
 }
 
 function isLlmMessage(message: AgentMessage): message is Message {

@@ -456,6 +456,7 @@ export default function ProviderSettings({ onChange }: { onChange?: () => void }
               }
             >
               <option value="openai-completions">{t('provider.apiOpenAI')}</option>
+              <option value="openai-responses">{t('provider.apiOpenAIResponses')}</option>
               <option value="anthropic-messages">{t('provider.apiAnthropic')}</option>
             </select>
           </label>

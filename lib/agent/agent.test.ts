@@ -40,6 +40,7 @@ import {
 } from './context-budget';
 import { browserOpenAIStream } from './openai-stream';
 import { browserAnthropicStream } from './anthropic-stream';
+import { browserOpenAIResponsesStream } from './openai-responses-stream';
 import { createTabSession, type TabSessionController } from './tab-session';
 import { TAB_SHOWS_ERROR_PAGE_ERROR } from './error-page';
 import { describeToolActivity } from './activity-description';
@@ -1560,6 +1561,10 @@ describe('selectStreamFn', () => {
 
   it('returns browserAnthropicStream when api is anthropic-messages', () => {
     expect(selectStreamFn({ ...baseProvider, api: 'anthropic-messages' })).toBe(browserAnthropicStream);
+  });
+
+  it('returns browserOpenAIResponsesStream when api is openai-responses', () => {
+    expect(selectStreamFn({ ...baseProvider, api: 'openai-responses' })).toBe(browserOpenAIResponsesStream);
   });
 });
 

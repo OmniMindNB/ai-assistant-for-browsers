@@ -156,6 +156,13 @@ describe('applyPresetToDraft', () => {
   });
 });
 
+describe('OpenAI preset', () => {
+  // GPT-6 Astra / GPT-6.1 Sol 的工具调用只在 Responses 上可用，走 Chat Completions 跑不了 agent。
+  it('uses the Responses protocol', () => {
+    expect(resolvePresetSelection('OpenAI')?.api).toBe('openai-responses');
+  });
+});
+
 describe('Claude preset', () => {
   it('uses the native Anthropic Messages protocol with an unversioned official baseURL', () => {
     expect(resolvePresetSelection('Claude')).toEqual({
@@ -278,8 +285,8 @@ describe('draftPlaceholders', () => {
     const p = draftPlaceholders('OpenAI');
     expect(p.name).toBe('例如 OpenAI');
     expect(p.baseURL).toBe('https://api.openai.com/v1');
-    expect(p.model).toBe('gpt-5.6-sol');
-    expect(p.extras).toBe('例如 gpt-5.6-terra, gpt-5.6-luna');
+    expect(p.model).toBe('gpt-6-astra');
+    expect(p.extras).toBe('例如 gpt-6.1-sol, gpt-6-luna');
   });
 
   it('keeps the existing DeepSeek-flavoured examples for the empty placeholder state', () => {
@@ -306,8 +313,8 @@ describe('draftPlaceholders', () => {
     const p = draftPlaceholders('OpenAI', 'en');
     expect(p.name).toBe('e.g. OpenAI');
     expect(p.baseURL).toBe('https://api.openai.com/v1');
-    expect(p.model).toBe('gpt-5.6-sol');
-    expect(p.extras).toBe('e.g. gpt-5.6-terra, gpt-5.6-luna');
+    expect(p.model).toBe('gpt-6-astra');
+    expect(p.extras).toBe('e.g. gpt-6.1-sol, gpt-6-luna');
   });
 
   it('keeps DeepSeek-flavoured examples with an "e.g." prefix for the empty state in en', () => {

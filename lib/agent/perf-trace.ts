@@ -254,6 +254,26 @@ export function readOpenAiUsage(chunk: unknown): Omit<PerfUsageSample, 'turn'> |
   };
 }
 
+interface RawOpenAiResponsesUsage {
+  input_tokens?: number;
+  output_tokens?: number;
+  input_tokens_details?: { cached_tokens?: number };
+}
+
+/** Responses API 的 usage（response.completed 里的 response.usage）：input_tokens 已含缓存命中部分。 */
+export function readOpenAiResponsesUsage(usage: unknown): Omit<PerfUsageSample, 'turn'> | undefined {
+  if (!usage || typeof usage !== 'object') return undefined;
+  const raw = usage as RawOpenAiResponsesUsage;
+  const promptTokens = raw.input_tokens ?? 0;
+  const cacheHitTokens = raw.input_tokens_details?.cached_tokens ?? 0;
+  return {
+    promptTokens,
+    completionTokens: raw.output_tokens ?? 0,
+    cacheHitTokens,
+    cacheMissTokens: promptTokens - cacheHitTokens,
+  };
+}
+
 let usageSamples: PerfUsageSample[] = [];
 
 export function recordPerfUsage(sample: Omit<PerfUsageSample, 'turn'>): void {

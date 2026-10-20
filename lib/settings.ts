@@ -6,7 +6,7 @@ import { DEV_PROVIDER } from './dev-config';
 export interface ProviderConfig {
   id: string;
   name: string;
-  /** OpenAI 兼容的基础地址，至 /v1 为止（不含 /chat/completions） */
+  /** 基础地址：OpenAI 两种协议写到 /v1 为止（不含 /chat/completions、/responses）；Anthropic 可不带版本段 */
   baseURL: string;
   apiKey: string;
   /** 默认 / 当前选中的模型 */
@@ -19,8 +19,14 @@ export interface ProviderConfig {
    */
   visionModels?: string[];
   /** 协议类型；缺省按 'openai-completions' 处理（兼容未设置该字段的历史配置） */
-  api?: 'openai-completions' | 'anthropic-messages';
+  api?: ProviderApi;
 }
+
+/**
+ * 支持的三种协议：OpenAI Chat Completions（含各家兼容端点）、OpenAI Responses、Anthropic Messages。
+ * 新增一种协议要同时改 agent.ts 的 selectStreamFn 与 one-shot-completion.ts 的请求分支。
+ */
+export type ProviderApi = 'openai-completions' | 'openai-responses' | 'anthropic-messages';
 
 export interface Settings {
   activeProviderId?: string;
@@ -39,7 +45,7 @@ export interface Settings {
 export type ProviderPreset = Omit<ProviderConfig, 'id' | 'apiKey'>;
 
 /**
- * 常用 OpenAI 兼容 Provider 预设（用于「设置」页快速填充）。
+ * 常用 Provider 预设（用于「设置」页快速填充）。
  * model/models 按各厂商官方文档核对（2026-09），deepseek-chat/deepseek-reasoner 等旧模型已停用或被取代。
  * 默认模型统一取各厂商当前最新旗舰（能力最强档位），其余档位放入 models 供「其他可用模型」参考。
  *
@@ -56,10 +62,13 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     models: ['deepseek-v4-pro', 'deepseek-v4-flash'],
   },
   {
+    // GPT-6 Astra / GPT-6.1 Sol 的工具调用只在 Responses API 上支持，Chat Completions 跑不了
+    // agent；gpt-5.6 系列已不在官方模型列表中。三者均为 1.05M 窗口（2026-10 核对）。
     name: 'OpenAI',
     baseURL: 'https://api.openai.com/v1',
-    model: 'gpt-5.6-sol',
-    models: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'],
+    model: 'gpt-6-astra',
+    models: ['gpt-6-astra', 'gpt-6.1-sol', 'gpt-6-luna'],
+    api: 'openai-responses',
   },
   {
     // 走 Anthropic Messages 原生协议：baseURL 按 Anthropic 生态约定不带版本段，
@@ -193,7 +202,7 @@ export function providerModels(provider: ProviderConfig): string[] {
 }
 
 /** 解析 Provider 的协议类型；未显式配置时统一按 OpenAI 兼容处理（历史配置兼容）。 */
-export function resolveProviderApi(provider: ProviderConfig): 'openai-completions' | 'anthropic-messages' {
+export function resolveProviderApi(provider: Pick<ProviderConfig, 'api'>): ProviderApi {
   return provider.api ?? 'openai-completions';
 }
 
