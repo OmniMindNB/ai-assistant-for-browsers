@@ -183,15 +183,16 @@ describe('maintained release capability contract', () => {
     expect(readRepoFile(file)).not.toMatch(removedPageRestorationPattern);
   });
 
+  // README.md 是英文主版、README.zh.md 是中文版；README.en.md 只剩指向两者的跳转页。
   it.each([
-    'README.en.md',
     'README.md',
+    'README.zh.md',
   ])('%s makes no per-change confirmation claim', (file) => {
     expect(readRepoFile(file)).not.toMatch(perChangeConfirmationPattern);
   });
 
   it('aligns English maintained marketing with provider transmission and submission-only approval', () => {
-    for (const file of ['README.en.md']) {
+    for (const file of ['README.md']) {
       const source = readRepoFile(file);
       expect(source).toContain('recent conversation context');
       expect(source).toContain('configured provider');
@@ -201,7 +202,7 @@ describe('maintained release capability contract', () => {
   });
 
   it('aligns Chinese maintained marketing with provider transmission and submission-only approval', () => {
-    for (const file of ['README.md']) {
+    for (const file of ['README.zh.md']) {
       const source = readRepoFile(file);
       expect(source).toContain('近期对话上下文');
       expect(source).toContain('配置的 AI Provider');

@@ -108,6 +108,7 @@ describe('Runi active product identity', () => {
 
   const maintainedDocs = [
     'README.md',
+    'README.zh.md',
     'README.en.md',
     'CLAUDE.md',
     'docs/README.md',

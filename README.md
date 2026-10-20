@@ -10,7 +10,7 @@
 
 ![Runi autofilling a form](docs/store-assets/en/screenshot-01-autofill.png)
 
-> An AI agent in your browser sidebar: tell it to fill a form, operate a web page, or summarize and translate what you're reading. Runi executes known page actions on its own and asks for confirmation only when it detects an actual form submission. Chat history never leaves your browser — prompts are sent directly to the AI provider **you** configure.
+> An AI agent in your browser sidebar: tell it to fill a form, operate a web page, or summarize and translate what you're reading — known page actions run automatically; only detected form submissions ask for confirmation each time. Chat history stays in your browser; when you send a request, your prompt, recent conversation context, and relevant page results go directly to your configured provider, the one **you** chose.
 
 Unlike subscription AI sidebars, Runi is **bring-your-own-key (BYOK)**: plug in OpenAI, Anthropic, DeepSeek, or any OpenAI-compatible endpoint. No Runi account, no Runi backend, no analytics SDK, no subscription.
 
@@ -18,7 +18,7 @@ Unlike subscription AI sidebars, Runi is **bring-your-own-key (BYOK)**: plug in 
 
 - **It operates pages, not just chats about them** — click, type, select, scroll, navigate, open and switch tabs. Every write is verified before and after; if something didn't take effect, Runi says so instead of pretending.
 - **Safety you can inspect** — a Deny-First permission model (unknown tools are refused), http(s)-only navigation, and detected form submissions always ask first. Password and payment fields are never read or written.
-- **PII redaction before anything is sent** — phone numbers, emails, ID and bank card numbers in your prompts are replaced with placeholders (rules are customizable; screenshots don't pass through this layer).
+- **PII redaction before page content is sent** — phone numbers, emails, ID and bank card numbers in the page text Runi reads are replaced with placeholders before they reach the model (rules are customizable; what you type yourself and screenshots don't pass through this layer).
 - **Local-first** — history and settings live in your browser's local storage. There is no developer server in the middle.
 
 ## Features
