@@ -4,7 +4,7 @@
     "description": "Extension name; also the Chrome Web Store title, so it carries search keywords. Space-constrained surfaces use the manifest short_name (Runi)."
   },
   "extDescription": {
-    "message": "AI side panel agent: autofill forms, click through web pages, summarize and translate, replay saved tasks. Works with your own key.",
+    "message": "No-subscription AI sidebar: ask about any page, summarize, translate, autofill. Your keys, your data.",
     "description": "Extension description shown in the Chrome Web Store"
   },
   "commandOpenPanel": {
