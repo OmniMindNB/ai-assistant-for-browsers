@@ -57,4 +57,4 @@ When you initiate a request, the extension sends the API key, current prompt, re
 
 ## Other providers
 
-Runi also includes a preset for OpenAI. The setup flow is the same: select a preset, verify its endpoint and model against the provider's official documentation, enter an API key, and save. For a custom or relay endpoint, obtain a Base URL, model name, and key that match the selected API type from that service.
+Runi also includes presets for OpenAI and Claude: the OpenAI preset uses the `OpenAI Responses` API type (tool calling on newer GPT models only works through the Responses API), and the Claude preset uses the Anthropic API type with the Base URL `https://api.anthropic.com`. Picking a preset switches the API type for you. The setup flow is the same: select a preset, verify its endpoint and model against the provider's official documentation, enter an API key, and save. For a custom or relay endpoint, obtain a Base URL, model name, and key that match the selected API type from that service.

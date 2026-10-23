@@ -15,7 +15,7 @@ Runi - AI Browser Agent: Autofill Forms, Automate Pages, Summarize
 Keep identical to `extDescription` (the manifest caps it at 132 characters).
 
 ```text
-AI side panel agent: autofill forms, click through web pages, summarize and translate, replay saved tasks. Works with your own key.
+No-subscription AI sidebar: ask about any page, summarize, translate, autofill. Your keys, your data.
 ```
 
 ## Category
