@@ -44,6 +44,7 @@ const chatStore = {
   quotedSource: 'page' as const,
   // 必须和 store.ts 的初值一致：非 0 会让 composer 以为收到了划词提问，在挂载时抢走焦点。
   pendingFocusToken: 0,
+  selectionHintToken: 0,
   pendingAttachments: [],
   referencedTabs: [],
   clearQuotedSelection: vi.fn(),
@@ -1906,12 +1907,23 @@ describe('workbench context controls', () => {
 
     expect(screen.getByText('Ready when you are')).toBeVisible();
     expect(
-      screen.getByText('Ask about the current page, or describe a browser task you want me to complete.'),
+      screen.getByText('I can read this page — and click, fill in, and navigate it for you.'),
     ).toBeVisible();
   });
 
   // 空状态和输入区曾经各渲染一排胶囊，取的是同一份快捷指令数据，
   // 于是首屏永远把同样几个快捷指令摆两遍。入口只留常驻的输入区那一处。
+  it('选区类指令没选中文字时弹一条中性、会自动消失的轻提示，而不是错误', () => {
+    (chatStore as any).selectionHintToken = 123;
+    try {
+      render(<LocaleProvider><App /></LocaleProvider>);
+      expect(screen.getByRole('status')).toHaveTextContent('Select some text on the page first, then try again');
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    } finally {
+      (chatStore as any).selectionHintToken = 0;
+    }
+  });
+
   it('首屏每个快捷指令只出现一次，空状态不再重复渲染一排胶囊', () => {
     (chatStore as any).shortcuts = emptyStateShortcuts.map(({ config }) => config);
     render(<LocaleProvider><App /></LocaleProvider>);

@@ -46,6 +46,7 @@ export default function App() {
     messages,
     activitySteps,
     pendingFocusToken,
+    selectionHintToken,
     quotedSelection,
     quotedSource,
     pendingAttachments,
@@ -108,6 +109,12 @@ export default function App() {
     setToast({ id: Date.now(), kind, text });
   }, []);
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (selectionHintToken === 0) return;
+    showToast('info', t('workbench.selectTextFirst'));
+    // 只跟着 token 走：t 在切换语言时换引用，带上它会让切语言也弹一次提示。
+  }, [selectionHintToken]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const historyTriggerRef = useRef<HTMLButtonElement>(null);
   // 是否仍处于“跟随最新内容”状态；用户向上滚动后置 false，直到手动回到底部或发起新一轮。

@@ -115,6 +115,11 @@ interface ChatState {
   activitySteps: ActivityStep[];
   /** 每次消费一条划词提问 pending ask 后设为 Date.now()；WorkbenchComposer 据此判断"该聚焦输入框了"。 */
   pendingFocusToken: number;
+  /**
+   * 选区类快捷指令点下去时页面上没选中文字，就设为 Date.now()；App 据此弹一条自动消失的轻提示。
+   * 不走 error：错误横幅带"重试"，可没选中文字时重试只会再失败一次。
+   */
+  selectionHintToken: number;
   /** 划词提问消费到的待引用文字（裁剪后）；作为独立卡片显示在输入框上方，不混入 input。 */
   quotedSelection: string | null;
   /** 与 quotedSelection 成对：选区在页面上所在的段落（已脱敏），只拼进发给模型的提问，不显示、不落库。 */
@@ -644,6 +649,7 @@ export const useChat = create<ChatState>((set, get) => ({
   messages: [],
   activitySteps: [],
   pendingFocusToken: 0,
+  selectionHintToken: 0,
   quotedSelection: null,
   quotedContext: null,
   quotedSource: 'page',
@@ -1297,6 +1303,10 @@ async function runResolvedShortcut(
     } catch (error) {
       if (!isCurrentOrigin(origin, get)) return false;
       set({ busy: false, error: errMsg(error), retryAction: options.retry });
+      return false;
+    }
+    if (!selectionText.trim()) {
+      set({ busy: false, selectionHintToken: Date.now() });
       return false;
     }
     set({ busy: false });

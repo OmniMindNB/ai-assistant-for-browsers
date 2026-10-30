@@ -1030,6 +1030,27 @@ describe('chat store page context', () => {
       // runShortcut's selection-scope preflight clears error synchronously before its first await.
       expect(useChat.getState().error).toBeNull();
     });
+
+    // 没选中文字不是出错：不弹带"重试"的错误横幅（重试只会再失败一次），只发一条轻提示，也不开跑。
+    it('页面上没选中文字时只发轻提示，不设 error、不发起运行', async () => {
+      await connectPort();
+      mocks.sendMessage
+        .mockResolvedValueOnce({ ok: true, data: { id: 7, title: 'Example', url: 'https://example.com/' } })
+        .mockResolvedValueOnce({ ok: true, data: { text: '   ' } });
+      useChat.setState({ selectionHintToken: 0, error: null, retryAction: null });
+      const before = lastStartRunCall();
+
+      await useChat.getState().runShortcut({
+        id: 'builtin:translate-selection', origin: 'builtin', scope: 'selection', customized: false,
+      });
+
+      expect(useChat.getState().selectionHintToken).toBeGreaterThan(0);
+      expect(useChat.getState().error).toBeNull();
+      expect(useChat.getState().retryAction).toBeNull();
+      expect(useChat.getState().busy).toBe(false);
+      expect(useChat.getState().messages).toEqual([]);
+      expect(lastStartRunCall()).toBe(before);
+    });
   });
 
   describe('restoreTabConversation pending ask', () => {
