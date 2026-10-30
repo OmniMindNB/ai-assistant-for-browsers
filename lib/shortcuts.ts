@@ -43,10 +43,8 @@ export const SHORTCUTS_STORAGE_KEY = 'runi:shortcuts';
 export const SHORTCUTS_REVISION_STORAGE_KEY = 'runi:shortcuts:builtins-revision';
 
 export const BUILTIN_SUMMARIZE_ID = 'builtin:summarize-page';
-export const BUILTIN_FOCUS_READ_ID = 'builtin:focus-read';
 export const BUILTIN_FILL_FORM_ID = 'builtin:fill-form';
 export const BUILTIN_TRANSLATE_ID = 'builtin:translate-selection';
-export const BUILTIN_POLISH_ID = 'builtin:polish-selection';
 
 /**
  * 已退役的内置：代码里不再提供，但老用户的 storage.local 里还存着。
@@ -55,7 +53,13 @@ export const BUILTIN_POLISH_ID = 'builtin:polish-selection';
  * migrateRetiredBuiltins 摘掉。
  */
 export const RETIRED_EXPLAIN_ID = 'builtin:explain-selection';
-const RETIRED_BUILTIN_IDS: ReadonlySet<string> = new Set([RETIRED_EXPLAIN_ID]);
+export const RETIRED_POLISH_ID = 'builtin:polish-selection';
+export const RETIRED_FOCUS_READ_ID = 'builtin:focus-read';
+const RETIRED_BUILTIN_IDS: ReadonlySet<string> = new Set([
+  RETIRED_EXPLAIN_ID,
+  RETIRED_POLISH_ID,
+  RETIRED_FOCUS_READ_ID,
+]);
 
 /**
  * 内置集合的版本号：每新增一批内置就 +1，并给新条目标上对应的 since。
@@ -87,20 +91,6 @@ const BUILTINS = [
     since: 2,
     nameKey: 'shortcut.builtinFillFormName',
     promptKey: 'shortcut.builtinFillFormPrompt',
-  },
-  {
-    id: BUILTIN_POLISH_ID,
-    scope: 'selection',
-    since: 2,
-    nameKey: 'shortcut.builtinPolishName',
-    promptKey: 'shortcut.builtinPolishPrompt',
-  },
-  {
-    id: BUILTIN_FOCUS_READ_ID,
-    scope: 'page',
-    since: 2,
-    nameKey: 'shortcut.builtinFocusReadName',
-    promptKey: 'shortcut.builtinFocusReadPrompt',
   },
 ] as const;
 

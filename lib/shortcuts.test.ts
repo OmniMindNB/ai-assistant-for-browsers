@@ -5,11 +5,11 @@ import type { Translate, TranslationKey } from './i18n';
 import {
   BUILTINS_REVISION,
   BUILTIN_FILL_FORM_ID,
-  BUILTIN_FOCUS_READ_ID,
-  BUILTIN_POLISH_ID,
   BUILTIN_SUMMARIZE_ID,
   BUILTIN_TRANSLATE_ID,
   RETIRED_EXPLAIN_ID,
+  RETIRED_FOCUS_READ_ID,
+  RETIRED_POLISH_ID,
   SHORTCUTS_REVISION_STORAGE_KEY,
   SHORTCUTS_STORAGE_KEY,
   defaultShortcutConfigs,
@@ -65,20 +65,19 @@ describe('shortcut defaults and localization', () => {
       BUILTIN_SUMMARIZE_ID,
       BUILTIN_TRANSLATE_ID,
       BUILTIN_FILL_FORM_ID,
-      BUILTIN_POLISH_ID,
-      BUILTIN_FOCUS_READ_ID,
     ]);
   });
 
-  it('no longer offers the retired explain built-in', () => {
-    expect(defaultShortcutConfigs().map((item) => item.id)).not.toContain(RETIRED_EXPLAIN_ID);
+  it('no longer offers the retired built-ins', () => {
+    const ids = defaultShortcutConfigs().map((item) => item.id);
+    expect(ids).not.toContain(RETIRED_EXPLAIN_ID);
+    expect(ids).not.toContain(RETIRED_POLISH_ID);
+    expect(ids).not.toContain(RETIRED_FOCUS_READ_ID);
   });
 
   it('gives the write-capable built-ins page scope so they receive browser tools', () => {
     const scopes = new Map(defaultShortcutConfigs().map((item) => [item.id, item.scope]));
-    expect(scopes.get(BUILTIN_FOCUS_READ_ID)).toBe('page');
     expect(scopes.get(BUILTIN_FILL_FORM_ID)).toBe('page');
-    expect(scopes.get(BUILTIN_POLISH_ID)).toBe('selection');
   });
 
   it('resolves an unedited built-in through the current locale', () => {
@@ -97,12 +96,8 @@ describe('shortcut defaults and localization', () => {
     const byId = new Map(defaultShortcutConfigs().map((item) => [item.id, item]));
     const name = (id: string, dict: Record<TranslationKey, string>) =>
       resolveShortcut(byId.get(id)!, translator(dict)).name;
-    expect(name(BUILTIN_FOCUS_READ_ID, zh)).toBe('专注阅读');
-    expect(name(BUILTIN_FOCUS_READ_ID, en)).toBe('Focus mode');
     expect(name(BUILTIN_FILL_FORM_ID, zh)).toBe('帮我填表');
     expect(name(BUILTIN_FILL_FORM_ID, en)).toBe('Fill this form');
-    expect(name(BUILTIN_POLISH_ID, zh)).toBe('润色改写');
-    expect(name(BUILTIN_POLISH_ID, en)).toBe('Polish selection');
   });
 
   it('keeps customized built-in text fixed across locales', () => {
@@ -249,8 +244,6 @@ describe('shortcut storage semantics', () => {
     expect((await loadShortcutConfigs()).shortcuts.map((item) => item.id)).toEqual([
       BUILTIN_TRANSLATE_ID,
       BUILTIN_FILL_FORM_ID,
-      BUILTIN_POLISH_ID,
-      BUILTIN_FOCUS_READ_ID,
     ]);
   });
 
@@ -350,6 +343,32 @@ describe('built-in retirement and revision migration', () => {
     });
   });
 
+  it('retires the polish and focus-read built-ins the same way', async () => {
+    installStorage({
+      [SHORTCUTS_STORAGE_KEY]: [
+        { id: BUILTIN_SUMMARIZE_ID, origin: 'builtin', scope: 'page', customized: false },
+        { id: RETIRED_POLISH_ID, origin: 'builtin', scope: 'selection', customized: false },
+        {
+          id: RETIRED_FOCUS_READ_ID,
+          origin: 'builtin',
+          scope: 'page',
+          customized: true,
+          name: '我的阅读模式',
+          prompt: '我自己的提示词',
+        },
+      ],
+      [SHORTCUTS_REVISION_STORAGE_KEY]: BUILTINS_REVISION,
+    });
+
+    const loaded = await loadShortcutConfigs();
+
+    expect(loaded.errors).toEqual([]);
+    expect(loaded.shortcuts.map((item) => [item.id, item.origin])).toEqual([
+      [BUILTIN_SUMMARIZE_ID, 'builtin'],
+      [RETIRED_FOCUS_READ_ID, 'custom'],
+    ]);
+  });
+
   it('appends the newly introduced built-ins after the user list and records the revision', async () => {
     const { data } = installStorage({
       [SHORTCUTS_STORAGE_KEY]: [
@@ -364,8 +383,6 @@ describe('built-in retirement and revision migration', () => {
       BUILTIN_TRANSLATE_ID,
       BUILTIN_SUMMARIZE_ID,
       BUILTIN_FILL_FORM_ID,
-      BUILTIN_POLISH_ID,
-      BUILTIN_FOCUS_READ_ID,
     ]);
     expect(data[SHORTCUTS_REVISION_STORAGE_KEY]).toBe(BUILTINS_REVISION);
   });
@@ -377,8 +394,6 @@ describe('built-in retirement and revision migration', () => {
 
     expect(loaded.shortcuts.map((item) => item.id)).toEqual([
       BUILTIN_FILL_FORM_ID,
-      BUILTIN_POLISH_ID,
-      BUILTIN_FOCUS_READ_ID,
     ]);
   });
 
@@ -390,10 +405,7 @@ describe('built-in retirement and revision migration', () => {
       items.filter((item) => item.id !== BUILTIN_FILL_FORM_ID),
     );
 
-    expect((await loadShortcutConfigs()).shortcuts.map((item) => item.id)).toEqual([
-      BUILTIN_POLISH_ID,
-      BUILTIN_FOCUS_READ_ID,
-    ]);
+    expect((await loadShortcutConfigs()).shortcuts.map((item) => item.id)).toEqual([]);
   });
 
   it('leaves malformed storage untouched instead of migrating on top of it', async () => {
@@ -418,10 +430,8 @@ describe('shortcut list operations', () => {
     expect(moveShortcut(items, 'custom-1', 'up').map((item) => item.id)).toEqual([
       BUILTIN_SUMMARIZE_ID,
       BUILTIN_TRANSLATE_ID,
-      BUILTIN_FILL_FORM_ID,
-      BUILTIN_POLISH_ID,
       'custom-1',
-      BUILTIN_FOCUS_READ_ID,
+      BUILTIN_FILL_FORM_ID,
     ]);
   });
 
