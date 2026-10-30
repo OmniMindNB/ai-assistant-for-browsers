@@ -1900,7 +1900,7 @@ describe('workbench context controls', () => {
   it('shows a single unified empty-state message regardless of intent', () => {
     render(
       <LocaleProvider>
-        <WorkbenchEmptyState busy={false} />
+        <WorkbenchEmptyState />
       </LocaleProvider>,
     );
 
@@ -1920,83 +1920,15 @@ describe('workbench context controls', () => {
     expect(within(screen.getByRole('main')).queryByRole('button', { name: /Shortcut/ })).not.toBeInTheDocument();
   });
 
-  // 三个内置快捷指令全是读操作，只摆它们会把产品定位成"页面问答"，
-  // 代填表单 / 改页面这些真正的差异化能力用户根本发现不了。
-  it('展示写操作示例，让空状态不止有读操作', () => {
+  // 示例区和输入区的快捷指令在首屏把同一件事说两遍，已整体删除：空状态不再有任何可点目标。
+  it('空状态不展示示例或任何按钮', () => {
     render(
       <LocaleProvider>
-        <WorkbenchEmptyState busy={false} onPickExample={vi.fn()} />
+        <WorkbenchEmptyState />
       </LocaleProvider>,
     );
 
-    expect(screen.getByRole('button', { name: 'Fill in the form on this page for me' })).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Make the article readable — strip the distractions' })).toBeVisible();
-  });
-
-  // 一次误点就动了用户的页面是不可接受的，所以示例只填进输入框、不发送。
-  it('点击示例是交给调用方填进输入框，而不是直接执行', async () => {
-    const user = userEvent.setup();
-    const onPickExample = vi.fn();
-    render(
-      <LocaleProvider>
-        <WorkbenchEmptyState busy={false} onPickExample={onPickExample} />
-      </LocaleProvider>,
-    );
-
-    await user.click(screen.getByRole('button', { name: 'Fill in the form on this page for me' }));
-    expect(onPickExample).toHaveBeenCalledWith('Fill in the form on this page for me');
-  });
-
-  it('不传 onPickExample 时不展示示例区', () => {
-    render(
-      <LocaleProvider>
-        <WorkbenchEmptyState busy={false} />
-      </LocaleProvider>,
-    );
-    expect(screen.queryByRole('button', { name: 'Fill in the form on this page for me' })).not.toBeInTheDocument();
-  });
-
-  // 三条示例卡片本身就是祈使句，上面再顶一行"也可以让我直接动手："是把同一件事说了两遍，
-  // 还在窄侧栏里多占一层视觉层级。
-  it('示例区不再多一层小标题，整个空状态只有三个可点目标', () => {
-    render(
-      <LocaleProvider>
-        <WorkbenchEmptyState busy={false} onPickExample={vi.fn()} />
-      </LocaleProvider>,
-    );
-
-    expect(screen.queryByText('Or have me act on the page:')).not.toBeInTheDocument();
-    expect(screen.getAllByRole('button')).toHaveLength(3);
-  });
-});
-
-describe('composer draftSeed', () => {
-  it('token 变化时把文字填进输入框，但不发送', () => {
-    const onSend = vi.fn();
-    const { rerender } = render(<ComposerHarness onSend={onSend} draftSeed={{ text: '', token: 0 }} />);
-    const textarea = screen.getByRole('textbox', { name: 'Message input' }) as HTMLTextAreaElement;
-    expect(textarea.value).toBe('');
-
-    rerender(<ComposerHarness onSend={onSend} draftSeed={{ text: '帮我填好这个表单', token: 1 }} />);
-
-    expect(textarea.value).toBe('帮我填好这个表单');
-    expect(onSend).not.toHaveBeenCalled();
-  });
-
-  // token 为 0 表示"从未发生过"，不能在挂载时就把 text 灌进去（同 pendingFocusToken 的约定）。
-  it('token 为 0 时不动输入框', () => {
-    render(<ComposerHarness draftSeed={{ text: '不该出现', token: 0 }} />);
-    expect((screen.getByRole('textbox', { name: 'Message input' }) as HTMLTextAreaElement).value).toBe('');
-  });
-
-  it('填入后用户仍可正常编辑', async () => {
-    const user = userEvent.setup();
-    const { rerender } = render(<ComposerHarness draftSeed={{ text: '前缀', token: 0 }} />);
-    rerender(<ComposerHarness draftSeed={{ text: '前缀', token: 2 }} />);
-
-    const textarea = screen.getByRole('textbox', { name: 'Message input' }) as HTMLTextAreaElement;
-    await user.type(textarea, '后缀');
-    expect(textarea.value).toBe('前缀后缀');
+    expect(screen.queryAllByRole('button')).toHaveLength(0);
   });
 });
 

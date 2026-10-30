@@ -114,7 +114,6 @@ export default function App() {
   const atBottomRef = useRef(true);
   const busyRef = useRef(busy);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
-  const [draftSeed, setDraftSeed] = useState<{ text: string; token: number }>({ text: '', token: 0 });
 
   const resolvedShortcuts: ResolvedShortcutCommand[] = shortcuts.map((config) => ({
     config,
@@ -233,10 +232,6 @@ export default function App() {
 
   // 空状态的写操作示例只填进输入框，不直接发送：一次误点就动了用户的页面是不可接受的，
   // 填进去也让用户能按自己的页面改措辞。用 token 传递，草稿仍留在 composer 本地。
-  function pickExample(text: string) {
-    setDraftSeed({ text, token: Date.now() });
-  }
-
   function executeShortcut(shortcut: ShortcutConfig, options?: { supplement?: string }) {
     if (requestBlocked) return;
     resetToFollowing();
@@ -341,7 +336,7 @@ export default function App() {
             <main ref={scrollRef} className="h-full overflow-y-auto">
               <div className="mx-auto flex min-h-full max-w-3xl flex-col gap-6 px-4 py-6">
                 {messages.length === 0 ? (
-                  <WorkbenchEmptyState busy={requestBlocked} onPickExample={pickExample} />
+                  <WorkbenchEmptyState />
                 ) : (
                   messages.map((m, i) => (
                     <Message
@@ -435,7 +430,6 @@ export default function App() {
             pendingFocusToken={pendingFocusToken}
             quotedSelection={quotedSelection}
             quotedSource={quotedSource}
-            draftSeed={draftSeed}
             attachments={pendingAttachments}
             onSend={submitMessage}
             onStop={stop}
