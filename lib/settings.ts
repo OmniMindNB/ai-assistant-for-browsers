@@ -81,6 +81,19 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     models: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'],
     api: 'anthropic-messages',
   },
+  {
+    // DemonRoute：OpenAI 兼容网关（https://demonroute.com），主打开源权重与去审查（abliterated /
+    // heretic）微调模型。按上方 ≥1M 窗口的约束，只收目录页标注 1.0M 上下文且支持 tool calling 的
+    // 模型（2026-11 核对 https://demonroute.com/models）。模型 ID 原样取自目录，形如 `family/Name`。
+    name: 'DemonRoute',
+    baseURL: 'https://api.demonroute.com/v1',
+    model: 'huihui-ai/Huihui-Qwythos-9B-Claude-Mythos-5-1M-abliterated',
+    models: [
+      'huihui-ai/Huihui-Qwythos-9B-Claude-Mythos-5-1M-abliterated',
+      'llmfan46/Qwythos-9B-Claude-Mythos-5-1M-uncensored-heretic',
+      'TheDrummer/Rocinante-12B-v1.1',
+    ],
+  },
 ];
 
 /**

@@ -330,3 +330,24 @@ describe('draftPlaceholders', () => {
     expect(draftPlaceholders('DeepSeek', 'en').name).toBe('e.g. DeepSeek');
   });
 });
+
+describe('DemonRoute preset', () => {
+  it('is an OpenAI-compatible preset with a versioned baseURL and 1M-window models', () => {
+    const demonroute = resolvePresetSelection('DemonRoute')!;
+    expect(demonroute.baseURL).toBe('https://api.demonroute.com/v1');
+    expect(demonroute.api).toBeUndefined();
+    expect(demonroute.models).toContain(demonroute.model);
+  });
+
+  it('falls back to OpenAI Chat Completions when applied to a draft', () => {
+    const demonroute = resolvePresetSelection('DemonRoute')!;
+    const result = applyPresetToDraft(
+      { ...baseDraft, api: 'anthropic-messages' },
+      '',
+      demonroute,
+      false,
+    );
+    expect(result.draft.api).toBe('openai-completions');
+    expect(result.draft.model).toBe('huihui-ai/Huihui-Qwythos-9B-Claude-Mythos-5-1M-abliterated');
+  });
+});

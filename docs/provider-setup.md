@@ -57,4 +57,4 @@ Provider 设置和 API Key 保存在浏览器本地的 `chrome.storage.local` �
 
 ## 其他 Provider
 
-OpenAI 和 Claude 也有内置预设：OpenAI 预设使用 `OpenAI Responses` 协议（新一代 GPT 模型的工具调用只能走 Responses API），Claude 预设使用 Anthropic 协议，Base URL 为 `https://api.anthropic.com`。选择预设时协议会自动切换。配置流程相同：选择预设、核对官方端点和模型、填写 API Key 并保存。使用自定义或中转端点时，请从服务方获取与所选协议匹配的 Base URL、模型名称和密钥。
+OpenAI 和 Claude 也有内置预设：OpenAI 预设使用 `OpenAI Responses` 协议（新一代 GPT 模型的工具调用只能走 Responses API），Claude 预设使用 Anthropic 协议，Base URL 为 `https://api.anthropic.com`。选择预设时协议会自动切换。配置流程相同：选择预设、核对官方端点和模型、填写 API Key 并保存。`DemonRoute` 预设使用 `OpenAI Chat Completions` 协议，Base URL 为 `https://api.demonroute.com/v1`，默认填入 1M 上下文的开源权重模型（如 `huihui-ai/Huihui-Qwythos-9B-Claude-Mythos-5-1M-abliterated`）；完整模型列表与按 token 计价见 [demonroute.com/models](https://demonroute.com/models)。使用自定义或中转端点时，请从服务方获取与所选协议匹配的 Base URL、模型名称和密钥。
