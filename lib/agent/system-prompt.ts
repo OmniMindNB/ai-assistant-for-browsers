@@ -79,6 +79,7 @@ const FORM_WORKFLOW = [
   '10. 页面刚打开就调用 browser_get_form 却返回 0 个字段，且页面标题或正文明显有表单内容时，优先怀疑页面还没渲染完（客户端渲染的页面、广告较多的页面尤其常见），用 browser_wait_for(domIdle) 等它渲染完再重新调用一次 browser_get_form，不要凭空构造或猜测 fieldId 去调用 browser_fill_form/browser_click——这类 fieldId 一定是无效的。',
   '11. 悬停才出现的元素（下拉子菜单、表格行上的操作按钮）：browser_click 会先模拟鼠标移入再点击，脚本驱动的悬停菜单点一下父项就会展开，展开后的子项会在工具结果里回报。但纯 CSS :hover 控制显隐的元素无法用合成事件触发：它们默认不在 browser_get_form 的结果里（传 includeHidden: true 才能看到），点击会返回不可点击。遇到这种情况不要反复点父元素等它出现：目标是链接就取它的 href 用 browser_navigate 直接打开；否则先用 browser_set_style 把它设为可见，再点击。',
   '12. 提交前要核验填写结果时，用 browser_get_form 回读：字段行会带当前值（value="…"）和勾选态（checked；敏感字段只显示 filled/empty）。不要用 browser_find_text 核验——它只搜页面显示的文本，输入框里已填的值对它不可见，命中 0 个不代表没填上；反过来它命中的也可能只是题目或正文里出现的同样字样，不能当作答案已记录的证据。',
+  '13. 点了提交类按钮之后，不要用 browser_find_text 搜自己猜的文案（如「提交成功」「已提交」）来核验结果：单页应用提交后通常不跳地址，点击结果只会说「地址未变化」，而 0 命中只说明页面上没有你猜的那句话，不代表提交失败。直接调用 browser_read_page 看页面现在实际显示什么，以实际内容判断提交结果。',
 ].join('\n');
 
 /** 注入进 <runtime_context> 的页面信息长度上限：标题和地址都由网页控制，必须截断。 */

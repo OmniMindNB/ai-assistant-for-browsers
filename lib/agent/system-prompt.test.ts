@@ -80,6 +80,14 @@ describe('buildSystemPrompt tool listing', () => {
     expect(SYSTEM_PROMPT).toContain('命中 0 个不代表没填上');
     expect(SYSTEM_PROMPT).toContain('不能当作答案已记录的证据');
   });
+
+  // 提交后核验的指路（ref: 2026-11-08 post-submit-spa-transition spec §2，wj.qq.com
+  // 轨迹步骤 9–11：模型猜了两次文案去 find_text，3 轮浪费后才想起 read_page）。
+  it('teaches the model to read the page after submitting instead of searching guessed wording', () => {
+    expect(SYSTEM_PROMPT).toContain('不要用 browser_find_text 搜自己猜的文案');
+    expect(SYSTEM_PROMPT).toContain('0 命中只说明页面上没有你猜的那句话，不代表提交失败');
+    expect(SYSTEM_PROMPT).toContain('直接调用 browser_read_page 看页面现在实际显示什么');
+  });
 });
 
 // 合成事件触发不了 CSS :hover：悬停才显示的元素默认不在 get_form 结果里，点击也会被判为
