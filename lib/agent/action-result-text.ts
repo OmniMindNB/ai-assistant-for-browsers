@@ -137,14 +137,22 @@ export function describeGoBackResult(result: NavigateHistoryResult): string {
 }
 
 /**
- * 写/交互动作之后「页面新出现了哪些可交互元素」。
+ * 写/交互动作之后「页面上与上次读取相比有差异的可交互元素」。
  *
  * 填完输入框弹出的下拉建议、点开的菜单项都是这一类。附在工具结果尾部，省掉模型
  * 「再调一次 browser_get_form 才发现它们」的一轮往返（ref: form-schema.ts 的 findNewFieldIds）。
  * label 由页面控制，已在 collectFormFields 阶段压空白并截断；脱敏由 agent.ts 的 afterToolCall
  * 对整条写工具结果统一做。
+ *
+ * 文案不得断言「新出现」：指纹对不上只说明「与上次读取时不同」，既可能是真新增，也可能是
+ * 原有元素被重新渲染换了属性（React 重渲染换 name/value 的常见现场，ref: 2026-11-08
+ * new-fields-wording spec §3.4）。vanishedCount 是同一趟预算配对顺带算出的另一半：
+ * 上一张表里已不在页面上的元素数——它们的旧 fieldId 从此点空，必须明说。
  */
-export function describeNewFields(appeared: FormFieldDescriptor[]): string | undefined {
+export function describeNewFields(
+  appeared: FormFieldDescriptor[],
+  vanishedCount?: number,
+): string | undefined {
   if (appeared.length === 0) return undefined;
 
   const listed = appeared
@@ -154,7 +162,12 @@ export function describeNewFields(appeared: FormFieldDescriptor[]): string | und
   const omitted = appeared.length - Math.min(appeared.length, MAX_LISTED_NEW_FIELDS);
   const tail = omitted > 0 ? `等，另有 ${omitted} 个未列出` : '';
 
-  return `页面新出现 ${appeared.length} 个可交互元素：${listed}${tail}。可直接用 browser_click 的 fieldId 参数操作它们。`;
+  const head = `页面有 ${appeared.length} 个与上次读取时不同的可交互元素（可能是新增控件，也可能是原有元素被重新渲染）：${listed}${tail}。`;
+  const vanishedNote =
+    vanishedCount && vanishedCount > 0
+      ? `另有 ${vanishedCount} 个之前读取到的元素已不在页面上，它们对应的旧 fieldId 已失效。`
+      : '';
+  return `${head}${vanishedNote}可直接用 browser_click 的 fieldId 参数操作它们。`;
 }
 
 /**

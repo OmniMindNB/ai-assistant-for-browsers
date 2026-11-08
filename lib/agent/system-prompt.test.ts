@@ -397,11 +397,15 @@ describe('表单作业流程', () => {
   });
 });
 
-// 写工具现在会在结果尾部自动回报新出现的可交互元素，并同步刷新句柄表。
+// 写工具现在会在结果尾部自动回报与上次读取相比有差异的可交互元素，并同步刷新句柄表。
 // 提示词必须讲清这两件事，否则模型仍会习惯性地再调一次 get_form，或继续用旧 fieldId。
 describe('写后自动回报新元素', () => {
-  it('tells the model that write tools report newly appeared elements themselves', () => {
-    expect(SYSTEM_PROMPT).toContain('新出现');
+  it('tells the model that write tools report changed elements themselves', () => {
+    expect(SYSTEM_PROMPT).toContain('新增或发生变化的可交互元素');
+  });
+
+  it('warns that vanished old fieldIds are dead after a re-render', () => {
+    expect(SYSTEM_PROMPT).toContain('旧 fieldId 已失效');
   });
 
   it('warns that fieldIds are reissued after a write', () => {

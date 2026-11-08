@@ -133,22 +133,37 @@ function fieldDescriptor(fieldId: string, label?: string, kind: FormFieldDescrip
   };
 }
 
-// 写完自动回报新元素，省掉模型「再调一次 get_form 才发现下拉建议弹出来了」的一轮往返。
+// 写完自动回报与上次读取有差异的元素，省掉模型「再调一次 get_form 才发现下拉建议弹出来了」的一轮往返。
+// 文案不说「新出现」：指纹对不上分不清是新增还是重渲染（ref: 2026-11-08 new-fields-wording spec）。
 describe('describeNewFields', () => {
   it('says nothing when no new field appeared', () => {
     expect(describeNewFields([])).toBeUndefined();
   });
 
-  it('lists the new fields with their ids and labels', () => {
+  it('lists the differing fields with their ids and labels', () => {
     expect(describeNewFields([fieldDescriptor('f2', '北京'), fieldDescriptor('f3', '北海')])).toBe(
-      '页面新出现 2 个可交互元素：f2「北京」、f3「北海」。可直接用 browser_click 的 fieldId 参数操作它们。',
+      '页面有 2 个与上次读取时不同的可交互元素（可能是新增控件，也可能是原有元素被重新渲染）：f2「北京」、f3「北海」。可直接用 browser_click 的 fieldId 参数操作它们。',
     );
   });
 
   it('falls back to the field kind when a new field has no label', () => {
     expect(describeNewFields([fieldDescriptor('f2', undefined, 'checkbox')])).toBe(
-      '页面新出现 1 个可交互元素：f2（checkbox）。可直接用 browser_click 的 fieldId 参数操作它们。',
+      '页面有 1 个与上次读取时不同的可交互元素（可能是新增控件，也可能是原有元素被重新渲染）：f2（checkbox）。可直接用 browser_click 的 fieldId 参数操作它们。',
     );
+  });
+
+  // 整页重挂载：旧 fieldId 全部点空，必须明说，否则模型攥着死号继续操作。
+  it('states that the old fieldIds are dead when previous elements vanished', () => {
+    const result = describeNewFields([fieldDescriptor('f4', '新建'), fieldDescriptor('f5', '删除')], 2);
+    expect(result).toBe(
+      '页面有 2 个与上次读取时不同的可交互元素（可能是新增控件，也可能是原有元素被重新渲染）：f4「新建」、f5「删除」。另有 2 个之前读取到的元素已不在页面上，它们对应的旧 fieldId 已失效。可直接用 browser_click 的 fieldId 参数操作它们。',
+    );
+  });
+
+  // vanished 为 0/缺省时不提旧元素——纯新增（下拉建议弹出来）是最常见场景，多说一句是噪音。
+  it('keeps the pure-addition wording free of the vanished note', () => {
+    const result = describeNewFields([fieldDescriptor('f2', '北京')], 0);
+    expect(result).not.toContain('已不在页面上');
   });
 
   // 一次展开出几十个选项时全列出来会淹没工具结果。
@@ -156,7 +171,7 @@ describe('describeNewFields', () => {
     const total = MAX_LISTED_NEW_FIELDS + 4;
     const fields = Array.from({ length: total }, (_, index) => fieldDescriptor(`f${index}`, `选项${index}`));
     const result = describeNewFields(fields);
-    expect(result).toContain(`页面新出现 ${total} 个可交互元素`);
+    expect(result).toContain(`页面有 ${total} 个与上次读取时不同的可交互元素`);
     expect(result).toContain(`f${MAX_LISTED_NEW_FIELDS - 1}「选项${MAX_LISTED_NEW_FIELDS - 1}」`);
     expect(result).not.toContain(`f${MAX_LISTED_NEW_FIELDS}「`);
     expect(result).toContain('等，另有 4 个未列出');
@@ -171,7 +186,7 @@ describe('describeNewFields', () => {
   // 只给 placeholder 当标签时（「如53,80,443或80-90」），不标类型看不出它是输入框还是按钮。
   it('annotates fillable fields with their kind, like the landing-page listing', () => {
     expect(describeNewFields([fieldDescriptor('f6', '如53,80,443或80-90', 'text'), fieldDescriptor('f9', '确定', 'submit')])).toBe(
-      '页面新出现 2 个可交互元素：f6「如53,80,443或80-90」（text）、f9「确定」。可直接用 browser_click 的 fieldId 参数操作它们。',
+      '页面有 2 个与上次读取时不同的可交互元素（可能是新增控件，也可能是原有元素被重新渲染）：f6「如53,80,443或80-90」（text）、f9「确定」。可直接用 browser_click 的 fieldId 参数操作它们。',
     );
   });
 });

@@ -779,6 +779,8 @@ interface FieldSnapshot {
   orphanFieldIds: string[];
   /** 相对上一次快照新出现的字段；首次读取该页面或页面已换地址时为空。 */
   newFields: FormFieldDescriptor[];
+  /** 上一张快照里已不在页面上的字段数（它们的旧 fieldId 从此点空）；不可比对时为 0。 */
+  vanishedFieldCount: number;
   /** collected.trailingText 净化后的结果；未开 includeText 或没有尾部正文时为 undefined。 */
   trailingText: string | undefined;
   /** 任一字段的 precedingText 或 trailingText 是否被截断到 MAX_FIELD_TEXT_CHARS。 */
@@ -891,7 +893,7 @@ async function snapshotFields(
   // 换了页面就不比对：跨页面「全都是新的」没有信息量，只会淹没真正的变化。单页应用同一文档内
   // 改地址不算换页面（ref: page-identity.ts）——那正是最需要报告新元素的时候。
   const comparable = previous && isSamePage(previous, collected) ? previous.fingerprints : undefined;
-  const newFieldIds = findNewFieldIds(fields, comparable);
+  const { newIds: newFieldIds, vanished: vanishedFieldCount } = findNewFieldIds(fields, comparable);
   for (const field of fields) {
     if (newFieldIds.has(field.fieldId)) field.isNew = true;
   }
@@ -914,6 +916,7 @@ async function snapshotFields(
     fields,
     orphanFieldIds,
     newFields: fields.filter((field) => field.isNew),
+    vanishedFieldCount,
     trailingText: trailingSanitized.text,
     textTruncated,
     scrollableContainers,
@@ -1005,7 +1008,7 @@ async function fillForm(payload: FillFormPayload, tabId: number): Promise<FillFo
       ? { fieldId: payload!.submit!.fieldId, status: 'not_found' as const }
       : submitResult?.submitted,
     fieldsTableStale: fieldsTableStale || undefined,
-    newFields: await collectNewFieldsAfterWrite(tabId),
+    ...(await collectNewFieldsAfterWrite(tabId)),
   };
 }
 
@@ -1016,12 +1019,20 @@ async function fillForm(payload: FillFormPayload, tabId: number): Promise<FillFo
  * browser_get_form 才能看见它们，等于每次交互都多一轮往返。
  * 重采失败（页面正在导航、标签页已关闭等）不该把一次成功的写入变成失败，故静默降级为空。
  */
-async function collectNewFieldsAfterWrite(tabId: number): Promise<FormFieldDescriptor[] | undefined> {
+/**
+ * 写/交互成功后整表重采一次，把「与上次读取相比有差异的可交互元素」以及「已不在页面上的旧元素数」
+ * 穿成消息结果形状（newFields/vanishedFields），调用点直接展开。有任何异常都降级为空对象——
+ * 这份报告是写操作的附赠品，不能区过来打断主结果（ref: 2026-11-08 new-fields-wording spec §3.2）。
+ */
+async function collectNewFieldsAfterWrite(
+  tabId: number,
+): Promise<{ newFields?: FormFieldDescriptor[]; vanishedFields?: number }> {
   try {
     const snapshot = await snapshotFields(tabId, {}, true);
-    return snapshot.newFields.length > 0 ? snapshot.newFields : undefined;
+    if (snapshot.newFields.length === 0) return {};
+    return { newFields: snapshot.newFields, vanishedFields: snapshot.vanishedFieldCount };
   } catch {
-    return undefined;
+    return {};
   }
 }
 
@@ -1460,7 +1471,7 @@ async function clickElement(payload: ClickElementPayload, tabId: number): Promis
     detail: result.detail,
     label: result.label,
     opensNewTab: result.opensNewTab,
-    newFields: result.status === 'ok' ? await collectNewFieldsAfterWrite(tabId) : undefined,
+    ...(result.status === 'ok' ? await collectNewFieldsAfterWrite(tabId) : {}),
   };
 }
 
@@ -1535,7 +1546,7 @@ async function clickElementByFieldId(fieldId: string, tabId: number): Promise<Cl
     label: submitted.label,
     opensNewTab: submitted.opensNewTab,
     kind: handle?.kind,
-    newFields: submitted.status === 'ok' ? await collectNewFieldsAfterWrite(tabId) : undefined,
+    ...(submitted.status === 'ok' ? await collectNewFieldsAfterWrite(tabId) : {}),
   };
 }
 
@@ -1588,7 +1599,7 @@ async function retryClickAfterRelocation(
       opensNewTab: submitted.opensNewTab,
       kind: refreshed.fields[fieldId]?.kind,
       relocated: true,
-      newFields: await collectNewFieldsAfterWrite(tabId),
+      ...(await collectNewFieldsAfterWrite(tabId)),
     };
   } catch {
     return undefined;
@@ -1699,7 +1710,7 @@ async function clickElementsByFieldIds(fieldIds: string[], tabId: number): Promi
     // 点成的那几个连同结果一起丢掉（工具层看到 fieldsTableStale 会直接抛错）。
     fieldsTableStale: table ? undefined : true,
     // 整批只重采一次，而不是每点一个重采一次。
-    newFields: succeeded > 0 ? await collectNewFieldsAfterWrite(tabId) : undefined,
+    ...(succeeded > 0 ? await collectNewFieldsAfterWrite(tabId) : {}),
   };
 }
 
@@ -1721,7 +1732,7 @@ async function typeText(payload: TypeTextPayload, tabId: number): Promise<TypeTe
     actualValue: result.actualValue,
     pendingSelection: result.pendingSelection,
     // 输入触发自动补全下拉是这里最典型的收益场景。
-    newFields: result.status === 'ok' ? await collectNewFieldsAfterWrite(tabId) : undefined,
+    ...(result.status === 'ok' ? await collectNewFieldsAfterWrite(tabId) : {}),
   };
 }
 
@@ -1816,7 +1827,7 @@ async function pressKey(payload: PressKeyPayload, tabId: number): Promise<PressK
     defaultPrevented: result.defaultPrevented,
     submitted: result.submitted,
     fieldsTableStale: result.fieldsTableStale,
-    newFields: result.status === 'ok' ? await collectNewFieldsAfterWrite(tabId) : undefined,
+    ...(result.status === 'ok' ? await collectNewFieldsAfterWrite(tabId) : {}),
   };
 }
 

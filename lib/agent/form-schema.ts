@@ -268,28 +268,37 @@ export function toScrollableContainerDescriptor(
  * 只看「指纹在不在」会全部漏判；而 path 里的 :nth-child 在列表顶部插入一条时会整体位移，
  * 又会把所有元素误判成新增。按文档序先到先得地消耗旧计数，多出来的（即文档序靠后的）算新增。
  *
+ * 返回两个数（同一趟预算配对顺带算出）：
+ * - newIds：当前字段里没有任何旧指纹可匹配的——「与上次读取时不同」，既可能是真新增，
+ *   也可能是原有元素被重新渲染换了属性，调用方文案不得断言是哪一种；
+ * - vanished：上一张表的指纹配额没被消耗掉的条数——之前的元素已不在页面上，
+ *   它们的旧 fieldId 从此点空（号码只发不复用，ref: field-id-allocation.ts）。
+ *
  * previousFingerprints 为 undefined 表示首次读取该页面——此时「全都是新的」没有信息量，
- * 一律不标记。
+ * 一律不标记（vanished 恒 0）。
  */
 export function findNewFieldIds(
   fields: FormFieldDescriptor[],
   previousFingerprints: string[] | undefined,
-): Set<string> {
+): { newIds: Set<string>; vanished: number } {
   const newIds = new Set<string>();
-  if (!previousFingerprints) return newIds;
+  if (!previousFingerprints) return { newIds, vanished: 0 };
 
   const budget = new Map<string, number>();
   for (const fingerprint of previousFingerprints) {
     budget.set(fingerprint, (budget.get(fingerprint) ?? 0) + 1);
   }
 
+  let consumed = 0;
   for (const field of fields) {
     const remaining = budget.get(field.fingerprint) ?? 0;
-    if (remaining > 0) budget.set(field.fingerprint, remaining - 1);
-    else newIds.add(field.fieldId);
+    if (remaining > 0) {
+      budget.set(field.fingerprint, remaining - 1);
+      consumed += 1;
+    } else newIds.add(field.fieldId);
   }
 
-  return newIds;
+  return { newIds, vanished: previousFingerprints.length - consumed };
 }
 
 // sanitizePageText 和 sanitizeFieldText 共用这一个归一化实现；改动它时要同时确认两个调用方的需求都还满足。

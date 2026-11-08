@@ -360,8 +360,10 @@ export interface ClickElementResult {
   label?: string;
   /** 命中 <a target="_blank">：当前标签页不会变化，必须点破，否则模型会一直等它变。 */
   opensNewTab?: boolean;
-  /** 本次点击之后页面新出现的可交互元素（下拉建议、展开的菜单项等）。句柄表已同步刷新。 */
+  /** 本次点击之后与上次读取相比有差异的可交互元素（新增或被重新渲染）。句柄表已同步刷新。 */
   newFields?: FormFieldDescriptor[];
+  /** 上一张句柄表里已不在页面上的元素数——它们的旧 fieldId 从此点空。 */
+  vanishedFields?: number;
   /** 原位置点不中，重采后按同一元素的新位置重试才点中（ref: fill-form-request.ts 的 planClickRetry）。 */
   relocated?: boolean;
   /** 仅批量点击（payload.fieldIds）时有值：逐个目标的结果，顺序与请求一致。 */
@@ -386,8 +388,10 @@ export interface TypeTextResult {
   actualValue?: string;
   /** 自动补全输入框：文字已输入、保持焦点，但还没有选定任何选项——detail 说明下一步。 */
   pendingSelection?: boolean;
-  /** 本次输入之后页面新出现的可交互元素（典型如自动补全下拉）。句柄表已同步刷新。 */
+  /** 本次输入之后与上次读取相比有差异的可交互元素（典型如自动补全下拉）。句柄表已同步刷新。 */
   newFields?: FormFieldDescriptor[];
+  /** 上一张句柄表里已不在页面上的元素数——它们的旧 fieldId 从此点空。 */
+  vanishedFields?: number;
 }
 
 export interface SelectOptionPayload {
@@ -673,8 +677,10 @@ export interface FillFormResult {
   submitted?: { fieldId: string; status: 'ok' | 'not_found' | 'mismatch' | 'not_clickable' };
   /** 句柄表已失效（页面导航或 storage 丢失），模型必须重新调用 browser_get_form。 */
   fieldsTableStale?: boolean;
-  /** 本次写入之后页面新出现的可交互元素（下拉建议、展开的菜单项等）。句柄表已同步刷新。 */
+  /** 本次写入之后与上次读取相比有差异的可交互元素（新增或被重新渲染）。句柄表已同步刷新。 */
   newFields?: FormFieldDescriptor[];
+  /** 上一张句柄表里已不在页面上的元素数——它们的旧 fieldId 从此点空。 */
+  vanishedFields?: number;
 }
 
 export interface ProbeClickTargetPayload {
@@ -749,6 +755,8 @@ export interface PressKeyResult {
   detail?: string;
   fieldsTableStale?: boolean;
   newFields?: FormFieldDescriptor[];
+  /** 上一张句柄表里已不在页面上的元素数——它们的旧 fieldId 从此点空。 */
+  vanishedFields?: number;
 }
 
 /**

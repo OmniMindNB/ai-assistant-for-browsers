@@ -731,7 +731,7 @@ async function clickBatch(
   }
 
   const clicked = describeBatchClickResult(outcomes);
-  const appeared = describeNewFields(response.data.newFields ?? []);
+  const appeared = describeNewFields(response.data.newFields ?? [], response.data.vanishedFields);
   return textResult(appeared ? `${clicked}\n${appeared}` : clicked, response.data as unknown as Record<string, unknown>);
 }
 
@@ -774,7 +774,7 @@ function makeClickTool(session: TabSessionController): BrowserAgentTool {
       }
       if (response.data.status !== 'ok') throw new Error(response.data.detail ?? response.data.status);
       const clicked = describeClickResult(response.data, payload.fieldId);
-      const appeared = describeNewFields(response.data.newFields ?? []);
+      const appeared = describeNewFields(response.data.newFields ?? [], response.data.vanishedFields);
       return textResult(appeared ? `${clicked}\n${appeared}` : clicked, response.data as unknown as Record<string, unknown>);
     },
   };
@@ -836,7 +836,7 @@ function makeFillFormTool(session: TabSessionController): BrowserAgentTool {
       if (failed.length > 0) {
         lines.push('注意：只有 ok 表示值真正写入了页面。mismatch 或 not_found 说明页面已变化，必须重新调用 browser_get_form，不要原样重试。');
       }
-      const appeared = describeNewFields(response.data.newFields ?? []);
+      const appeared = describeNewFields(response.data.newFields ?? [], response.data.vanishedFields);
       if (appeared) lines.push(appeared);
       // 一个字段都没落地时按失败收尾（clickBatch 早就是这条规矩）：返回成功会让面板的
       // 步骤时间线显示「已填写 N 个字段」，而页面上其实什么都没变。提交按钮点成了是例外，
@@ -870,7 +870,7 @@ function makeTypeTool(session: TabSessionController): BrowserAgentTool {
       const typed = response.data.pendingSelection && response.data.detail
         ? `已在匹配 "${response.data.selector}" 的元素中输入文本。${response.data.detail}`
         : `已在匹配 "${response.data.selector}" 的元素中输入文本。`;
-      const appeared = describeNewFields(response.data.newFields ?? []);
+      const appeared = describeNewFields(response.data.newFields ?? [], response.data.vanishedFields);
       return textResult(appeared ? `${typed}\n${appeared}` : typed, response.data as unknown as Record<string, unknown>);
     },
   };
@@ -945,7 +945,7 @@ function makePressKeyTool(session: TabSessionController): BrowserAgentTool {
       }
 
       const pressed = describePressKeyResult(response.data);
-      const appeared = describeNewFields(response.data.newFields ?? []);
+      const appeared = describeNewFields(response.data.newFields ?? [], response.data.vanishedFields);
       return textResult(appeared ? `${pressed}\n${appeared}` : pressed, response.data as unknown as Record<string, unknown>);
     },
   };
