@@ -150,7 +150,7 @@ import { fieldExpectation, findNewFieldIds, sanitizeFieldText, toFieldDescriptor
 import { getFormFieldsForTab, setFormFieldsForTab, type FormFieldHandle } from '@/lib/agent/tab-form-fields';
 import { isSamePage } from '@/lib/agent/page-identity';
 import { mergeFrameCollections, mergeReadResultsByFrame, type MergedCollection } from '@/lib/agent/frame-merge';
-import { decideEnterSubmitIntent, decideSubmitIntent } from '@/lib/agent/form-submit';
+import { decideEnterSubmitIntent, decideFormlessCommitIntent, decideSubmitIntent } from '@/lib/agent/form-submit';
 import { resolveKeyDescriptor } from '@/lib/agent/key-dispatch';
 import { waitForConditionInPage } from '@/lib/agent/wait-dom';
 import { DEFAULT_WAIT_TIMEOUT_MS, MAX_WAIT_TIMEOUT_MS, MIN_WAIT_TIMEOUT_MS } from '@/lib/agent/wait-condition';
@@ -1050,18 +1050,37 @@ async function probeSubmitIntent(payload: ProbeClickTargetPayload, tabId: number
   );
   if (!probe.found) return { isSubmit: false, fieldLabels };
 
-  return {
-    ...decideSubmitIntent({
+  const submitIntent = decideSubmitIntent({
+    tag: probe.tag,
+    type: probe.type,
+    hasFormOwner: probe.hasFormOwner,
+    formAction: probe.formAction,
+    textContent: probe.textContent,
+    fieldCount: probe.fieldCount,
+  });
+  if (submitIntent.isSubmit) {
+    return { ...submitIntent, frameOrigin: target.expectOrigin, fieldLabels };
+  }
+
+  // 行为规则：结构判定为非提交，但本轮已批量填写字段（ref: 2026-11-08
+  // formless-commit-confirmation spec §4）。批量点击内部调本函数时不带 landedFieldWrites，
+  // 谓词自然不触发，不需要额外分支。
+  const submitHandle = payload?.submitFieldId ? table?.fields[payload.submitFieldId] : undefined;
+  const landed = payload?.landedFieldWrites;
+  const commitConfirm =
+    typeof landed === 'number' &&
+    decideFormlessCommitIntent({
       tag: probe.tag,
       type: probe.type,
-      hasFormOwner: probe.hasFormOwner,
-      formAction: probe.formAction,
-      textContent: probe.textContent,
-      fieldCount: probe.fieldCount,
-    }),
-    frameOrigin: target.expectOrigin,
-    fieldLabels,
-  };
+      role: probe.role,
+      kind: submitHandle?.kind,
+      landedFieldWrites: landed,
+    })
+      ? { landedFieldWrites: landed }
+      : undefined;
+  const submitLabel =
+    ((submitHandle?.expect.label || submitHandle?.expect.text || '').trim() || probe.textContent || '').trim() || undefined;
+  return { ...submitIntent, frameOrigin: target.expectOrigin, fieldLabels, commitConfirm, submitLabel };
 }
 
 /** Enter 的隐式提交探测。与 probeSubmitIntent 并列而非合并：判据与输入形状都不同。 */
@@ -1514,6 +1533,7 @@ async function clickElementByFieldId(fieldId: string, tabId: number): Promise<Cl
     status: submitted.status,
     label: submitted.label,
     opensNewTab: submitted.opensNewTab,
+    kind: handle?.kind,
     newFields: submitted.status === 'ok' ? await collectNewFieldsAfterWrite(tabId) : undefined,
   };
 }
@@ -1565,6 +1585,7 @@ async function retryClickAfterRelocation(
       status: 'ok',
       label: submitted.label,
       opensNewTab: submitted.opensNewTab,
+      kind: refreshed.fields[fieldId]?.kind,
       relocated: true,
       newFields: await collectNewFieldsAfterWrite(tabId),
     };
@@ -1654,6 +1675,7 @@ async function clickElementsByFieldIds(fieldIds: string[], tabId: number): Promi
       status: submitted?.status ?? 'not_found',
       label: submitted?.label,
       opensNewTab: submitted?.opensNewTab,
+      kind: handle?.kind,
       detail:
         submitted?.status === 'mismatch'
           ? '该位置的元素与读取时不一致，页面可能已变化，请重新调用 browser_get_form。'

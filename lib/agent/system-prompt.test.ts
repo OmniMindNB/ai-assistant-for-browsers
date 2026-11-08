@@ -67,8 +67,8 @@ describe('buildSystemPrompt tool listing', () => {
     }
   });
 
-  it('explains that only detected form submissions ask for approval', () => {
-    expect(SYSTEM_PROMPT).toContain('只有检测到的表单提交');
+  it('explains that detected submissions and post-bulk-fill commit clicks ask for approval', () => {
+    expect(SYSTEM_PROMPT).toContain('检测到的表单提交，以及批量填写字段后的提交性点击，会触发用户确认');
     expect(SYSTEM_PROMPT).toContain('其余已知操作会自动执行');
     expect(SYSTEM_PROMPT).not.toContain('高风险操作（browser_navigate');
     expect(SYSTEM_PROMPT).not.toContain('写工具首次调用会触发一次性用户确认');

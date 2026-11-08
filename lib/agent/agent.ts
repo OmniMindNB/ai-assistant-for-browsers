@@ -37,6 +37,7 @@ import { createErrorPageGuard } from './error-page';
 import { decideTabAccess, resolveToolTargetTabId } from './tab-access';
 import { getFormFieldsForTab } from './tab-form-fields';
 import { isChildFrameHandle } from './fill-form-request';
+import { countLandedFieldWrites } from './form-submit';
 import { createAgentToolPolicy } from './tool-policy';
 import { isPageLocationTool } from './task-trajectory';
 import { describeToolActivity } from './activity-description';
@@ -168,18 +169,27 @@ export interface BrowserAgentRuntimeOptions extends BrowserAgentOptions {
 /**
  * browser_fill_form 走「句柄表批量查」；browser_click 只在带 fieldId 时走同一条路径
  * （复用 background 侧已有的 fieldIds → fieldLabels 查表逻辑），否则退回 selector/index。
+ *
+ * runContext 是无 form 结构提交确认的运行态信号（ref: 2026-11-08 spec §4.2）：
+ * landedFieldWrites = 本轮已落地的可写字段写入个数。只有 click / fill_form 分支带：
+ * 批量 fieldIds 的探针载荷由 background 内部构造、不带计数（新规则对批量天然免疫）；
+ * press_key 的 Enter 判定不在这个行为规则范围内。fill_form 的计数要加上本次调用自己的
+ * 字段数——探针在执行前发出，这 N 个还没落地（敏感字段此刻不可知，上界，接受）。
  */
 export function buildSubmitIntentProbePayload(
   toolName: string,
   args: unknown,
+  runContext?: { landedFieldWrites?: number },
 ): ProbeClickTargetPayload | ProbeKeyTargetPayload {
   const record = (args ?? {}) as Record<string, unknown>;
   if (toolName === 'browser_fill_form') {
+    const fieldIds = Array.isArray(record.fields)
+      ? (record.fields as { fieldId?: string }[]).map((field) => String(field.fieldId ?? '')).filter(Boolean)
+      : [];
     return {
       submitFieldId: (record.submit as { fieldId?: string } | undefined)?.fieldId,
-      fieldIds: Array.isArray(record.fields)
-        ? (record.fields as { fieldId?: string }[]).map((field) => String(field.fieldId ?? '')).filter(Boolean)
-        : [],
+      fieldIds,
+      landedFieldWrites: (runContext?.landedFieldWrites ?? 0) + fieldIds.length || undefined,
     };
   }
   if (toolName === 'browser_press_key') {
@@ -193,9 +203,9 @@ export function buildSubmitIntentProbePayload(
     return { useActiveElement: true, fieldIds: [] };
   }
   if (toolName === 'browser_click' && typeof record.fieldId === 'string' && record.fieldId) {
-    return { submitFieldId: record.fieldId, fieldIds: [record.fieldId] };
+    return { submitFieldId: record.fieldId, fieldIds: [record.fieldId], landedFieldWrites: runContext?.landedFieldWrites };
   }
-  return { selector: String(record.selector ?? ''), index: Number(record.index ?? 0) };
+  return { selector: String(record.selector ?? ''), index: Number(record.index ?? 0), landedFieldWrites: runContext?.landedFieldWrites };
 }
 
 /**
@@ -266,6 +276,11 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
   let overlayTabId = options.tabId;
   // tabId -> 最后一次已知的 URL，用于识别 browser_click/fill_form/type 隐式触发的导航。
   const lastKnownUrl = new Map<number, string>();
+  // 无 form 结构的提交确认（ref: 2026-11-08 formless-commit-confirmation spec §4.2）：
+  // tabId -> 本轮在该页面成功落地的可写字段写入个数。url 是计数累积时的地址基线
+  // （首次观测到时采纳）；地址一变即清零——同地址下的 SPA 软转场保留（正是要覆盖的
+  // 场景）。只看当前 run：跨轮提交指令出自用户本人，风险性质不同。
+  const landedFieldWrites = new Map<number, { url?: string; count: number }>();
   const TAB_SESSION_MUTATING_TOOLS = new Set(['browser_open_tab', 'browser_switch_tab', 'browser_close_tab']);
   const errorPageGuard = createErrorPageGuard();
   const recordPreExecutionBlock = (block: BeforeToolCallResult): BeforeToolCallResult => {
@@ -354,7 +369,21 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
         targetTabId: session.currentTabId,
         signal,
         resolveSubmitIntent: async (toolName, args) => {
-          const payload = buildSubmitIntentProbePayload(toolName, args);
+          // 填写活动计数随探针载荷发走，但先做一次地址哨兵：页面在填写后自己跳走了
+          // （无工具调观察过），旧页面的计数不能拿到新页面上误伤（ref: spec §4.2）。
+          // 拿不到当前地址时宁可不发——方向是多确认一次确认，不是少确认一次提交。
+          let runContext: { landedFieldWrites?: number } | undefined;
+          if (toolName === 'browser_click' || toolName === 'browser_fill_form') {
+            const activity = landedFieldWrites.get(session.currentTabId);
+            if (activity && activity.count > 0) {
+              const currentUrl = await fetchTabUrl(session.currentTabId);
+              if (currentUrl) {
+                if (activity.url === undefined) activity.url = currentUrl;
+                if (activity.url === currentUrl) runContext = { landedFieldWrites: activity.count };
+              }
+            }
+          }
+          const payload = buildSubmitIntentProbePayload(toolName, args, runContext);
           const messageType = toolName === 'browser_press_key' ? 'PROBE_KEY_TARGET' : 'PROBE_CLICK_TARGET';
           // 只有结构探测明确识别出的提交才确认；无响应或异常不属于“已检测到提交”，
           // 按普通已知操作自动执行。
@@ -459,7 +488,11 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
         // （ref: 2026-09-05 final review Important #5）。
         if (toolName === 'browser_navigate' || toolName === 'browser_open_tab' || toolName === 'browser_go_back') {
           const url = (context.result.details as { url?: string } | undefined)?.url;
-          if (url) lastKnownUrl.set(session.currentTabId, url);
+          if (url) {
+            lastKnownUrl.set(session.currentTabId, url);
+            // 主动导航 = 换了页面：旧页面的填写计数不再有意义。
+            landedFieldWrites.delete(session.currentTabId);
+          }
         } else if (NAVIGATION_WATCH_TOOLS.has(toolName)) {
           const newUrl = await fetchTabUrl(session.currentTabId);
           if (newUrl) {
@@ -468,6 +501,8 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
             // 不必再花一轮去确认。
             if (previousUrl !== undefined && previousUrl !== newUrl) {
               landingNote = await readLandingPage(session.currentTabId);
+              // 地址变了：清掉旧页面的填写计数，再让本次写入计入新基线（方向多计，安全）。
+              landedFieldWrites.delete(session.currentTabId);
             }
             locationNote = describePageLocation(
               previousUrl,
@@ -476,6 +511,21 @@ export function createBrowserAgentOptions(options: BrowserAgentRuntimeOptions): 
               landingNote !== undefined,
             );
             lastKnownUrl.set(session.currentTabId, newUrl);
+            const writeActivity = landedFieldWrites.get(session.currentTabId);
+            if (writeActivity) writeActivity.url = newUrl;
+          }
+        }
+        // 填写活动计数：只数回读确认落地的可写字段写入（含批量点击里的选项），
+        // 供下一张提交性点击的确认闸门用（ref: form-submit.ts 的 countLandedFieldWrites）。
+        {
+          const landed = countLandedFieldWrites(toolName, context.result.details);
+          if (landed > 0) {
+            const activity = landedFieldWrites.get(session.currentTabId) ?? { count: 0 };
+            activity.count += landed;
+            // 地址基线：watched 工具刚观测过地址（含导航后清零重计的情形），直接采纳；
+            // select 这类不观测地址的写入留空，由探针哨兵首次观测时采纳。
+            if (activity.url === undefined) activity.url = lastKnownUrl.get(session.currentTabId);
+            landedFieldWrites.set(session.currentTabId, activity);
           }
         }
       }

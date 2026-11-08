@@ -435,7 +435,15 @@ export async function startRun(request: StartRunRequest): Promise<void> {
   await persistMessages(state);
   pushAndPersist(state);
 
-  const onConfirm = async (toolCallId: string, toolName: string, args: unknown): Promise<boolean> => {
+  // onConfirm 的 kind 参数：'commit'（行为规则命中的提交性点击）时卡片换一套不说
+  // 「表单提交」的文案——我们对那种目标不能断言是提交（ref: 2026-11-08 spec §4.5）。
+  const onConfirm = async (
+    toolCallId: string,
+    toolName: string,
+    args: unknown,
+    _reason: string,
+    kind?: 'submit' | 'commit',
+  ): Promise<boolean> => {
     // 只有当前操作目标不是面板绑定的那个 tab 时才带上标注——同一个 tab 上的操作再标一遍
     // "将操作标签页：《本页》"只是噪音（ref: confirm-summary.ts 的 targetTab 参数说明）。
     // 读的是 state.session 的实时字段而不是 startRun 那一刻的值：browser_open_tab /
@@ -451,7 +459,13 @@ export async function startRun(request: StartRunRequest): Promise<void> {
     if (runs.get(state.tabId) !== state) return false;
     const { summary, codePreview } = summarizeToolCallForConfirmation(toolName, args, targetTab, mainOrigin);
     state.pendingToolArgs.set(toolCallId, { toolName, args });
-    state.pendingConfirmation = { toolCallId, toolName, summary, codePreview };
+    state.pendingConfirmation = {
+      toolCallId,
+      toolName,
+      summary,
+      codePreview,
+      ...(kind === 'commit' ? { kind: 'commit' as const } : {}),
+    };
     pushAndPersist(state);
     return new Promise<boolean>((resolve) => { state.resolveConfirmation = resolve; });
   };

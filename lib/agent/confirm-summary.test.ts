@@ -209,6 +209,63 @@ describe('browser_fill_form summary', () => {
     expect(summary.summary).not.toContain('密码/支付');
   });
 
+  // —— 行为规则（formless commit）的两种新文案（ref: 2026-11-08 spec §4.5）——
+
+  it('words a formless click as a possible commit with the landed write count', () => {
+    const result = summarizeToolCallForConfirmation('browser_click', {
+      fieldId: 'f120',
+      label: '提交',
+      commitConfirm: true,
+      landedFieldWrites: 25,
+    });
+    expect(result.summary).toBe('AI 已在本页填写 25 个字段，现在想要点击「提交」——这一步可能会提交或终结表单。');
+  });
+
+  it('words a formless selector click the same way', () => {
+    const result = summarizeToolCallForConfirmation('browser_click', {
+      selector: 'div.submit-btn',
+      commitConfirm: true,
+      landedFieldWrites: 3,
+    });
+    expect(result.summary).toBe('AI 已在本页填写 3 个字段，现在想要点击 "div.submit-btn"——这一步可能会提交或终结表单。');
+  });
+
+  it('keeps the plain click summary when there is no commit marker', () => {
+    const result = summarizeToolCallForConfirmation('browser_click', {
+      fieldId: 'f7',
+      landedFieldWrites: 25, // 没有标记：不能仅凭个数就指为提交性点击
+    });
+    expect(result.summary).toBe('AI 想要点击「f7」。');
+  });
+
+  it('words a formless fill_form submit tail as a possible commit', () => {
+    const summary = summarizeToolCallForConfirmation('browser_fill_form', {
+      fields: [{ fieldId: 'f1', value: '张三', label: '姓名' }],
+      submit: { fieldId: 'f120' },
+      commitConfirm: true,
+      submitLabel: '交卷',
+    });
+    expect(summary.summary).toContain('随后点击「交卷」——这一步可能会提交或终结表单');
+    expect(summary.summary).not.toContain('并提交表单');
+  });
+
+  it('falls back to 提交按钮 when the submit label cannot be resolved', () => {
+    const summary = summarizeToolCallForConfirmation('browser_fill_form', {
+      fields: [{ fieldId: 'f1', value: '张三', label: '姓名' }],
+      submit: { fieldId: 'f120' },
+      commitConfirm: true,
+    });
+    expect(summary.summary).toContain('随后点击「提交按钮」');
+  });
+
+  it('keeps the structural submit tail for non-commit fill_form submits', () => {
+    const summary = summarizeToolCallForConfirmation('browser_fill_form', {
+      fields: [{ fieldId: 'f1', value: '张三', label: '姓名' }],
+      submit: { fieldId: 'f9', formAction: 'https://example.com/checkout' },
+    });
+    expect(summary.summary).toContain('并提交表单到 https://example.com/checkout');
+  });
+
   it('says the form will be submitted when a submit target is present', () => {
     const summary = summarizeToolCallForConfirmation('browser_fill_form', {
       fields: [{ fieldId: 'f1', value: 'x', label: '邮箱' }],

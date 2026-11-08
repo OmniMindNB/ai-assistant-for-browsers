@@ -16,11 +16,13 @@ export interface PendingConfirmation {
   codePreview?: string;
   /**
    * 这次询问属于哪一类。'submit'（默认，可缺省以兼容已持久化的旧快照）是结构检测出的
-   * 表单提交，问的是"要不要放行这次提交"；'takeover' 是用户在执行期间自己动了手，
-   * 问的是"人已经插手了，还要不要接着做"。两者共用同一条应答通道（respondConfirm），
-   * 但文案、配色和按钮语义完全不同，所以必须由这个字段区分而不是靠 toolName 猜。
+   * 表单提交，问的是"要不要放行这次提交"；'commit' 是行为规则命中的提交性点击（本轮已
+   * 批量填写字段后点按钮），不能断言是提交，文案说「可能」（ref: 2026-11-08
+   * formless-commit-confirmation spec §4.5）；'takeover' 是用户在执行期间自己动了手，
+   * 问的是"人已经插手了，还要不要接着做"。三者共用同一条应答通道（respondConfirm），
+   * 但文案、配色和按钮语义各不相同，所以必须由这个字段区分而不是靠 toolName 猜。
    */
-  kind?: 'submit' | 'takeover';
+  kind?: 'submit' | 'commit' | 'takeover';
 }
 
 export interface PendingQuestion {

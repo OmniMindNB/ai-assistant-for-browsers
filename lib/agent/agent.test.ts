@@ -1604,13 +1604,48 @@ describe('buildSubmitIntentProbePayload', () => {
     });
   });
 
-  it('keeps the existing fill_form payload shape', () => {
+  it('keeps the existing fill_form payload shape (self-contained fields count)', () => {
     expect(
       buildSubmitIntentProbePayload('browser_fill_form', {
         fields: [{ fieldId: 'f1' }, { fieldId: 'f2' }],
         submit: { fieldId: 'f9' },
       }),
-    ).toEqual({ submitFieldId: 'f9', fieldIds: ['f1', 'f2'] });
+    ).toEqual({ submitFieldId: 'f9', fieldIds: ['f1', 'f2'], landedFieldWrites: 2 });
+  });
+
+  // —— 无 form 结构的提交确认：探针载荷携带填写活动计数（ref: 2026-11-08 spec §4.4） ——
+
+  it('attaches landedFieldWrites to click probes and adds the current call\'s fields for fill_form', () => {
+    expect(
+      buildSubmitIntentProbePayload('browser_click', { fieldId: 'f120' }, { landedFieldWrites: 25 }),
+    ).toEqual({ submitFieldId: 'f120', fieldIds: ['f120'], landedFieldWrites: 25 });
+    expect(
+      buildSubmitIntentProbePayload('browser_click', { selector: '#save' }, { landedFieldWrites: 4 }),
+    ).toEqual({ selector: '#save', index: 0, landedFieldWrites: 4 });
+    expect(
+      buildSubmitIntentProbePayload(
+        'browser_fill_form',
+        { fields: [{ fieldId: 'f1' }, { fieldId: 'f2' }], submit: { fieldId: 'f9' } },
+        { landedFieldWrites: 5 },
+      ),
+    ).toEqual({ submitFieldId: 'f9', fieldIds: ['f1', 'f2'], landedFieldWrites: 7 });
+  });
+
+  it('omits landedFieldWrites when there is no run context or nothing to add', () => {
+    expect(buildSubmitIntentProbePayload('browser_click', { fieldId: 'f7' }, {})).toEqual({
+      submitFieldId: 'f7',
+      fieldIds: ['f7'],
+    });
+    // fill_form 不带 submit 时探针本就早退；字段数叠加为 0 时也不携带。
+    expect(
+      buildSubmitIntentProbePayload('browser_fill_form', { fields: [] }, { landedFieldWrites: 0 }),
+    ).toEqual({ submitFieldId: undefined, fieldIds: [] });
+  });
+
+  it('never attaches landedFieldWrites to press_key payloads', () => {
+    expect(
+      buildSubmitIntentProbePayload('browser_press_key', { key: 'Enter', fieldId: 'f1' }, { landedFieldWrites: 9 }),
+    ).toEqual({ fieldId: 'f1', fieldIds: ['f1'], useActiveElement: false });
   });
 });
 
@@ -1768,6 +1803,153 @@ describe('多标签页：session 可选，且遮罩跟随当前操作目标', ()
     session.switchTo(1);
     await hooks.beforeToolCall?.(beforeContext('browser_click', { selector: '#submit-c' }));
     expect(onConfirm).toHaveBeenCalledTimes(3);
+  });
+
+  // —— 无 form 结构的提交确认（行为规则，ref: 2026-11-08 spec §4.2/§4.4）——
+
+  it('批量填写落地后，下一次单目标点击的探针携带 landedFieldWrites', async () => {
+    sendMessageSpy.mockImplementation(async (type: string) =>
+      type === 'GET_TAB_URL'
+        ? { ok: true, data: { url: 'https://wj.example.com/s2/quiz' } }
+        : { ok: true, data: { isSubmit: false } },
+    );
+    onTestFinished(() => {
+      sendMessageSpy.mockReset();
+    });
+    const hooks = runtimeOptions({ onConfirm: async () => true });
+
+    // 两次 fill 共落地 3 个字段（一次 2 ok + 1 pendingSelection，一次 1 ok）。
+    await hooks.afterToolCall?.(
+      afterContext('browser_fill_form', {}, false, {
+        outcomes: [
+          { fieldId: 'f1', status: 'ok' },
+          { fieldId: 'f2', status: 'ok' },
+          { fieldId: 'f3', status: 'ok', pendingSelection: true },
+        ],
+      }),
+    );
+    await hooks.afterToolCall?.(
+      afterContext('browser_fill_form', {}, false, { outcomes: [{ fieldId: 'f4', status: 'ok' }] }),
+    );
+
+    sendMessageSpy.mockClear();
+    await hooks.beforeToolCall?.(beforeContext('browser_click', { fieldId: 'f120' }));
+
+    expect(sendMessageSpy).toHaveBeenCalledWith(
+      'PROBE_CLICK_TARGET',
+      expect.objectContaining({ submitFieldId: 'f120', landedFieldWrites: 3 }),
+      1,
+    );
+  });
+
+  it('地址一变即清零：同页计数不跨页携带', async () => {
+    let url = 'https://wj.example.com/s2/quiz';
+    sendMessageSpy.mockImplementation(async (type: string) =>
+      type === 'GET_TAB_URL' ? { ok: true, data: { url } } : { ok: true, data: { isSubmit: false } },
+    );
+    onTestFinished(() => {
+      sendMessageSpy.mockReset();
+    });
+    const hooks = runtimeOptions({ onConfirm: async () => true });
+
+    await hooks.afterToolCall?.(
+      afterContext('browser_fill_form', {}, false, { outcomes: [{ fieldId: 'f1', status: 'ok' }] }),
+    );
+    // 页面自己跳走了：下一次写操作的地址观测与基线不同 → 计数清零。
+    url = 'https://wj.example.com/s2/result';
+    await hooks.afterToolCall?.(
+      afterContext('browser_click', {}, false, { status: 'ok', kind: 'button' }),
+    );
+
+    sendMessageSpy.mockClear();
+    await hooks.beforeToolCall?.(beforeContext('browser_click', { fieldId: 'f9' }));
+
+    expect(sendMessageSpy).toHaveBeenCalledWith(
+      'PROBE_CLICK_TARGET',
+      expect.not.objectContaining({ landedFieldWrites: expect.anything() }),
+      1,
+    );
+  });
+
+  it('地址哨兵：填写后页面自跳，旧计数不拿到新页面上', async () => {
+    let url = 'https://wj.example.com/s2/quiz';
+    sendMessageSpy.mockImplementation(async (type: string) =>
+      type === 'GET_TAB_URL' ? { ok: true, data: { url } } : { ok: true, data: { isSubmit: false } },
+    );
+    onTestFinished(() => {
+      sendMessageSpy.mockReset();
+    });
+    const hooks = runtimeOptions({ onConfirm: async () => true });
+
+    await hooks.afterToolCall?.(
+      afterContext('browser_fill_form', {}, false, { outcomes: [{ fieldId: 'f1', status: 'ok' }] }),
+    );
+    // 没有任何工具调观察过导航：页面在填写后自己跳到了结果页。
+    url = 'https://wj.example.com/s2/result';
+    sendMessageSpy.mockClear();
+    await hooks.beforeToolCall?.(beforeContext('browser_click', { fieldId: 'f9' }));
+
+    expect(sendMessageSpy).toHaveBeenCalledWith(
+      'PROBE_CLICK_TARGET',
+      expect.not.objectContaining({ landedFieldWrites: expect.anything() }),
+      1,
+    );
+  });
+
+  it('fill_form 的探针在执行前发出：本次调用的字段数计入计数', async () => {
+    sendMessageSpy.mockImplementation(async (type: string) =>
+      type === 'GET_TAB_URL'
+        ? { ok: true, data: { url: 'https://wj.example.com/s2/quiz' } }
+        : { ok: true, data: { isSubmit: false } },
+    );
+    onTestFinished(() => {
+      sendMessageSpy.mockReset();
+    });
+    const hooks = runtimeOptions({ onConfirm: async () => true });
+
+    await hooks.afterToolCall?.(afterContext('browser_type', {}, false, { status: 'ok' }));
+
+    sendMessageSpy.mockClear();
+    await hooks.beforeToolCall?.(
+      beforeContext('browser_fill_form', { fields: [{ fieldId: 'f1' }, { fieldId: 'f2' }], submit: { fieldId: 'f120' } }),
+    );
+
+    expect(sendMessageSpy).toHaveBeenCalledWith(
+      'PROBE_CLICK_TARGET',
+      expect.objectContaining({ submitFieldId: 'f120', landedFieldWrites: 3 }),
+      1,
+    );
+  });
+
+  it('点选项（可写字段 kind）计入，点按钮不计入', async () => {
+    sendMessageSpy.mockImplementation(async (type: string) =>
+      type === 'GET_TAB_URL'
+        ? { ok: true, data: { url: 'https://wj.example.com/s2/quiz' } }
+        : { ok: true, data: { isSubmit: false } },
+    );
+    onTestFinished(() => {
+      sendMessageSpy.mockReset();
+    });
+    const hooks = runtimeOptions({ onConfirm: async () => true });
+
+    await hooks.afterToolCall?.(
+      afterContext('browser_click', {}, false, {
+        outcomes: [
+          { fieldId: 'f1', status: 'ok', kind: 'checkbox' },
+          { fieldId: 'f2', status: 'ok', kind: 'button' },
+          { fieldId: 'f3', status: 'ok', kind: 'radio' },
+        ],
+      }),
+    );
+
+    sendMessageSpy.mockClear();
+    await hooks.beforeToolCall?.(beforeContext('browser_click', { fieldId: 'f120' }));
+
+    expect(sendMessageSpy).toHaveBeenCalledWith(
+      'PROBE_CLICK_TARGET',
+      expect.objectContaining({ landedFieldWrites: 2 }),
+      1,
+    );
   });
 
   it('onSessionChange 在 open/switch/close 成功后立即触发，不等回合结束才存（最终审查 Important #4）', async () => {

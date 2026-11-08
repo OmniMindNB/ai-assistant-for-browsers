@@ -344,6 +344,8 @@ export interface BatchClickOutcome {
   /** 被点元素的可见文案。页面可控，已净化截断。 */
   label?: string;
   opensNewTab?: boolean;
+  /** 被点目标的句柄 kind（查表可得时才有）。供填写活动计数用（ref: form-submit.ts）。 */
+  kind?: FormFieldKind;
 }
 
 export interface ClickElementResult {
@@ -364,6 +366,8 @@ export interface ClickElementResult {
   relocated?: boolean;
   /** 仅批量点击（payload.fieldIds）时有值：逐个目标的结果，顺序与请求一致。 */
   outcomes?: BatchClickOutcome[];
+  /** 被点目标的句柄 kind（查表可得时才有；selector 兑底路径缺省）。供填写活动计数用（ref: form-submit.ts）。 */
+  kind?: FormFieldKind;
 }
 
 export interface TypeTextPayload {
@@ -675,6 +679,12 @@ export interface ProbeClickTargetPayload {
   submitFieldId?: string;
   /** 需要补齐 label 的字段，供确认卡片展示（args 里只有 fieldId）。 */
   fieldIds?: string[];
+  /**
+   * 本轮已落地的可写字段写入个数（agent.ts 的运行态计数，ref: 2026-11-08
+   * formless-commit-confirmation spec §4.2）。只有单目标 click 与 fill_form 的探针带；
+   * 批量点击与按键探测不带——新规则对它们天然免疫。
+   */
+  landedFieldWrites?: number;
 }
 
 export interface ProbeClickTargetResult {
@@ -689,6 +699,14 @@ export interface ProbeClickTargetResult {
   fieldLabels?: { fieldId: string; label?: string; sensitive?: boolean }[];
   /** 该表单所在帧的 origin；供确认卡片标注嵌入框架用（ref: 设计文档 §5.3）。 */
   frameOrigin?: string;
+  /**
+   * 行为规则命中（本轮已批量填写字段后的提交性点击）：按疑似提交请求确认，
+   * 但不能断言是提交——卡片文案与 block reason 都要说「可能」
+   * （ref: 2026-11-08 formless-commit-confirmation spec §4.5）。
+   */
+  commitConfirm?: { landedFieldWrites: number };
+  /** 提交/点击目标的文案（句柄 expect 优先，探针 textContent 兑底），供 fill_form 的确认卡片用。 */
+  submitLabel?: string;
 }
 
 /**

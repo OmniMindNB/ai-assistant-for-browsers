@@ -69,6 +69,32 @@ describe('resolveConfirmGate', () => {
     expect(result).toEqual({ block: true, reason: '该操作需要用户确认，当前确认 UI 尚未接入。' });
   });
 
+  // 行为规则（formless commit）：kind 要一路透传到 onConfirm，拒绝文案不说「提交」——
+  // 我们并不能断言那是提交（ref: 2026-11-08 spec §4.5）。
+  it('passes kind=commit through to onConfirm and words the denial as a click denial', async () => {
+    const state = createConfirmGateState();
+    const onConfirm = vi.fn().mockResolvedValue(false);
+
+    const result = await resolveConfirmGate(
+      state, 'call-1', 'browser_click', { fieldId: 'f120' }, '可能提交或终结表单', onConfirm, 1, undefined, true, 'commit',
+    );
+
+    expect(onConfirm).toHaveBeenCalledWith('call-1', 'browser_click', { fieldId: 'f120' }, '可能提交或终结表单', 'commit');
+    expect(result).toEqual({ block: true, reason: '用户拒绝了这次点击。' });
+  });
+
+  it('keeps the submit denial wording when kind is submit (the default)', async () => {
+    const state = createConfirmGateState();
+    const onConfirm = vi.fn().mockResolvedValue(false);
+
+    const result = await resolveConfirmGate(
+      state, 'call-1', 'browser_click', {}, '会提交表单', onConfirm, 1, undefined, true,
+    );
+
+    expect(onConfirm).toHaveBeenLastCalledWith('call-1', 'browser_click', {}, '会提交表单', 'submit');
+    expect(result).toEqual({ block: true, reason: '用户拒绝了该提交操作。' });
+  });
+
   it('treats an aborted signal as a denial', async () => {
     const state = createConfirmGateState();
     const controller = new AbortController();

@@ -110,6 +110,10 @@ export function decideToolPermission(toolName: string, args: unknown): Permissio
  */
 export interface ToolWriteIntent extends SubmitIntent {
   fieldLabels?: { fieldId: string; label?: string; sensitive?: boolean }[];
+  /** 行为规则命中（批量填写后的提交性点击）：按疑似提交确认，文案说「可能」（ref: 2026-11-08 spec §4.5）。 */
+  commitConfirm?: { landedFieldWrites: number };
+  /** 提交/点击目标的文案，fill_form 的确认卡片用。 */
+  submitLabel?: string;
 }
 
 export interface PermissionGateOptions {
@@ -145,16 +149,23 @@ export async function beforeToolCallPermissionGate(
   }
 
   let always = false;
+  let commitKind: 'submit' | 'commit' = 'submit';
   let reason = decision.reason ?? '该操作会修改页面或浏览器状态，需要用户确认。';
   let confirmArgs = context.args;
 
   if (options.resolveSubmitIntent && SUBMIT_CAPABLE_TOOLS.has(toolName)) {
     const intent = await options.resolveSubmitIntent(toolName, context.args);
+    const commit = intent?.commitConfirm;
     if (intent?.isSubmit) {
       always = true;
       reason = intent.formAction
         ? `该操作会把表单提交到 ${intent.formAction}，需要单独确认。`
         : '该操作会提交表单，需要单独确认。';
+    } else if (commit) {
+      // 行为规则：不能断言是提交（可能是「下一步」），文案必须说「可能」。
+      always = true;
+      commitKind = 'commit';
+      reason = '该操作可能提交或终结表单（本轮已批量填写字段），需要单独确认。';
     }
     const labels = intent?.fieldLabels;
     const record = (context.args ?? {}) as Record<string, unknown>;
@@ -178,6 +189,14 @@ export async function beforeToolCallPermissionGate(
         frameOrigin: intent?.frameOrigin,
       };
     }
+    // 行为规则的确认副本：click 带已填写个数（卡片首句），fill_form 带提交目标文案（尾部）。
+    if (commit) {
+      const extra: Record<string, unknown> =
+        toolName === 'browser_fill_form'
+          ? { commitConfirm: true, submitLabel: intent?.submitLabel }
+          : { commitConfirm: true, landedFieldWrites: commit.landedFieldWrites };
+      confirmArgs = { ...(confirmArgs as Record<string, unknown>), ...extra };
+    }
   }
 
   if (decision.level === 'auto_allow' && !always) return undefined;
@@ -192,6 +211,7 @@ export async function beforeToolCallPermissionGate(
     options.targetTabId,
     options.signal,
     always,
+    commitKind,
   );
 }
 

@@ -62,9 +62,25 @@ export function summarizeToolCallForConfirmation(
       }
       case 'browser_click': {
         const fieldId = str('fieldId');
+        // 行为规则命中的提交性点击：不能断言是提交，文案要说「可能」
+        // （ref: 2026-11-08 formless-commit-confirmation spec §4.5）。
+        const landedWrites =
+          record.commitConfirm === true && typeof record.landedFieldWrites === 'number'
+            ? record.landedFieldWrites
+            : undefined;
         if (fieldId) {
           const label = sanitizePageText(str('label') || fieldId, 40);
+          if (landedWrites !== undefined) {
+            return {
+              summary: `AI 已在本页填写 ${landedWrites} 个字段，现在想要点击「${label}」——这一步可能会提交或终结表单。`,
+            };
+          }
           return { summary: `AI 想要点击「${label}」。` };
+        }
+        if (landedWrites !== undefined) {
+          return {
+            summary: `AI 已在本页填写 ${landedWrites} 个字段，现在想要点击 "${str('selector')}"——这一步可能会提交或终结表单。`,
+          };
         }
         return { summary: `AI 想要点击 "${str('selector')}"。` };
       }
@@ -95,8 +111,15 @@ export function summarizeToolCallForConfirmation(
         });
         const rest = rawFields.length - shown.length;
         const submit = record.submit as { formAction?: string } | undefined;
+        // 行为规则命中的 fill_form：提交目标是按钮类元素但不能断言是提交，尾部改说「可能」。
+        const commitLabel =
+          record.commitConfirm === true
+            ? sanitizePageText(str('submitLabel') || '提交按钮', 40)
+            : undefined;
         const tail = submit
-          ? `，并提交表单${submit.formAction ? `到 ${sanitizePageText(submit.formAction, 80)}` : ''}`
+          ? commitLabel !== undefined
+            ? `，随后点击「${commitLabel}」——这一步可能会提交或终结表单`
+            : `，并提交表单${submit.formAction ? `到 ${sanitizePageText(submit.formAction, 80)}` : ''}`
           : '';
         const more = rest > 0 ? `，另 ${rest} 个字段` : '';
         // 少算的那几个不能一声不响地消失：明说它们需要用户自己输入。

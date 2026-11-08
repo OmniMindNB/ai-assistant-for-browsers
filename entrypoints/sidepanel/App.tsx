@@ -805,6 +805,8 @@ function ConfirmationCard({
   const summaryId = useId();
   // kind 缺省按 'submit' 处理：已持久化的旧快照里没有这个字段。
   const takeover = confirmation.kind === 'takeover';
+  // 行为规则命中的提交性点击（批量填写后点按钮）：不能断言是提交，标题与按钮都不说「提交」。
+  const commit = confirmation.kind === 'commit';
 
   // 依赖 toolCallId 而不是只跑一次：同一轮里可能连着来第二个待确认的提交
   // （confirm-gate 逐次询问），换了一张卡就要重新把人带过来。
@@ -835,7 +837,7 @@ function ConfirmationCard({
       className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:border-amber-900/60 dark:bg-amber-950/30"
     >
       <div id={titleId} className="mb-2 flex items-center gap-2 font-medium text-amber-900 dark:text-amber-200">
-        {t(takeover ? 'confirm.takeoverTitle' : 'confirm.title')}
+        {t(takeover ? 'confirm.takeoverTitle' : commit ? 'confirm.commitTitle' : 'confirm.title')}
       </div>
       {takeover && (
         <p className="mb-1 text-amber-900/90 dark:text-amber-200/90">{t('confirm.takeoverBody')}</p>
@@ -856,7 +858,7 @@ function ConfirmationCard({
           onClick={onApprove}
           className="h-9 flex-1 rounded-lg bg-amber-600 px-4 text-sm font-medium text-white transition-colors hover:bg-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-700"
         >
-          {t(takeover ? 'confirm.takeoverResume' : 'confirm.approve')}
+          {t(takeover ? 'confirm.takeoverResume' : commit ? 'confirm.commitApprove' : 'confirm.approve')}
         </button>
         <button
           onClick={onDeny}
@@ -866,7 +868,7 @@ function ConfirmationCard({
         </button>
       </div>
       <p className="mt-2 text-xs text-amber-800 dark:text-amber-300/80">
-        {t(takeover ? 'confirm.takeoverHint' : 'confirm.approveHint')}
+        {t(takeover ? 'confirm.takeoverHint' : commit ? 'confirm.commitHint' : 'confirm.approveHint')}
       </p>
     </div>
   );

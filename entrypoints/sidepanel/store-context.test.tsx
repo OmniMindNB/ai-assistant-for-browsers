@@ -526,6 +526,29 @@ describe('chat store page context', () => {
         .toHaveBeenCalledWith({ [`runi:tab-conversation:${DEFAULT_TAB_ID}`]: 'live-conv' });
     });
 
+    // 行为规则的确认卡（ref: 2026-11-08 formless-commit-confirmation spec §4.5）：kind 要原样
+    // 穿过快照往返，面板靠它区分「请确认此次点击」和「请确认表单提交」两套文案。
+    it('carries a commit-kind pendingConfirmation through the snapshot round trip', async () => {
+      armLiveRunHelloReply();
+      runPortHelloReply = {
+        ...runPortHelloReply!,
+        pendingConfirmation: {
+          toolCallId: 'call-1',
+          toolName: 'browser_click',
+          summary: 'AI 已在本页填写 25 个字段，现在想要点击「提交」——这一步可能会提交或终结表单。',
+          kind: 'commit',
+        },
+      };
+      await connectPort();
+
+      expect(useChat.getState().pendingConfirmation).toEqual({
+        toolCallId: 'call-1',
+        toolName: 'browser_click',
+        summary: 'AI 已在本页填写 25 个字段，现在想要点击「提交」——这一步可能会提交或终结表单。',
+        kind: 'commit',
+      });
+    });
+
     it('settles the reconnected run when its final non-busy snapshot arrives', async () => {
       armLiveRunHelloReply();
       await connectPort();

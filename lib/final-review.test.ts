@@ -197,7 +197,7 @@ describe('maintained release capability contract', () => {
       expect(source).toContain('recent conversation context');
       expect(source).toContain('configured provider');
       expect(source).toContain('known page actions run automatically');
-      expect(source).toContain('detected form submissions ask for confirmation each time');
+      expect(source).toContain('form submissions — detected structurally, or a button click right after the agent has filled in your fields — ask for confirmation each time');
     }
   });
 
@@ -207,7 +207,7 @@ describe('maintained release capability contract', () => {
       expect(source).toContain('近期对话上下文');
       expect(source).toContain('配置的 AI Provider');
       expect(source).toContain('已知页面操作自动执行');
-      expect(source).toContain('只有检测到的表单提交会逐次请求确认');
+      expect(source).toContain('表单提交——结构检测到的，或批量填写字段后的提交性点击——会逐次请求确认');
     }
   });
 

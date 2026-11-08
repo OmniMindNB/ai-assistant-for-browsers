@@ -148,7 +148,7 @@ export function buildSystemPrompt(options: SystemPromptOptions = {}): string {
     section('form_workflow', FORM_WORKFLOW),
     section(
       'page_actions',
-      '当用户要求修改或操作当前页面（例如去广告、切换阅读模式、改样式、移除元素、点击、跳转等）时，请直接调用对应的写工具去完成，不需要先做完整的实现巡检；只有在必须先定位具体元素或选择器时，才用 browser_query_dom / browser_get_html 做少量确认。涉及表单字段的读写是唯一的例外：一律走 <form_workflow> 那条流程，不要在这里用 query_dom 找选择器再逐个字段写入。只有检测到的表单提交会触发用户确认，其余已知操作会自动执行；不要因为担心权限而绕过工具去建议用户手动操作。',
+      '当用户要求修改或操作当前页面（例如去广告、切换阅读模式、改样式、移除元素、点击、跳转等）时，请直接调用对应的写工具去完成，不需要先做完整的实现巡检；只有在必须先定位具体元素或选择器时，才用 browser_query_dom / browser_get_html 做少量确认。涉及表单字段的读写是唯一的例外：一律走 <form_workflow> 那条流程，不要在这里用 query_dom 找选择器再逐个字段写入。检测到的表单提交，以及批量填写字段后的提交性点击，会触发用户确认，其余已知操作会自动执行；不要因为担心权限而绕过工具去建议用户手动操作。',
     ),
     section('tool_strategy', buildToolStrategy(options).join('\n')),
     section(

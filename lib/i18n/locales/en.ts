@@ -286,6 +286,10 @@ export const en: Record<keyof typeof zh, string> = {
   'confirm.deny': 'Deny',
   'confirm.approveHint':
     'Detected form submissions ask every time to prevent page data from being sent accidentally.',
+  'confirm.commitTitle': '🔒 Confirm this click',
+  'confirm.commitApprove': 'Allow click',
+  'confirm.commitHint':
+    'Several form fields were filled in this run; a button click at this point may submit or finalize the form, so it asks every time.',
   'confirm.takeoverTitle': '✋ You took over this page',
   'confirm.takeoverBody':
     'You clicked or typed on the page while the agent was working, so it stopped before its next change:',

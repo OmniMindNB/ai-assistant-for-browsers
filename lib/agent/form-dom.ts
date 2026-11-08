@@ -1158,6 +1158,7 @@ export interface ProbeClickOutput {
   found: boolean;
   tag: string;
   type?: string;
+  role?: string;
   hasFormOwner: boolean;
   formAction?: string;
   textContent?: string;
@@ -1193,6 +1194,7 @@ export function probeClickTarget(input: ProbeClickInput): ProbeClickOutput {
     found: true,
     tag: element.tagName.toLowerCase(),
     type: element.getAttribute('type') || undefined,
+    role: element.getAttribute('role') || undefined,
     hasFormOwner: owner != null,
     formAction: owner?.getAttribute('action') ? owner.action : undefined,
     textContent: (element.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60),

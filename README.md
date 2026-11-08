@@ -10,7 +10,7 @@
 
 ![Runi autofilling a form](docs/store-assets/en/screenshot-01-autofill.png)
 
-> An AI agent in your browser sidebar: tell it to fill a form, operate a web page, or summarize and translate what you're reading — known page actions run automatically; only detected form submissions ask for confirmation each time. Chat history stays in your browser; when you send a request, your prompt, recent conversation context, and relevant page results go directly to your configured provider, the one **you** chose.
+> An AI agent in your browser sidebar: tell it to fill a form, operate a web page, or summarize and translate what you're reading — known page actions run automatically; form submissions — detected structurally, or a button click right after the agent has filled in your fields — ask for confirmation each time. Chat history stays in your browser; when you send a request, your prompt, recent conversation context, and relevant page results go directly to your configured provider, the one **you** chose.
 
 Unlike subscription AI sidebars, Runi is **bring-your-own-key (BYOK)**: plug in OpenAI, Anthropic, DeepSeek, or any OpenAI-compatible endpoint. No Runi account, no Runi backend, no analytics SDK, no subscription.
 

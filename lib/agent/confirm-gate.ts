@@ -1,6 +1,15 @@
 import type { BeforeToolCallResult } from '@earendil-works/pi-agent-core';
 
-export type ConfirmFn = (toolCallId: string, toolName: string, args: unknown, reason: string) => Promise<boolean>;
+export type ConfirmKind = 'submit' | 'commit';
+
+export type ConfirmFn = (
+  toolCallId: string,
+  toolName: string,
+  args: unknown,
+  reason: string,
+  /** 确认卡片的类型：结构提交（submit）还是行为规则命中的疑似提交（commit）。缺省按 submit。 */
+  kind?: ConfirmKind,
+) => Promise<boolean>;
 
 export interface ConfirmGateState {
   decision: 'unset' | 'approved' | 'denied';
@@ -57,13 +66,19 @@ export async function resolveConfirmGate(
   targetTabId: number,
   signal?: AbortSignal,
   always = false,
+  kind: ConfirmKind = 'submit',
 ): Promise<BeforeToolCallResult | undefined> {
   if (always) {
     // 提交这类不可逆操作每次都问：既不读本轮缓存，也不写回本轮缓存——
     // 用户拒绝一次提交，不应该连带撤销他已经批准的填写（ref: Spec-0005）。
     if (!onConfirm) return { block: true, reason: '该操作需要用户确认，当前确认 UI 尚未接入。' };
-    const approvedAlways = await raceWithAbort(onConfirm(toolCallId, toolName, args, reason), signal);
-    if (!approvedAlways) return { block: true, reason: '用户拒绝了该提交操作。' };
+    const approvedAlways = await raceWithAbort(onConfirm(toolCallId, toolName, args, reason, kind), signal);
+    if (!approvedAlways) {
+      return {
+        block: true,
+        reason: kind === 'commit' ? '用户拒绝了这次点击。' : '用户拒绝了该提交操作。',
+      };
+    }
     state.alwaysApprovedCallIds.add(toolCallId);
     return undefined;
   }

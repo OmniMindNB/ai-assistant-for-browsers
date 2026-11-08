@@ -393,6 +393,112 @@ describe('submit intent escalation', () => {
     expect(result).toBeUndefined();
     expect(onConfirm).not.toHaveBeenCalled();
   });
+
+  // —— 行为规则（无 form 结构的提交确认，ref: 2026-11-08 spec）——
+
+  it('escalates a formless commit candidate to confirm_always with kind=commit', async () => {
+    const state = createConfirmGateState();
+    state.decision = 'approved'; // 本轮早先已批准过一次写操作：行为规则同样不吃轮内缓存
+    const onConfirm = vi.fn().mockResolvedValue(true);
+
+    const result = await beforeToolCallPermissionGate(
+      { toolCall: { id: 'call-1', name: 'browser_click' }, args: { fieldId: 'f120' } } as any,
+      {
+        gateState: state,
+        onConfirm,
+        targetTabId: 1,
+        resolveSubmitIntent: async () => ({
+          isSubmit: false,
+          commitConfirm: { landedFieldWrites: 25 },
+          fieldLabels: [{ fieldId: 'f120', label: '提交' }],
+        }),
+      },
+    );
+
+    expect(result).toBeUndefined();
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    expect(onConfirm.mock.calls[0][4]).toBe('commit');
+    expect(onConfirm.mock.calls[0][3]).toContain('可能提交或终结表单');
+    const confirmArgs = onConfirm.mock.calls[0][2] as any;
+    expect(confirmArgs.landedFieldWrites).toBe(25);
+    expect(confirmArgs.label).toBe('提交');
+  });
+
+  it('blocks with an honest reason when the user denies a formless commit candidate', async () => {
+    const onConfirm = vi.fn().mockResolvedValue(false);
+
+    const result = await beforeToolCallPermissionGate(
+      { toolCall: { id: 'call-1', name: 'browser_click' }, args: { fieldId: 'f120' } } as any,
+      {
+        gateState: createConfirmGateState(),
+        onConfirm,
+        targetTabId: 1,
+        resolveSubmitIntent: async () => ({ isSubmit: false, commitConfirm: { landedFieldWrites: 3 } }),
+      },
+    );
+
+    expect(result).toEqual({ block: true, reason: '用户拒绝了这次点击。' });
+  });
+
+  it('keeps the structural submit path on kind=submit when both signals could apply', async () => {
+    const onConfirm = vi.fn().mockResolvedValue(true);
+
+    await beforeToolCallPermissionGate(
+      { toolCall: { id: 'call-1', name: 'browser_click' }, args: { fieldId: 'f9' } } as any,
+      {
+        gateState: createConfirmGateState(),
+        onConfirm,
+        targetTabId: 1,
+        resolveSubmitIntent: async () => ({
+          isSubmit: true,
+          formAction: 'https://example.com/checkout',
+          commitConfirm: { landedFieldWrites: 5 },
+        }),
+      },
+    );
+
+    expect(onConfirm.mock.calls[0][4]).toBe('submit');
+    expect(onConfirm.mock.calls[0][3]).toContain('提交到');
+  });
+
+  it('carries submitLabel into the confirmation copy of a formless fill_form commit', async () => {
+    const args = { fields: [{ fieldId: 'f1', value: 'x' }], submit: { fieldId: 'f120' } };
+    const onConfirm = vi.fn().mockResolvedValue(true);
+
+    await beforeToolCallPermissionGate(
+      { toolCall: { id: 'call-1', name: 'browser_fill_form' }, args } as any,
+      {
+        gateState: createConfirmGateState(),
+        onConfirm,
+        targetTabId: 1,
+        resolveSubmitIntent: async () => ({
+          isSubmit: false,
+          commitConfirm: { landedFieldWrites: 4 },
+          submitLabel: '交卷',
+          fieldLabels: [{ fieldId: 'f1', label: '姓名' }],
+        }),
+      },
+    );
+
+    const confirmArgs = onConfirm.mock.calls[0][2] as any;
+    expect(confirmArgs.commitConfirm).toBe(true);
+    expect(confirmArgs.submitLabel).toBe('交卷');
+    expect((args as any).submitLabel).toBeUndefined(); // 不进模型 args
+  });
+
+  it('asks even without a prior approval cache miss for commit candidates on a fresh gate', async () => {
+    // 行为规则同样走 always：确认 UI 缺席时阻断而不是放行。
+    const result = await beforeToolCallPermissionGate(
+      { toolCall: { id: 'call-1', name: 'browser_click' }, args: { fieldId: 'f120' } } as any,
+      {
+        gateState: createConfirmGateState(),
+        targetTabId: 1,
+        resolveSubmitIntent: async () => ({ isSubmit: false, commitConfirm: { landedFieldWrites: 25 } }),
+      },
+    );
+
+    expect(result).toEqual({ block: true, reason: '该操作需要用户确认，当前确认 UI 尚未接入。' });
+  });
 });
 
 describe('browser_run_script on a read-only tab', () => {
