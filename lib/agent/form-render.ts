@@ -106,6 +106,14 @@ function renderNotes(data: GetFormResult): string[] {
   if (data.droppedChildFields) {
     notes.push(`嵌入框架中有 ${data.droppedChildFields} 个字段因单帧上限未列出。`);
   }
+  // 选择器落空：上面的 0 是「容器没找到」，不是「页面没有可交互元素」。模型看到 0
+  // 字段时会无从分辨（无 <form> 的单页应用上 selector:"form" 必然如此），往往会
+  // 再花几轮盲核验（ref: 2026-11-08 pre-submit-verification-hints spec §3.1）。
+  if (data.selectorMatched === false) {
+    notes.push(
+      'selector 未匹配到任何元素——上面的 0 是「容器没找到」，不是「页面没有可交互元素」。页面可能没有该结构（例如无 <form> 的单页应用）；省略 selector 可读取整个页面。',
+    );
+  }
   return notes;
 }
 

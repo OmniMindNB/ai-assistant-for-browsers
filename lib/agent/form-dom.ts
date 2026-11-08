@@ -49,6 +49,13 @@ export interface CollectFormOutput {
   trailingText?: string;
   /** 页面上发现的可滚动容器；仅 includeScrollable 时有值（可能是空数组）。 */
   scrollables?: RawScrollableContainer[];
+  /**
+   * 传了 selector 时：querySelector 是否命中容器。false = 选择器落空（页面没有该结构），
+   * 与「容器存在但里面 0 个可交互字段」是两个结论，必须让模型分得开（ref:
+   * 2026-11-08 pre-submit-verification-hints spec §3.1，wj.qq.com 无 <form> 的轨迹）。
+   * 不传 selector 时缺省。
+   */
+  selectorMatched?: boolean;
 }
 
 export function collectFormFields(
@@ -538,6 +545,8 @@ export function collectFormFields(
   }
 
   const scope = input.selector ? document.querySelector(input.selector) : document.body;
+  // 选择器落空是一个独立信号：下面的 0 字段是「容器没找到」，不是「页面没有可交互元素」。
+  const selectorMatched = input.selector ? scope !== null : undefined;
   if (scope) walk(scope);
 
   let trailingText: string | undefined;
@@ -616,6 +625,7 @@ export function collectFormFields(
     truncated,
     trailingText,
     scrollables: includeScrollable ? scrollables : undefined,
+    selectorMatched,
   };
 }
 

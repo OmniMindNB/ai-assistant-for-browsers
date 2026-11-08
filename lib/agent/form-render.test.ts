@@ -171,6 +171,18 @@ describe('renderFormResultForModel', () => {
     expect(text).toContain('部分正文已截断');
   });
 
+  // 选择器落空 ≠ 页面没有可交互元素：无 <form> 的单页应用上 selector:"form" 必然落空
+  // （ref: 2026-11-08 pre-submit-verification-hints spec §3.1，wj.qq.com 轨迹步骤 5）。
+  it('says the selector matched nothing, distinguishing it from a page with no fields', () => {
+    const text = renderFormResultForModel(resultWith({ selectorMatched: false }));
+    expect(text).toContain('selector 未匹配到任何元素');
+    expect(text).toContain('省略 selector 可读取整个页面');
+    // 反面一：容器命中但里面真没有字段——不加这条旁注，那是诚实结果。
+    expect(renderFormResultForModel(resultWith({ selectorMatched: true }))).not.toContain('selector 未匹配到');
+    // 反面二：不传 selector 的常规读取（缺省）也不加。
+    expect(renderFormResultForModel(resultWith())).not.toContain('selector 未匹配到');
+  });
+
   it('renders scrollable containers with their handles and four-directional remaining distance', () => {
     const text = renderFormResultForModel(
       resultWith({

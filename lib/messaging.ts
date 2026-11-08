@@ -644,6 +644,12 @@ export interface GetFormResult {
   textTruncated: boolean;
   /** 页面上发现的可滚动容器；仅 includeScrollable 时有值（可能是空数组）。 */
   scrollableContainers?: ScrollableContainerDescriptor[];
+  /**
+   * 传了 selector 且命中容器时为 true，落空时为 false——「选择器没找到」和「容器里
+   * 0 个可交互字段」是两个结论（ref: 2026-11-08 pre-submit-verification-hints spec §3.1）。
+   * 不传 selector 时缺省。
+   */
+  selectorMatched?: boolean;
 }
 
 export interface FillFormPayload {

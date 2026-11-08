@@ -943,6 +943,7 @@ async function getForm(payload: GetFormPayload, tabId: number): Promise<GetFormR
     trailingText,
     textTruncated,
     scrollableContainers,
+    selectorMatched: collected.selectorMatched,
   };
 }
 

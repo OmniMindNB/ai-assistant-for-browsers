@@ -228,6 +228,23 @@ describe('collectFormFields', () => {
     render(`<form id="a"><input name="in-a" /></form><form id="b"><input name="in-b" /></form>`);
     const output = collectFormFields({ ...INPUT, selector: '#b' });
     expect(output.raws.map((raw) => raw.name)).toEqual(['in-b']);
+    expect(output.selectorMatched).toBe(true);
+  });
+
+  // selector 落空是一个独立信号：0 字段是「容器没找到」，不是「页面没有可交互元素」
+  // （ref: 2026-11-08 pre-submit-verification-hints spec，wj.qq.com 无 <form> 的轨迹）。
+  it('reports selectorMatched=false when the selector matches no element', () => {
+    render(`<input name="present" />`);
+    const output = collectFormFields({ ...INPUT, selector: 'form' });
+    expect(output.selectorMatched).toBe(false);
+    expect(output.raws).toEqual([]);
+    // 对照：同一个页面不传 selector 能看到字段——落空不是「页面没有字段」。
+    expect(collectFormFields(INPUT).raws.map((raw) => raw.name)).toEqual(['present']);
+  });
+
+  it('omits selectorMatched when no selector was given', () => {
+    render(`<input name="present" />`);
+    expect(collectFormFields(INPUT).selectorMatched).toBeUndefined();
   });
 
   it('collects a navigation link outside any form', () => {

@@ -36,6 +36,12 @@ export interface MergedCollection {
   droppedChildFields: number;
   /** 出现在 raws 里的帧清单，供渲染层做分组标题。 */
   frameOrigins: { frameId: number; origin: string }[];
+  /**
+   * 透传主帧的 CollectFormOutput.selectorMatched：传了 selector 且落空时为 false，
+   * 让渲染层把「选择器没找到」与「容器里 0 个字段」分开（ref: 2026-11-08
+   * pre-submit-verification-hints spec §3.1）。selector 读取只采主帧，子帧的值不参与。
+   */
+  selectorMatched?: boolean;
 }
 
 export function mergeFrameCollections(collections: FrameCollection[]): MergedCollection {
@@ -75,6 +81,7 @@ export function mergeFrameCollections(collections: FrameCollection[]): MergedCol
     frameOrigins: collections
       .filter((item) => raws.some((field) => field.frameId === item.frameId))
       .map((item) => ({ frameId: item.frameId, origin: item.origin })),
+    selectorMatched: main?.output.selectorMatched,
   };
 }
 

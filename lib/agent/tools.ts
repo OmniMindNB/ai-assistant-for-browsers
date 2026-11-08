@@ -412,7 +412,7 @@ function makeGetFormTool(session: TabSessionController): BrowserAgentTool {
     description:
       "Read every form field and other clickable element on the page as structured data: kind (including link and button for non-form elements), label, current value, checked state, select options, requiredness, visibility and native validation message. Each field gets a stable fieldId — use these ids with browser_fill_form for form fields and with browser_click for any clickable element (buttons, links, form-less custom widgets), instead of writing your own CSS selectors. Prefer this over browser_read_page or browser_get_html for any form or click-target task; readable-text extraction strips these elements' structure entirely.",
     parameters: Type.Object({
-      selector: Type.Optional(Type.String({ description: 'Limit collection to this container. Defaults to the whole document.' })),
+      selector: Type.Optional(Type.String({ description: 'Limit collection to this container. Defaults to the whole document. If the selector matches no element, the result will say so explicitly — a common cause is single-page apps with no <form> element.' })),
       includeHidden: Type.Optional(Type.Boolean({ description: 'Include hidden and invisible fields. Defaults to false.' })),
       includeText: Type.Optional(
         Type.Boolean({
@@ -474,7 +474,7 @@ function makeFindTextTool(session: TabSessionController): BrowserAgentTool {
     name: 'browser_find_text',
     label: 'Find Text',
     description:
-      'Locate elements by their visible text — a status label, a total amount, an error message — and get back a fieldId usable with browser_click, plus the surrounding context — the whole table row or list item (cells separated by |) when the match sits inside one, so a single call is enough to confirm that a row such as a newly added rule reads as expected; you rarely need a separate read afterwards. This finds content, not controls: for a button, link, or form field you intend to operate, use browser_get_form instead — its handles carry write verification this one does not, and it already covers every clickable element.',
+      'Locate elements by their visible text — a status label, a total amount, an error message — and get back a fieldId usable with browser_click, plus the surrounding context — the whole table row or list item (cells separated by |) when the match sits inside one, so a single call is enough to confirm that a row such as a newly added rule reads as expected; you rarely need a separate read afterwards. This finds content, not controls: for a button, link, or form field you intend to operate, use browser_get_form instead — its handles carry write verification this one does not, and it already covers every clickable element. It only matches text rendered on the page: values typed into input/textarea fields are invisible to it, and a hit may just be the same wording inside question or paragraph text — so never use it to verify that a form answer was recorded; browser_get_form reads back the current value of each field (sensitive fields report only filled/empty).',
     parameters: Type.Object({
       text: Type.String({ description: 'The visible text to search for.' }),
       mode: Type.Optional(

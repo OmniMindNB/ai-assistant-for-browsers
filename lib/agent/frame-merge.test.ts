@@ -57,6 +57,19 @@ describe('mergeFrameCollections', () => {
     expect(merged.documentId).toBe('doc:https://shop.example.com/page');
   });
 
+  // selector 落空信号只看主帧（selector 读取本来就不采子帧），且主帧缺席时缺省。
+  // ref: 2026-11-08 pre-submit-verification-hints spec §3.1
+  it('propagates the main frame selectorMatched and leaves it unset without a main frame', () => {
+    const withFlag = mergeFrameCollections([
+      { ...frame(0, 'https://a.example.com', [], true), output: { ...output([], 'https://a.example.com/page'), selectorMatched: false } },
+      frame(7, 'https://b.example.com', ['child-field']),
+    ]);
+    expect(withFlag.selectorMatched).toBe(false);
+
+    const noMain = mergeFrameCollections([frame(7, 'https://b.example.com', ['child-field'])]);
+    expect(noMain.selectorMatched).toBeUndefined();
+  });
+
   // 会让这个用例失败的 production 改动：把 slice 上限去掉，或者丢弃时不计数——
   // 那样模型会以为自己看到了页面上全部字段。
   it('drops frames past MAX_COLLECTED_FRAMES and fields past MAX_FIELDS_PER_CHILD_FRAME', () => {

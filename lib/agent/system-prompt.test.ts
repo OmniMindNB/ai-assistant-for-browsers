@@ -73,6 +73,13 @@ describe('buildSystemPrompt tool listing', () => {
     expect(SYSTEM_PROMPT).not.toContain('高风险操作（browser_navigate');
     expect(SYSTEM_PROMPT).not.toContain('写工具首次调用会触发一次性用户确认');
   });
+
+  // 提交前核验的指路（ref: 2026-11-08 pre-submit-verification-hints spec §3.2）。
+  it('teaches the model to verify filled answers via get_form read-back, not find_text', () => {
+    expect(SYSTEM_PROMPT).toContain('提交前要核验填写结果时，用 browser_get_form 回读');
+    expect(SYSTEM_PROMPT).toContain('命中 0 个不代表没填上');
+    expect(SYSTEM_PROMPT).toContain('不能当作答案已记录的证据');
+  });
 });
 
 // 合成事件触发不了 CSS :hover：悬停才显示的元素默认不在 get_form 结果里，点击也会被判为
