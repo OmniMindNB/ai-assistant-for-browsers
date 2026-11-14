@@ -65,6 +65,12 @@ export interface RespondConfirmMessage {
   tabId: number;
   toolCallId: string;
   approved: boolean;
+  /**
+   * 用户同时勾选了确认卡上的“本次任务内不再询问”：本 run 内同 kind 的后续确认直接
+   * 沿用本次决定，不再弹卡（仅对 submit/commit 有意义；takeover 卡不显示该勾选，
+   * 这里的值也会被 respondConfirm 防御性忽略。ref: 2026-11-14-confirm-silence-for-run-design.md）。
+   */
+  silenceForRun?: boolean;
 }
 
 export interface RespondQuestionMessage {

@@ -188,3 +188,99 @@ describe('confirm_always', () => {
     expect(state.decidedForTabId).toBeNull();
   });
 });
+
+// 「本次任务内不再询问」（ref: docs/superpowers/specs/2026-11-14-confirm-silence-for-run-design.md §3）
+describe('silenceForRun（本次任务内不再询问）', () => {
+  it('勾选批准后：同 kind 的后续提交不再询问，直接放行并计入 alwaysApprovedCallIds', async () => {
+    const state = createConfirmGateState();
+    const onConfirm = vi.fn().mockResolvedValue({ approved: true, silenceForRun: true });
+
+    const first = await resolveConfirmGate(state, 'call-1', 'browser_fill_form', {}, '提交', onConfirm, 1, undefined, true);
+    expect(first).toBeUndefined();
+
+    const second = await resolveConfirmGate(state, 'call-2', 'browser_click', {}, '提交', onConfirm, 1, undefined, true);
+    expect(second).toBeUndefined();
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    expect(state.alwaysApprovedCallIds.has('call-2')).toBe(true);
+  });
+
+  it('勾选拒绝后：同 kind 的后续提交不再询问，按用户的选择直接拒绝', async () => {
+    const state = createConfirmGateState();
+    const onConfirm = vi.fn().mockResolvedValue({ approved: false, silenceForRun: true });
+
+    const first = await resolveConfirmGate(state, 'call-1', 'browser_fill_form', {}, '提交', onConfirm, 1, undefined, true);
+    expect(first?.block).toBe(true);
+
+    const second = await resolveConfirmGate(state, 'call-2', 'browser_click', {}, '提交', onConfirm, 1, undefined, true);
+    expect(second).toEqual({ block: true, reason: '用户已选择本次任务内不再询问，按其选择拒绝了该提交操作。' });
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+
+  it('静默拒绝的 commit 文案不说「提交」——不能断言那是提交（同拒绝文案的分工）', async () => {
+    const state = createConfirmGateState();
+    const onConfirm = vi.fn().mockResolvedValue({ approved: false, silenceForRun: true });
+
+    await resolveConfirmGate(state, 'call-1', 'browser_click', {}, '可能提交', onConfirm, 1, undefined, true, 'commit');
+    const second = await resolveConfirmGate(state, 'call-2', 'browser_click', {}, '可能提交', onConfirm, 1, undefined, true, 'commit');
+
+    expect(second).toEqual({ block: true, reason: '用户已选择本次任务内不再询问，按其选择拒绝了这次点击。' });
+  });
+
+  it('静默按 kind 隔离：commit 的勾选不影响 submit（submit 仍要再问一次）', async () => {
+    const state = createConfirmGateState();
+    const onConfirm = vi.fn().mockResolvedValue({ approved: true, silenceForRun: true });
+
+    await resolveConfirmGate(state, 'call-1', 'browser_click', {}, '可能提交', onConfirm, 1, undefined, true, 'commit');
+    expect(state.silencedKinds.get('commit')).toBe(true);
+    // commit 的静默没有替 submit 做决定：submit 仍在表外，还得问。
+    expect(state.silencedKinds.has('submit')).toBe(false);
+    const submit = await resolveConfirmGate(state, 'call-2', 'browser_fill_form', {}, '提交', onConfirm, 1, undefined, true, 'submit');
+
+    expect(submit).toBeUndefined();
+    expect(onConfirm).toHaveBeenCalledTimes(2);
+  });
+
+  it('静默跨目标 tab 不作废——用户勾的是「本次任务」，不是「这个标签页」', async () => {
+    const state = createConfirmGateState();
+    const onConfirm = vi.fn().mockResolvedValue({ approved: true, silenceForRun: true });
+
+    await resolveConfirmGate(state, 'call-1', 'browser_fill_form', {}, '提交', onConfirm, 1, undefined, true);
+    const second = await resolveConfirmGate(state, 'call-2', 'browser_fill_form', {}, '提交', onConfirm, 2, undefined, true);
+
+    expect(second).toBeUndefined();
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+
+  it('未勾选的普通答复不产生静默（既有逐次询问语义不变）', async () => {
+    const state = createConfirmGateState();
+    const onConfirm = vi.fn().mockResolvedValue(true);
+
+    await resolveConfirmGate(state, 'call-1', 'browser_fill_form', {}, '提交', onConfirm, 1, undefined, true);
+    await resolveConfirmGate(state, 'call-2', 'browser_fill_form', {}, '提交', onConfirm, 1, undefined, true);
+
+    expect(onConfirm).toHaveBeenCalledTimes(2);
+    expect(state.silencedKinds.size).toBe(0);
+  });
+
+  it('静默不写回、也不读取 per-turn 缓存（decision/decidedForTabId 不被污染）', async () => {
+    const state = createConfirmGateState();
+    const onConfirm = vi.fn().mockResolvedValue({ approved: false, silenceForRun: true });
+
+    const denied = await resolveConfirmGate(state, 'call-1', 'browser_click', {}, '提交', onConfirm, 1, undefined, true);
+    expect(denied?.block).toBe(true);
+    expect(state.decision).toBe('unset'); // always 路径从不写 per-turn 缓存
+    expect(state.decidedForTabId).toBeNull();
+    expect(state.silencedKinds.get('submit')).toBe(false);
+  });
+
+  it('对象形态在非 always 档位只取 approved，不叠加静默（该档位自有 per-turn 缓存）', async () => {
+    const state = createConfirmGateState();
+    const onConfirm = vi.fn().mockResolvedValue({ approved: false } as never);
+
+    const result = await resolveConfirmGate(state, 'call-1', 'browser_click', {}, '需要确认', onConfirm, 1);
+
+    expect(result).toEqual({ block: true, reason: '用户拒绝了该操作。' });
+    expect(state.decision).toBe('denied'); // 对象 {approved:false} 不能被当真值误记为批准
+    expect(state.silencedKinds.size).toBe(0);
+  });
+});

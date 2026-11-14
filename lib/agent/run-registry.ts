@@ -37,6 +37,7 @@ import {
 import { setOverlayForTab, clearOverlayForTab } from './tab-overlay-state';
 import { clearTakeoverForTab } from './tab-takeover';
 import { sendToContentScript } from './content-script-messaging';
+import type { ConfirmResult } from './confirm-gate';
 import { newMessageId, type SetAgentOverlayPayload } from '@/lib/messaging';
 
 interface RecordingContext {
@@ -57,7 +58,7 @@ interface RunState {
   busy: boolean;
   pendingConfirmation: PendingConfirmation | null;
   pendingQuestion: PendingQuestion | null;
-  resolveConfirmation: ((approved: boolean) => void) | null;
+  resolveConfirmation: ((result: ConfirmResult) => void) | null;
   resolveQuestion: ((answer: string) => void) | null;
   pendingToolArgs: Map<string, { toolName: string; args: unknown }>;
   terminatedToolCallIds: Set<string>;
@@ -443,7 +444,7 @@ export async function startRun(request: StartRunRequest): Promise<void> {
     args: unknown,
     _reason: string,
     kind?: 'submit' | 'commit',
-  ): Promise<boolean> => {
+  ): Promise<ConfirmResult> => {
     // 只有当前操作目标不是面板绑定的那个 tab 时才带上标注——同一个 tab 上的操作再标一遍
     // "将操作标签页：《本页》"只是噪音（ref: confirm-summary.ts 的 targetTab 参数说明）。
     // 读的是 state.session 的实时字段而不是 startRun 那一刻的值：browser_open_tab /
@@ -467,7 +468,9 @@ export async function startRun(request: StartRunRequest): Promise<void> {
       ...(kind === 'commit' ? { kind: 'commit' as const } : {}),
     };
     pushAndPersist(state);
-    return new Promise<boolean>((resolve) => { state.resolveConfirmation = resolve; });
+    return new Promise<ConfirmResult>((resolve) => {
+      state.resolveConfirmation = resolve;
+    });
   };
 
   // 用户在 agent 操作期间自己点了/敲了页面，而 agent 又要写：停下来问一次。
@@ -481,7 +484,11 @@ export async function startRun(request: StartRunRequest): Promise<void> {
     // 让它还挂着"正在点击…"会与"其实已经停下来等你了"直接矛盾。
     void sendAgentOverlay({ active: true, label: t('agentActivity.takeoverPaused') }, state.session.currentTabId);
     pushAndPersist(state);
-    return new Promise<boolean>((resolve) => { state.resolveConfirmation = resolve; });
+    return new Promise<boolean>((resolve) => {
+      // takeover 通道永远只收布尔应答（respondConfirm 对 takeover 防御性忽略
+      // silenceForRun，不会回对象形态）；这里显式收窄，万一真收到对象也落在拒绝这一侧。
+      state.resolveConfirmation = (result) => resolve(result === true);
+    });
   };
 
   const onAskUser = async (toolCallId: string, question: string, signal?: AbortSignal): Promise<string> => {
@@ -827,7 +834,12 @@ export async function scanForOrphans(): Promise<import('./run-port-protocol').Or
   return resolved;
 }
 
-export function respondConfirm(tabId: number, toolCallId: string, approved: boolean): void {
+export function respondConfirm(
+  tabId: number,
+  toolCallId: string,
+  approved: boolean,
+  silenceForRun?: boolean,
+): void {
   const state = runs.get(tabId);
   if (!state || state.pendingConfirmation?.toolCallId !== toolCallId) return;
   const resolve = state.resolveConfirmation;
@@ -857,7 +869,11 @@ export function respondConfirm(tabId: number, toolCallId: string, approved: bool
   state.pendingConfirmation = null;
   broadcast(tabId, snapshotOf(state));
   void saveRunStateSnapshot(tabId, snapshotOf(state));
-  resolve?.(approved);
+  // 静默授权只对提交类确认卡有意义：takeover 问的是“人插手了还要不要继续”，没有可以
+  // 沿用的答案，防御性忽略（UI 本就不会在那张卡上显示勾选）。
+  resolve?.(
+    silenceForRun && kind !== 'takeover' ? { approved, silenceForRun: true } : approved,
+  );
 }
 
 export function respondQuestion(tabId: number, toolCallId: string, answer: string): void {

@@ -284,7 +284,7 @@ export default defineBackground(() => {
           void startRun(message);
           break;
         case 'respondConfirm':
-          respondConfirm(message.tabId, message.toolCallId, message.approved);
+          respondConfirm(message.tabId, message.toolCallId, message.approved, message.silenceForRun);
           break;
         case 'respondQuestion':
           respondQuestion(message.tabId, message.toolCallId, message.answer);

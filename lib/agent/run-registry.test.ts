@@ -74,6 +74,7 @@ import {
   unmarkConversationDeleted,
 } from './run-registry';
 import type { StartRunRequest } from './run-port-protocol';
+import type { ConfirmResult } from './confirm-gate';
 
 /** 大部分用例并不关心 alarms，但 startRun/scanForOrphans 都会碰它；统一装一份可断言的替身。 */
 function installAlarmsStub(): void {
@@ -514,7 +515,7 @@ describe('run-registry confirm/question/stop/port', () => {
     mocks.createBrowserAgent.mockReturnValue(agent);
     await startRun(makeRequest({ tabId: 20 }));
     const state = getRunState(20)!;
-    let resolved: boolean | undefined;
+    let resolved: ConfirmResult | undefined;
     // 真实场景下这个字段是 agent.ts 内部调用 onConfirm 时设置的；makeFakeAgent 的
     // prompt() 不模拟 beforeToolCall/onConfirm 那条路径（agent.ts 本身已经有测试覆盖
     // onConfirm 何时被调用），这里直接摆好"正在等待确认"这个前置状态来测 respondConfirm
@@ -1204,7 +1205,7 @@ describe('run-registry confirmation summary target tab', () => {
 
     await startRun(makeRequest({ tabId: 74 }));
 
-    let resolvedValue: boolean | undefined;
+    let resolvedValue: ConfirmResult | undefined;
     void lastOnConfirm()('call-race', 'browser_click', { selector: '#pay' }).then((v) => { resolvedValue = v; });
 
     // 用户此时点了"停止"：pendingConfirmation 还没落地，stopRun 看不到这条在途的确认，

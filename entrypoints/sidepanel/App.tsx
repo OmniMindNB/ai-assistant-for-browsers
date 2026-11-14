@@ -372,8 +372,8 @@ export default function App() {
                 {pendingConfirmation && (
                   <ConfirmationCard
                     confirmation={pendingConfirmation}
-                    onApprove={() => respondToConfirmation(true)}
-                    onDeny={() => respondToConfirmation(false)}
+                    onApprove={(silenceForRun) => respondToConfirmation(true, silenceForRun)}
+                    onDeny={(silenceForRun) => respondToConfirmation(false, silenceForRun)}
                   />
                 )}
                 {pendingQuestion && (
@@ -792,8 +792,8 @@ function ConfirmationCard({
   onDeny,
 }: {
   confirmation: PendingConfirmation;
-  onApprove: () => void;
-  onDeny: () => void;
+  onApprove: (silenceForRun: boolean) => void;
+  onDeny: (silenceForRun: boolean) => void;
 }) {
   const { t } = useTranslation();
   const cardRef = useRef<HTMLDivElement>(null);
@@ -803,10 +803,14 @@ function ConfirmationCard({
   const takeover = confirmation.kind === 'takeover';
   // 行为规则命中的提交性点击（批量填写后点按钮）：不能断言是提交，标题与按钮都不说「提交」。
   const commit = confirmation.kind === 'commit';
+  // 「本次任务内不再询问」的勾选状态（ref: 2026-11-14-confirm-silence-for-run-design.md）。
+  const [silenceForRun, setSilenceForRun] = useState(false);
 
   // 依赖 toolCallId 而不是只跑一次：同一轮里可能连着来第二个待确认的提交
-  // （confirm-gate 逐次询问），换了一张卡就要重新把人带过来。
+  // （confirm-gate 逐次询问），换了一张卡就要重新把人带过来；勾选也一并归位——
+  // 不能把上一张卡的授权悄悄带到一张用户还没看过的新卡上。
   useEffect(() => {
+    setSilenceForRun(false);
     const card = cardRef.current;
     if (!card) return;
     // jsdom 及部分嵌入环境没有实现 scrollIntoView。
@@ -825,9 +829,10 @@ function ConfirmationCard({
       tabIndex={-1}
       onKeyDown={(event) => {
         // dialog 的常规约定：Esc 取消。这里的“取消”是拒绝提交，也就是安全的那一侧。
+        // Esc 不携带静默授权：安全侧不携带任何形式的“记住”。
         if (event.key === 'Escape') {
           event.stopPropagation();
-          onDeny();
+          onDeny(false);
         }
       }}
       className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:border-amber-900/60 dark:bg-amber-950/30"
@@ -851,18 +856,32 @@ function ConfirmationCard({
           这是全流程唯一要人拍板的地方，按钮给足 36px 高、14px 字，各占一半宽度，不让人点偏。 */}
       <div className="flex gap-2">
         <button
-          onClick={onApprove}
+          onClick={() => onApprove(silenceForRun)}
           className="h-9 flex-1 rounded-lg bg-amber-600 px-4 text-sm font-medium text-white transition-colors hover:bg-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-700"
         >
           {t(takeover ? 'confirm.takeoverResume' : commit ? 'confirm.commitApprove' : 'confirm.approve')}
         </button>
         <button
-          onClick={onDeny}
+          onClick={() => onDeny(silenceForRun)}
           className="h-9 flex-1 rounded-lg border border-neutral-400 bg-white px-4 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-700 dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
         >
           {t(takeover ? 'confirm.takeoverStop' : 'confirm.deny')}
         </button>
       </div>
+      {/* 提交/疑似提交卡才提供“本次任务内不再询问”：takeover 问的是“人插手了还要不要继续”，
+          每一次都必须本人回答，没有可以沿用的答案。两个按钮都受它影响——拒绝同样可以
+          “这类操作别再问我”（后续同类提交一律自动拒绝，模型会读到明确的拒绝理由）。 */}
+      {!takeover && (
+        <label className="mt-2 flex cursor-pointer items-center gap-1.5 text-xs text-amber-800 dark:text-amber-300/80">
+          <input
+            type="checkbox"
+            checked={silenceForRun}
+            onChange={(event) => setSilenceForRun(event.target.checked)}
+            className="h-3.5 w-3.5 cursor-pointer accent-amber-600"
+          />
+          {t('confirm.silenceForRun')}
+        </label>
+      )}
       <p className="mt-2 text-xs text-amber-800 dark:text-amber-300/80">
         {t(takeover ? 'confirm.takeoverHint' : commit ? 'confirm.commitHint' : 'confirm.approveHint')}
       </p>

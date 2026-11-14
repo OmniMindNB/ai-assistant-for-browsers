@@ -282,6 +282,7 @@ export const zh = {
   'confirm.approve': '确认提交',
   'confirm.deny': '拒绝',
   'confirm.approveHint': '检测到的表单提交会逐次确认，避免意外发送页面中的数据。',
+  'confirm.silenceForRun': '本次任务内不再询问此类操作',
   'confirm.commitTitle': '🔒 请确认此次点击',
   'confirm.commitApprove': '允许点击',
   'confirm.commitHint': '本轮已批量填写表单字段；这类按钮点击可能提交或终结表单，因此逐次确认。',

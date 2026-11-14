@@ -1322,7 +1322,7 @@ describe('activity step list', () => {
     expect(screen.queryByText('Clicking "button.buy"')).toBeNull();
     expect(screen.getByText(/Confirm form submission/)).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Submit form' }));
-    expect(chatStore.respondToConfirmation).toHaveBeenCalledWith(true);
+    expect(chatStore.respondToConfirmation).toHaveBeenCalledWith(true, false);
   });
 
   it('quotes a selected passage of an assistant reply as a follow-up, and labels a quoted reply in history', async () => {
@@ -1707,7 +1707,7 @@ describe('confirmation card', () => {
     );
 
     await user.keyboard('{Escape}');
-    expect(chatStore.respondToConfirmation).toHaveBeenCalledWith(false);
+    expect(chatStore.respondToConfirmation).toHaveBeenCalledWith(false, false);
   });
 
   // 提交表单不可撤销，不该被画成一个绿色的「安全放行」按钮。
@@ -1771,7 +1771,48 @@ describe('confirmation card', () => {
     );
 
     await user.click(screen.getByRole('button', { name: 'Stop here' }));
-    expect(chatStore.respondToConfirmation).toHaveBeenCalledWith(false);
+    expect(chatStore.respondToConfirmation).toHaveBeenCalledWith(false, false);
+  });
+
+  // 「本次任务内不再询问」只出现在提交/疑似提交卡上，且勾选状态随两个按钮一起发走
+  // （ref: 2026-11-14-confirm-silence-for-run-design.md）。
+  it('提交卡勾选「本次任务内不再询问」后，批准把勾选状态一并传给应答通道', async () => {
+    const user = userEvent.setup();
+    (chatStore as any).pendingConfirmation = pendingConfirmation;
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    await user.click(screen.getByRole('checkbox', { name: en['confirm.silenceForRun'] }));
+    await user.click(screen.getByRole('button', { name: 'Submit form' }));
+    expect(chatStore.respondToConfirmation).toHaveBeenCalledWith(true, true);
+  });
+
+  it('拒绝同样携带勾选状态——「这类操作别再问我」对两个方向都成立', async () => {
+    const user = userEvent.setup();
+    (chatStore as any).pendingConfirmation = pendingConfirmation;
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    await user.click(screen.getByRole('checkbox', { name: en['confirm.silenceForRun'] }));
+    await user.click(screen.getByRole('button', { name: 'Deny' }));
+    expect(chatStore.respondToConfirmation).toHaveBeenCalledWith(false, true);
+  });
+
+  it('接管卡不提供「本次任务内不再询问」——每一次都必须本人回答', () => {
+    (chatStore as any).pendingConfirmation = { ...pendingConfirmation, kind: 'takeover' };
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
   });
 
   // kind 缺省必须按表单提交处理：已经落盘的旧快照里没有这个字段。

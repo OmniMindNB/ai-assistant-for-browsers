@@ -179,7 +179,12 @@ interface ChatState {
    * （消息流里、带重试），导出失败是一次性反馈，由面板弹成轻提示。
    */
   exportConversation: (id: string) => Promise<string | null>;
-  respondToConfirmation: (approved: boolean) => void;
+  /**
+   * 第二个参数是确认卡上“本次任务内不再询问”的勾选状态：随 respondConfirm 一起发
+   * 给 background，由确认门按 kind 记入本 run 的静默决定
+   * （ref: 2026-11-14-confirm-silence-for-run-design.md）。takeover 卡不会传它。
+   */
+  respondToConfirmation: (approved: boolean, silenceForRun?: boolean) => void;
   respondToQuestion: (answer: string) => void;
   restoreTabConversation: () => Promise<void>;
   loadReferencableTabs: () => Promise<ReferencableTab[]>;
@@ -945,7 +950,7 @@ export const useChat = create<ChatState>((set, get) => ({
     set({ pendingConfirmation: null, pendingQuestion: null, activitySteps: [] });
   },
 
-  respondToConfirmation: (approved) => {
+  respondToConfirmation: (approved, silenceForRun) => {
     const run = activeRun;
     if (!run || !isCurrentRun(run, get)) return;
     const pending = get().pendingConfirmation;
@@ -955,6 +960,7 @@ export const useChat = create<ChatState>((set, get) => ({
       tabId: run.tabId,
       toolCallId: pending.toolCallId,
       approved,
+      silenceForRun,
     });
     set({ pendingConfirmation: null });
   },

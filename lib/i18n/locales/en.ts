@@ -286,6 +286,7 @@ export const en: Record<keyof typeof zh, string> = {
   'confirm.deny': 'Deny',
   'confirm.approveHint':
     'Detected form submissions ask every time to prevent page data from being sent accidentally.',
+  'confirm.silenceForRun': "Don't ask again during this task",
   'confirm.commitTitle': '🔒 Confirm this click',
   'confirm.commitApprove': 'Allow click',
   'confirm.commitHint':
