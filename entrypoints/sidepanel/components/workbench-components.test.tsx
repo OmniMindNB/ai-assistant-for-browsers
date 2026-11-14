@@ -818,6 +818,16 @@ describe('workbench composer', () => {
     expect(trigger).toHaveAttribute('title', 'Configured provider · model-one');
   });
 
+  // 旧样式（纯文字+小箭头）看起来像一行说明文字，不像能点的东西（UI 走查 P2-7）。
+  it('模型触发器画成描边胶囊，与快捷指令胶囊同一套视觉语法', () => {
+    render(<ComposerHarness providers={[configuredProvider]} selectedProviderId={configuredProvider.id} selectedModel="model-one" />);
+
+    const trigger = screen.getByRole('button', { name: 'Select provider and model' });
+    expect(trigger.className).toContain('rounded-full');
+    expect(trigger.className).toContain('border');
+    expect(trigger.className).not.toContain('rounded-lg');
+  });
+
   // 快捷指令多时横向滚动会把后面的胶囊裁没（2026-09-07 反馈），整条折行又让输入框随侧栏宽度上下跳。
   // 现在只占一行，放不下的收进"+N"，点开就是 / 面板。
   it('胶囊只占一行，放不下的收进 +N，点开是 / 面板', async () => {
@@ -1956,6 +1966,20 @@ describe('workbench context controls', () => {
     await user.click(screen.getByRole('textbox', { name: 'Edit message' }));
     await user.keyboard('{Enter}');
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  // 同一个“发送这条消息”动作必须与 Composer 的发送按钮同色：近黑是“停止”的专属色
+  // （UI 走查 P2-8）。
+  it('styles the editor send button as the same primary action as the composer send', () => {
+    render(
+      <LocaleProvider>
+        <MessageEditor initialContent="x" discardCount={0} onCancel={vi.fn()} onSubmit={vi.fn()} />
+      </LocaleProvider>,
+    );
+
+    const send = screen.getByRole('button', { name: 'Send' });
+    expect(send.className).toContain('bg-indigo-600');
+    expect(send.className).not.toContain('bg-neutral-900');
   });
 
   it('routes attachment retries from the compact chip to the store', async () => {

@@ -82,7 +82,10 @@ export default function MessageEditor({
             type="button"
             disabled={!canSubmit}
             onClick={() => onSubmit(text)}
-            className="rounded-lg bg-neutral-900 px-3 py-1.5 text-xs text-white disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:bg-neutral-700"
+            // 主操作色与 Composer 的发送按钮统一为 indigo：同一个“发送这条消息”动作
+            // 不能一处 indigo、一处近黑——近黑在这个面板里是“停止”按钮的专属色
+            // （UI 走查 P2-8）。禁用态也照搬 Composer 那套换色，不再用半透明。
+            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:disabled:bg-neutral-800 dark:disabled:text-neutral-600"
           >
             {t('common.send')}
           </button>

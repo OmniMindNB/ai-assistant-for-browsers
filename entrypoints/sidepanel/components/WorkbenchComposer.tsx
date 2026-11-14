@@ -731,6 +731,8 @@ export function WorkbenchComposer({
                 </button>
               </div>
             )}
+            {/* 模型选择器画成与快捷指令胶囊同一套“描边胶囊”：旧样式（纯文字+小箭头）看起来像一行
+                说明文字，不像能点的东西，新用户几乎发现不了这里能切模型（UI 走查 P2-7）。 */}
             {providers.length > 0 && (
               <button
                 ref={modelTriggerRef}
@@ -742,7 +744,7 @@ export function WorkbenchComposer({
                 aria-expanded={openPopover === 'models'}
                 aria-controls={openPopover === 'models' ? 'workbench-model-menu' : undefined}
                 title={modelTriggerTitle}
-                className="inline-flex min-w-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
+                className="inline-flex h-7 min-w-0 items-center gap-1 rounded-full border border-neutral-200 bg-white px-2.5 text-xs text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
               >
                 {/* provider 名不上触发器：下拉里每个分组标题都写着它，重复一遍只是在窄侧栏里吃宽度。 */}
                 <span className="truncate font-medium">{modelLabel}</span>
