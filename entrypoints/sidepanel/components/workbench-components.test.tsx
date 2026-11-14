@@ -951,6 +951,40 @@ describe('workbench composer', () => {
     expect(onRetryPageContext).toHaveBeenCalledOnce();
   });
 
+  // 底栏常驻的页面状态徽章：available/restricted 两个稳定态才有；loading/error 不画
+  // （ref: 2026-11-14-composer-page-context-badge-design.md）。
+  it('shows the attached-page badge for available tabs and describes the composer with it', () => {
+    render(<ComposerHarness pageContext={availableContext} />);
+
+    const badge = screen.getByTestId('composer-page-context');
+    expect(badge).toHaveTextContent('This page included');
+    // 具体是哪个页面退到悬停：标题 + URL。
+    expect(badge).toHaveAttribute('title', 'Example article\nhttps://example.com/article');
+    // 徽章不是控件，读屏通过输入框的 description 听到“带没带页面”。
+    expect(screen.getByRole('textbox')).toHaveAccessibleDescription('This page included');
+  });
+
+  it('shows the restricted-page badge instead when the tab cannot be read', () => {
+    render(
+      <ComposerHarness
+        pageContext={{ status: 'restricted', tabId: 2, title: 'Extensions', url: 'chrome://extensions/' }}
+      />,
+    );
+
+    const badge = screen.getByTestId('composer-page-context');
+    expect(badge).toHaveTextContent('No page context');
+    expect(badge).toHaveAttribute('title', en['workbench.pageRestrictedTitle']);
+    expect(screen.getByRole('textbox')).toHaveAccessibleDescription('No page context');
+  });
+
+  it('keeps the badge out of the bottom bar for transient loading and errored tabs', () => {
+    const { rerender } = render(<ComposerHarness pageContext={{ status: 'loading' }} />);
+    expect(screen.queryByTestId('composer-page-context')).not.toBeInTheDocument();
+
+    rerender(<ComposerHarness pageContext={{ status: 'error', message: 'Offline' }} />);
+    expect(screen.queryByTestId('composer-page-context')).not.toBeInTheDocument();
+  });
+
   it('keeps English and Chinese composer labels in sync', () => {
     expect(Object.keys(en).sort()).toEqual(Object.keys(zh).sort());
     expect(en['chat.noMatchingSlashCommands']).toBe('No matching commands');

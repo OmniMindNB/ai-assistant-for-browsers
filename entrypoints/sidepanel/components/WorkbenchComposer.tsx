@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -22,7 +23,7 @@ import {
 import { findMentionQuery, type MentionQuery, type ReferencableTab } from '@/lib/chat/tab-reference';
 import { AttachmentChip } from './AttachmentChip';
 import { TabRefChip } from './TabRefChip';
-import { IconCheck, IconChevronDown, IconClose, IconPaperclip, IconPlay, IconPlus, IconSend, IconStop } from '../icons';
+import { IconCheck, IconChevronDown, IconClose, IconFileText, IconPaperclip, IconPlay, IconPlus, IconSend, IconStop } from '../icons';
 
 export interface WorkbenchComposerProps {
   busy: boolean;
@@ -127,6 +128,17 @@ export function WorkbenchComposer({
   const modelLabel = currentModel || t('chat.noModelSelected');
   // 触发器上只留模型名，provider 名退到 title 里——鼠标悬停仍拿得到完整信息。
   const modelTriggerTitle = selectedProvider ? `${selectedProvider.name} · ${modelLabel}` : modelLabel;
+  // 底栏的页面状态徽章：回答“下一条消息带没带当前页面”，语义锄在 resolvePageAttached
+  // （withoutBrowserTools 的取反）上，两边永不各说各话。只画 available/restricted 两个
+  // 稳定态：loading 一闪而过，error 有自己的带重试提示条，都不在底栏再重复一遍
+  // （ref: docs/superpowers/specs/2026-11-14-composer-page-context-badge-design.md）。
+  const pageBadge =
+    pageContext.status === 'available'
+      ? { attached: true, label: t('workbench.pageAttached'), title: `${pageContext.title}\n${pageContext.url}` }
+      : pageContext.status === 'restricted'
+        ? { attached: false, label: t('workbench.pageRestricted'), title: t('workbench.pageRestrictedTitle') }
+        : null;
+  const pageBadgeId = useId();
   const modelOptions = providers.flatMap((provider) =>
     providerModels(provider).map((model) => ({ provider, model })),
   );
@@ -659,6 +671,9 @@ export function WorkbenchComposer({
             onCompositionEnd={() => setComposing(false)}
             rows={1}
             aria-label={t('chat.composerAriaLabel')}
+            // 徽章不是控件、不进 tab 序列，读屏靠这一条把它听到：聚焦输入框时
+            // description 会播报“带没带当前页面”。加载/出错态没有徽章，指向 undefined 无副作用。
+            aria-describedby={pageBadge ? pageBadgeId : undefined}
             aria-haspopup="menu"
             aria-expanded={openPopover === 'commands'}
             aria-controls={openPopover === 'commands' ? 'workbench-slash-commands' : undefined}
@@ -733,6 +748,21 @@ export function WorkbenchComposer({
                 <span className="truncate font-medium">{modelLabel}</span>
                 <IconChevronDown className="h-3.5 w-3.5 shrink-0 text-neutral-400 dark:text-neutral-500" />
               </button>
+            )}
+            {pageBadge && (
+              <span
+                id={pageBadgeId}
+                data-testid="composer-page-context"
+                title={pageBadge.title}
+                className={`inline-flex min-w-0 max-w-40 shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-xs ${
+                  pageBadge.attached
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300'
+                    : 'border-neutral-200 bg-neutral-100 text-neutral-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-400'
+                }`}
+              >
+                <IconFileText className="h-3 w-3 shrink-0" />
+                <span className="truncate">{pageBadge.label}</span>
+              </span>
             )}
             <div className="ml-auto shrink-0">
               {busy ? (
