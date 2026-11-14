@@ -119,7 +119,6 @@ export default function App() {
   const historyTriggerRef = useRef<HTMLButtonElement>(null);
   // 是否仍处于“跟随最新内容”状态；用户向上滚动后置 false，直到手动回到底部或发起新一轮。
   const atBottomRef = useRef(true);
-  const busyRef = useRef(busy);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
 
   const resolvedShortcuts: ResolvedShortcutCommand[] = shortcuts.map((config) => ({
@@ -158,16 +157,13 @@ export default function App() {
   }, [refreshShortcuts]);
 
   useEffect(() => {
-    busyRef.current = busy;
-  }, [busy]);
-
-  useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     const onScroll = () => {
       const atBottom = isNearBottom(el);
       atBottomRef.current = atBottom;
-      setShowJumpToBottom(!atBottom && busyRef.current);
+      // 不看 busy：运行结束后用户往往正停在历史里读，这时候更需要一条回去的路。
+      setShowJumpToBottom(!atBottom);
     };
     el.addEventListener('scroll', onScroll, { passive: true });
     return () => el.removeEventListener('scroll', onScroll);
@@ -415,7 +411,7 @@ export default function App() {
                 容器本身不吃点击（pointer-events-none），否则这一整条会挡住下面消息里的按钮。 */}
             <div className="pointer-events-none absolute inset-x-0 bottom-3 flex flex-col items-center gap-2 px-4">
               {toast && <Toast toast={toast} onDismiss={() => setToast(null)} />}
-              {busy && showJumpToBottom && (
+              {showJumpToBottom && (
                 <button
                   type="button"
                   onClick={jumpToBottom}
@@ -874,6 +870,12 @@ function ConfirmationCard({
   );
 }
 
+// 与 ConfirmationCard 同一套“把人带过来”的模式（ref: 该卡上方注释）：滚动到可见 + 焦点落
+// 在卡片本身 + alertdialog 角色让读屏主动播报。焦点不直接放输入框：读屏得先听到完整的
+// 标题和问题才谈得上回答，而且卡片不是按钮，用户随手一个回车也不会误发。依赖 toolCallId
+// 而不是只跑一次：同一轮里可能连着来第二个问题，换了一张卡就要重新把人带过来。
+// 不接 Esc：提问没有“拒绝”这条应答通道，agent 在等一个答案，Esc 把卡收走只会让人
+// 以为问题可以就这么算了。
 function QuestionCard({
   question,
   onSubmit,
@@ -883,6 +885,17 @@ function QuestionCard({
 }) {
   const { t } = useTranslation();
   const [answer, setAnswer] = useState('');
+  const cardRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  const questionId = useId();
+
+  useEffect(() => {
+    const card = cardRef.current;
+    if (!card) return;
+    // jsdom 及部分嵌入环境没有实现 scrollIntoView。
+    card.scrollIntoView?.({ block: 'nearest' });
+    card.focus();
+  }, [question.toolCallId]);
 
   const submit = () => {
     const trimmed = answer.trim();
@@ -892,14 +905,20 @@ function QuestionCard({
   };
 
   return (
-    <div className="rounded-xl border border-indigo-300 bg-indigo-50 p-3 text-sm dark:border-indigo-900/60 dark:bg-indigo-950/30">
-      <div className="mb-2 flex items-center gap-2 font-medium text-indigo-900 dark:text-indigo-200">
+    <div
+      ref={cardRef}
+      role="alertdialog"
+      aria-labelledby={titleId}
+      aria-describedby={questionId}
+      tabIndex={-1}
+      className="rounded-xl border border-indigo-300 bg-indigo-50 p-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-indigo-900/60 dark:bg-indigo-950/30"
+    >
+      <div id={titleId} className="mb-2 flex items-center gap-2 font-medium text-indigo-900 dark:text-indigo-200">
         {t('askUser.title')}
       </div>
-      <p className="mb-2 whitespace-pre-line text-indigo-900/90 dark:text-indigo-200/90">{question.question}</p>
+      <p id={questionId} className="mb-2 whitespace-pre-line text-indigo-900/90 dark:text-indigo-200/90">{question.question}</p>
       <div className="flex gap-2">
         <input
-          autoFocus
           type="text"
           value={answer}
           onChange={(e) => setAnswer(e.target.value)}
