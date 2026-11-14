@@ -41,6 +41,29 @@ export function groupConversationsByDay(
     .map((key) => ({ key, records: grouped[key] }));
 }
 
+/**
+ * 历史抽屉每行的时间文案。分组标题（今天/昨天/更早）已经把日期说了，行内再把
+ * toLocaleString 的完整串抄一遍（2026/2/14 20:23:45）既与标题重复，又在窄抽屉里占掉
+ * 大半行宽。今天/昨天只给时刻；更早给短日期，年份与当前不同才补年。
+ * 精确到秒的完整时间退到行悬停（title）里。
+ */
+export function formatConversationTimestamp(
+  updatedAt: number,
+  groupKey: ConversationGroupKey,
+  now: Date,
+  locale: string,
+): string {
+  const date = new Date(updatedAt);
+  if (groupKey === 'today' || groupKey === 'yesterday') {
+    return date.toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit' });
+  }
+  return date.toLocaleDateString(locale, {
+    ...(date.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {}),
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
 export function isUsableShortcutCommand(command: ResolvedShortcutCommand): boolean {
   return Boolean(command.config.id && command.resolved.id && command.resolved.name.trim() && command.resolved.prompt.trim());
 }

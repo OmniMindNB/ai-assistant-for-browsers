@@ -27,6 +27,7 @@ const chatStore = {
   busy: false,
   error: null,
   pendingConfirmation: null,
+  pendingQuestion: null,
   providers: [],
   selectedProviderId: null,
   selectedModel: '',
@@ -71,6 +72,7 @@ const chatStore = {
   removeConversation: vi.fn(),
   clearAllConversations: vi.fn(),
   respondToConfirmation: vi.fn(),
+  respondToQuestion: vi.fn(),
   restoreTabConversation: vi.fn(),
   exportConversation: vi.fn(),
 };
@@ -176,6 +178,7 @@ beforeEach(() => {
     busy: false,
     error: null,
     pendingConfirmation: null,
+    pendingQuestion: null,
     pendingFocusToken: 0,
     pendingAttachments: [],
     referencedTabs: [],
@@ -1862,6 +1865,64 @@ describe('confirmation card', () => {
   });
 });
 
+// 提问卡（UI 走查 P2-9）：答案常不止一行，输入框是 textarea；键位与 Composer 一致
+// （Enter 提交、Shift+Enter 换行），且输入法组合中的回车绝不提交。
+describe('question card', () => {
+  it('submits the trimmed answer on Enter', async () => {
+    const user = userEvent.setup();
+    (chatStore as any).pendingQuestion = { toolCallId: 'q-1', question: 'Which address should I use?' };
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    const box = screen.getByRole('textbox', { name: en['askUser.placeholder'] });
+    await user.type(box, '  No.8 Nanjing Rd  ');
+    await user.keyboard('{Enter}');
+
+    expect(chatStore.respondToQuestion).toHaveBeenCalledWith('No.8 Nanjing Rd');
+  });
+
+  it('lets Shift+Enter insert a newline instead of submitting', async () => {
+    const user = userEvent.setup();
+    (chatStore as any).pendingQuestion = { toolCallId: 'q-1', question: 'Which address?' };
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    const box = screen.getByRole('textbox', { name: en['askUser.placeholder'] });
+    await user.type(box, 'Line one{Shift>}{Enter}{/Shift}Line two');
+    expect(chatStore.respondToQuestion).not.toHaveBeenCalled();
+    expect(box).toHaveValue('Line one\nLine two');
+
+    await user.keyboard('{Enter}');
+    expect(chatStore.respondToQuestion).toHaveBeenCalledWith('Line one\nLine two');
+  });
+
+  it('does not submit when Enter only confirms an IME composition', async () => {
+    const user = userEvent.setup();
+    (chatStore as any).pendingQuestion = { toolCallId: 'q-1', question: 'Which address?' };
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    const box = screen.getByRole('textbox', { name: en['askUser.placeholder'] });
+    await user.type(box, '南京市');
+    fireEvent.compositionStart(box);
+    await user.keyboard('{Enter}'); // 输入法里确认候选词的回车
+    expect(chatStore.respondToQuestion).not.toHaveBeenCalled();
+
+    fireEvent.compositionEnd(box);
+    await user.keyboard('{Enter}'); // 真正的提交
+    expect(chatStore.respondToQuestion).toHaveBeenCalledWith('南京市');
+  });
+});
+
 describe('workbench context controls', () => {
   it('disables composer shortcuts while an attachment is parsing', async () => {
     const user = userEvent.setup();
@@ -2020,6 +2081,24 @@ describe('workbench context controls', () => {
 });
 
 describe('workbench history', () => {
+  it('shows compact times and short dates instead of full toLocaleString stamps', () => {
+    // 分组标题已把日期说了：今天/昨天两行只给时刻（两条同名由 getAllByText 兼容），
+    // 更早的给短日期，往年补年；精确到秒的完整时间退到悬停（ref: UI 走查 P2-6）。
+    renderDrawer(vi.fn(), vi.fn(), [
+      { id: 'today-rec', title: 'Today talk', createdAt: 0, updatedAt: new Date(2026, 6, 30, 9, 5, 0).getTime() },
+      { id: 'yesterday-rec', title: 'Yesterday talk', createdAt: 0, updatedAt: new Date(2026, 6, 29, 9, 5, 0).getTime() },
+      { id: 'same-year-rec', title: 'Older this year', createdAt: 0, updatedAt: new Date(2026, 0, 15, 9, 5, 0).getTime() },
+      { id: 'other-year-rec', title: 'Older year', createdAt: 0, updatedAt: new Date(2025, 11, 31, 9, 5, 0).getTime() },
+    ]);
+
+    expect(screen.getAllByText('9:05 AM')).toHaveLength(2);
+    expect(screen.getByText('Jan 15')).toBeInTheDocument();
+    expect(screen.getByText('Dec 31, 2025')).toBeInTheDocument();
+    expect(
+      screen.getByTitle(new Date(2026, 0, 15, 9, 5, 0).toLocaleString('en')),
+    ).toBeInTheDocument();
+  });
+
   it('opens and closes history with accessible state and returns focus to its trigger', async () => {
     const user = userEvent.setup();
     render(<Harness />);

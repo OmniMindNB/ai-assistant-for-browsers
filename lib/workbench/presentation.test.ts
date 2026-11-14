@@ -3,6 +3,7 @@ import type { ConversationRecord } from '../db';
 import type { ShortcutConfig, ResolvedShortcut } from '../shortcuts';
 import {
   filterShortcutCommands,
+  formatConversationTimestamp,
   groupConversationsByDay,
   normalizeShortcutCommand,
   resolvePageAttached,
@@ -80,5 +81,34 @@ describe('resolvePageAttached', () => {
     ['error', false],
   ] as const)('status=%s -> %s', (status, expected) => {
     expect(resolvePageAttached(status)).toBe(expected);
+  });
+});
+
+// 行内时间与分组标题的分工：日期由标题承担，行内只给时刻；更早的给短日期
+// （ref: UI 走查 P2-6）。日期用本地时区构造，断言不随运行环境时区漂移。
+describe('formatConversationTimestamp', () => {
+  const now = new Date(2026, 6, 30, 12, 0, 0);
+
+  it('今天/昨天只给时刻，日期由分组标题承担', () => {
+    const today = new Date(2026, 6, 30, 9, 5).getTime();
+    const yesterday = new Date(2026, 6, 29, 23, 59).getTime();
+
+    expect(formatConversationTimestamp(today, 'today', now, 'zh')).toBe('9:05');
+    expect(formatConversationTimestamp(yesterday, 'yesterday', now, 'zh')).toBe('23:59');
+    expect(formatConversationTimestamp(today, 'today', now, 'en')).toBe('9:05 AM');
+  });
+
+  it('更早的条目给短日期，同一年不重复年份', () => {
+    const sameYear = new Date(2026, 0, 15, 9, 5).getTime();
+
+    expect(formatConversationTimestamp(sameYear, 'earlier', now, 'zh')).toBe('1月15日');
+    expect(formatConversationTimestamp(sameYear, 'earlier', now, 'en')).toBe('Jan 15');
+  });
+
+  it('往年的条目补上年份', () => {
+    const lastYear = new Date(2025, 11, 31, 9, 5).getTime();
+
+    expect(formatConversationTimestamp(lastYear, 'earlier', now, 'zh')).toBe('2025年12月31日');
+    expect(formatConversationTimestamp(lastYear, 'earlier', now, 'en')).toBe('Dec 31, 2025');
   });
 });

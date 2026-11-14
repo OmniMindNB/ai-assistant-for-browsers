@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import type { ConversationRecord } from '@/lib/db';
 import { useTranslation } from '@/lib/i18n';
-import { groupConversationsByDay, type ConversationGroupKey } from '@/lib/workbench/presentation';
+import { groupConversationsByDay, formatConversationTimestamp, type ConversationGroupKey } from '@/lib/workbench/presentation';
 import { IconClose, IconDownload, IconPlus, IconTrash } from '../icons';
 import { useModalKeyboard } from './useModalKeyboard';
 
@@ -39,7 +39,7 @@ export function HistoryDrawer({
   onExport,
   returnFocusRef,
 }: HistoryDrawerProps) {
-  const { t } = useTranslation();
+  const { t, resolved } = useTranslation();
   const [query, setQuery] = useState('');
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [confirmingClearAll, setConfirmingClearAll] = useState(false);
@@ -210,8 +210,11 @@ export function HistoryDrawer({
                           <div className="truncate text-sm text-neutral-800 dark:text-neutral-200">
                             {conversation.title || t('sidebar.untitledConversation')}
                           </div>
-                          <div className="truncate text-xs text-neutral-400 dark:text-neutral-500">
-                            {new Date(conversation.updatedAt).toLocaleString()}
+                          <div
+                            className="truncate text-xs text-neutral-400 dark:text-neutral-500"
+                            title={new Date(conversation.updatedAt).toLocaleString(resolved)}
+                          >
+                            {formatConversationTimestamp(conversation.updatedAt, group.key, now, resolved)}
                           </div>
                         </button>
                         {onExport && (

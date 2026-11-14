@@ -889,6 +889,11 @@ function ConfirmationCard({
   );
 }
 
+// 提问卡答案框的自动长高封顶（4 行上下）：问的常是“收货地址”这类一句装不下的内容，
+// 但答案框不能无限撑破消息流里的卡片，超出部分内部滚动。
+// 与下面 textarea className 里的 max-h-28（112px）是同一上限的两处写法：改一处必须同步另一处。
+const ANSWER_MAX_HEIGHT_PX = 112;
+
 // 与 ConfirmationCard 同一套“把人带过来”的模式（ref: 该卡上方注释）：滚动到可见 + 焦点落
 // 在卡片本身 + alertdialog 角色让读屏主动播报。焦点不直接放输入框：读屏得先听到完整的
 // 标题和问题才谈得上回答，而且卡片不是按钮，用户随手一个回车也不会误发。依赖 toolCallId
@@ -904,9 +909,24 @@ function QuestionCard({
 }) {
   const { t } = useTranslation();
   const [answer, setAnswer] = useState('');
+  const [composing, setComposing] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
+  const answerRef = useRef<HTMLTextAreaElement>(null);
   const titleId = useId();
   const questionId = useId();
+
+  // 随内容长高、封顶后内部滚动：先归零再读 scrollHeight，删字时高度才会回落
+  // （与 Composer/MessageEditor 同款手法）。
+  useEffect(() => {
+    const el = answerRef.current;
+    if (!el) return;
+    if (!answer) {
+      el.style.height = '';
+      return;
+    }
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, ANSWER_MAX_HEIGHT_PX)}px`;
+  }, [answer]);
 
   useEffect(() => {
     const card = cardRef.current;
@@ -936,16 +956,27 @@ function QuestionCard({
         {t('askUser.title')}
       </div>
       <p id={questionId} className="mb-2 whitespace-pre-line text-indigo-900/90 dark:text-indigo-200/90">{question.question}</p>
-      <div className="flex gap-2">
-        <input
-          type="text"
+      {/* 答案常不止一行（UI 走查 P2-9），用 textarea；键位与 Composer/MessageEditor
+          保持一致：Enter 提交、Shift+Enter 换行。isComposing/composing 双保险：
+          输入法里按回车确认候选词绝不能顺手把答案发出去。 */}
+      <div className="flex items-end gap-2">
+        <textarea
+          ref={answerRef}
+          rows={1}
+          aria-label={t('askUser.placeholder')}
           value={answer}
           onChange={(e) => setAnswer(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') submit();
+            if (composing || e.nativeEvent.isComposing) return;
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              submit();
+            }
           }}
+          onCompositionStart={() => setComposing(true)}
+          onCompositionEnd={() => setComposing(false)}
           placeholder={t('askUser.placeholder')}
-          className="h-9 min-w-0 flex-1 rounded-lg border border-indigo-200 bg-white px-3 text-sm text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-indigo-800 dark:bg-neutral-900 dark:text-neutral-100"
+          className="min-h-9 max-h-28 min-w-0 flex-1 resize-none overflow-y-auto rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-indigo-800 dark:bg-neutral-900 dark:text-neutral-100"
         />
         <button
           onClick={submit}
