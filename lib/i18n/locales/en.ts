@@ -164,6 +164,7 @@ export const en: Record<keyof typeof zh, string> = {
   'chat.shortcutConfigError': 'Some shortcut settings are invalid. Open Settings to fix them.',
   'chat.editMessageAriaLabel': 'Edit this message',
   'chat.copyMessageAriaLabel': 'Copy message',
+  'chat.quoteReplyAriaLabel': 'Quote this reply',
   'chat.copiedLabel': 'Copied',
   'chat.copyCodeAriaLabel': 'Copy code',
   'chat.markdownImageLabel': 'Image',

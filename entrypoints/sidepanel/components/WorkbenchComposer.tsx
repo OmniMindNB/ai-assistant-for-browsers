@@ -822,10 +822,19 @@ export function WorkbenchComposer({
                   disabled={requestBlocked}
                   aria-disabled={requestBlocked}
                   onClick={() => runCommand(index)}
-                  className={`block w-full truncate rounded-lg px-3 py-2 text-left text-sm disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${index === highlightedCommand ? 'bg-neutral-100 dark:bg-neutral-800' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}
+                  // truncate 下沉到两行各自的 span：按钮本身不再截断，第二行才放得下描述。
+                  className={`block w-full rounded-lg px-3 py-2 text-left text-sm disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${index === highlightedCommand ? 'bg-neutral-100 dark:bg-neutral-800' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}
                 >
                   {config.origin === 'recorded' && <IconPlay className="mr-1.5 inline h-3 w-3 align-[-1px] text-indigo-500" />}
-                  {resolved.name}
+                  <span className="block truncate">{resolved.name}</span>
+                  {/* 录制型指令的第二行是 playbook 的适用场景：存了十几条之后名字根本认不出
+                      “它上次到底干了什么”，这一句才是信任的来源（UI 走查 P3-12）。
+                      没有 playbook（总结失败、只存了轨迹）就不显示第二行。 */}
+                  {resolved.playbook && (
+                    <span className="mt-0.5 block truncate text-xs text-neutral-500 dark:text-neutral-400">
+                      {resolved.playbook.applicability}
+                    </span>
+                  )}
                 </button>
               ))}
               {commands.length === 0 && <div role="status" aria-live="polite" className="px-3 py-2 text-sm text-neutral-500">{t('chat.noMatchingSlashCommands')}</div>}

@@ -36,6 +36,7 @@ import {
   IconChevronRight,
   IconClose,
   IconCopy,
+  IconMessage,
   IconPencil,
   IconRefresh,
   IconStop,
@@ -359,6 +360,7 @@ export default function App() {
                       isLastMessage={i === messages.length - 1}
                       canRegenerate={m.role === 'assistant' && canRegenerateMessage(messages, m.id)}
                       canSaveTask={m.role === 'assistant' && canSaveAsTask(messages, m.id)}
+                      onQuote={quoteReply}
                       onBeginEdit={handleBeginEdit}
                       onCancelEdit={handleCancelEdit}
                       onSubmitEdit={submitEdit}
@@ -486,6 +488,7 @@ const Message = memo(function Message({
   isLastMessage,
   canRegenerate,
   canSaveTask,
+  onQuote,
   onBeginEdit,
   onCancelEdit,
   onSubmitEdit,
@@ -502,6 +505,8 @@ const Message = memo(function Message({
   isLastMessage: boolean;
   canRegenerate: boolean;
   canSaveTask: boolean;
+  /** 把整条回复作为引用交给面板（store.quoteReply，会自行截断）——划词气泡的键盘可达替代入口。 */
+  onQuote: (text: string) => void;
   onBeginEdit: (id: string) => void;
   onCancelEdit: () => void;
   onSubmitEdit: (id: string, content: string) => void;
@@ -682,6 +687,18 @@ const Message = memo(function Message({
             }`}
           >
             <CopyMessageButton content={content} />
+            {/* 划词“追问”气泡只对鼠标可达：键盘/读屏用户没有任何入口。这条按钮把整条回复
+                （store.quoteReply 自带截断）作为引用，补上这块（UI 走查 P3-10）；
+                精确到段落的引用仍然靠气泡。与复制同属“对这段文字做点什么”，排在它旁边。 */}
+            <button
+              type="button"
+              onClick={() => onQuote(content)}
+              aria-label={t('chat.quoteReplyAriaLabel')}
+              title={t('chat.quoteReplyAriaLabel')}
+              className="inline-flex items-center gap-1 rounded-md p-1.5 text-neutral-400 transition-colors hover:text-neutral-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:hover:text-neutral-200"
+            >
+              <IconMessage className="h-3.5 w-3.5" />
+            </button>
             {isLastMessage && !requestBlocked && canRegenerate && (
               <button
                 type="button"

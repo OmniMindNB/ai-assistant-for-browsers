@@ -158,6 +158,7 @@ export const zh = {
   'chat.shortcutConfigError': '部分快捷方式配置无效，请前往设置修复。',
   'chat.editMessageAriaLabel': '编辑这条消息',
   'chat.copyMessageAriaLabel': '复制这条消息',
+  'chat.quoteReplyAriaLabel': '引用这条回复',
   'chat.copiedLabel': '已复制',
   'chat.copyCodeAriaLabel': '复制代码',
   'chat.markdownImageLabel': '图片',

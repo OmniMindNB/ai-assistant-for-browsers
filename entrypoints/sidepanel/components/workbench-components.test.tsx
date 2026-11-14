@@ -1010,6 +1010,7 @@ describe('workbench composer', () => {
     expect(screen.getByRole('button', { name: 'Stop generating' })).toBeVisible();
   });
 
+  const playbookDescription = { applicability: 'Any expense form with a total field', steps: ['Fill the total', 'Click next'] };
   const recordedCommand: ResolvedShortcutCommand = {
     config: {
       id: 'shortcut-rec',
@@ -1057,6 +1058,25 @@ describe('workbench composer', () => {
     await user.keyboard('{Enter}');
     await user.keyboard('{Enter}');
     expect(onRunShortcut).toHaveBeenCalledWith(recordedCommand.config, undefined);
+  });
+
+  // 录制型指令在 / 面板里带第二行描述（playbook 适用场景）：存了十几条之后名字认不出
+  // “它上次到底干了什么”，这一句才是信任的来源（UI 走查 P3-12）。没有 playbook 则不显示。
+  it('describes recorded commands in the slash menu with their playbook applicability', async () => {
+    const user = userEvent.setup();
+    const withPlaybook = {
+      ...recordedCommand,
+      config: { ...recordedCommand.config, playbook: playbookDescription },
+      resolved: { ...recordedCommand.resolved, playbook: playbookDescription },
+    };
+    render(<ComposerHarness shortcuts={[withPlaybook, recordedCommand]} />);
+
+    await user.type(screen.getByRole('textbox'), '/');
+
+    expect(screen.getAllByRole('menuitem', { name: 'Expense report' })).toHaveLength(2);
+    // 有 playbook 的那条带第二行；没有的那条（总结失败、只存了轨迹）不显示——
+    // getByText 要求恰好一个匹配，两条都画就会在这里毕掉。
+    expect(screen.getByText('Any expense form with a total field')).toBeVisible();
   });
 
   it('cancels a staged recorded task with Escape or its close button', async () => {
@@ -1395,6 +1415,24 @@ describe('activity step list', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: en['workbench.quoteReplyButton'] }));
     expect(chatStore.quoteReply).toHaveBeenCalledWith('sandbox');
+  });
+
+  // 划词“追问”气泡只对鼠标可达；这条按钮是键盘/读屏用户的替代入口，把整条回复作为
+  // 引用交给 store（UI 走查 P3-10）。精确到段落的引用仍靠气泡。
+  it('exposes a keyboard-reachable quote action on each assistant reply', async () => {
+    const user = userEvent.setup();
+    (chatStore as any).messages = [
+      { id: 'm1', role: 'user', content: 'Why?', createdAt: 1 },
+      { id: 'm2', role: 'assistant', content: 'It runs in a sandbox.', createdAt: 2 },
+    ];
+    render(
+      <LocaleProvider>
+        <App />
+      </LocaleProvider>,
+    );
+
+    await user.click(screen.getByRole('button', { name: en['chat.quoteReplyAriaLabel'] }));
+    expect(chatStore.quoteReply).toHaveBeenCalledWith('It runs in a sandbox.');
   });
 
   it('shows a trailing thinking indicator on the last message while busy with no running step', () => {
@@ -2172,6 +2210,17 @@ describe('workbench history', () => {
 
     await user.click(screen.getByRole('button', { name: 'Confirm delete conversation Shopping comparison? Click again to delete.' }));
     expect(onRemove).toHaveBeenCalledWith('shopping');
+  });
+
+  it('tints the whole row red while a delete waits for its confirming click', async () => {
+    const user = userEvent.setup();
+    renderDrawer(vi.fn());
+
+    await user.click(screen.getByRole('button', { name: 'Delete conversation Shopping comparison' }));
+    const confirm = screen.getByRole('button', { name: 'Confirm delete conversation Shopping comparison? Click again to delete.' });
+    // 整行染红而不只是角落按钮变色：第一次点击的反馈必须明显到不会被误当成“没反应”
+    // （UI 走查 P3-11）。confirm 按钮的直接父元素就是会话行。
+    expect(confirm.parentElement?.className).toContain('bg-red-50');
   });
 
   it('only clears all history after a second confirming click, not the first', async () => {

@@ -333,7 +333,9 @@ describe('side-panel shortcut rendering', () => {
   });
 
   it('truncates long shortcut names while preserving the full accessible name and title', () => {
-    expect(source).toContain('className={`block w-full truncate');
+    // 截断下沉到了按钮内层的 name span（菜单项现在还有第二行 playbook 描述），
+    // 守卫不变的是意图：名字过长不能撑破菜单布局，完整名字仍要能拿到。
+    expect(source).toContain('<span className="block truncate">{resolved.name}</span>');
     expect(source).toContain('title={resolved.name}');
     expect(source).toContain('aria-label={resolved.name}');
   });

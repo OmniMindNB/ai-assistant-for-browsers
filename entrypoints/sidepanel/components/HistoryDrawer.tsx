@@ -200,7 +200,16 @@ export function HistoryDrawer({
                 <ul className="space-y-0.5">
                   {group.records.map((conversation) => (
                     <li key={conversation.id}>
-                      <div className="group flex items-center gap-1 rounded-lg px-2 py-2 transition-colors hover:bg-neutral-100 dark:hover:bg-neutral-800">
+                      {/* 确认删除期间整行染红，而不只是角落那颗小按钮变色——第一次点击的反馈
+                          必须明显到不会被误当成“没反应”（UI 走查 P3-11）；行本身已有
+                          transition-colors，淡入随之发生。 */}
+                      <div
+                        className={`group flex items-center gap-1 rounded-lg px-2 py-2 transition-colors ${
+                          confirmingId === conversation.id
+                            ? 'bg-red-50 dark:bg-red-950/30'
+                            : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                        }`}
+                      >
                         <button
                           type="button"
                           aria-current={conversation.id === activeConversationId ? 'page' : undefined}
