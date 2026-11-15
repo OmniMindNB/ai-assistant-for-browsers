@@ -217,6 +217,23 @@ describe('chat store page context', () => {
     });
   });
 
+  it('carries the tab favicon into the page context for the composer chip', async () => {
+    mocks.sendMessage.mockResolvedValue({
+      ok: true,
+      data: { id: 7, title: 'Example', url: 'https://example.com/', favIconUrl: 'https://example.com/favicon.ico' },
+    });
+
+    await useChat.getState().refreshPageContext();
+
+    expect(useChat.getState().pageContext).toEqual({
+      status: 'available',
+      tabId: 7,
+      title: 'Example',
+      url: 'https://example.com/',
+      favIconUrl: 'https://example.com/favicon.ico',
+    });
+  });
+
   it.each(['http://localhost:3000/', 'http://192.168.1.20/dashboard'])('keeps readable current HTTP tabs available even when external fetching would reject them: %s', async (url) => {
     mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, title: 'Local app', url } });
 

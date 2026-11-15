@@ -202,6 +202,7 @@ const availableContext: PageContextState = {
   tabId: 1,
   title: 'Example article',
   url: 'https://example.com/article',
+  favIconUrl: 'https://example.com/favicon.ico',
 };
 
 const emptyStateShortcuts: ResolvedShortcutCommand[] = Array.from({ length: 5 }, (_, index) => ({
@@ -964,33 +965,45 @@ describe('workbench composer', () => {
     expect(onRetryPageContext).toHaveBeenCalledOnce();
   });
 
-  // 底栏常驻的页面状态徽章：available/restricted 两个稳定态才有；loading/error 不画
-  // （ref: 2026-11-14-composer-page-context-badge-design.md）。
-  it('shows the attached-page badge for available tabs and describes the composer with it', () => {
-    render(<ComposerHarness pageContext={availableContext} />);
+  // 可读的当前页默认进上下文，不画任何常驻指示；引用行只属于用户显式加进来的页面。
+  // 受限页是唯一例外——它回答“这轮为什么读不了页面”
+  // （ref: 2026-11-15-composer-page-context-chip-design.md）。
+  it('does not show a page chip for the default-attached page', () => {
+    render(<ComposerHarness />);
 
-    const badge = screen.getByTestId('composer-page-context');
-    expect(badge).toHaveTextContent('This page included');
-    // 具体是哪个页面退到悬停：标题 + URL。
-    expect(badge).toHaveAttribute('title', 'Example article\nhttps://example.com/article');
-    // 徽章不是控件，读屏通过输入框的 description 听到“带没带页面”。
-    expect(screen.getByRole('textbox')).toHaveAccessibleDescription('This page included');
+    expect(screen.queryByTestId('composer-page-context')).not.toBeInTheDocument();
+    // 没有可播报的页面状态：输入框不带 description。
+    expect(screen.getByRole('textbox')).not.toHaveAccessibleDescription();
   });
 
-  it('shows the restricted-page badge instead when the tab cannot be read', () => {
-    render(
+  it('shows the restricted-page note chip when the tab cannot be read', () => {
+    const { rerender } = render(
       <ComposerHarness
         pageContext={{ status: 'restricted', tabId: 2, title: 'Extensions', url: 'chrome://extensions/' }}
       />,
     );
 
-    const badge = screen.getByTestId('composer-page-context');
-    expect(badge).toHaveTextContent('No page context');
-    expect(badge).toHaveAttribute('title', en['workbench.pageRestrictedTitle']);
+    const chip = screen.getByTestId('composer-page-context');
+    expect(chip).toHaveTextContent('Extensions');
+    expect(chip).toHaveAttribute('title', en['workbench.pageRestrictedTitle']);
+    // 没有 favicon 时回退文档图标，不画 img；受限不是用户能摘掉的状态，没有 ×。
+    expect(chip.querySelector('img')).toBeNull();
+    expect(within(chip).queryByRole('button')).toBeNull();
     expect(screen.getByRole('textbox')).toHaveAccessibleDescription('No page context');
+
+    // 有 favicon 时用它（favIconUrl 经 GET_ACTIVE_TAB 透传进 PageContextState）。
+    rerender(
+      <ComposerHarness
+        pageContext={{ status: 'restricted', tabId: 2, title: 'Extensions', url: 'chrome://extensions/', favIconUrl: 'https://example.com/favicon.ico' }}
+      />,
+    );
+    expect(screen.getByTestId('composer-page-context').querySelector('img')).toHaveAttribute(
+      'src',
+      'https://example.com/favicon.ico',
+    );
   });
 
-  it('keeps the badge out of the bottom bar for transient loading and errored tabs', () => {
+  it('keeps the page chip out of the composer for transient loading and errored tabs', () => {
     const { rerender } = render(<ComposerHarness pageContext={{ status: 'loading' }} />);
     expect(screen.queryByTestId('composer-page-context')).not.toBeInTheDocument();
 
@@ -2489,10 +2502,16 @@ describe('composer tab picker', () => {
     const user = userEvent.setup();
     render(<ComposerHarness onLoadReferencableTabs={async () => [docsTab]} />);
     await user.type(screen.getByRole('textbox'), '@');
-    // composerProps.pageContext 默认是 available/Example article。
-    const row = await screen.findByText(/Example article/);
+    // composerProps.pageContext 默认是 available/Example article；输入框里的页面 chip 也画着
+    // 同一个标题，所以查询范围必须限定在 @ 选择器里，不能对全文 findByText。
+    const picker = await waitFor(() => {
+      const element = document.getElementById('workbench-tab-picker');
+      expect(element).not.toBeNull();
+      return element as HTMLElement;
+    });
+    const row = within(picker).getByText(/Example article/);
     expect(row).toBeInTheDocument();
-    expect(screen.getByText(en['workbench.currentPageIncluded'])).toBeInTheDocument();
+    expect(within(picker).getByText(en['workbench.currentPageIncluded'])).toBeInTheDocument();
     expect(row.closest('button')).toBeNull();
   });
 

@@ -602,7 +602,9 @@ async function handleMessage(message: Message, sender?: MessageSender): Promise<
 async function getActiveTab() {
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
   if (!tab) throw new Error('未找到活动标签页');
-  return { id: tab.id, title: tab.title, url: tab.url };
+  // favIconUrl 只给面板的受限页说明 chip 用（ref: 2026-11-15-composer-page-context-chip-design.md）；
+  // <runtime_context> 不取它。
+  return { id: tab.id, title: tab.title, url: tab.url, favIconUrl: tab.favIconUrl };
 }
 
 // 内部专用：给 agent.ts 探测 browser_click/fill_form/type 之类隐式触发的导航

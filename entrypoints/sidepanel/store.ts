@@ -101,8 +101,8 @@ export type { PendingConfirmation, PendingQuestion };
 
 export type PageContextState =
   | { status: 'loading' }
-  | { status: 'available'; tabId: number; title: string; url: string }
-  | { status: 'restricted'; tabId: number; title: string; url: string }
+  | { status: 'available'; tabId: number; title: string; url: string; favIconUrl?: string }
+  | { status: 'restricted'; tabId: number; title: string; url: string; favIconUrl?: string }
   | { status: 'error'; message: string };
 
 /** 面板侧的引用条目。snapshotSent 决定这一轮要不要再抓一次正文——授权持续，快照只注入一次。 */
@@ -838,9 +838,11 @@ export const useChat = create<ChatState>((set, get) => ({
       const title = res.data.title?.trim() || (available && hostname ? hostname : t('workbench.untitledPage'));
       if (requestId !== pageContextRequestId) return;
       set({
+        // favIconUrl 只给受限页说明 chip 画图标用（ref: 2026-11-15-composer-page-context-chip-design.md；
+        // 可读页默认进上下文，不画任何指示）。
         pageContext: available
-          ? { status: 'available', tabId, title, url }
-          : { status: 'restricted', tabId, title, url },
+          ? { status: 'available', tabId, title, url, favIconUrl: res.data.favIconUrl }
+          : { status: 'restricted', tabId, title, url, favIconUrl: res.data.favIconUrl },
       });
     } catch (error) {
       if (requestId !== pageContextRequestId) return;

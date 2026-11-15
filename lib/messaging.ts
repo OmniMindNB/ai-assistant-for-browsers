@@ -72,6 +72,8 @@ export interface ActiveTabInfo {
   id: number;
   title?: string;
   url?: string;
+  /** 页面上下文 chip 的站点图标；只在本地面板渲染，不进模型上下文。 */
+  favIconUrl?: string;
 }
 
 /**

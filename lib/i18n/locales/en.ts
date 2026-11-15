@@ -120,7 +120,6 @@ export const en: Record<keyof typeof zh, string> = {
   'workbench.earlier': 'Earlier',
   'workbench.untitledPage': 'Untitled page',
   'workbench.pageContextUnavailable': 'Page context unavailable: {message}',
-  'workbench.pageAttached': 'This page included',
   'workbench.pageRestricted': 'No page context',
   'workbench.pageRestrictedTitle': 'This page type cannot be read; this conversation will not use page content.',
   'workbench.retryPageContext': 'Retry page context',
