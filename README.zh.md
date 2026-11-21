@@ -27,7 +27,7 @@
 - **任务存下来，用 `/` 重放**——把一次成功执行存成指令，之后在相似页面一键重放。
 - **基于页面原文的问答**——回答有页面实际内容作依据；可附加文本、图片、PDF（在本地提取文本），也可以用 `@` 引用其他标签页（只读）。
 - **划词提问与快捷指令**——选中文字点“问 Runi”；内置总结本页、翻译划词、帮我填表，也能加你自己的自定义动作。选中 Runi 回复里的一段，还能引用它继续追问。
-- **PDF 问答、总结与翻译**——在 Runi PDF 阅读器中选中文字，点击「问 Runi」气泡。侧边栏的「总结本页」读取 PDF 正文，「翻译划词」翻译当前选区。Chrome 151 及以上直接使用 Runi 阅读器，旧版 Chromium 可右键扩展图标，点击「在 Runi 中打开 PDF」。原生阅读器也可通过选区右键菜单翻译和提问。
+- **PDF 问答、总结与翻译**——引用选区提问、翻译选中的段落，或总结整份文档。见[用 Runi 阅读 PDF](#用-runi-阅读-pdf)。
 - **“这个页面是怎么做的？”**——Runi 能读 DOM、HTML、脚本、样式和计算样式，讲解页面效果的实现方式。
 - **拴着绳的 Agent**——任务执行中你一动鼠标或键盘，它就暂停询问；工具调用有预算上限。
 - **模型随你选**——支持 OpenAI Chat Completions（任意兼容接口）、OpenAI Responses 和 Anthropic Messages 三种协议，内置 DeepSeek、OpenAI、Claude 一键预设；可配置多个服务商，在输入框下方直接切换。
@@ -51,9 +51,17 @@ Runi 不带内置模型，需要你自备服务商的 API Key。以 DeepSeek 为
 
 完整图文步骤和常见问题见 [Provider 配置指南](docs/provider-setup.md)。
 
+### 用 Runi 阅读 PDF
+
+1. 打开本地或在线 PDF。Chrome 151 及以上会用 Runi PDF 阅读器打开。旧版 Chromium 可右键工具栏上的 Runi 图标，选择 **「在 Runi 中打开 PDF」**。打开本地文件时，再点击 **「打开 PDF 文件」** 并选择文件。
+2. 打开 Runi 侧边栏，点 **「总结本页」**。Runi 会读取所有页的文字，包括尚未滚动到的页面。长文档会分段读取。
+3. 想翻译某一段，在 PDF 里选中文字，然后点侧边栏的 **「翻译划词」**。想就选区提问，点旁边的 **「问 Runi」** 气泡，再在侧边栏输入问题。
+
+这些功能需要 PDF 中有可提取的文字。纯图片扫描件需要先做 OCR。在浏览器内置 PDF 阅读器中，也可以选中文字后通过 Runi 的右键菜单翻译或提问。
+
 ## 权限
 
-`sidePanel`、`storage`、`scripting`、`activeTab`、`tabs`、`alarms`（仅在你发起的任务运行期间保持 Service Worker 存活）、`userScripts`（Agent 在隔离环境中运行页面脚本，需在扩展详情页开启“允许用户脚本”），以及 `<all_urls>` 主机权限。
+`sidePanel`、`storage`、`scripting`、`activeTab`、`tabs`、`contextMenus`（在右键菜单中添加 Runi 操作）、`alarms`（仅在你发起的任务运行期间保持 Service Worker 存活）、`userScripts`（Agent 在隔离环境中运行页面脚本，需在扩展详情页开启“允许用户脚本”），以及 `<all_urls>` 主机权限。
 
 ## 开发
 

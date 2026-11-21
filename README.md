@@ -27,7 +27,7 @@ Unlike subscription AI sidebars, Runi is **bring-your-own-key (BYOK)**: plug in 
 - **Save a task, replay it with `/`** — turn a successful run into a saved instruction and replay it on similar pages.
 - **Page Q&A that cites the page** — answers grounded in the page's actual text; attach text, images, or PDFs (text extracted locally), or reference other tabs with `@` (read-only).
 - **Selection ask & quick actions** — select text and click "Ask Runi"; built-in actions include summarize page, translate selection, and fill this form — plus your own custom actions. Select part of Runi's own reply to quote it in a follow-up question.
-- **PDF Q&A, summaries and translation** — select text and click the **Ask Runi** bubble in Runi’s PDF viewer. Use **Summarize page** and **Translate selection** in the sidebar. Chrome 151+ opens PDFs in this viewer directly. On older Chromium versions, right-click the extension icon and choose **Open PDF in Runi**. The browser’s built-in viewer offers translation and Q&A through the selection context menu.
+- **PDF Q&A, summaries and translation** — ask about selected text, translate a passage, or summarize the whole document. See [Read a PDF with Runi](#read-a-pdf-with-runi).
 - **"How is this page built?"** — Runi can read the DOM, HTML, scripts, styles, and computed styles to explain a page effect.
 - **Agent with a leash** — if you move your mouse or type while a task runs, Runi pauses and asks; tool calls have a budget cap.
 - **Any model you like** — OpenAI Chat Completions (any compatible endpoint), OpenAI Responses, and Anthropic Messages protocols, with one-click presets for DeepSeek, OpenAI, and Claude; configure multiple providers and switch right under the input box.
@@ -51,9 +51,17 @@ Runi ships without a built-in model — you bring a provider API key. Using Deep
 
 Full walkthrough and FAQ: [Provider setup guide](docs/provider-setup.md).
 
+### Read a PDF with Runi
+
+1. Open a local or online PDF. Chrome 151+ opens it in Runi’s PDF viewer. On older Chromium versions, right-click the Runi toolbar icon and choose **Open PDF in Runi**. For a local PDF on those versions, click **Open PDF file** and choose the file.
+2. Open the Runi sidebar. Click **Summarize page** to summarize the text from all pages, including pages you haven’t scrolled to. For a long document, Runi reads the text in sections.
+3. To translate a passage, select it in the PDF and click **Translate selection** in the sidebar. To ask a question, click the **Ask Runi** bubble by the selection, then type your question in the sidebar.
+
+These actions require selectable text. Image-only scans need OCR first. In the browser’s built-in PDF viewer, you can still select text and use Runi’s translation or Q&A commands from the right-click menu.
+
 ## Permissions
 
-`sidePanel`, `storage`, `scripting`, `activeTab`, `tabs`, `alarms` (keeps the service worker alive only while a task you started is running), `userScripts` (the agent runs page scripts in an isolated world; requires enabling "Allow user scripts" on the extension details page), plus `<all_urls>` host access.
+`sidePanel`, `storage`, `scripting`, `activeTab`, `tabs`, `contextMenus` (adds Runi actions to right-click menus), `alarms` (keeps the service worker alive only while a task you started is running), `userScripts` (the agent runs page scripts in an isolated world and requires enabling "Allow user scripts" on the extension details page), plus `<all_urls>` host access.
 
 ## Development
 
