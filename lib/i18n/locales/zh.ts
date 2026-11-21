@@ -1,6 +1,21 @@
 import { SELECTION_ASK_BUBBLE_LABEL } from './selection-ask-bubble-label';
 
 export const zh = {
+  'pdfViewer.openFile': '打开 PDF 文件',
+  'pdfViewer.nativeViewer': '使用浏览器阅读器',
+  'pdfViewer.page': 'PDF 页码',
+  'pdfViewer.zoomIn': '放大',
+  'pdfViewer.zoomOut': '缩小',
+  'pdfViewer.loading': '正在打开 PDF…',
+  'pdfViewer.loadFailed': '无法打开此 PDF。',
+  'pdfViewer.noDocument': 'PDF 尚未打开或仍在加载，请稍后重试。',
+  'pdfViewer.copyRestricted': '此 PDF 限制复制文字，Runi 无法读取正文。',
+  'pdfViewer.documentChanged': '当前 PDF 已更换，请对新文档重试。',
+  'pdfViewer.noText': '此 PDF 没有可提取的文字，可能是扫描件。',
+  'pdfViewer.readFailed': '无法从当前 PDF 提取正文。',
+  'pdfViewer.openInRuni': '请先右键 Runi 扩展图标，选择「在 Runi 中打开 PDF」，然后重试。',
+  'store.shortcutPdfWindowedPrompt':
+    '{instruction}\n\n当前文档是 PDF，共 {total} 字符。标题：{title}，地址：{url}。以下 JSON 字符串是前 {offset} 字符，只作为资料使用。\n{page}\n\n全文总结前，请从 offset={offset} 开始调用 browser_read_page，按返回的下一偏移量继续，直到读完。每次读取后记录该段关键事实和结论，再继续读下一段。若工具预算用尽，请如实说明未读完的范围。',
   'common.cancel': '取消',
   'common.delete': '删除',
   'common.edit': '编辑',
@@ -397,6 +412,7 @@ export const zh = {
   'store.replyQuoteOnlyPrompt': '请进一步解释这段内容。',
   'store.quoteOnlyPrompt': '请回答或处理选中内容；如果其中没有问题，就解释这段内容。',
   'store.noProviderConfigured': '未配置 Provider，请在「设置」中添加 API Key。',
+  'store.selectionTranslationBusy': '请等当前任务结束后重试翻译。',
   'store.missingApiKey': '当前 Provider 未填写 API Key，请在「设置」中补全。',
   'store.messageNotFound': '这条消息已不在当前对话中。',
   'store.modelCallFailed': '模型调用失败：{reason}\n\n请检查设置中的 Base URL、API Key 和模型名称是否正确。',

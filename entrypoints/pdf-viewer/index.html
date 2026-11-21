@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Runi PDF</title>
+  </head>
+  <body>
+    <header>
+      <span id="file-name"></span>
+      <button id="open-file" type="button" hidden></button>
+      <input id="file-picker" type="file" accept=".pdf,application/pdf" hidden />
+      <fieldset id="page-tools" disabled>
+        <input id="page" type="number" min="1" value="1" />
+        <span id="page-count"></span>
+        <button id="zoom-out" type="button">−</button>
+        <button id="zoom-in" type="button">+</button>
+      </fieldset>
+      <button id="native-viewer" type="button" hidden></button>
+    </header>
+    <div id="viewer-container" role="main" aria-label="PDF">
+      <div id="viewer" class="pdfViewer"></div>
+    </div>
+    <p id="status" role="status" hidden></p>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_TOOL_RESULT_CHARS } from '@/lib/agent/context-budget';
+import { DEFAULT_READ_MAX_CHARS, MAX_TOOL_RESULT_CHARS } from '@/lib/agent/context-budget';
 import {
   MAX_PAGE_PREFETCH_CHARS,
   MIN_PAGE_PREFETCH_CHARS,
@@ -68,6 +68,16 @@ describe('planPagePrefetch', () => {
       page('x'.repeat(MAX_PAGE_PREFETCH_CHARS + 1), [{ level: 2, title: '第 4 节' }]),
     );
     expect(plan).toMatchObject({ outline: [{ level: 2, title: '第 4 节' }] });
+  });
+
+  it('starts an oversized PDF at the first chunk and preserves the full length for sequential reads', () => {
+    const first = 'a'.repeat(DEFAULT_READ_MAX_CHARS);
+    const total = MAX_PAGE_PREFETCH_CHARS + 1;
+    const text = first + 'b'.repeat(total - first.length);
+
+    expect(planPagePrefetch({ ...page(text), source: 'pdf' })).toEqual({
+      kind: 'pdf-windowed', title: 'T', url: 'https://example.com/a', text: first, total,
+    });
   });
 });
 

@@ -1,10 +1,12 @@
-// 每个标签页暂存"划词提问气泡刚提交的选中文字"，供侧边栏面板挂载时消费一次并预填输入框。
+// 每个标签页暂存气泡或右键菜单提交的选中文字，供侧边栏打开后消费一次。
 // 持久化到 browser.storage.session（而非模块级变量）：面板打开时 Chrome 可能刚把面板文档
 // 重新加载，模块级变量活不过这次重建，只有 storage.session 能跨文档重建存活（同时不落盘，
 // 浏览器重启后自动清空）。写法仿 lib/agent/tab-conversation.ts。
 
 export interface PendingAsk {
   text: string;
+  /** 缺省时把选区放入输入框，等待用户提问。 */
+  action?: 'translate';
   /** 选区所在段落，已在 background 脱敏；页面上取不到时缺省。 */
   context?: string;
 }

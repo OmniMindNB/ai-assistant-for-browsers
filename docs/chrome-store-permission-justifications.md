@@ -1,9 +1,9 @@
 # Chrome Web Store Permission and Data-Use Answers
 
-Paste-ready answers for the Chrome Web Store Developer Dashboard. The `1.11.0` Store build uses this permission set:
+Paste-ready answers for the Chrome Web Store Developer Dashboard. The current Chrome build uses the following permissions.
 
 ```text
-permissions: sidePanel, storage, scripting, activeTab, tabs, alarms, userScripts
+permissions: sidePanel, storage, scripting, activeTab, tabs, alarms, userScripts, contextMenus
 host_permissions: <all_urls>
 ```
 
@@ -91,6 +91,20 @@ Used to host Runi’s primary user interface: the AI conversation and page-actio
 
 ```text
 用于承载 Runi 的主要用户界面，即 AI 对话与页面操作侧边栏。
+```
+
+## `contextMenus`
+
+**English**
+
+```text
+Adds translation and question commands to the browser’s text-selection menu, including in the built-in PDF viewer. Runi receives the highlighted text when the user clicks one of these commands.
+```
+
+**简体中文**
+
+```text
+用于在浏览器的文字选区右键菜单中添加翻译与提问入口，内置 PDF 阅读器也可使用。用户点击对应菜单后，Runi 才会收到选中的文字。
 ```
 
 ## `alarms`

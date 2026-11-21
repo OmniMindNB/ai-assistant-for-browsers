@@ -10,5 +10,14 @@
   "commandOpenPanel": {
     "message": "Open Runi panel",
     "description": "Keyboard shortcut label shown on chrome://extensions/shortcuts"
+  },
+  "menuTranslateSelection": {
+    "message": "Translate selected text"
+  },
+  "menuAskSelection": {
+    "message": "Ask about selected text"
+  },
+  "menuOpenPdfViewer": {
+    "message": "Open PDF in Runi"
   }
 }

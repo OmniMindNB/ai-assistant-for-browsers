@@ -72,6 +72,7 @@ export interface ActiveTabInfo {
   id: number;
   title?: string;
   url?: string;
+  source?: 'pdf';
   /** 页面上下文 chip 的站点图标；只在本地面板渲染，不进模型上下文。 */
   favIconUrl?: string;
 }
@@ -90,6 +91,9 @@ export interface PageContent {
   title: string;
   url: string;
   lang: string;
+  source?: 'pdf';
+  /** PDF 阅读器可识别该文档，但当前无法提供正文时的提示。 */
+  pdfError?: string;
   /** 纯文本正文（Phase 1 接入 Readability 优化） */
   text: string;
   /** 提取到的字符数 */
@@ -103,7 +107,7 @@ export interface PageSelection {
   text: string;
 }
 
-/** ASK_SELECTION：content script 主动上报"用户点击了划词提问气泡"，携带选中的文本。 */
+/** ASK_SELECTION：网页或 PDF 阅读器上报用户点击气泡时选中的文本。 */
 export interface AskSelectionPayload {
   text: string;
   /** 选区所在段落的原文窗口（未脱敏，background 落盘前脱敏）。 */

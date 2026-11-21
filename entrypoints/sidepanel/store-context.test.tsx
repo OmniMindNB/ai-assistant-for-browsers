@@ -253,6 +253,15 @@ describe('chat store page context', () => {
     expect(useChat.getState().pageContext.status).toBe('restricted');
   });
 
+  it('treats a local PDF as readable when it is open in the Runi viewer', async () => {
+    const url = 'file:///sample.pdf';
+    mocks.sendMessage.mockResolvedValue({ ok: true, data: { id: 7, url, source: 'pdf' } });
+
+    await useChat.getState().refreshPageContext();
+
+    expect(useChat.getState().pageContext).toMatchObject({ status: 'available', url });
+  });
+
   it.each([
     'https://chromewebstore.google.com/detail/example',
     'https://chrome.google.com/webstore/detail/example',
@@ -1123,6 +1132,19 @@ describe('chat store page context', () => {
       expect(useChat.getState().pendingFocusToken).toBe(0);
     });
 
+    it('translates a native PDF selection in its own tab without reading the selection from a content script', async () => {
+      const key = 'runi:tab-pending-ask:42';
+      (globalThis as any).browser.storage.session.get = vi.fn().mockImplementation(async (name) =>
+        name === key ? { [key]: { text: 'First line\nSecond line', action: 'translate' } } : {},
+      );
+
+      await useChat.getState().restoreTabConversation();
+
+      expect(lastStartRunCall()).toMatchObject({ tabId: 42, withoutBrowserTools: true });
+      expect(lastStartRunCall().agentUserContent).toContain(JSON.stringify('First line\nSecond line'));
+      expect(mocks.sendMessage).not.toHaveBeenCalled();
+    });
+
     // sidePanel.open() 对已经打开的面板是 no-op，不会重新触发 restoreTabConversation，
     // 所以这一条刻意不再调用它——只靠 storage.onChanged 事件驱动消费。
     it('consumes a pending ask that arrives while the panel is already open, without a second restore', async () => {
@@ -1655,6 +1677,41 @@ describe('chat store page context', () => {
     expect(sent).toContain('总结这个页面');
     expect(sent).toContain(JSON.stringify('正文内容。'.repeat(50)));
     expect(sent).not.toBe('📄 总结当前网页');
+  });
+
+  it('summarizes a short PDF with the entire extracted document in the first turn', async () => {
+    await connectPort();
+    const url = 'file:///sample.pdf';
+    const text = '[Page 1]\nFirst-page paragraph.\n\n[Page 2]\nLast-page paragraph.';
+    mocks.sendMessage.mockImplementation(async (type: string) => {
+      if (type === 'GET_ACTIVE_TAB') return { ok: true, data: { id: 7, url } };
+      return { ok: true, data: { title: 'sample.pdf', url, source: 'pdf', text } };
+    });
+
+    await useChat.getState().runShortcut({
+      id: 'builtin:summarize-page', origin: 'builtin', scope: 'page', customized: false,
+    });
+
+    expect(lastStartRunCall().agentUserContent).toContain(JSON.stringify(text));
+    expect(lastStartRunCall().withoutBrowserTools).toBe(true);
+  });
+
+  it('reports an unreadable PDF before starting a model run', async () => {
+    await connectPort();
+    const url = 'file:///scanned.pdf';
+    const pdfError = 'This PDF has no extractable text.';
+    mocks.sendMessage.mockImplementation(async (type: string) => {
+      if (type === 'GET_ACTIVE_TAB') return { ok: true, data: { id: 7, url } };
+      return { ok: true, data: { title: 'scanned.pdf', url, source: 'pdf', text: '', pdfError } };
+    });
+
+    await useChat.getState().runShortcut({
+      id: 'builtin:summarize-page', origin: 'builtin', scope: 'page', customized: false,
+    });
+
+    expect(lastStartRunCall()).toBeUndefined();
+    expect(useChat.getState().error).toBe(pdfError);
+    expect(useChat.getState().busy).toBe(false);
   });
 
   const recordedShortcut = {

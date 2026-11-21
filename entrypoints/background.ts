@@ -1,4 +1,5 @@
 import {
+  type ActiveTabInfo,
   type BatchClickOutcome,
   type CaptureScreenshotPayload,
   type CaptureScreenshotResult,
@@ -85,6 +86,9 @@ import { clearOverlayForTab, getOverlayForTab, setOverlayForTab } from '@/lib/ag
 import { clearConversationIdForTab } from '@/lib/agent/tab-conversation';
 import { resolveHtmlRequest, resolveResourceRequest, type ResolvedHtmlRequest } from '@/lib/agent/read-request';
 import { clearPendingAskForTab, setPendingAskForTab } from '@/lib/agent/tab-pending-ask';
+import { truncateSelectionText } from '@/lib/selection-ask';
+import { hasPdfFilePath, PDF_VIEWER_PATH, remotePdfUrl } from '@/lib/pdf-viewer-source';
+import { requestPdfViewer } from '@/lib/pdf-viewer-messaging';
 import { setTakeoverForTab } from '@/lib/agent/tab-takeover';
 import { clearTabSession } from '@/lib/agent/tab-session-storage';
 import { AGENT_RUN_PORT_NAME, type PanelToBackground } from '@/lib/agent/run-port-protocol';
@@ -99,7 +103,7 @@ import {
   markConversationDeleted,
   unmarkConversationDeleted,
 } from '@/lib/agent/run-registry';
-import { loadLocale, applyLocale, LOCALE_KEY } from '@/lib/i18n';
+import { loadLocale, applyLocale, LOCALE_KEY, t } from '@/lib/i18n';
 import {
   SIDE_PANEL_PATH,
   enableAndOpenPanelForTab,
@@ -204,6 +208,8 @@ const SUPPORTED_MESSAGE_TYPES = [
 
 // Service Worker：消息路由中心（ref: technical-plan.md §3.2）
 export default defineBackground(() => {
+  registerSelectionMenus();
+
   // agent 主循环现在跑在 background 自己的执行上下文里，lib/agent/tools.ts、agent.ts 的
   // browser_* 工具调用的 sendMessage() 因此变成了"自己给自己发运行时消息"——按 WebExtensions
   // 规范，runtime.onMessage 不会派发给发消息的那个 frame 自己，继续走消息总线会让这些调用
@@ -412,9 +418,7 @@ function requireTabId(message: Message): number {
 type MessageSender = Parameters<Parameters<typeof browser.runtime.onMessage.addListener>[0]>[1];
 
 /**
- * ASK_SELECTION 是唯一一个由 content script 主动发起、不携带 tabId 的消息——它的语义就是
- * "当前这个 tab 的用户点了划词提问气泡"，tab 身份直接来自 sender.tab.id，不走其它消息类型
- * 依赖的"侧边栏在回合开始时解析并透传 tabId"那套逻辑。
+ * 网页或 PDF 阅读器里的用户点了划词提问气泡。tab 身份直接来自 sender.tab.id。
  */
 async function handleAskSelection(sender: MessageSender | undefined, payload: AskSelectionPayload | undefined): Promise<void> {
   const tabId = sender?.tab?.id;
@@ -422,6 +426,60 @@ async function handleAskSelection(sender: MessageSender | undefined, payload: As
   const text = payload?.text?.trim();
   if (!text) return;
 
+  await openPanelForSelection(tabId);
+
+  // 即使侧边栏没打开，用户手动打开时仍能接上这次划词。
+  const rawContext = payload?.context?.trim();
+  // 先脱敏再截断，避免截断把敏感串切成正则无法匹配的片段。
+  const context = rawContext
+    ? redactText(rawContext, await loadRedactionSettings()).slice(0, MAX_SELECTION_CONTEXT_CHARS + 2)
+    : undefined;
+  await setPendingAskForTab(tabId, context ? { text, context } : { text });
+}
+
+function registerSelectionMenus(): void {
+  if (!browser.sidePanel?.open || !browser.contextMenus) return;
+  const menus = browser.contextMenus;
+  const askId = 'menuAskSelection';
+  const translateId = 'menuTranslateSelection';
+  const viewerId = 'menuOpenPdfViewer';
+
+  browser.runtime.onInstalled.addListener(() => {
+    void menus.removeAll().then(() => {
+      for (const id of [translateId, askId, viewerId] as const) {
+        const contexts = id === viewerId ? ['selection', 'action'] as const : ['selection'] as const;
+        menus.create({ id, title: browser.i18n.getMessage(id), contexts: [...contexts] }, () => {
+          const error = browser.runtime.lastError;
+          if (error) console.error('[Runi] create selection menu:', error.message);
+        });
+      }
+    }).catch((err: unknown) => console.error('[Runi] register selection menus:', err));
+  });
+
+  // 原生 PDF 阅读器的选区由浏览器直接提供。文件 URL 可以没有 .pdf 后缀。
+  menus.onClicked.addListener((info, tab) => {
+    const tabId = tab?.id;
+    const id = info.menuItemId;
+    if (id === viewerId) {
+      const readerUrl = new URL(browser.runtime.getURL(PDF_VIEWER_PATH));
+      const source = remotePdfUrl(tab?.url ?? info.pageUrl);
+      if (source) readerUrl.searchParams.set('file', source.href);
+      void browser.tabs.create({ url: readerUrl.href, openerTabId: tabId }).catch(
+        (err: unknown) => console.error('[Runi] open PDF viewer:', err),
+      );
+      return;
+    }
+    if (typeof tabId !== 'number' || (id !== askId && id !== translateId)) return;
+    const text = truncateSelectionText(info.selectionText ?? '');
+    if (!text) return;
+
+    void openPanelForSelection(tabId).then(() =>
+      setPendingAskForTab(tabId, id === translateId ? { text, action: 'translate' } : { text }),
+    ).catch((err: unknown) => console.error('[Runi] handle selection menu:', err));
+  });
+}
+
+async function openPanelForSelection(tabId: number): Promise<void> {
   // 启用 + 打开必须在这一段同步执行里发起，中间不能插入任何 await——手势的有效期只覆盖
   // 监听器的同步执行段，跨过一次 await 就会拿到
   // "`sidePanel.open()` may only be called in response to a user gesture."
@@ -438,15 +496,6 @@ async function handleAskSelection(sender: MessageSender | undefined, payload: As
   // 只有真的打开了才记账。失败时若照样记成"这个 tab 开过面板"，这个 tab 就会一直保持
   // enabled:true，用户切到它时面板会跟过来显示——正是 lib/tab-panel-scope.ts 要挡的那个问题。
   if (outcome.opened) await markPanelOpenedForTab(tabId);
-
-  // 待提问的选中文本无论如何都留下：即使这次没打开成功，用户手动点开面板时仍能接上。
-  // 选区是用户自己挑的、要发出去的内容；所在段落则是顺带的页面原文，和读工具一样先脱敏。
-  const rawContext = payload?.context?.trim();
-  // 先脱敏再截断（截断可能把敏感串切成正则认不出的半截）；内容脚本已按上限开窗，这里只兜底长度。
-  const context = rawContext
-    ? redactText(rawContext, await loadRedactionSettings()).slice(0, MAX_SELECTION_CONTEXT_CHARS + 2)
-    : undefined;
-  await setPendingAskForTab(tabId, context ? { text, context } : { text });
 }
 
 /**
@@ -599,12 +648,16 @@ async function handleMessage(message: Message, sender?: MessageSender): Promise<
 
 // 例外：这是唯一保留"实时查询当前激活标签页"语义的函数，用于 GET_ACTIVE_TAB——
 // 它的用途就是让模型知道"用户现在焦点在哪"，和"本回合操作目标"是两个正交的问题。
-async function getActiveTab() {
+async function getActiveTab(): Promise<ActiveTabInfo> {
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-  if (!tab) throw new Error('未找到活动标签页');
+  if (typeof tab?.id !== 'number') throw new Error('未找到活动标签页');
+  const pdf = await requestPdfViewer(tab.id, 'status').catch(() => undefined);
   // favIconUrl 只给面板的受限页说明 chip 用（ref: 2026-11-15-composer-page-context-chip-design.md）；
   // <runtime_context> 不取它。
-  return { id: tab.id, title: tab.title, url: tab.url, favIconUrl: tab.favIconUrl };
+  return {
+    id: tab.id, title: tab.title, url: tab.url, favIconUrl: tab.favIconUrl,
+    ...(pdf?.ok && pdf.data ? { source: pdf.data.source } : {}),
+  };
 }
 
 // 内部专用：给 agent.ts 探测 browser_click/fill_form/type 之类隐式触发的导航
@@ -630,11 +683,25 @@ async function listWindowTabs(panelTabId: number): Promise<ListWindowTabsResult>
 }
 
 async function extractActivePage(tabId: number): Promise<PageContent> {
-  const tab = await resolveTargetTab(tabId);
-  const response = await sendToContentScript<PageContent>(tab.id, {
-    id: `extract-${Date.now()}`,
-    type: 'EXTRACT_PAGE',
-  } satisfies Message);
+  const tab = await browser.tabs.get(tabId);
+  let response = await requestPdfViewer(tabId, 'document');
+  if (!response) {
+    const pdfPath = hasPdfFilePath(tab.url);
+    try {
+      response = await sendToContentScript<PageContent>(tabId, {
+        id: `extract-${Date.now()}`,
+        type: 'EXTRACT_PAGE',
+      } satisfies Message);
+    } catch (error) {
+      if (!pdfPath) throw error;
+    }
+    if (pdfPath && !response?.data?.text.trim()) {
+      return {
+        source: 'pdf', title: tab.title ?? '', url: tab.url ?? '', lang: '',
+        text: '', length: 0, pdfError: t('pdfViewer.openInRuni'),
+      };
+    }
+  }
 
   if (!response?.ok || !response.data) {
     throw new Error(response?.error ?? '页面提取失败');
@@ -655,11 +722,20 @@ async function extractActivePage(tabId: number): Promise<PageContent> {
 }
 
 async function getActiveSelection(tabId: number): Promise<PageSelection> {
-  const tab = await resolveTargetTab(tabId);
-  const response = await sendToContentScript<PageSelection>(tab.id, {
+  const tab = await browser.tabs.get(tabId);
+  const pdf = await requestPdfViewer(tabId, 'selection');
+  if (pdf?.ok && pdf.data) return pdf.data;
+  if (pdf) throw new Error(pdf.error ?? t('pdfViewer.readFailed'));
+
+  const pdfPath = hasPdfFilePath(tab.url);
+  const response = await sendToContentScript<PageSelection>(tabId, {
     id: `selection-${Date.now()}`,
     type: 'GET_SELECTION',
-  } satisfies Message);
+  } satisfies Message).catch((error: unknown) => {
+    if (pdfPath) throw new Error(t('pdfViewer.openInRuni'));
+    throw error;
+  });
+  if (pdfPath && !response?.data?.text.trim()) throw new Error(t('pdfViewer.openInRuni'));
 
   if (!response?.ok || !response.data) {
     throw new Error(response?.error ?? '获取选区失败');

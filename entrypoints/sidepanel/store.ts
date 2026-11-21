@@ -79,6 +79,8 @@ import { buildConversationExport, exportFileName, renderConversationExportMarkdo
 import { downloadTextFile } from '@/lib/workbench/download-file';
 import { isCurrentTabReadable } from '@/lib/current-tab-readability';
 import {
+  BUILTIN_SUMMARIZE_ID,
+  BUILTIN_TRANSLATE_ID,
   loadShortcutConfigs,
   resolveShortcut,
   type ResolvedShortcut,
@@ -435,6 +437,8 @@ let runEpoch = 0;
 let conversationEpoch = 0;
 /** 侧边栏面板自己绑定的 tabId；挂载时解析一次并缓存，用于把 conversationId 变化写回对应 tab 的映射。 */
 let panelTabId: number | null = null;
+let pendingAskReady = false;
+let pendingAskConsumption = Promise.resolve();
 /** true 只在 restoreTabConversation() 内部恢复已保存对话期间。
  * 这段时间 conversationId 的变化是"面板文档重建后重新挂载同一个对话"，
  * 不是真正的对话切换/清空——useChat.subscribe 靠这个标志跳过 clearTabSession，
@@ -614,10 +618,42 @@ async function resolveActiveTab(): Promise<ActiveTabInfo> {
  * 用 useChat.setState 而不是闭包里的 set，是因为模块级监听器拿不到 set/get；两者等价——
  * 调用发生时 useChat 早已构造完成。
  */
-async function consumePendingAskForTab(tabId: number): Promise<void> {
+function consumePendingAskForTab(tabId: number): Promise<void> {
+  // 面板恢复和 storage 事件可能同时看到这一条记录。串行读取和删除，避免重复翻译。
+  const consume = pendingAskConsumption.then(() => applyPendingAskForTab(tabId));
+  pendingAskConsumption = consume.catch(() => undefined);
+  return consume;
+}
+
+async function applyPendingAskForTab(tabId: number): Promise<void> {
+  if (panelTabId !== tabId || !pendingAskReady) return;
   const pendingAsk = await getPendingAskForTab(tabId);
   if (!pendingAsk) return;
   await clearPendingAskForTab(tabId);
+  if (panelTabId !== tabId || !pendingAskReady) return;
+  if (pendingAsk.action === 'translate') {
+    const { text } = pendingAsk;
+    const { setState: set, getState: get } = useChat;
+    const resolved = resolveShortcut({
+      id: BUILTIN_TRANSLATE_ID, origin: 'builtin', scope: 'selection', customized: false,
+    }, t);
+    const origin = captureConversationOrigin(get);
+    async function translateSelection(): Promise<void> {
+      if (panelTabId !== tabId || !isCurrentOrigin(origin, get)) return;
+      const retry = () => { void translateSelection(); };
+      if (get().busy || activeRun || hasBusyAttachments(get().pendingAttachments)) {
+        set({ error: t('store.selectionTranslationBusy'), retryAction: retry });
+        return;
+      }
+      await runResolvedShortcut(set, get, resolved, {
+        presetSelection: text,
+        presetTab: { id: tabId },
+        retry,
+      });
+    }
+    await translateSelection();
+    return;
+  }
   useChat.setState({
     quotedSelection: truncateSelectionText(pendingAsk.text),
     quotedContext: pendingAsk.context ?? null,
@@ -834,7 +870,7 @@ export const useChat = create<ChatState>((set, get) => ({
       } catch {
         // 无法解析的 URL 对浏览器工具同样不可用，按受限页显示原始地址。
       }
-      const available = isCurrentTabReadable(url);
+      const available = res.data.source === 'pdf' || isCurrentTabReadable(url);
       const title = res.data.title?.trim() || (available && hostname ? hostname : t('workbench.untitledPage'));
       if (requestId !== pageContextRequestId) return;
       set({
@@ -1050,6 +1086,7 @@ export const useChat = create<ChatState>((set, get) => ({
   },
 
   restoreTabConversation: async () => {
+    pendingAskReady = false;
     const tabs = await browser.tabs.query({ active: true, currentWindow: true });
     const tabId = tabs[0]?.id;
     if (typeof tabId !== 'number') return;
@@ -1075,6 +1112,8 @@ export const useChat = create<ChatState>((set, get) => ({
       }
     }
 
+    if (panelTabId !== tabId) return;
+    pendingAskReady = true;
     await consumePendingAskForTab(tabId);
   },
 
@@ -1211,11 +1250,13 @@ useChat.subscribe((state, prevState) => {
 // 与上面的 subscribe 一样是"绑定在 panelTabId 上、每个面板文档生命周期内注册一次"的模块级副作用，
 // 不需要显式移除：Chrome 销毁/重建面板文档时整个模块也随之重建，没有泄漏可言。
 browser.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName !== 'session' || panelTabId === null) return;
+  if (areaName !== 'session' || panelTabId === null || !pendingAskReady) return;
   const change = changes[pendingAskStorageKey(panelTabId)];
   // 跳过删除侧的变化——那正是本函数自己 clearPendingAskForTab 触发的回声。
   if (!change || !change.newValue) return;
-  void consumePendingAskForTab(panelTabId);
+  void consumePendingAskForTab(panelTabId).catch((error: unknown) =>
+    console.error('[Runi] consume pending selection:', error),
+  );
 });
 
 // pageContext 只在面板挂载时取过一次快照；submitMessage 用它的 status 决定
@@ -1266,6 +1307,8 @@ interface RunAgentOptions {
 }
 
 interface RunShortcutOptions {
+  /** 原生选区来自菜单事件绑定的标签页。 */
+  presetTab?: ActiveTabInfo;
   /** 重新生成时用当时存下的选区，跳过读取页面当前选区——那会儿的选区多半已经没了。 */
   presetSelection?: string;
   /** 重新生成时截断到这条消息之前，替换掉原来那一轮，而不是在末尾再追加一轮。 */
@@ -1289,9 +1332,10 @@ async function runResolvedShortcut(
 ): Promise<boolean> {
   if (get().busy || hasBusyAttachments(get().pendingAttachments)) return false;
   const origin = captureConversationOrigin(get);
-  let tab: ActiveTabInfo | undefined;
+  let tab = options.presetTab;
   let selectionText: string | undefined = options.presetSelection;
   let pagePrefetch: PagePrefetchPlan | undefined;
+  let summarizePdf = false;
 
   if (resolved.scope === 'selection' && selectionText === undefined) {
     set({ busy: true, error: null });
@@ -1335,6 +1379,7 @@ async function runResolvedShortcut(
     }
     if (!isCurrentOrigin(origin, get)) return false;
     // 录制型指令不预取正文：回放要的是表单和按钮，起始页也可能不是当前页（见 shortcut-prompts.ts）。
+    summarizePdf = resolved.id === BUILTIN_SUMMARIZE_ID && tab.source === 'pdf';
     if (resolved.origin !== 'recorded') {
       try {
         const response = (await sendMessage(
@@ -1343,7 +1388,14 @@ async function runResolvedShortcut(
           tab.id,
         )) as MessageResponse<PageContent>;
         if (!isCurrentOrigin(origin, get)) return false;
+        summarizePdf ||= resolved.id === BUILTIN_SUMMARIZE_ID && response.data?.source === 'pdf';
+        if (summarizePdf && (!response.ok || response.data?.source !== 'pdf')) {
+          throw new Error(response.error ?? t('pdfViewer.documentChanged'));
+        }
         if (response.ok && response.data) {
+          if (summarizePdf && !response.data.text.trim()) {
+            throw new Error(response.data.pdfError ?? t('pdfViewer.noText'));
+          }
           // 预取跑在脱敏之后的正文上（background.ts 的 extractActivePage 已经过了 redactText），
           // 所以长度判断和头尾切分用的就是模型最终会看到的那份文本。
           // 正文太短时 planPagePrefetch 给出 skip：不设 pagePrefetch，退回工具路径，
@@ -1351,8 +1403,13 @@ async function runResolvedShortcut(
           const plan = planPagePrefetch(response.data);
           if (plan.kind !== 'skip') pagePrefetch = plan;
         }
-      } catch {
-        // 静默降级，见上方注释。
+      } catch (error) {
+        if (!isCurrentOrigin(origin, get)) return false;
+        if (summarizePdf) {
+          set({ busy: false, error: errMsg(error), retryAction: options.retry });
+          return false;
+        }
+        // 普通网页沿用快捷指令的静默降级路径。
       }
     }
     set({ busy: false });
@@ -1381,7 +1438,7 @@ async function runResolvedShortcut(
 
   return runAgent(set, get, display, execution.agentUserContent, {
     presetTab: tab,
-    withoutBrowserTools: execution.browserTools === 'none',
+    withoutBrowserTools: execution.browserTools === 'none' || (summarizePdf && pagePrefetch?.kind === 'full'),
     systemPromptSuffix: execution.systemPromptSuffix,
     truncateToId: options.truncateToId,
     origin,

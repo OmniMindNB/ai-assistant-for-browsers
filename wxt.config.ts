@@ -20,6 +20,14 @@ function katexWoff2Only() {
 export default defineConfig({
   modules: ['@wxt-dev/module-react'],
   srcDir: '.',
+  hooks: {
+    'build:manifestGenerated': (wxt, manifest) => {
+      if (!['chrome', 'edge'].includes(wxt.config.browser)) return;
+      Object.assign(manifest, {
+        mime_types_handler: { 'application/pdf': { handler_url: 'pdf-viewer.html' } },
+      });
+    },
+  },
   vite: () => ({
     plugins: [
       tailwindcss(),
@@ -51,7 +59,7 @@ export default defineConfig({
     name: '__MSG_extName__',
     short_name: 'Runi',
     description: '__MSG_extDescription__',
-    permissions: ['sidePanel', 'storage', 'scripting', 'activeTab', 'tabs', 'alarms', 'userScripts'],
+    permissions: ['sidePanel', 'storage', 'scripting', 'activeTab', 'tabs', 'alarms', 'userScripts', 'contextMenus'],
     host_permissions: ['<all_urls>'],
     minimum_chrome_version: '138',
     icons: {

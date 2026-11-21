@@ -63,6 +63,21 @@ export function buildShortcutExecution(
         systemPromptSuffix: '',
       };
     }
+    if (pagePrefetch?.kind === 'pdf-windowed') {
+      return {
+        display: shortcut.name,
+        agentUserContent: translate('store.shortcutPdfWindowedPrompt', {
+          instruction: shortcut.prompt,
+          title: JSON.stringify(pagePrefetch.title),
+          url: JSON.stringify(pagePrefetch.url),
+          page: JSON.stringify(pagePrefetch.text),
+          offset: pagePrefetch.text.length,
+          total: pagePrefetch.total,
+        }),
+        browserTools: 'all',
+        systemPromptSuffix: '',
+      };
+    }
     if (pagePrefetch?.kind === 'windowed') {
       // 空大纲不是边缘情况：任何超过上限但没有 h1-h3（长论坛帖、<pre> 日志、法条、连载小说）
       // 都会命中。空大纲版本绝口不提「大纲」，改成让模型用任务本身的关键词去 browser_find_text，

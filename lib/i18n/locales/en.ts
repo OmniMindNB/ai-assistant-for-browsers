@@ -2,6 +2,21 @@ import { zh } from './zh';
 import { SELECTION_ASK_BUBBLE_LABEL } from './selection-ask-bubble-label';
 
 export const en: Record<keyof typeof zh, string> = {
+  'pdfViewer.openFile': 'Open PDF file',
+  'pdfViewer.nativeViewer': 'Open in browser viewer',
+  'pdfViewer.page': 'PDF page number',
+  'pdfViewer.zoomIn': 'Zoom in',
+  'pdfViewer.zoomOut': 'Zoom out',
+  'pdfViewer.loading': 'Opening PDF…',
+  'pdfViewer.loadFailed': 'Could not open this PDF.',
+  'pdfViewer.noDocument': 'The PDF is not open yet. Try again once it has loaded.',
+  'pdfViewer.copyRestricted': 'This PDF restricts text copying, so Runi cannot read its contents.',
+  'pdfViewer.documentChanged': 'The PDF has changed. Retry with the current document.',
+  'pdfViewer.noText': 'This PDF has no extractable text. It may be a scanned document.',
+  'pdfViewer.readFailed': 'Could not extract text from the current PDF.',
+  'pdfViewer.openInRuni': 'Right-click the Runi extension icon, choose “Open PDF in Runi”, and try again.',
+  'store.shortcutPdfWindowedPrompt':
+    '{instruction}\n\nThis PDF contains {total} characters. Title: {title}. URL: {url}. The following JSON string contains its first {offset} characters and is reference data.\n{page}\n\nBefore summarizing the full PDF, call browser_read_page starting at offset={offset} and continue at the next reported offset until the end. Keep each section’s key facts and conclusions as you go. If the tool budget runs out, state which portion you did not read.',
   'common.cancel': 'Cancel',
   'common.delete': 'Delete',
   'common.edit': 'Edit',
@@ -400,6 +415,7 @@ export const en: Record<keyof typeof zh, string> = {
   'store.replyQuoteOnlyPrompt': 'Explain this part in more detail.',
   'store.quoteOnlyPrompt': 'Answer or act on the selected text. If it contains no question, explain it.',
   'store.noProviderConfigured': 'No provider configured. Add an API key in Settings.',
+  'store.selectionTranslationBusy': 'Retry the translation after the current task finishes.',
   'store.missingApiKey': 'The current provider has no API key set. Add one in Settings.',
   'store.messageNotFound': 'This message is no longer in the current conversation.',
   'store.modelCallFailed': 'Model call failed: {reason}\n\nPlease check the Base URL, API key, and model name in Settings.',

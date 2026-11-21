@@ -10,5 +10,14 @@
   "commandOpenPanel": {
     "message": "打开 Runi 侧边栏",
     "description": "Keyboard shortcut label shown on chrome://extensions/shortcuts"
+  },
+  "menuTranslateSelection": {
+    "message": "翻译所选文字"
+  },
+  "menuAskSelection": {
+    "message": "就所选文字提问"
+  },
+  "menuOpenPdfViewer": {
+    "message": "在 Runi 中打开 PDF"
   }
 }

@@ -3,7 +3,6 @@ import { collectOutline, type PageOutlineItem } from '@/lib/page-outline';
 import {
   sendMessage,
   type AgentTakeoverPayload,
-  type AskSelectionPayload,
   type Message,
   type MessageResponse,
   type PageContent,
@@ -19,18 +18,8 @@ import {
   pulseOverlayCursor,
   unmountOverlay,
 } from '@/lib/agent/agent-overlay';
-import {
-  isExtensionContextInvalidatedError,
-  runIgnoringOrphanContext,
-} from '@/lib/extension-context';
-import { loadLocale, resolveLocale } from '@/lib/i18n/core';
-import { SELECTION_ASK_BUBBLE_LABEL } from '@/lib/i18n/locales/selection-ask-bubble-label';
-import {
-  SELECTION_ASK_ENABLED_KEY,
-  clampBubblePosition,
-  clipSelectionContext,
-  loadSelectionAskEnabled,
-} from '@/lib/selection-ask';
+import { isExtensionContextInvalidatedError, runIgnoringOrphanContext } from '@/lib/extension-context';
+import { initSelectionAskBubble } from '@/lib/selection-ask-bubble';
 
 // Content Script：页面交互层（ref: technical-plan.md §3.2、§4.1）
 export default defineContentScript({
@@ -66,9 +55,7 @@ export default defineContentScript({
         },
       );
 
-      // 不能让这个 Promise 裸奔：内容脚本跑在用户访问的每一个页面里，一次 unhandled rejection
-      // 就会在人家网站的控制台留一条红色报错。里面的 storage/i18n 读取都会在扩展重载后失败。
-      void initSelectionAskBubble().catch(handleAsyncFailure);
+      void initSelectionAskBubble();
       initAgentCursorBridge();
       initTakeoverWatch();
     });
@@ -129,170 +116,6 @@ function getSelection(): PageSelection {
   return { text: (window.getSelection()?.toString() ?? '').trim() };
 }
 
-// ---- 划词提问悬浮气泡 ----
-// 不能用 lib/i18n 的 t()/applyLocale()：applyLocale() 会写 document.documentElement.lang，
-// 在内容脚本里调用会篡改被访问网页本身的 lang 属性。这里只解析一次 locale，
-// 直接从 SELECTION_ASK_BUBBLE_LABEL（只含这一个文案的极小模块，见其头部注释）取值——
-// 内容脚本跑在每个页面里，不能为一句按钮文案把完整字典和 React 运行时打进产物。
-let bubbleLabel = 'Ask Runi';
-let bubbleHost: HTMLElement | null = null;
-let bubbleSelectionText = '';
-// 点气泡时选区可能已经被点击清掉，所以在 mouseup 时克隆一份 Range，点击时再取所在段落。
-let bubbleSelectionRange: Range | null = null;
-let selectionAskEnabled = false;
-
-const BUBBLE_SIZE = { width: 88, height: 32 };
-const BUBBLE_BUTTON_STYLE =
-  'all: initial; display: inline-flex; align-items: center; justify-content: center; ' +
-  'width: 88px; height: 32px; border-radius: 9999px; border: none; cursor: pointer; ' +
-  'background: #4f46e5; color: #ffffff; ' +
-  'font: 500 12px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; ' +
-  'box-shadow: 0 2px 8px rgba(0,0,0,0.24);';
-
-async function initSelectionAskBubble(): Promise<void> {
-  const locale = resolveLocale(await loadLocale());
-  bubbleLabel = SELECTION_ASK_BUBBLE_LABEL[locale];
-
-  selectionAskEnabled = await loadSelectionAskEnabled();
-  if (selectionAskEnabled) attachSelectionAskListeners();
-
-  browser.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName !== 'local' || !(SELECTION_ASK_ENABLED_KEY in changes)) return;
-    const next = (changes[SELECTION_ASK_ENABLED_KEY].newValue as boolean | undefined) ?? true;
-    if (next === selectionAskEnabled) return;
-    selectionAskEnabled = next;
-    if (selectionAskEnabled) {
-      attachSelectionAskListeners();
-    } else {
-      detachSelectionAskListeners();
-      removeBubble();
-    }
-  });
-}
-
-function attachSelectionAskListeners(): void {
-  document.addEventListener('mouseup', handleMouseUp);
-  document.addEventListener('mousedown', handleOutsideMouseDown, true);
-  document.addEventListener('scroll', handleScrollAway, true);
-  document.addEventListener('keydown', handleEscapeKey);
-}
-
-function detachSelectionAskListeners(): void {
-  document.removeEventListener('mouseup', handleMouseUp);
-  document.removeEventListener('mousedown', handleOutsideMouseDown, true);
-  document.removeEventListener('scroll', handleScrollAway, true);
-  document.removeEventListener('keydown', handleEscapeKey);
-}
-
-function handleMouseUp(event: MouseEvent): void {
-  if (bubbleHost && event.composedPath().includes(bubbleHost)) return;
-  removeBubble();
-  const selection = window.getSelection();
-  const text = (selection?.toString() ?? '').trim();
-  if (!text || !selection || selection.rangeCount === 0) return;
-  const rect = selection.getRangeAt(0).getBoundingClientRect();
-  if (rect.width === 0 && rect.height === 0) return;
-  bubbleSelectionText = text;
-  bubbleSelectionRange = selection.getRangeAt(0).cloneRange();
-  showBubble(rect);
-}
-
-function showBubble(rect: DOMRect): void {
-  const host = document.createElement('div');
-  host.style.position = 'fixed';
-  host.style.zIndex = '2147483647';
-  const { top, left } = clampBubblePosition(
-    { top: rect.top, left: rect.left, right: rect.right, bottom: rect.bottom },
-    { width: window.innerWidth, height: window.innerHeight },
-    BUBBLE_SIZE,
-  );
-  host.style.top = `${top}px`;
-  host.style.left = `${left}px`;
-
-  const shadow = host.attachShadow({ mode: 'closed' });
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.textContent = bubbleLabel;
-  button.style.cssText = BUBBLE_BUTTON_STYLE;
-  button.addEventListener('click', handleBubbleClick);
-  shadow.appendChild(button);
-
-  document.documentElement.appendChild(host);
-  bubbleHost = host;
-}
-
-function handleBubbleClick(): void {
-  const text = bubbleSelectionText;
-  const range = bubbleSelectionRange;
-  removeBubble();
-  if (!text) return;
-  const context = range ? selectionContextOf(range, text) : undefined;
-  // addEventListener 不会接住回调返回的 Promise，所以这里必须自己收尾。
-  void sendMessage('ASK_SELECTION', { text, context } satisfies AskSelectionPayload).catch(
-    handleAsyncFailure,
-  );
-}
-
-// 孤儿内容脚本（扩展已重载、这个页面还没刷新）唯一正确的反应是安静下来：重试没有意义，
-// 它的 runtime 通道不会再恢复。继续挂着监听器只会让用户每点一次气泡就多一条控制台报错，
-// 而且气泡看起来能点、点了却什么都不发生。摘掉监听器后划词不再冒气泡，与「扩展未启用」
-// 的表现一致，用户刷新页面即可恢复（新页面会由新扩展实例重新注入内容脚本）。
-function handleAsyncFailure(error: unknown): void {
-  if (isExtensionContextInvalidatedError(error)) {
-    detachSelectionAskListeners();
-    removeBubble();
-    return;
-  }
-  console.error('[Runi] content script error:', error);
-}
-
-function handleOutsideMouseDown(event: MouseEvent): void {
-  if (!bubbleHost) return;
-  if (event.composedPath().includes(bubbleHost)) return;
-  removeBubble();
-}
-
-function handleScrollAway(): void {
-  removeBubble();
-}
-
-function handleEscapeKey(event: KeyboardEvent): void {
-  if (event.key === 'Escape') removeBubble();
-}
-
-function removeBubble(): void {
-  bubbleHost?.remove();
-  bubbleHost = null;
-  bubbleSelectionText = '';
-  bubbleSelectionRange = null;
-}
-
-/** 往上找几层就够了：再往上通常是整栏、整页，开窗后也只剩选区附近那一截。 */
-const MAX_CONTEXT_ANCESTOR_DEPTH = 8;
-
-/**
- * 选区所在段落：从选区的公共祖先往上找第一个文字比选区多出一截的块级元素，取它的可见文字，
- * 再交给 clipSelectionContext 开窗。取不到（或段落就是选区本身）时返回 undefined，
- * 划词提问照常只带选区。
- */
-function selectionContextOf(range: Range, selection: string): string | undefined {
-  try {
-    const ancestor = range.commonAncestorContainer;
-    let element: Element | null = ancestor instanceof Element ? ancestor : ancestor.parentElement;
-    for (let depth = 0; element && element !== document.documentElement && depth < MAX_CONTEXT_ANCESTOR_DEPTH; depth += 1) {
-      const display = getComputedStyle(element).display;
-      if (element instanceof HTMLElement && !display.startsWith('inline') && display !== 'contents') {
-        const context = clipSelectionContext(element.innerText, selection);
-        if (context) return context;
-      }
-      element = element.parentElement;
-    }
-  } catch {
-    // 取上下文只是锦上添花，任何异常都退回只带选区。
-  }
-  return undefined;
-}
-
 // ---- 模拟光标的跨 world 桥 ----
 // 点击是在 MAIN world 的注入函数里派发的，光标却由这个 ISOLATED world 的内容脚本持有。
 // 让注入函数自己算完 rect 后直接派发事件、再 await 250ms，好处是光标停的位置与事件
@@ -324,7 +147,9 @@ function initTakeoverWatch(): void {
     if (!shouldReportTakeover(event, getOverlayState().mounted, Date.now(), lastReportedAt)) return;
     lastReportedAt = Date.now();
     // addEventListener 不接住回调返回的 Promise，必须自己收尾（同 handleBubbleClick）。
-    void sendMessage('AGENT_TAKEOVER', { via } satisfies AgentTakeoverPayload).catch(handleAsyncFailure);
+    void sendMessage('AGENT_TAKEOVER', { via } satisfies AgentTakeoverPayload).catch((error: unknown) => {
+      if (!isExtensionContextInvalidatedError(error)) console.error('[Runi] content script error:', error);
+    });
   };
 
   window.addEventListener('click', observe('click'), { capture: true, passive: true });

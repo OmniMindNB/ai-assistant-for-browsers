@@ -13,7 +13,7 @@ export type PdfExtractionFailureReason =
 export interface PdfTextItemLike { str: string; hasEOL?: boolean }
 export interface PdfDocumentLike {
   numPages: number;
-  getPage(pageNumber: number): Promise<{ getTextContent(): Promise<{ items: PdfTextItemLike[] }> }>;
+  getPage(pageNumber: number): Promise<{ getTextContent(): Promise<{ items: (PdfTextItemLike | { type: string })[] }> }>;
 }
 export interface PdfLoadingTaskLike {
   promise: Promise<PdfDocumentLike>;
@@ -45,6 +45,30 @@ function raceWithAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T>
   });
 }
 
+/** 直接读已加载文档的所有页。阅读器与附件共用，附件可另设长度上限。 */
+export async function readPdfDocumentText(
+  document: PdfDocumentLike,
+  { maxChars = Infinity, signal, onProgress }: Partial<PdfExtractionOptions> = {},
+): Promise<{ text: string; truncated: boolean }> {
+  const pages: string[] = [];
+  let length = 0;
+  for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+    const page = await raceWithAbort(document.getPage(pageNumber), signal);
+    const content = await raceWithAbort(page.getTextContent(), signal);
+    const pageText = content.items
+      .map((item) => 'str' in item ? item.str + (item.hasEOL ? '\n' : ' ') : '')
+      .join('').trim();
+    if (pageText) {
+      const section = pages.length ? `\n\n[Page ${pageNumber}]\n\n${pageText}` : pageText;
+      pages.push(section);
+      length += section.length;
+    }
+    onProgress?.(pageNumber, document.numPages);
+    if (length > maxChars) return { text: pages.join('').slice(0, maxChars), truncated: true };
+  }
+  return { text: pages.join(''), truncated: false };
+}
+
 export async function extractPdfText(
   file: File,
   options: PdfExtractionOptions,
@@ -69,25 +93,9 @@ export async function extractPdfText(
   };
   const abort = () => { void destroyTask(); };
   options.signal?.addEventListener('abort', abort, { once: true });
-  let document: PdfDocumentLike | undefined;
   try {
-    document = await raceWithAbort(task.promise, options.signal);
-    let text = '';
-    let truncated = false;
-    for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
-      const page = await raceWithAbort(document.getPage(pageNumber), options.signal);
-      const content = await raceWithAbort(page.getTextContent(), options.signal);
-      const pageText = content.items
-        .map((item) => item.str + (item.hasEOL ? '\n' : ' '))
-        .join('').trim();
-      if (pageText) text += `${text ? `\n\n[Page ${pageNumber}]\n\n` : ''}${pageText}`;
-      options.onProgress?.(pageNumber, document.numPages);
-      if (text.length > options.maxChars) {
-        text = text.slice(0, options.maxChars);
-        truncated = true;
-        break;
-      }
-    }
+    const document = await raceWithAbort(task.promise, options.signal);
+    const { text, truncated } = await readPdfDocumentText(document, options);
     if (options.signal?.aborted) return { ok: false, reason: 'cancelled' };
     if (!text.trim()) return { ok: false, reason: 'no-extractable-text' };
     return { ok: true, value: { text, pageCount: document.numPages, extractedChars: text.length, truncated } };

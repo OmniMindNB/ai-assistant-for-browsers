@@ -251,6 +251,7 @@ function makeReadPageTool(session: TabSessionController): BrowserAgentTool {
       if (!response.ok || !response.data) throw new Error(response.error ?? '页面读取失败');
 
       const page = response.data;
+      if (page.pdfError) throw new Error(page.pdfError);
       // 取窗和截断提示都在 page-read-window.ts：maxChars 仍夹在压缩层的硬上限内（超过的部分
       // 在 compactAgentMessages 里必然被再切一刀），offset 则是超长正文唯一的续读手段。
       const window = planPageReadWindow(page.text.length, params as { offset?: unknown; maxChars?: unknown } | undefined);

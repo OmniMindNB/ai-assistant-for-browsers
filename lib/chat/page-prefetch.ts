@@ -15,7 +15,7 @@
  * 面板这边本来就握着全文，不需要用往返去换内容。
  */
 
-import { MAX_TOOL_RESULT_CHARS } from '@/lib/agent/context-budget';
+import { DEFAULT_READ_MAX_CHARS, MAX_TOOL_RESULT_CHARS } from '@/lib/agent/context-budget';
 import type { PageOutlineItem } from '@/lib/page-outline';
 
 /** 比这更短的「正文」在实践中只会是骨架页或错误页（PDF 阅读器、canvas 应用、未渲染完的 SPA）。 */
@@ -39,6 +39,7 @@ export interface PagePrefetchInput {
   title: string;
   url: string;
   text: string;
+  source?: 'pdf';
   outline?: PageOutlineItem[];
 }
 
@@ -64,7 +65,13 @@ export interface WindowedPagePrefetch {
   outline: PageOutlineItem[];
 }
 
-export type PagePrefetchPlan = { kind: 'skip' } | FullPagePrefetch | WindowedPagePrefetch;
+export type PagePrefetchPlan = { kind: 'skip' } | FullPagePrefetch | WindowedPagePrefetch | {
+  kind: 'pdf-windowed';
+  title: string;
+  url: string;
+  text: string;
+  total: number;
+};
 
 /**
  * 输入必须是**脱敏之后**的正文（background.ts 的 extractActivePage 已经跑过 redactText），
@@ -72,9 +79,15 @@ export type PagePrefetchPlan = { kind: 'skip' } | FullPagePrefetch | WindowedPag
  */
 export function planPagePrefetch(input: PagePrefetchInput): PagePrefetchPlan {
   const text = input.text ?? '';
-  if (text.length < MIN_PAGE_PREFETCH_CHARS) return { kind: 'skip' };
+  if (text.length < (input.source === 'pdf' ? 1 : MIN_PAGE_PREFETCH_CHARS)) return { kind: 'skip' };
   if (text.length <= MAX_PAGE_PREFETCH_CHARS) {
     return { kind: 'full', title: input.title, url: input.url, text };
+  }
+  if (input.source === 'pdf') {
+    return {
+      kind: 'pdf-windowed', title: input.title, url: input.url,
+      text: text.slice(0, DEFAULT_READ_MAX_CHARS), total: text.length,
+    };
   }
   const tailStart = text.length - PAGE_PREFETCH_TAIL_CHARS;
   return {
